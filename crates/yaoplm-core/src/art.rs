@@ -109,7 +109,11 @@ pub fn plan_set_art(
     plan.notices.extend(state.unfinished_notice());
     let folder = art_folder(&state)?;
     let entries = list_or_empty(fs, &folder)?;
-    let backup = rel(&format!("{BACKUP_DIR}/{}/{}", journal::new_id(), folder.as_str()))?;
+    let backup = rel(&format!(
+        "{BACKUP_DIR}/{}/{}",
+        journal::new_id(),
+        folder.as_str()
+    ))?;
     let mut need_backup = false;
     let mut seen = HashSet::new();
     let mut transactions = Vec::new();
@@ -184,13 +188,13 @@ pub fn plan_set_art(
         if !existing.is_empty() {
             tx.notices.push(Notice::info(
                 "coverReplaced",
-                format!(
-                    "the current cover moves to {backup} before the new one is written"
-                ),
+                format!("the current cover moves to {backup} before the new one is written"),
             ));
         }
-        tx.notices
-            .push(Notice::info("coverFrom", format!("cover from {}", item.origin)));
+        tx.notices.push(Notice::info(
+            "coverFrom",
+            format!("cover from {}", item.origin),
+        ));
         transactions.push(tx);
     }
 
@@ -211,6 +215,7 @@ pub fn plan_set_art(
     let count = transactions.len();
     plan.transactions.extend(transactions);
     plan.title = match count {
+        0 => "No cover to write".into(),
         1 => "Write 1 cover".into(),
         n => format!("Write {n} covers"),
     };
@@ -239,11 +244,13 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
     let entries = list_or_empty(fs, &folder)?;
     let existing = existing_art(&entries, startup, kind);
     if existing.is_empty() {
-        return Err(OpError::NotFound(format!(
-            "{startup} has no {kind} cover"
-        )));
+        return Err(OpError::NotFound(format!("{startup} has no {kind} cover")));
     }
-    let backup = rel(&format!("{BACKUP_DIR}/{}/{}", journal::new_id(), folder.as_str()))?;
+    let backup = rel(&format!(
+        "{BACKUP_DIR}/{}/{}",
+        journal::new_id(),
+        folder.as_str()
+    ))?;
     let mut plan = Plan::new(
         PlanKind::Art,
         format!("Delete the {kind} cover of {startup}"),

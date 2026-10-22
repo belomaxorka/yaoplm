@@ -65,7 +65,10 @@ fn covers_are_written_into_art_and_the_folder_is_created() {
     assert_eq!(plan.title, "Write 2 covers");
     // Folder first, then one transaction per cover.
     assert_eq!(plan.transactions.len(), 3);
-    assert!(matches!(plan.transactions[0].steps[0], Step::CreateDir { .. }));
+    assert!(matches!(
+        plan.transactions[0].steps[0],
+        Step::CreateDir { .. }
+    ));
     assert_eq!(plan.transactions[1].commit, 1);
     assert_eq!(plan.write_bytes(), 10);
     assert!(!plan.deletes_user_data());
@@ -98,15 +101,23 @@ fn existing_covers_are_skipped_or_moved_to_the_backup_folder() {
     assert!(plan.is_executable(), "{:?}", plan.notices);
     assert!(!plan.deletes_user_data(), "a move, not a deletion");
     let tx = &plan.transactions[1];
-    assert!(matches!(&tx.steps[0], Step::Rename { from, .. } if from.as_str() == "art/slus_200.62_cov.png"));
-    assert!(matches!(&tx.steps[1], Step::WriteFile { path, .. } if path.as_str() == "art/SLUS_200.62_COV.png"));
+    assert!(
+        matches!(&tx.steps[0], Step::Rename { from, .. } if from.as_str() == "art/slus_200.62_cov.png")
+    );
+    assert!(
+        matches!(&tx.steps[1], Step::WriteFile { path, .. } if path.as_str() == "art/SLUS_200.62_COV.png")
+    );
     assert!(tx.notices.iter().any(|n| n.code == "coverReplaced"));
     let report = run(&plan, &fs, &src);
     assert!(report.succeeded(), "{:?}", report.error);
     assert_eq!(fs.bytes("art/SLUS_200.62_COV.png").unwrap(), b"PNG-A");
     let saved = backups(&fs);
     assert_eq!(saved.len(), 1);
-    assert!(saved[0].0.ends_with("/art/slus_200.62_cov.png"), "{}", saved[0].0);
+    assert!(
+        saved[0].0.ends_with("/art/slus_200.62_cov.png"),
+        "{}",
+        saved[0].0
+    );
     assert_eq!(saved[0].1, b"old");
 }
 
@@ -169,7 +180,11 @@ fn deleting_a_cover_backs_it_up_and_needs_confirmation() {
     assert_eq!(fs.bytes("ART/SLUS_200.62_ICO.png").unwrap(), b"ico");
     let saved = backups(&fs);
     assert_eq!(saved.len(), 2);
-    assert!(saved.iter().any(|(p, b)| p.ends_with("/ART/SLUS_200.62_COV.png") && b == b"png"));
+    assert!(
+        saved
+            .iter()
+            .any(|(p, b)| p.ends_with("/ART/SLUS_200.62_COV.png") && b == b"png")
+    );
 
     assert!(matches!(
         plan_delete_art(&fs, "SLUS_200.62", ArtKind::Cov),
