@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "YAOPLM",
+  "identifier": "io.github.belomaxorka.yaoplm",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../../web/dist",
+    "beforeDevCommand": "pnpm --filter @yaoplm/web dev",
+    "beforeBuildCommand": "pnpm --filter @yaoplm/web build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "YAOPLM",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

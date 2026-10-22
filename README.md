@@ -2,7 +2,7 @@
 
 Open-source, cross-platform manager for PlayStation 2 game libraries used with [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader) (OPL) and its forks.
 
-> **Status: pre-alpha / planning.** Nothing to download yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: pre-alpha.** Nothing to download yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Planned features
 
@@ -25,6 +25,23 @@ Open-source, cross-platform manager for PlayStation 2 game libraries used with [
 - [Decisions](docs/DECISIONS.md) (RU)
 - [Testing](docs/TESTING.md) (RU)
 - [Research](docs/research/README.md) (EN): competitors, OPL on-disk formats, data sources, stack
+
+## Development
+
+Requirements: Rust via [rustup](https://rustup.rs) (the version is pinned in `rust-toolchain.toml`), Node.js 24+ and pnpm through corepack (`npm install -g corepack && corepack enable pnpm`). On Windows, Visual Studio Build Tools with the C++ workload and WebView2. On Linux, the [Tauri system libraries](https://v2.tauri.app/start/prerequisites/).
+
+```sh
+pnpm install
+cargo test --workspace            # Rust tests
+pnpm -C web test                  # UI unit tests
+pnpm -C web build                 # build the SPA into web/dist
+cargo run -p yaoplm-server        # web UI and API on http://127.0.0.1:7878
+pnpm -C web e2e                   # Playwright against yaoplm-server
+cd apps/desktop && pnpm tauri dev # desktop app
+cargo run -p yaoplm-cli -- rpc '{"type":"Ping"}'
+```
+
+`yaoplm-server` listens on loopback by default. Listening on another address requires `--token`; open the UI once as `http://<host>:7878/?token=<token>`. Allowed library folders are given with `--root <dir>` (repeatable). See [ADR-0009](docs/DECISIONS.md) and ADR-0012.
 
 ## Legal
 

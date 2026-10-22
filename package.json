@@ -1,0 +1,12 @@
+{
+  "name": "yaoplm",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "tauri": "pnpm --filter @yaoplm/desktop tauri"
+  }
+}

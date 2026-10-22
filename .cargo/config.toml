@@ -1,0 +1,5 @@
+# ts-rs output for the web UI: `cargo test -p yaoplm-api --features ts-export`.
+# Byte counts stay below 2^53, so u64 maps to a plain JS number.
+[env]
+TS_RS_EXPORT_DIR = { value = "web/src/api/generated", relative = true }
+TS_RS_LARGE_INT = "number"

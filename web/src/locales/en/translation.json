@@ -1,0 +1,60 @@
+{
+  "app": {
+    "name": "YAOPLM",
+    "tagline": "OPL library manager",
+    "skipToContent": "Skip to content"
+  },
+  "nav": {
+    "label": "Main",
+    "library": "Library",
+    "devices": "Devices",
+    "jobs": "Jobs",
+    "settings": "Settings"
+  },
+  "connection": {
+    "connecting": "Connecting…",
+    "open": "Connected",
+    "closed": "Disconnected"
+  },
+  "theme": {
+    "switchToDark": "Switch to dark theme",
+    "switchToLight": "Switch to light theme"
+  },
+  "library": {
+    "emptyTitle": "No library open",
+    "emptyDescription": "Open a USB drive, a folder or a network share to see its PS2 games. Opening libraries arrives in an upcoming version."
+  },
+  "devices": {
+    "emptyTitle": "No devices yet",
+    "emptyDescription": "Removable drives, their file systems and free space will be listed here."
+  },
+  "jobs": {
+    "emptyTitle": "No jobs",
+    "emptyDescription": "Imports, copies and downloads will show their progress here."
+  },
+  "settings": {
+    "appearance": "Appearance",
+    "language": "Language",
+    "theme": "Theme",
+    "themes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "about": "About",
+    "version": "Version",
+    "mode": "Mode",
+    "modes": {
+      "tauri": "Desktop app",
+      "http": "Server",
+      "mock": "Demo"
+    },
+    "license": "License",
+    "loading": "Loading…",
+    "unavailable": "Unavailable"
+  },
+  "languages": {
+    "en": "English",
+    "ru": "Русский"
+  }
+}

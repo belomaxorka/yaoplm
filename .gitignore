@@ -44,3 +44,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Claude Code: only launch.json is shared
+.claude/*
+!.claude/launch.json
