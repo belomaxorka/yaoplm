@@ -2,10 +2,11 @@
 //! and the plan → confirm → execute engine for every write.
 //!
 //! - [`scan_library`] and [`image_info`] read what OPL would see.
-//! - [`import::plan_import`] builds a [`plan::Plan`]; nothing is written
-//!   while planning.
+//! - [`import::plan_import`] and [`ops`] build [`plan::Plan`]s; nothing is
+//!   written while planning.
 //! - [`exec::execute`] runs a plan with a journal, rollback before each
-//!   commit point and resume after it.
+//!   commit point and resume after it; [`recovery::plan_recovery`] picks up
+//!   what a crash left behind.
 //!
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
@@ -17,7 +18,9 @@ mod info;
 pub mod journal;
 mod model;
 mod multipart;
+pub mod ops;
 pub mod plan;
+pub mod recovery;
 mod scan;
 pub mod source;
 
