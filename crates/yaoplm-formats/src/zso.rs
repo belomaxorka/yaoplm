@@ -352,11 +352,26 @@ pub fn compress<R: Read, W: Write + Seek>(
     out: &mut W,
     progress: &mut dyn FnMut(u64),
 ) -> Result<ZsoStats, ZsoError> {
+    let align = align_for(total_bytes)?;
+    compress_aligned(input, total_bytes, out, align, progress)
+}
+
+/// [`compress`] with an explicit index shift, at least [`align_for`] and at
+/// most [`MAX_ALIGN`]. Larger shifts waste padding; tests use them.
+pub fn compress_aligned<R: Read, W: Write + Seek>(
+    input: &mut R,
+    total_bytes: u64,
+    out: &mut W,
+    align: u8,
+    progress: &mut dyn FnMut(u64),
+) -> Result<ZsoStats, ZsoError> {
     if total_bytes == 0 || !total_bytes.is_multiple_of(u64::from(BLOCK_SIZE)) {
         return Err(ZsoError::BadImageSize(total_bytes));
     }
+    if align > MAX_ALIGN || align < align_for(total_bytes)? {
+        return Err(ZsoError::Unsupported(ZsoProblem::Align(align)));
+    }
     let blocks = total_bytes / u64::from(BLOCK_SIZE);
-    let align = align_for(total_bytes)?;
     let header = ZsoHeader {
         header_size: HEADER_SIZE as u32,
         total_bytes,

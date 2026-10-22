@@ -185,3 +185,89 @@ fn usba_crc32_matches_opl_c_function() {
         );
     }
 }
+
+fn python() -> String {
+    std::env::var("YAOPLM_PYTHON")
+        .unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into())
+}
+
+/// Runs OPL's `pc/ziso.py` from a private copy.
+fn ziso_py(dir: &Path, args: &[&Path], level: &str) {
+    let script = dir.join("ziso.py");
+    if !script.exists() {
+        std::fs::copy(opl_src().join("pc").join("ziso.py"), &script).unwrap();
+    }
+    let output = Command::new(python())
+        .arg(&script)
+        .args(["-c", level])
+        .args(args)
+        .output()
+        .expect("run python");
+    assert!(
+        output.status.success(),
+        "ziso.py -c {level} failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+fn mixed_iso() -> Vec<u8> {
+    use yaoplm_test_support::{Content, fixtures};
+    fixtures::boot_iso(fixtures::placeholder_elf(), "SLUS_200.62", 0)
+        .file(
+            "NOISE.BIN;1",
+            Content::Noise {
+                len: 300_000,
+                seed: 7,
+            },
+        )
+        .file("ZEROS.BIN;1", Content::Zeros(300_000))
+        .build()
+        .to_vec()
+}
+
+fn read_zso(bytes: Vec<u8>) -> Vec<u8> {
+    use yaoplm_formats::iso9660::SectorSource;
+    let mut reader = yaoplm_formats::zso::ZsoReader::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut out = Vec::new();
+    let mut sector = [0u8; 2048];
+    for lba in 0..reader.sector_count() {
+        reader.read_sector(lba, &mut sector).unwrap();
+        out.extend_from_slice(&sector);
+    }
+    out
+}
+
+#[test]
+#[ignore = "needs YAOPLM_OPL_SRC and Python with lz4"]
+fn zso_interoperates_with_ziso_py() {
+    let dir = tempfile::tempdir().unwrap();
+    let iso = mixed_iso();
+    let iso_path = dir.path().join("in.iso");
+    std::fs::write(&iso_path, &iso).unwrap();
+
+    // ziso.py output, default and high compression, read by us.
+    for level in ["1", "9"] {
+        let zso_path = dir.path().join(format!("py{level}.zso"));
+        ziso_py(dir.path(), &[&iso_path, &zso_path], level);
+        let zso = std::fs::read(&zso_path).unwrap();
+        assert_eq!(read_zso(zso), iso, "ziso.py -c {level}");
+    }
+
+    // Our output, plain and with an index shift, read by ziso.py.
+    for align in [0, 2] {
+        let mut zso = std::io::Cursor::new(Vec::new());
+        yaoplm_formats::zso::compress_aligned(
+            &mut std::io::Cursor::new(&iso),
+            iso.len() as u64,
+            &mut zso,
+            align,
+            &mut |_| {},
+        )
+        .unwrap();
+        let zso_path = dir.path().join(format!("ours{align}.zso"));
+        let back = dir.path().join(format!("back{align}.iso"));
+        std::fs::write(&zso_path, zso.into_inner()).unwrap();
+        ziso_py(dir.path(), &[&zso_path, &back], "0");
+        assert_eq!(std::fs::read(&back).unwrap(), iso, "align {align}");
+    }
+}
