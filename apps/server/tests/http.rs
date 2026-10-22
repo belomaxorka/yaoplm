@@ -205,3 +205,21 @@ async fn events_stream_job_events() {
     let event: Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(event, json!({"type": "Started", "job": 42}));
 }
+
+#[tokio::test]
+async fn paths_outside_roots_are_forbidden() {
+    let dir = std::env::temp_dir();
+    let state = AppState::new(
+        Arc::new(Api::with_roots(Vec::new())),
+        Config {
+            token: None,
+            roots: Vec::new(),
+            loopback_only: true,
+        },
+    );
+    let body = json!({"type": "ScanLibrary", "root": dir}).to_string();
+    let request = rpc_post().body(Body::from(body)).unwrap();
+    let (status, body) = send(state, request).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "Forbidden");
+}

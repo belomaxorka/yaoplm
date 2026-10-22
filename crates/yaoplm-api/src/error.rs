@@ -20,6 +20,8 @@ pub enum ErrorCode {
     BadRequest,
     /// Server mode only: missing or wrong token.
     Unauthorized,
+    /// Server mode only: the path is outside the allowed library roots.
+    Forbidden,
     NotFound,
     Cancelled,
     Internal,
@@ -39,6 +41,14 @@ impl ApiError {
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Unauthorized, message)
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Forbidden, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::NotFound, message)
     }
 
     pub fn internal(message: impl Into<String>) -> Self {

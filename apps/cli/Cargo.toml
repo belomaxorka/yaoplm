@@ -19,5 +19,9 @@ serde.workspace = true
 serde_json.workspace = true
 yaoplm-api.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+yaoplm-test-support.workspace = true
+
 [lints]
 workspace = true

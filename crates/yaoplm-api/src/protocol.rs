@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ApiError;
+use crate::library::{ImageDetails, Library, LoaderProfile};
 
 /// An operation requested by a front end.
 ///
@@ -16,6 +17,27 @@ pub enum Request {
     Ping,
     /// Application name and version.
     Version,
+    /// Lists a device root (or its `usb_prefix` folder) as OPL would.
+    /// Answered with [`Response::Library`].
+    ScanLibrary {
+        root: String,
+        /// Defaults to OPL 1.2.0 beta.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Also read images whose ID OPL takes from the name or
+        /// `games.bin`, to catch mismatches. Defaults to true.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        verify: Option<bool>,
+    },
+    /// Details of one ISO or ZSO file. Answered with [`Response::ImageInfo`].
+    ImageInfo {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+    },
 }
 
 /// The successful answer to a [`Request`].
@@ -25,6 +47,8 @@ pub enum Request {
 pub enum Response {
     Pong,
     Version { name: String, version: String },
+    Library(Box<Library>),
+    ImageInfo(Box<ImageDetails>),
 }
 
 /// Identifies a long-running job for its whole lifetime.

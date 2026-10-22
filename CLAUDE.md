@@ -100,7 +100,12 @@ Update this section if they change.
 - Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878` (serves `web/dist`; debug builds read it from disk)
 - CLI: `cargo run -p yaoplm-cli -- rpc '{"type":"Ping"}'`; on Windows PowerShell 5.1 pipe the JSON instead: `'{"type":"Ping"}' | cargo run -p yaoplm-cli -- rpc`
 - Previews: `.claude/launch.json` has `yaoplm-server` (7878) and `web-dev` (Vite, 5173, proxies `/api` to 7878). Stop the server preview before `cargo test`: Windows locks the running `.exe`.
-- Real-data tests: set `YAOPLM_TESTDATA=D:\yaoplm-testdata`, then `cargo test --workspace -- --ignored`
+- Real-data tests: set `YAOPLM_TESTDATA=D:\yaoplm-testdata`, then `cargo test --workspace -- --ignored` (CFG/CHT corpus: `cargo test -p yaoplm-formats --test corpus -- --ignored --nocapture`)
+- OPL cross-checks (C `USBA_crc32`, `pc/ziso.py`; needs a C compiler and Python with `lz4`): `YAOPLM_OPL_SRC=D:\yaoplm-testdata\refs\ps2homebrew__Open-PS2-Loader cargo test -p yaoplm-formats --test opl_oracles -- --ignored`
+efs\ps2homebrew__Open-PS2-Loader cargo test -p yaoplm-formats --test opl_oracles -- --ignored`
+- Fuzz (nightly, `cargo install cargo-fuzz`): `cd fuzz && cargo +nightly fuzz run -O <iso|system_cnf|cfg|ul_cfg|zso|cht> -- -max_total_time=60`. On Windows add the MSVC ASan runtime folder (`VC\Tools\MSVC\<ver>\bin\Hostx64\x64`) to `PATH`. Seed ISOs: `cargo run -p yaoplm-test-support --example write_fixtures -- fuzz/corpus/iso`
+- Library tools: `cargo run -p yaoplm-cli -- scan <root>` and `cargo run -p yaoplm-cli -- info <image>` (`--json`, `--profile opl-1.2|opl-1.1|riptopl`)
+- Console test disc: `cargo run -p yaoplm-test-support --example make_boot_iso -- --elf <homebrew.elf> --out <image.iso> [--min-mib 4300]`
 
 ## Workflow (details in docs/ROADMAP.md)
 - One branch per milestone or task: `m<N>/<slug>`.

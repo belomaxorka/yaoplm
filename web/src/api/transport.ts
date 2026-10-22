@@ -175,6 +175,19 @@ function mockResponse(request: Request): Response {
       return { type: "Pong" };
     case "Version":
       return { type: "Version", name: "YAOPLM", version: "0.0.0-mock" };
+    case "ScanLibrary":
+      return {
+        type: "Library",
+        root: request.root,
+        profile: request.profile ?? "Opl120Beta",
+        folders: [],
+        games: [],
+        apps: [],
+        skipped: [],
+        warnings: [],
+      };
+    case "ImageInfo":
+      throw new RpcError({ code: "NotFound", message: `${request.path}: not available in the mock` });
   }
 }
 
