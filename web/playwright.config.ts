@@ -6,7 +6,9 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  fullyParallel: true,
+  // Every test shares one server and one fixture library, so they run in order.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
@@ -18,9 +20,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // Serves web/dist, so run `pnpm build` first.
-    command: `cargo run -q -p yaoplm-server -- --bind 127.0.0.1:${port}`,
-    cwd: "..",
+    // Builds the fixture library, then serves web/dist: run `pnpm build` first.
+    command: "node tests/e2e/server.mjs",
     url: `${baseURL}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
