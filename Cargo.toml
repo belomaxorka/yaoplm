@@ -12,6 +12,8 @@ members = [
     "apps/server",
     "apps/desktop/src-tauri",
 ]
+# cargo-fuzz targets need nightly; see fuzz/Cargo.toml.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.1"

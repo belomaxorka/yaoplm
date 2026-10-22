@@ -1,0 +1,59 @@
+[package]
+name = "yaoplm-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+yaoplm-formats = { path = "../crates/yaoplm-formats" }
+
+# Not part of the main workspace: cargo-fuzz needs nightly.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "iso"
+path = "fuzz_targets/iso.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "system_cnf"
+path = "fuzz_targets/system_cnf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cfg"
+path = "fuzz_targets/cfg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ul_cfg"
+path = "fuzz_targets/ul_cfg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zso"
+path = "fuzz_targets/zso.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cht"
+path = "fuzz_targets/cht.rs"
+test = false
+doc = false
+bench = false
