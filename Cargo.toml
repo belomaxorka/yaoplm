@@ -6,6 +6,7 @@ members = [
     "crates/yaoplm-hash",
     "crates/yaoplm-device",
     "crates/yaoplm-net",
+    "crates/yaoplm-api",
     "crates/yaoplm-test-support",
 ]
 
