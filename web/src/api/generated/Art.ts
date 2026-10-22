@@ -4,4 +4,8 @@ export type Art = { path: string,
 /**
  * `COV`, `ICO`, ...
  */
-kind: string, width: number | null, height: number | null, };
+kind: string, width: number | null, height: number | null, size: number, 
+/**
+ * Milliseconds since the Unix epoch, for cache busting.
+ */
+modified: number | null, };

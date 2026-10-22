@@ -145,6 +145,9 @@ pub struct Art {
     pub kind: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub size: u64,
+    /// Milliseconds since the Unix epoch, for cache busting.
+    pub modified: Option<u64>,
 }
 
 impl From<&core::ArtFile> for Art {
@@ -154,6 +157,8 @@ impl From<&core::ArtFile> for Art {
             kind: art.suffix.clone(),
             width: art.dimensions.map(|d| d.0),
             height: art.dimensions.map(|d| d.1),
+            size: art.size,
+            modified: art.modified,
         }
     }
 }

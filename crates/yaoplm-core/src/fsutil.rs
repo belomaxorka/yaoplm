@@ -20,6 +20,8 @@ pub struct Entry {
     pub path: PathBuf,
     pub is_dir: bool,
     pub len: u64,
+    /// Milliseconds since the Unix epoch, when the file system says.
+    pub modified: Option<u64>,
 }
 
 impl Listing {
@@ -42,6 +44,11 @@ impl Listing {
                 path: entry.path(),
                 is_dir: meta.is_dir(),
                 len: meta.len(),
+                modified: meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
             });
         }
         // Directory order differs between file systems; keep results stable.
