@@ -7,11 +7,13 @@
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
 pub mod cfg;
+pub mod image;
 pub mod iso9660;
 pub mod iso_name;
 pub mod media;
 pub mod system_cnf;
 pub mod ul_cfg;
 pub mod usba_crc32;
+pub mod zso;
 
 pub use media::Media;
