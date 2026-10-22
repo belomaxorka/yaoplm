@@ -113,7 +113,7 @@ test("renaming goes through the plan dialog", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Lf Renamed/ }).click();
-  await page.getByRole("button", { name: "Rename" }).click();
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Rename game" });
   await dialog.getByLabel("Title", { exact: true }).fill("Lf Final");
   await dialog.getByRole("button", { name: "Preview changes" }).click();
@@ -129,7 +129,7 @@ test("deleting needs the plan and an extra confirmation", async ({ page, request
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Lf Final/ }).click();
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("delete-preview").click();
   const plan = page.getByTestId("plan-dialog");
   await expect(plan).toContainText("Delete CD/SCES_500.03.Lf Final.iso");

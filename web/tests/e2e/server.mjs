@@ -1,7 +1,8 @@
 // Starts yaoplm-server for the e2e tests on a fresh fixture library
-// (TESTING.md): `make_library` writes the device root and the import
-// sources into a temp folder, both become server roots. Playwright runs
-// this as its webServer and kills the whole tree afterwards.
+// (TESTING.md): `make_library` writes the device root, the import sources
+// and the cover mirrors into a temp folder; all three become server roots.
+// The art cache goes to the same temp folder. Playwright runs this as its
+// webServer and kills the whole tree afterwards.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,6 +37,10 @@ const server = spawn(
     path.join(dir, "library"),
     "--root",
     path.join(dir, "sources"),
+    "--root",
+    path.join(dir, "mirror"),
+    "--data-dir",
+    path.join(dir, "data"),
   ],
   { cwd: repo, stdio: "inherit" },
 );

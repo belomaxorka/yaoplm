@@ -25,6 +25,7 @@ function game(overrides: Partial<Game>): Game {
     art: [],
     cheats: null,
     warnings: [],
+    knownTitle: null,
     ...overrides,
   };
 }
