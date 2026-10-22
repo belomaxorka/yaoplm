@@ -9,7 +9,7 @@ use yaoplm_api::ApiError;
 use crate::AppState;
 use crate::rpc::error_response;
 
-/// Guards `/api` (ADR-0009, ADR-0012): same-origin requests only, the token
+/// Guards `/api` and `/media` (ADR-0009, ADR-0012): same-origin requests only, the token
 /// when one is configured, and without a token a loopback `Host` (DNS
 /// rebinding cannot forge a token, so a reverse proxy may pass its own host).
 pub async fn require(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -24,10 +24,11 @@ pub async fn require(State(state): State<AppState>, request: Request, next: Next
     }
 
     if let Some(expected) = &config.token {
-        // Browsers cannot set headers on WebSocket handshakes, so the events
-        // stream also accepts `?token=`.
+        // Browsers cannot set headers on WebSocket handshakes or <img>
+        // requests, so the events stream and /media accept `?token=`.
+        let path = request.uri().path();
         let provided = bearer_token(headers).or_else(|| {
-            (request.uri().path() == "/api/events")
+            (path == "/api/events" || path.starts_with("/media/"))
                 .then(|| query_token(request.uri().query()))
                 .flatten()
         });

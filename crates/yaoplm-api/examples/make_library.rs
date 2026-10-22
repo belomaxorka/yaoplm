@@ -6,16 +6,20 @@
 //! ```
 //!
 //! `<folder>/library` is a device root with games in every format and a
-//! few things to warn about; `<folder>/sources` holds images to import.
-//! Pass `--games N` to add N more games for virtualization checks. Nothing
-//! here is a real game: every image comes from `yaoplm-test-support`.
+//! few things to warn about; `<folder>/sources` holds images to import;
+//! `<folder>/mirror` holds local mirrors of the two cover sources with a
+//! cover each (ART-1), so the art screens work without the network. Pass
+//! `--games N` to add N more games for virtualization checks. Nothing here
+//! is a real game or a real cover: every image is generated.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use image::{DynamicImage, ImageBuffer, Rgb};
 use yaoplm_api::jobs::{JobResult, JobStatus};
 use yaoplm_api::{Api, Layout, Request, Response};
 use yaoplm_test_support::Variant;
@@ -24,6 +28,24 @@ use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, bytes).unwrap();
+}
+
+/// A flat two-tone "cover" with a diagonal, so a resized copy is still
+/// recognisable in a screenshot.
+fn cover(width: u32, height: u32, hue: u8, format: image::ImageFormat) -> Vec<u8> {
+    let img = ImageBuffer::from_fn(width, height, |x, y| {
+        let band = (x + y) / 24 % 2 == 0;
+        if band {
+            Rgb([hue, 80, 200u8.wrapping_sub(hue)])
+        } else {
+            Rgb([240, 240, 230])
+        }
+    });
+    let mut out = Vec::new();
+    DynamicImage::ImageRgb8(img)
+        .write_to(&mut Cursor::new(&mut out), format)
+        .unwrap();
+    out
 }
 
 /// Imports `sources` into `root` through the API, like the UI does.
@@ -79,8 +101,10 @@ fn main() -> ExitCode {
 
     let library = dir.join("library");
     let sources = dir.join("sources");
+    let mirror = dir.join("mirror");
     let _ = fs::remove_dir_all(&library);
     let _ = fs::remove_dir_all(&sources);
+    let _ = fs::remove_dir_all(&mirror);
     for folder in ["CD", "DVD", "CFG", "ART", "VMC"] {
         fs::create_dir_all(library.join(folder)).unwrap();
     }
@@ -120,6 +144,27 @@ fn main() -> ExitCode {
         b"$Compatibility=5\r\n$VMC_0=SLUS_200.62_0\r\nTitle=Retail Game\r\n",
     );
     write(&library.join("VMC/SLUS_200.62_0.bin"), &vec![0u8; 64 << 10]);
+    // One game already has a cover, so "only missing" has something to skip.
+    write(
+        &library.join("ART/SLUS_212.18_COV.png"),
+        &cover(140, 200, 40, image::ImageFormat::Png),
+    );
+
+    // Cover mirrors: xlenore has the retail game by serial, libretro has
+    // the split game (SCES-50003, Dead or Alive 2) by its Redump name.
+    write(
+        &mirror.join("xlenore/covers/default/SLUS-20062.jpg"),
+        &cover(300, 420, 200, image::ImageFormat::Jpeg),
+    );
+    write(
+        &mirror.join("libretro/Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
+        &cover(256, 362, 110, image::ImageFormat::Png),
+    );
+    // A loose image to pick as a manual replacement (ART-3).
+    write(
+        &mirror.join("custom-cover.jpg"),
+        &cover(350, 500, 20, image::ImageFormat::Jpeg),
+    );
     for n in 0..extra {
         let id = format!("SLUS_{:03}.{:02}", 300 + n / 100, n % 100);
         write(
@@ -163,5 +208,6 @@ fn main() -> ExitCode {
 
     println!("library: {}", library.display());
     println!("sources: {}", sources.display());
+    println!("mirror: {}", mirror.display());
     ExitCode::SUCCESS
 }

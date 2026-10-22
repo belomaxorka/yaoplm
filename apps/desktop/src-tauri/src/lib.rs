@@ -2,10 +2,11 @@
 //! are a thin adapter over `yaoplm_api::Api` (ARCHITECTURE.md §4).
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tauri::ipc::Channel;
-use tauri::{State, Webview};
+use tauri::{AppHandle, Manager, State, Webview};
 use yaoplm_api::{Api, ApiError, JobEvent, Request, Response, Subscription};
 
 /// One event stream per webview, keyed by its label.
@@ -40,12 +41,29 @@ fn subscribe(
         .insert(webview.label().to_owned(), subscription);
 }
 
+/// Lets the page load `ART/*` of the open library root through the asset
+/// protocol (`convertFileSrc`), and nothing else on the disk (ART-2). The
+/// folder may not exist yet; it is allowed again after every scan.
+#[tauri::command]
+fn allow_art(app: AppHandle, root: String) -> Result<bool, ApiError> {
+    let art = Path::new(&root).join("ART");
+    if !art.is_dir() {
+        return Ok(false);
+    }
+    app.asset_protocol_scope()
+        .allow_directory(&art, false)
+        .map(|()| true)
+        .map_err(|err| ApiError::internal(err.to_string()))
+}
+
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         // Native file and folder pickers for the Add games screen (IMP-1).
         .plugin(tauri_plugin_dialog::init())
+        // Pasting a cover from the clipboard (ART-3).
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(Api::new()))
         .manage(Subscriptions::default())
-        .invoke_handler(tauri::generate_handler![rpc, subscribe])
+        .invoke_handler(tauri::generate_handler![rpc, subscribe, allow_art])
         .run(tauri::generate_context!())
 }

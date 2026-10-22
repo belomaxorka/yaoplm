@@ -27,6 +27,11 @@ struct Args {
     /// Library root the UI may open. Repeat for several roots.
     #[arg(long = "root", value_name = "DIR")]
     roots: Vec<PathBuf>,
+
+    /// Folder for the art cache and other app data (ARCHITECTURE.md §6).
+    /// Defaults to the platform's app data folder.
+    #[arg(long, env = "YAOPLM_DATA_DIR", value_name = "DIR")]
+    data_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -58,8 +63,13 @@ async fn main() -> anyhow::Result<()> {
         roots.push(canonical);
     }
 
+    let mut api = Api::with_roots(roots.clone());
+    if let Some(dir) = args.data_dir {
+        api = api.with_data_dir(dir);
+    }
+    tracing::info!(dir = %api.data_dir().display(), "app data folder");
     let state = AppState::new(
-        Arc::new(Api::with_roots(roots.clone())),
+        Arc::new(api),
         Config {
             token,
             roots,

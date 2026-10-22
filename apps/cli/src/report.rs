@@ -3,8 +3,9 @@
 use std::fmt::Write;
 use std::path::Path;
 
+use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable};
-use yaoplm_api::jobs::{ExecutionReport, TxOutcome};
+use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
     GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice, Platform,
 };
@@ -433,6 +434,77 @@ pub fn execution(plan: &PlanView, report: &ExecutionReport) -> String {
             out,
             "An operation is half done (journal {journal}). Run `yaoplm recover <root>` to undo it, or add --resume to finish it."
         );
+    }
+    out
+}
+
+/// One line of a cover search: `SLUS_200.62  found      xlenore  Retail`.
+pub fn art_line(entry: &JobLogEntry) -> String {
+    match entry {
+        JobLogEntry::Art {
+            startup,
+            title,
+            state,
+            source,
+            detail,
+            ..
+        } => {
+            let state = match state {
+                ArtLogState::Found => "found",
+                ArtLogState::Cached => "cached",
+                ArtLogState::NotFound => "not found",
+                ArtLogState::Failed => "FAILED",
+            };
+            let via = match (source, detail) {
+                (Some(source), _) => source.clone(),
+                (None, Some(detail)) => detail.clone(),
+                (None, None) => String::new(),
+            };
+            format!("{startup:<12} {state:<10} {via:<10} {title}")
+        }
+        _ => String::new(),
+    }
+}
+
+/// The About screen as text.
+pub fn about(about: &Attribution) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{} {} ({}) {}",
+        about.name, about.version, about.license, about.repository
+    );
+    let _ = writeln!(
+        out,
+        "Title database: {} serials, built {}, Redump names from libretro-database {}",
+        about.titles.entries, about.titles.built, about.titles.libretro_version
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(out, "Bundled data:");
+    for entry in &about.data {
+        let _ = writeln!(
+            out,
+            "  {}: {} ({})",
+            entry.name,
+            entry.license.as_deref().unwrap_or("no licence"),
+            entry.url
+        );
+        let _ = writeln!(out, "    {}", entry.credits);
+    }
+    let _ = writeln!(out);
+    let _ = writeln!(out, "Cover sources (fetched on request, never bundled):");
+    for entry in &about.art {
+        let _ = writeln!(
+            out,
+            "  {}: {} ({})",
+            entry.name,
+            entry
+                .license
+                .as_deref()
+                .unwrap_or("no licence stated; used on request only"),
+            entry.url
+        );
+        let _ = writeln!(out, "    {}", entry.credits);
     }
     out
 }
