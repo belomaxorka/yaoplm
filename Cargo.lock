@@ -4973,7 +4973,9 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tempfile",
  "yaoplm-api",
+ "yaoplm-test-support",
 ]
 
 [[package]]
