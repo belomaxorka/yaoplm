@@ -7,6 +7,7 @@
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
 pub mod cfg;
+pub mod iso9660;
 pub mod iso_name;
 pub mod media;
 pub mod system_cnf;
