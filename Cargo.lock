@@ -4993,8 +4993,11 @@ dependencies = [
 name = "yaoplm-core"
 version = "0.0.1"
 dependencies = [
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "yaoplm-device",
  "yaoplm-formats",
  "yaoplm-test-support",
 ]
