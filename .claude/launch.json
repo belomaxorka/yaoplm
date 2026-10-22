@@ -8,6 +8,12 @@
       "port": 7878
     },
     {
+      "name": "yaoplm-server-fixture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["web/tests/e2e/server.mjs", "7878"],
+      "port": 7878
+    },
+    {
       "name": "web-dev",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "web", "dev"],

@@ -1,9 +1,267 @@
-import { ListChecks } from "lucide-react";
+import { cn } from "cn";
+import {
+  Ban,
+  BrushCleaning,
+  CheckCircle2,
+  ChevronDown,
+  CircleX,
+  Clock,
+  History,
+  ListChecks,
+  Loader2,
+  ScanSearch,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
+import type { JobInfo } from "@/api/generated/JobInfo";
+import type { JobLogEntry } from "@/api/generated/JobLogEntry";
+import type { TxOutcome } from "@/api/generated/TxOutcome";
 import { EmptyState } from "@/components/EmptyState";
+import { PageScroll } from "@/components/PageScroll";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { useJobs } from "@/jobs/context";
+import { formatBytes, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 
+/**
+ * Jobs panel (IMP-9): one card per job with progress, speed, time left,
+ * the game being written, cancel, per-transaction outcomes and the live
+ * step log (ideas from OrbitPS2 Manager's jobs panel, research/10).
+ */
 export function JobsPage() {
   const { t } = useTranslation();
-  return <EmptyState icon={ListChecks} title={t("jobs.emptyTitle")} description={t("jobs.emptyDescription")} />;
+  const { jobs, dismissed, clearFinished } = useJobs();
+  const shown = jobs.filter((job) => !dismissed.has(job.id));
+  const finished = shown.filter((job) => job.status !== "queued" && job.status !== "running");
+
+  return (
+    <PageScroll>
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        {shown.length > 0 && (
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={clearFinished} disabled={finished.length === 0}>
+              <BrushCleaning aria-hidden />
+              {t("jobs.clearFinished")}
+            </Button>
+          </div>
+        )}
+        {shown.length === 0 && (
+          <EmptyState icon={ListChecks} title={t("jobs.emptyTitle")} description={t("jobs.emptyDescription")} />
+        )}
+        <ul className="flex flex-col gap-3">
+          {shown.map((job) => (
+            <JobCard key={job.id} job={job} />
+          ))}
+        </ul>
+      </div>
+    </PageScroll>
+  );
+}
+
+const statusIcons = {
+  queued: Clock,
+  running: Loader2,
+  finished: CheckCircle2,
+  failed: CircleX,
+  cancelled: Ban,
+} as const;
+
+const statusColours = {
+  queued: "text-muted-foreground",
+  running: "text-primary",
+  finished: "text-emerald-600 dark:text-emerald-400",
+  failed: "text-destructive",
+  cancelled: "text-amber-600 dark:text-amber-400",
+} as const;
+
+export function JobStatusIcon({ job, className }: { job: JobInfo; className?: string }) {
+  const Icon = statusIcons[job.status];
+  return (
+    <Icon
+      className={cn("size-4 shrink-0", statusColours[job.status], job.status === "running" && "animate-spin", className)}
+      aria-hidden
+    />
+  );
+}
+
+export function JobProgressLine({ job }: { job: JobInfo }) {
+  const { t } = useTranslation();
+  const value = percent(job.done, job.total);
+  const bytes = job.kind === "executePlan";
+  const eta = formatEta(job.done, job.total, job.rate);
+  return (
+    <div className="flex flex-col gap-1">
+      <Progress value={value ?? 0} className={cn("h-1.5", value === null && job.status === "running" && "animate-pulse")} />
+      <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground tabular-nums">
+        <span className="font-mono">
+          {bytes ? formatBytes(job.done) : job.done}
+          {job.total !== null && ` / ${bytes ? formatBytes(job.total) : job.total}`}
+          {value !== null && ` (${value}%)`}
+        </span>
+        {job.rate !== null && <span>{formatRate(job.rate)}</span>}
+        {eta && <span>{t("jobs.eta", { time: eta })}</span>}
+        {job.item && (
+          <span className="truncate" title={job.item}>
+            {job.item}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function outcomeCounts(outcomes: readonly TxOutcome[]): Partial<Record<TxOutcome, number>> {
+  const counts: Partial<Record<TxOutcome, number>> = {};
+  for (const outcome of outcomes) counts[outcome] = (counts[outcome] ?? 0) + 1;
+  return counts;
+}
+
+const outcomeVariant: Record<TxOutcome, "default" | "secondary" | "destructive" | "outline"> = {
+  done: "default",
+  rolledBack: "secondary",
+  notStarted: "outline",
+  interrupted: "destructive",
+};
+
+function JobCard({ job }: { job: JobInfo }) {
+  const { t } = useTranslation();
+  const { cancel, dismiss, load } = useJobs();
+  const [logOpen, setLogOpen] = useState(false);
+  const active = job.status === "queued" || job.status === "running";
+  const report = job.result?.type === "Execution" ? job.result : null;
+  const KindIcon = job.kind === "scanLibrary" ? ScanSearch : ListChecks;
+  const plan = job.kind === "executePlan";
+
+  // ListJobs leaves results and logs out; a finished plan fetches its own once.
+  useEffect(() => {
+    if (plan && !active && !job.result) void load(job.id);
+  }, [plan, active, job.result, job.id, load]);
+
+  return (
+    <li className="rounded-lg border bg-card p-4" data-testid="job-card" data-status={job.status} data-kind={job.kind}>
+      <div className="flex items-start gap-3">
+        <KindIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium wrap-anywhere">{job.kind === "scanLibrary" ? t("jobs.scanTitle") : job.title}</span>
+            <Badge variant="outline" className={cn("gap-1", statusColours[job.status])}>
+              <JobStatusIcon job={job} className="size-3" />
+              {t(`jobs.status.${job.status}`)}
+            </Badge>
+            <span className="font-mono text-xs text-muted-foreground">#{job.id}</span>
+          </div>
+          {job.root && (
+            <div className="truncate font-mono text-xs text-muted-foreground" title={job.root}>
+              {job.root}
+            </div>
+          )}
+          {(active || (plan && job.total !== null && job.total > 0)) && (
+            <div className="mt-2">
+              <JobProgressLine job={job} />
+            </div>
+          )}
+          {job.error && (
+            <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive" role="alert">
+              {job.error.message}
+            </p>
+          )}
+          {report && (
+            <div className="mt-2 flex flex-col gap-2 text-sm" data-testid="job-outcomes">
+              <ul className="flex flex-wrap gap-1.5">
+                {Object.entries(outcomeCounts(report.outcomes)).map(([outcome, count]) => (
+                  <li key={outcome}>
+                    <Badge variant={outcomeVariant[outcome as TxOutcome]}>
+                      {t(`jobs.outcome.${outcome as TxOutcome}`, { count })}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+              {report.error && <p className="text-destructive">{report.error}</p>}
+              {report.cancelled && <p className="text-muted-foreground">{t("jobs.cancelledNote")}</p>}
+              {report.journal && (
+                <p className="flex flex-wrap items-center gap-2 text-destructive">
+                  <History className="size-4" aria-hidden />
+                  {t("jobs.journalLeft", { id: report.journal })}
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/library">{t("jobs.recover")}</Link>
+                  </Button>
+                </p>
+              )}
+            </div>
+          )}
+          {plan && (
+            <div className="mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-expanded={logOpen}
+                onClick={() => {
+                  if (!logOpen && job.log.length === 0) void load(job.id);
+                  setLogOpen(!logOpen);
+                }}
+              >
+                <ChevronDown className={cn("transition-transform", logOpen && "rotate-180")} aria-hidden />
+                {t("jobs.log", { count: job.log.length })}
+              </Button>
+              {logOpen && <JobLog entries={job.log} />}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {active ? (
+            <Button variant="outline" size="sm" onClick={() => void cancel(job.id)} data-testid="job-cancel">
+              <Ban aria-hidden />
+              {t("jobs.cancel")}
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon-sm" onClick={() => dismiss(job.id)} aria-label={t("jobs.dismiss")}>
+              <X aria-hidden />
+            </Button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+const stepStateColours = {
+  started: "text-muted-foreground",
+  done: "text-emerald-600 dark:text-emerald-400",
+  failed: "text-destructive",
+  undone: "text-amber-600 dark:text-amber-400",
+} as const;
+
+export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
+  const { t } = useTranslation();
+  if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
+  return (
+    <ol className="mt-1 max-h-72 overflow-auto rounded-md border bg-background p-2 font-mono text-xs" data-testid="job-log">
+      {entries.map((entry, index) => (
+        <li
+          key={index}
+          className={cn(
+            "flex gap-2 py-0.5",
+            entry.kind === "transaction" ? "font-semibold" : "pl-3",
+            entry.kind === "step" && stepStateColours[entry.state],
+            entry.kind === "transaction" && entry.state === "rolledBack" && "text-amber-600 dark:text-amber-400",
+            entry.kind === "transaction" && entry.state === "interrupted" && "text-destructive",
+          )}
+        >
+          <span className="shrink-0 text-muted-foreground tabular-nums">{formatTime(entry.at)}</span>
+          <span className="min-w-0 wrap-anywhere">
+            {entry.kind === "transaction"
+              ? t(`jobs.txState.${entry.state}`, { title: entry.title })
+              : t(`jobs.stepState.${entry.state}`, {
+                  step: t(`plan.steps.${entry.op}`, { path: entry.path, to: entry.to ?? "" }),
+                })}
+            {entry.kind === "step" && entry.error && <span className="block">{entry.error}</span>}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
 }

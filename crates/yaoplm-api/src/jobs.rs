@@ -21,12 +21,15 @@ use yaoplm_device::CancelToken;
 
 use crate::events::EventBus;
 use crate::library::Library;
+use crate::plans::StepOp;
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
 
 /// Finished jobs kept for `GetJob` / `ListJobs`.
 const KEEP_FINISHED: usize = 100;
 /// At most this many progress events per second and job.
 const EVENT_INTERVAL: Duration = Duration::from_millis(100);
+/// Oldest log entries are dropped beyond this many per job.
+const LOG_LIMIT: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -85,6 +88,59 @@ pub enum JobResult {
     Execution(ExecutionReport),
 }
 
+/// The state of a transaction in the live log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum TxLogState {
+    Started,
+    Done,
+    RolledBack,
+    Interrupted,
+}
+
+/// The state of a step in the live log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum StepLogState {
+    Started,
+    Done,
+    Failed,
+    /// Rolled back after a failure or a cancel.
+    Undone,
+}
+
+/// One line of a plan job's live log (the idea comes from OrbitPS2
+/// Manager's per-job log, research/10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum JobLogEntry {
+    Transaction {
+        /// Milliseconds since the Unix epoch.
+        at: u64,
+        index: u32,
+        title: String,
+        state: TxLogState,
+    },
+    Step {
+        at: u64,
+        transaction: u32,
+        index: u32,
+        op: StepOp,
+        /// Device path relative to the root, or a host path for sources.
+        path: String,
+        to: Option<String>,
+        state: StepLogState,
+        error: Option<String>,
+    },
+}
+
 /// A job as front ends see it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -93,6 +149,8 @@ pub struct JobInfo {
     pub id: JobId,
     pub kind: JobKind,
     pub title: String,
+    /// The device the job works on, when it has one.
+    pub root: Option<String>,
     pub status: JobStatus,
     /// Bytes for plans, items for scans.
     pub done: u64,
@@ -106,6 +164,9 @@ pub struct JobInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<JobResult>,
     pub error: Option<ApiError>,
+    /// Transactions and steps so far (plans only); `ListJobs` leaves it out.
+    #[serde(default)]
+    pub log: Vec<JobLogEntry>,
 }
 
 /// Which queue a job runs on.
@@ -200,6 +261,30 @@ impl JobContext {
             });
         }
     }
+
+    /// Appends to the job's log and publishes the entry at once.
+    pub fn log(&self, entry: JobLogEntry) {
+        {
+            let mut jobs = lock(&self.inner.jobs);
+            if let Some(record) = jobs.get_mut(&self.id.0) {
+                if record.info.log.len() >= LOG_LIMIT {
+                    record.info.log.remove(0);
+                }
+                record.info.log.push(entry.clone());
+            }
+        }
+        self.inner.events.publish(&JobEvent::Log {
+            job: self.id,
+            entry,
+        });
+    }
+}
+
+/// Milliseconds since the Unix epoch, for log entries.
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 type Work = Box<dyn FnOnce(&JobContext) -> Result<JobResult, ApiError> + Send>;
@@ -223,6 +308,7 @@ impl JobManager {
         &self,
         kind: JobKind,
         title: impl Into<String>,
+        root: Option<String>,
         queue: Queue,
         work: impl FnOnce(&JobContext) -> Result<JobResult, ApiError> + Send + 'static,
     ) -> JobId {
@@ -232,6 +318,7 @@ impl JobManager {
             id,
             kind,
             title: title.into(),
+            root,
             status: JobStatus::Queued,
             done: 0,
             total: None,
@@ -239,6 +326,7 @@ impl JobManager {
             item: None,
             result: None,
             error: None,
+            log: Vec::new(),
         };
         {
             let mut jobs = lock(&self.inner.jobs);
@@ -255,6 +343,7 @@ impl JobManager {
             job: id,
             kind,
             title: info.title,
+            root: info.root,
         });
         let inner = Arc::clone(&self.inner);
         let work: Work = Box::new(work);
@@ -287,12 +376,13 @@ impl JobManager {
         lock(&self.inner.jobs).get(&id.0).map(|r| r.info.clone())
     }
 
-    /// All known jobs, newest last, without their results.
+    /// All known jobs, newest last, without their results and logs.
     pub fn list(&self) -> Vec<JobInfo> {
         lock(&self.inner.jobs)
             .values()
             .map(|r| JobInfo {
                 result: None,
+                log: Vec::new(),
                 ..r.info.clone()
             })
             .collect()
@@ -458,6 +548,7 @@ mod tests {
                 jobs.spawn(
                     JobKind::ExecutePlan,
                     format!("job {n}"),
+                    None,
                     Queue::Write,
                     move |_| {
                         assert_eq!(running.fetch_add(1, Ordering::SeqCst), 0);
@@ -491,7 +582,7 @@ mod tests {
             lock(&log).push(name);
         });
         let jobs = JobManager::new(bus);
-        let id = jobs.spawn(JobKind::ExecutePlan, "copy", Queue::Write, |ctx| {
+        let id = jobs.spawn(JobKind::ExecutePlan, "copy", None, Queue::Write, |ctx| {
             for done in 0..=10 {
                 ctx.progress(done, Some(10), Some("Game"));
             }
@@ -515,14 +606,14 @@ mod tests {
             "{events:?}"
         );
 
-        let failed = jobs.spawn(JobKind::ScanLibrary, "scan", Queue::Read, |_| {
+        let failed = jobs.spawn(JobKind::ScanLibrary, "scan", None, Queue::Read, |_| {
             Err(ApiError::not_found("gone"))
         });
         let info = jobs.wait(failed).unwrap();
         assert_eq!(info.status, JobStatus::Failed);
         assert_eq!(info.error.unwrap().code, ErrorCode::NotFound);
 
-        let panics = jobs.spawn(JobKind::ScanLibrary, "scan", Queue::Read, |_| {
+        let panics = jobs.spawn(JobKind::ScanLibrary, "scan", None, Queue::Read, |_| {
             panic!("boom")
         });
         assert_eq!(jobs.wait(panics).unwrap().status, JobStatus::Failed);

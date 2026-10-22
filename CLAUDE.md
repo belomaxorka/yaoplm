@@ -95,11 +95,12 @@ Update this section if they change.
 - Core purity (ADR-0003): `bash scripts/check-core-deps.sh`
 - Types: `cargo test -p yaoplm-api --features ts-export` (regenerates `web/src/api/generated/`; CI fails if it is stale)
 - Web: `pnpm install`, then `pnpm -C web lint`, `pnpm -C web typecheck`, `pnpm -C web test`
-- E2E: `pnpm -C web build`, then `pnpm -C web e2e` (starts `yaoplm-server` on 127.0.0.1:7879; once per machine: `pnpm -C web exec playwright install chromium`)
+- E2E: `pnpm -C web build`, then `pnpm -C web e2e` (`web/tests/e2e/server.mjs` builds a fixture library with `make_library` in a temp folder and starts `yaoplm-server` on 127.0.0.1:7879 with it; once per machine: `pnpm -C web exec playwright install chromium`). Screenshots land in `web/test-results/screenshots/`.
+- Fixture library: `cargo run -p yaoplm-api --example make_library -- <dir> [--games N]` (`<dir>/library` and `<dir>/sources`)
 - Desktop dev: `pnpm tauri dev` (from `apps/desktop`; starts Vite on 5173)
 - Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878` (serves `web/dist`; debug builds read it from disk)
 - CLI: `cargo run -p yaoplm-cli -- rpc '{"type":"Ping"}'`; on Windows PowerShell 5.1 pipe the JSON instead: `'{"type":"Ping"}' | cargo run -p yaoplm-cli -- rpc`
-- Previews: `.claude/launch.json` has `yaoplm-server` (7878) and `web-dev` (Vite, 5173, proxies `/api` to 7878). Stop the server preview before `cargo test`: Windows locks the running `.exe`.
+- Previews: `.claude/launch.json` has `yaoplm-server` (7878, no roots), `yaoplm-server-fixture` (7878, fresh fixture library) and `web-dev` (Vite, 5173, proxies `/api` to 7878). Stop the server preview before `cargo test` or a cargo build of the server: Windows locks the running `.exe`.
 - Real-data tests: set `YAOPLM_TESTDATA=D:\yaoplm-testdata`, then `cargo test --workspace -- --ignored` (CFG/CHT corpus: `cargo test -p yaoplm-formats --test corpus -- --ignored --nocapture`)
 - OPL cross-checks (C `USBA_crc32`, `pc/ziso.py`; needs a C compiler and Python with `lz4`): `YAOPLM_OPL_SRC=D:\yaoplm-testdata\refs\ps2homebrew__Open-PS2-Loader cargo test -p yaoplm-formats --test opl_oracles -- --ignored`
 - Fuzz (nightly, `cargo install cargo-fuzz`): `cd fuzz && cargo +nightly fuzz run -O <iso|system_cnf|cfg|ul_cfg|zso|cht> -- -max_total_time=60`. On Windows add the MSVC ASan runtime folder (`VC\Tools\MSVC\<ver>\bin\Hostx64\x64`) to `PATH`. Seed ISOs: `cargo run -p yaoplm-test-support --example write_fixtures -- fuzz/corpus/iso`

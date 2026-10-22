@@ -5,7 +5,8 @@ use ts_rs::TS;
 
 use crate::ApiError;
 use crate::devices::DeviceInfo;
-use crate::jobs::{JobInfo, JobKind};
+use crate::dir::DirListing;
+use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
 use crate::plans::PlanView;
 
@@ -132,6 +133,15 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         profile: Option<LoaderProfile>,
     },
+    /// Lists a folder so the web UI can pick import sources (IMP-1). The
+    /// server only lists its library roots and what is inside them; without
+    /// `path` the roots (or, on the desktop, the volumes) are listed.
+    /// Answered with [`Response::Dir`].
+    ListDir {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        path: Option<String>,
+    },
     /// Plans creating the missing OPL folders (LIB-3).
     PlanInit {
         root: String,
@@ -231,6 +241,7 @@ pub enum Response {
     },
     Device(Box<DeviceInfo>),
     ImageInfo(Box<ImageDetails>),
+    Dir(Box<DirListing>),
     Plan(Box<PlanView>),
     /// A job was queued; follow it with [`JobEvent`]s or `GetJob`.
     Job {
@@ -249,8 +260,8 @@ pub struct JobId(pub u64);
 
 /// Progress of a long-running job, streamed to subscribers.
 ///
-/// Every job emits `Queued`, `Started`, any number of `Progress` events,
-/// then exactly one of `Finished`, `Failed` or `Cancelled`.
+/// Every job emits `Queued`, `Started`, any number of `Progress` and `Log`
+/// events, then exactly one of `Finished`, `Failed` or `Cancelled`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(tag = "type")]
@@ -259,6 +270,8 @@ pub enum JobEvent {
         job: JobId,
         kind: JobKind,
         title: String,
+        /// The device the job works on, when it has one.
+        root: Option<String>,
     },
     Started {
         job: JobId,
@@ -272,6 +285,12 @@ pub enum JobEvent {
         rate: Option<u64>,
         /// What is being worked on, e.g. the game being copied.
         item: Option<String>,
+    },
+    /// A transaction or step started or ended (plans only). `GetJob`
+    /// returns the whole log, so a client that reconnects misses nothing.
+    Log {
+        job: JobId,
+        entry: JobLogEntry,
     },
     Finished {
         job: JobId,

@@ -2,15 +2,20 @@
 import type { ApiError } from "./ApiError";
 import type { JobId } from "./JobId";
 import type { JobKind } from "./JobKind";
+import type { JobLogEntry } from "./JobLogEntry";
 
 /**
  * Progress of a long-running job, streamed to subscribers.
  *
- * Every job emits `Queued`, `Started`, any number of `Progress` events,
- * then exactly one of `Finished`, `Failed` or `Cancelled`.
+ * Every job emits `Queued`, `Started`, any number of `Progress` and `Log`
+ * events, then exactly one of `Finished`, `Failed` or `Cancelled`.
  */
-export type JobEvent = { "type": "Queued", job: JobId, kind: JobKind, title: string, } | { "type": "Started", job: JobId, } | { "type": "Progress", job: JobId, done: number, total: number | null, rate: number | null, 
+export type JobEvent = { "type": "Queued", job: JobId, kind: JobKind, title: string, 
+/**
+ * The device the job works on, when it has one.
+ */
+root: string | null, } | { "type": "Started", job: JobId, } | { "type": "Progress", job: JobId, done: number, total: number | null, rate: number | null, 
 /**
  * What is being worked on, e.g. the game being copied.
  */
-item: string | null, } | { "type": "Finished", job: JobId, } | { "type": "Failed", job: JobId, error: ApiError, } | { "type": "Cancelled", job: JobId, };
+item: string | null, } | { "type": "Log", job: JobId, entry: JobLogEntry, } | { "type": "Finished", job: JobId, } | { "type": "Failed", job: JobId, error: ApiError, } | { "type": "Cancelled", job: JobId, };

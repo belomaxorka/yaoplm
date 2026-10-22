@@ -1,0 +1,90 @@
+import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { DirListing } from "@/api/generated/DirListing";
+import type { JobId } from "@/api/generated/JobId";
+import type { JobInfo } from "@/api/generated/JobInfo";
+import type { Library } from "@/api/generated/Library";
+import type { LoaderProfile } from "@/api/generated/LoaderProfile";
+import type { PlanView } from "@/api/generated/PlanView";
+import type { Request } from "@/api/generated/Request";
+import { call, RpcError, type Transport } from "@/api/transport";
+
+/** Typed wrappers over `call`; every screen goes through these. */
+
+export function listDevices(transport: Transport, profile: LoaderProfile): Promise<DeviceInfo[]> {
+  return call(transport, { type: "ListDevices", profile }, "Devices").then((r) => r.devices);
+}
+
+export async function inspectDevice(
+  transport: Transport,
+  root: string,
+  profile: LoaderProfile,
+): Promise<DeviceInfo> {
+  const { type: _type, ...device } = await call(transport, { type: "InspectDevice", root, profile }, "Device");
+  return device;
+}
+
+export async function listDir(transport: Transport, path: string | null): Promise<DirListing> {
+  const { type: _type, ...listing } = await call(
+    transport,
+    path === null ? { type: "ListDir" } : { type: "ListDir", path },
+    "Dir",
+  );
+  return listing;
+}
+
+export async function requestPlan(transport: Transport, request: Request): Promise<PlanView> {
+  const { type: _type, ...plan } = await call(transport, request, "Plan");
+  return plan;
+}
+
+export function executePlan(transport: Transport, plan: string, confirmDelete: boolean): Promise<JobId> {
+  return call(transport, { type: "ExecutePlan", plan, confirmDelete }, "Job").then((r) => r.job);
+}
+
+export async function discardPlan(transport: Transport, plan: string): Promise<void> {
+  await call(transport, { type: "DiscardPlan", plan }, "Ack");
+}
+
+export async function getJob(transport: Transport, job: JobId): Promise<JobInfo> {
+  const { type: _type, ...info } = await call(transport, { type: "GetJob", job }, "JobState");
+  return info;
+}
+
+export function listJobs(transport: Transport): Promise<JobInfo[]> {
+  return call(transport, { type: "ListJobs" }, "Jobs").then((r) => r.jobs);
+}
+
+export async function cancelJob(transport: Transport, job: JobId): Promise<void> {
+  await call(transport, { type: "CancelJob", job }, "Ack");
+}
+
+const FINAL = new Set(["finished", "failed", "cancelled"]);
+
+/** Polls `GetJob` until the job is over. Progress itself arrives as events. */
+export async function waitForJob(transport: Transport, job: JobId, signal?: AbortSignal): Promise<JobInfo> {
+  let delay = 100;
+  for (;;) {
+    const info = await getJob(transport, job);
+    if (FINAL.has(info.status)) return info;
+    if (signal?.aborted) throw new RpcError({ code: "Cancelled", message: "cancelled" });
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 1000);
+  }
+}
+
+/** Starts a scan and waits for the library it produces. */
+export async function scanLibrary(
+  transport: Transport,
+  root: string,
+  profile: LoaderProfile,
+  verify: boolean,
+  signal?: AbortSignal,
+): Promise<Library> {
+  const { job } = await call(transport, { type: "ScanLibrary", root, profile, verify }, "Job");
+  const info = await waitForJob(transport, job, signal);
+  if (info.status === "finished" && info.result?.type === "Library") {
+    const { type: _type, ...library } = info.result;
+    return library;
+  }
+  throw new RpcError(info.error ?? { code: "Internal", message: "the scan produced no library" });
+}

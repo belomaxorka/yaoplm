@@ -15,6 +15,7 @@
 //! `cargo test -p yaoplm-api --features ts-export`.
 
 pub mod devices;
+pub mod dir;
 mod error;
 mod events;
 pub mod jobs;
@@ -34,10 +35,13 @@ pub use protocol::{
 };
 
 use devices::DeviceInfo;
-use jobs::{ExecutionReport, JobKind, JobManager, JobResult, Queue, TxOutcome};
+use jobs::{
+    ExecutionReport, JobKind, JobLogEntry, JobManager, JobResult, Queue, StepLogState, TxLogState,
+    TxOutcome, now_ms,
+};
 use library::{ImageDetails, Library, LoaderProfile};
 use plans::PlanStore;
-use yaoplm_core::exec::{self, Context, Outcome};
+use yaoplm_core::exec::{self, Context, Event, Outcome, StepEvent, TxEvent};
 use yaoplm_core::import::{self, ImportOptions};
 use yaoplm_core::ops::{self, DeleteOptions, OpError, RenameOptions};
 use yaoplm_core::plan::Plan;
@@ -225,9 +229,13 @@ impl Api {
                     verify_images: verify.unwrap_or(true),
                 };
                 let title = format!("Scan {}", display_path(&path));
-                let job = self
-                    .jobs
-                    .spawn(JobKind::ScanLibrary, title, Queue::Read, move |ctx| {
+                let root = display_path(&path);
+                let job = self.jobs.spawn(
+                    JobKind::ScanLibrary,
+                    title,
+                    Some(root),
+                    Queue::Read,
+                    move |ctx| {
                         let library =
                             yaoplm_core::scan_library_with(&path, &options, &mut |done, total| {
                                 ctx.progress(done, Some(total), None);
@@ -247,7 +255,8 @@ impl Api {
                         Ok(JobResult::Library(Box::new(Library::from_core(
                             &library, profile,
                         ))))
-                    });
+                    },
+                );
                 Ok(Response::Job { job })
             }
             Request::ImageInfo { path, profile } => {
@@ -262,6 +271,13 @@ impl Api {
                 let info = yaoplm_core::image_info(&path, profile.into())
                     .map_err(|err| ApiError::bad_request(err.to_string()))?;
                 Ok(Response::ImageInfo(Box::new(ImageDetails::from(&info))))
+            }
+            Request::ListDir { path } => {
+                let listing = match path {
+                    None => dir::list_top(&self.paths),
+                    Some(path) => dir::list_dir(&self.paths, &path)?,
+                };
+                Ok(Response::Dir(Box::new(listing)))
             }
             Request::PlanInit { root } => {
                 let (path, fs) = self.root(&root)?;
@@ -376,18 +392,68 @@ impl Api {
                     Ok(())
                 })?;
                 let title = stored.plan.title.clone();
-                let job = self
-                    .jobs
-                    .spawn(JobKind::ExecutePlan, title, Queue::Write, move |ctx| {
+                let root = display_path(&stored.root);
+                let job = self.jobs.spawn(
+                    JobKind::ExecutePlan,
+                    title,
+                    Some(root),
+                    Queue::Write,
+                    move |ctx| {
                         let fs = HostFs::new(&stored.root).map_err(io_error)?;
-                        let report = exec::execute(
-                            &stored.plan,
+                        let plan = &stored.plan;
+                        let report = exec::execute_with_events(
+                            plan,
                             &Context {
                                 fs: &fs,
                                 sources: &HostSources,
                                 cancel: ctx.cancel_token(),
                             },
-                            &mut |p| ctx.progress(p.done, Some(p.total), Some(&p.title)),
+                            &mut |event| match event {
+                                Event::Progress(p) => {
+                                    ctx.progress(p.done, Some(p.total), Some(&p.title));
+                                }
+                                Event::Transaction {
+                                    index,
+                                    title,
+                                    state,
+                                } => ctx.log(JobLogEntry::Transaction {
+                                    at: now_ms(),
+                                    index: u32::try_from(index).unwrap_or(u32::MAX),
+                                    title: title.to_owned(),
+                                    state: match state {
+                                        TxEvent::Started => TxLogState::Started,
+                                        TxEvent::Done => TxLogState::Done,
+                                        TxEvent::RolledBack => TxLogState::RolledBack,
+                                        TxEvent::Interrupted => TxLogState::Interrupted,
+                                    },
+                                }),
+                                Event::Step {
+                                    transaction,
+                                    index,
+                                    step,
+                                    state,
+                                } => {
+                                    let view = plans::step(plan, step);
+                                    let (state, error) = match state {
+                                        StepEvent::Started => (StepLogState::Started, None),
+                                        StepEvent::Done => (StepLogState::Done, None),
+                                        StepEvent::Undone => (StepLogState::Undone, None),
+                                        StepEvent::Failed(error) => {
+                                            (StepLogState::Failed, Some(error))
+                                        }
+                                    };
+                                    ctx.log(JobLogEntry::Step {
+                                        at: now_ms(),
+                                        transaction: u32::try_from(transaction).unwrap_or(u32::MAX),
+                                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                                        op: view.op,
+                                        path: view.path,
+                                        to: view.to,
+                                        state,
+                                        error,
+                                    });
+                                }
+                            },
                         );
                         Ok(JobResult::Execution(ExecutionReport {
                             outcomes: report
@@ -404,7 +470,8 @@ impl Api {
                             error: report.error.as_ref().map(ToString::to_string),
                             journal: report.journal,
                         }))
-                    });
+                    },
+                );
                 Ok(Response::Job { job })
             }
             Request::DiscardPlan { plan } => {

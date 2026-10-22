@@ -42,6 +42,8 @@ fn subscribe(
 
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
+        // Native file and folder pickers for the Add games screen (IMP-1).
+        .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Api::new()))
         .manage(Subscriptions::default())
         .invoke_handler(tauri::generate_handler![rpc, subscribe])
