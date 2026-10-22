@@ -6,6 +6,7 @@
 //! `docs/research/02-opl-formats.md` and the OPL source file it mirrors.
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
+pub mod iso_name;
 pub mod media;
 pub mod system_cnf;
 pub mod usba_crc32;
