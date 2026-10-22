@@ -9,6 +9,7 @@
 pub mod iso_name;
 pub mod media;
 pub mod system_cnf;
+pub mod ul_cfg;
 pub mod usba_crc32;
 
 pub use media::Media;
