@@ -16,6 +16,7 @@ yaoplm-device.workspace = true
 yaoplm-formats.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 tempfile.workspace = true
 yaoplm-test-support.workspace = true
 
