@@ -29,5 +29,7 @@ pub use model::{
     App, ArtFile, CfgSummary, CheatSummary, Game, GameFormat, GameLocation, Library, SkipReason,
     Skipped, UlPart, Warning,
 };
-pub use scan::{CD_MAX_BYTES, OPL_FOLDERS, ScanError, ScanOptions, scan_library};
+pub use scan::{
+    CD_MAX_BYTES, OPL_FOLDERS, ScanError, ScanOptions, scan_library, scan_library_with,
+};
 pub use yaoplm_formats::{LoaderProfile, Media};

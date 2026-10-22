@@ -48,6 +48,15 @@ impl From<core::Media> for Media {
     }
 }
 
+impl From<Media> for core::Media {
+    fn from(media: Media) -> Self {
+        match media {
+            Media::CD => Self::Cd,
+            Media::DVD => Self::Dvd,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub enum GameFormat {
@@ -163,6 +172,8 @@ pub struct Game {
     pub name_format: Option<NameFormat>,
     /// `ul` chunks; empty for images.
     pub parts: Vec<UlPart>,
+    /// Position in `ul.cfg`, for `ul` games (see `GameRef`).
+    pub ul_index: Option<u32>,
     pub size: u64,
     /// The ID in `SYSTEM.CNF`, when it was read.
     pub image_startup: Option<String>,
@@ -176,6 +187,10 @@ pub struct Game {
 
 impl Game {
     fn from_core(game: &core::Game, root: &std::path::Path) -> Self {
+        let ul_index = match &game.location {
+            core::GameLocation::Ul { index, .. } => u32::try_from(*index).ok(),
+            core::GameLocation::Image { .. } => None,
+        };
         let (path, name_format, parts) = match &game.location {
             core::GameLocation::Image {
                 path, name_format, ..
@@ -201,6 +216,7 @@ impl Game {
             path,
             name_format,
             parts,
+            ul_index,
             size: game.size,
             image_startup: game.image_startup.clone(),
             layer1_start: match game.layers {

@@ -216,6 +216,8 @@ pub enum Warning {
     DuplicateStartup,
     UlCfgTrailingBytes(usize),
     AppBootMissing(String),
+    /// A YAOPLM operation did not finish; its journal is still on the device.
+    UnfinishedOperation(String),
 }
 
 impl Warning {
@@ -246,6 +248,7 @@ impl Warning {
             Self::DuplicateStartup => "duplicateStartup",
             Self::UlCfgTrailingBytes(_) => "ulCfgTrailingBytes",
             Self::AppBootMissing(_) => "appBootMissing",
+            Self::UnfinishedOperation(_) => "unfinishedOperation",
         }
     }
 }
@@ -330,6 +333,10 @@ impl fmt::Display for Warning {
                 )
             }
             Self::AppBootMissing(boot) => write!(f, "boot file {boot} is not in the app folder"),
+            Self::UnfinishedOperation(id) => write!(
+                f,
+                "an operation did not finish (journal {id}); recover it before changing the library"
+            ),
         }
     }
 }

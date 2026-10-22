@@ -4972,6 +4972,7 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "yaoplm-core",
+ "yaoplm-device",
  "yaoplm-formats",
  "yaoplm-test-support",
 ]

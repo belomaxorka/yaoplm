@@ -65,6 +65,8 @@ pub enum ScanError {
     Io { path: PathBuf, source: io::Error },
     #[error("{0} is not a folder")]
     NotADirectory(PathBuf),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ScanError + '_ {
@@ -141,9 +143,22 @@ fn container_format(container: Container) -> GameFormat {
 struct Scanner<'a> {
     options: &'a ScanOptions,
     library: Library,
+    /// Entries looked at so far and in total; returns false to stop.
+    progress: &'a mut dyn FnMut(u64, u64) -> bool,
+    done: u64,
+    total: u64,
 }
 
 impl Scanner<'_> {
+    fn tick(&mut self) -> Result<(), ScanError> {
+        self.done += 1;
+        if (self.progress)(self.done.min(self.total), self.total) {
+            Ok(())
+        } else {
+            Err(ScanError::Cancelled)
+        }
+    }
+
     fn scan_image_folder(&mut self, dir: &Entry, media: Media) -> Result<(), ScanError> {
         let listing = Listing::read(&dir.path).map_err(io_err(&dir.path))?;
         let cache = listing
@@ -153,6 +168,7 @@ impl Scanner<'_> {
             .unwrap_or_default();
 
         for entry in &listing.entries {
+            self.tick()?;
             if entry.name.eq_ignore_ascii_case(games_bin::FILE_NAME) {
                 continue;
             }
@@ -280,6 +296,7 @@ impl Scanner<'_> {
                 .push(Warning::UlCfgTrailingBytes(table.trailing.len()));
         }
         for (index, record) in table.records.iter().enumerate() {
+            self.tick()?;
             let mut warnings: Vec<Warning> = record
                 .anomalies()
                 .into_iter()
@@ -527,11 +544,33 @@ fn scan_apps(
 
 /// Lists `root` (a device root, or its `usb_prefix` folder) as OPL would.
 pub fn scan_library(root: &Path, options: &ScanOptions) -> Result<Library, ScanError> {
+    scan_library_with(root, options, &mut |_, _| true)
+}
+
+/// [`scan_library`] with progress: `progress(done, total)` is called for
+/// every image and `ul.cfg` entry and stops the scan by returning false.
+pub fn scan_library_with(
+    root: &Path,
+    options: &ScanOptions,
+    progress: &mut dyn FnMut(u64, u64) -> bool,
+) -> Result<Library, ScanError> {
     if !root.is_dir() {
         return Err(ScanError::NotADirectory(root.to_path_buf()));
     }
     let top = Listing::read(root).map_err(io_err(root))?;
+    let mut total = 0u64;
+    for media in [Media::Cd, Media::Dvd] {
+        if let Some(dir) = top.find_dir(media.folder()) {
+            total += Listing::read(&dir.path).map_or(0, |l| l.entries.len() as u64);
+        }
+    }
+    if let Some(ul) = top.find_file("ul.cfg") {
+        total += ul.len / ul_cfg::RECORD_SIZE as u64;
+    }
     let mut scanner = Scanner {
+        progress,
+        done: 0,
+        total,
         options,
         library: Library {
             root: root.to_path_buf(),
@@ -580,6 +619,11 @@ pub fn scan_library(root: &Path, options: &ScanOptions) -> Result<Library, ScanE
         }
     }
     scan_apps(top.find_dir(apps::APPS_FOLDER), &art, profile, &mut library)?;
+    let journals = Listing::read(&root.join(crate::journal::JOURNAL_DIR)).unwrap_or_default();
+    for entry in journals.files().filter(|e| e.name.ends_with(".json")) {
+        let id = entry.name.trim_end_matches(".json").to_owned();
+        library.warnings.push(Warning::UnfinishedOperation(id));
+    }
 
     library.games.sort_by(|a, b| {
         (a.title.to_lowercase(), &a.startup, a.media).cmp(&(
