@@ -1,0 +1,88 @@
+name: Release desktop
+
+# Builds the desktop installers on a version tag and attaches them to a
+# draft GitHub release (ARCHITECTURE.md §10). macOS and Windows runners
+# burn private-repo minutes fast, so this never runs on pushes or PRs
+# (ADR-0011). No updater: there is no signing key yet (CLAUDE.md rule 5).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+  NODE_VERSION: 26
+  COREPACK_VERSION: 0.36.0
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (NSIS, MSI)
+            os: windows-latest
+            args: "--bundles nsis,msi"
+            targets: ""
+          - name: Linux x64 (AppImage, deb, rpm)
+            os: ubuntu-22.04
+            args: "--bundles appimage,deb,rpm"
+            targets: ""
+          - name: macOS universal (dmg, ad-hoc signed)
+            os: macos-latest
+            args: "--target universal-apple-darwin --bundles dmg"
+            targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Tauri system libraries
+        if: runner.os == 'Linux'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 \
+            libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Add the macOS targets for the universal binary
+        if: matrix.targets != ''
+        run: rustup target add ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Enable pnpm via corepack
+        run: |
+          npm install -g corepack@${COREPACK_VERSION}
+          corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # tauri-action reads the version from apps/desktop/src-tauri/Cargo.toml
+      # (the workspace version). The release stays a draft until the owner
+      # publishes it after the console checks (ROADMAP.md).
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Ad-hoc signature: no Apple Developer account yet (SPEC §6).
+          APPLE_SIGNING_IDENTITY: "-"
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: "YAOPLM ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}"
+          releaseBody: "Pre-release. See CHANGELOG and the PS2 test checklist in the milestone PR."
+          releaseDraft: true
+          prerelease: true
+          uploadUpdaterJson: false
+          args: ${{ matrix.args }}

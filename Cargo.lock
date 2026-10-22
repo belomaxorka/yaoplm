@@ -6129,7 +6129,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "yaoplm-api"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "dirs",
@@ -6149,7 +6149,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6163,7 +6163,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flate2",
  "proptest",
@@ -6178,7 +6178,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-desktop"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "tauri",
  "tauri-build",
@@ -6189,7 +6189,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-device"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "rustix",
  "serde",
@@ -6201,7 +6201,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-formats"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cc",
  "lz4_flex",
@@ -6213,11 +6213,11 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-hash"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "yaoplm-net"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "fast_image_resize",
  "image",
@@ -6235,7 +6235,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-server"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -6254,7 +6254,7 @@ dependencies = [
 
 [[package]]
 name = "yaoplm-test-support"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "fatfs",
  "tempfile",
