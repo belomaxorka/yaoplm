@@ -182,6 +182,25 @@ impl UlRecord {
         Ok(Self { bytes })
     }
 
+    /// The same record with another game ID; every other byte is kept.
+    /// The chunk names change with it.
+    pub fn with_startup(&self, startup: &str) -> Result<Self, UlError> {
+        if !is_valid_startup(startup) {
+            return Err(UlError::BadStartup(startup.to_owned()));
+        }
+        let mut bytes = self.bytes;
+        bytes[OFF_STARTUP..OFF_STARTUP + STARTUP_FIELD].fill(0);
+        bytes[OFF_STARTUP..OFF_STARTUP + startup.len()].copy_from_slice(startup.as_bytes());
+        Ok(Self { bytes })
+    }
+
+    /// The same record with another media byte (CD/DVD move, GAME-3).
+    pub fn with_media(&self, media: Media) -> Self {
+        let mut bytes = self.bytes;
+        bytes[OFF_MEDIA] = media.byte();
+        Self { bytes }
+    }
+
     pub fn anomalies(&self) -> Vec<RecordAnomaly> {
         let b = &self.bytes;
         let mut found = Vec::new();
@@ -399,6 +418,26 @@ mod tests {
         assert_eq!(renamed.startup(), "SLUS_200.62");
         assert_eq!(renamed.parts(), 3);
         assert!(renamed.as_bytes()[3..32].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn startup_and_media_changes_keep_other_bytes() {
+        let mut bytes = *UlRecord::new("Game", "SLUS_200.62", 5, Media::Cd)
+            .unwrap()
+            .as_bytes();
+        bytes[0x3A] = 0x77;
+        let record = UlRecord::from_bytes(bytes);
+        let moved = record
+            .with_startup("SLES_123.45")
+            .unwrap()
+            .with_media(Media::Dvd);
+        assert_eq!(moved.startup(), "SLES_123.45");
+        assert_eq!(moved.media(), Media::Dvd);
+        assert_eq!(moved.name(), "Game");
+        assert_eq!(moved.as_bytes()[0x3A], 0x77);
+        let short = record.with_startup("AB").unwrap();
+        assert_eq!(short.startup_bytes(), b"AB");
+        assert!(record.with_startup(r"A\B").is_err());
     }
 
     #[test]

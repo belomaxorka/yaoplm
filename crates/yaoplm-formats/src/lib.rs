@@ -10,6 +10,7 @@ pub mod apps;
 pub mod art;
 pub mod cfg;
 pub mod cht;
+pub mod cue;
 pub mod games_bin;
 pub mod image;
 pub mod iso9660;
