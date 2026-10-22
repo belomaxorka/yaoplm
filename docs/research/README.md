@@ -8,7 +8,9 @@ Background research done before development started. Facts were checked against 
 | 02 | [opl-formats.md](02-opl-formats.md) | What OPL reads from storage, from OPL source: folders, ID detection, `ul.cfg` + `USBA_crc32`, CFG keys, ART, CHT, VMC, APPS, ZSO, HDL. Implementation checklist in §14 |
 | 03 | [data-sources.md](03-data-sources.md) | Cover-art, metadata, Redump, GameIndex, compatibility lists, cheats. Licences, auth, limits, recommended priority |
 | 04 | [stack.md](04-stack.md) | Tauri 2 vs Wails v3 vs Electron vs others, Rust/Go library availability, CI/signing, testing, repo layout, risks |
-| 05 | [oplnova-audit.md](05-oplnova-audit.md) | Source audit of OPLNova. "RIP" = RiptOPL art formats and what supporting them takes |
+| 05 | [oplnova-audit.md](05-oplnova-audit.md) | Source audit of OPLNova. "RIP" = RiptOPL art formats and what supporting them takes; §3.4 has the RiptOPL author's art spec verbatim |
+| 07 | [loaders-and-boot.md](07-loaders-and-boot.md) | Loader catalogue (OPL, forks, NHDDL/Neutrino), boot setups (FreeMcBoot, PS2BBL, MX4SIO, MMCE emulators), where ELFs go (SPEC LDR-*) |
+| — | [REFERENCES.md](REFERENCES.md) | Index of reference repositories (local clones in `D:\yaoplm-testdata\refs\`) and forum threads (ADR-0015) |
 
 Spot-checked by hand against OPL fork source (NathanNeurotic/Open-PS2-Loader @ 2089b79):
 - the `USBExtreme_game_entry_t` layout (64 bytes);

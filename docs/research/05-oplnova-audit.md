@@ -246,7 +246,50 @@ From the RiptOPL source (`src/tar.c`, `src/texcache.c`, `src/bdmsupport.c`, `doc
 - A guarantee that CFG writes preserve unknown keys. That last item is needed anyway.
 - PS1 "launcher style: POPStarter vs RiptOPL/POPSLoader" if we do PS1 at all.
 
-### 3.4 Other interpretations considered
+### 3.4 The author's specification (primary source, added 2026-10-22)
+
+NathanNeurotic (Ripto, the RiptOPL author) posted the full spec as a spoiler titled "Standards and Specifications for RiptOPL + PSBBN-DP" in two psx-place threads on 2026-09-25: the OPLNova release thread (post 427638, https://www.psx-place.com/threads/release-oplnova-a-modern-open-source-cross-platform-alternative-to-opl-manager.50635/) and the OrbitPS2 Manager thread (https://www.psx-place.com/threads/orbitps2-manager-by-luden02.51158/). Read through the user's Chrome on 2026-10-22; the text is identical in both posts. Verbatim:
+
+```
+Format: 8-bit PNG required
+Naming:
+PS2 → <DISC_ID>_<TYPE>.png
+VCD → <VCD_FILENAME>_<TYPE>.png
+EMBER → <FOLDER_NAME>_<TYPE>.png
+APP → <ELF_FILENAME>.ELF_<TYPE>.png
+Examples:
+SLUS_203.12_COV.png
+Crash Bandicoot_COV.png
+Spyro 2 (Ripto's Rage)_COV.png
+RIPTOPL.ELF_COV.png
+Dimensions:
+ICO 128x128
+SCR/SCR2 250x188
+BG 640x480
+LGO 300x125
+PS2 COV 280x400
+PS2 LAB 18x240
+PS2 COV2 242x344
+PS1/VCD/EMBER/APP COV 400x400
+PS1/VCD/EMBER/APP LAB 12x200
+PS1/VCD/EMBER/APP COV2 222x200
+Locations:
+APA HDD OPL → hdd0:/+OPL/ART/ OR hdd0:/__common/OPL/ART/
+PSBBN Game Collection → hdd0:/PP.<entry>/res/jkt_001.png
+HDD-OSD/HOSDMenu icon → PP.<entry> APA metadata: list.ico / del.ico / icon.sys
+exFAT OPL/NHDDL PS2 → exFAT:/ART/<DISC-ID>_COV.png
+exFAT POPSLoader PS1 → exFAT:/ART/<VCD-FILENAME>_COV.png
+exFAT OPL Apps → exFAT:/ART/<ELF-FILENAME>_COV.png
+Notes: VCD strips .VCD. EMBER uses the EMBER/games/ folder name. APP keeps .ELF in the key. Only COV and ICO use doubled dimensions.
+```
+
+What it adds to §3.3:
+- **"8-bit PNG required"** means at most 8 bits per channel. RiptOPL `src/textures.c` (`NathanNeurotic/Open-PS2-Loader@40c52ceb`) returns `ERR_BAD_DEPTH` for `bitDepth > 8` and loads RGB, RGBA and palette PNGs; upstream OPL instead strips 16-bit input (`png_set_strip_16`). The stricter "8-bit indexed" rule in §3.3 comes from OrbitPS2's pipeline; for RiptOPL a palette is a memory-saving recommendation. Checked 2026-10-22; details in research/07.
+- **Apps use the PS1 sizes** (COV 400×400, LAB 12×200, COV2 222×200) and keep `.ELF` in the key, which confirms OrbitPS2's app rule.
+- **"Only COV and ICO use doubled dimensions"**: most likely relative to the stock OPL sizes (COV 140×200 → 280×400, ICO 64×64 → 128×128), with the other types unchanged. Needs a check against RiptOPL code (research/07).
+- **Locations beyond `ART/`**: `__common/OPL/ART/` on APA, the PSBBN Definitive Patch jacket `PP.<entry>/res/jkt_001.png`, and HDD-OSD icons in the `PP.<entry>` partition (`list.ico`, `del.ico`, `icon.sys`). SPEC ART-7 tracks these.
+
+### 3.5 Other interpretations considered
 
 - **RIPPS2** (the RiptOPL-based front-end): related, but the comment names RiptOPL explicitly.
 - **"Rips"** in the old scene sense (PS2 ISOs with FMV/audio stripped to fit a CD-R): there is no evidence of this in the thread, and OPL needs nothing special for such images. They are ordinary ISOs, so this is unlikely.
