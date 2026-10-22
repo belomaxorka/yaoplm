@@ -104,6 +104,9 @@ Update this section if they change.
 - OPL cross-checks (C `USBA_crc32`, `pc/ziso.py`; needs a C compiler and Python with `lz4`): `YAOPLM_OPL_SRC=D:\yaoplm-testdata\refs\ps2homebrew__Open-PS2-Loader cargo test -p yaoplm-formats --test opl_oracles -- --ignored`
 - Fuzz (nightly, `cargo install cargo-fuzz`): `cd fuzz && cargo +nightly fuzz run -O <iso|system_cnf|cfg|ul_cfg|zso|cht> -- -max_total_time=60`. On Windows add the MSVC ASan runtime folder (`VC\Tools\MSVC\<ver>\bin\Hostx64\x64`) to `PATH`. Seed ISOs: `cargo run -p yaoplm-test-support --example write_fixtures -- fuzz/corpus/iso`
 - Library tools: `cargo run -p yaoplm-cli -- scan <root>` and `cargo run -p yaoplm-cli -- info <image>` (`--json`, `--profile opl-1.2|opl-1.1|riptopl`)
+- Devices (read-only): `yaoplm devices [--all]`, `yaoplm device <root>`
+- Writes print a plan and need `--yes` (or "y" on a terminal): `yaoplm init <root>`, `yaoplm add <root> <files or folders> [--move] [--ul] [--title T] [--media cd|dvd]`, `yaoplm rename <root> <game> <title> [--id ID]`, `yaoplm rm <root> <game> [--with-related]`, `yaoplm mv <root> <game> --to cd|dvd`, `yaoplm recover <root> [--resume]`. `<game>` is an ID, title, file name, path or `ul:<index>`. Never point them at a real drive without the owner's confirmation (rule 1).
+- Real FAT32/exFAT drivers (Linux, mounted image files; CI job `real-fs`): `YAOPLM_FAT32_DIR=/mnt/fat32 YAOPLM_EXFAT_DIR=/mnt/exfat cargo test -p yaoplm-core --test real_fs -- --ignored`
 - Console test disc: `cargo run -p yaoplm-test-support --example make_boot_iso -- --elf <homebrew.elf> --out <image.iso> [--min-mib 4300]`
 
 ## Workflow (details in docs/ROADMAP.md)

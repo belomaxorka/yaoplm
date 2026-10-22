@@ -155,6 +155,7 @@ The ID is used verbatim (e.g. `SLUS_200.62`) as `#Startup` and as the base name 
 - Media type comes **only from the folder** (`CD/` → 0x12, `DVD/` → 0x14). OPL does not inspect the image size or content.
 - For ul.cfg games, the media byte in the record decides.
 - For HDL games, `discType` in the HDL header decides.
+- The value is not cosmetic (corrected 2026-10-23, research/09 §3): OPL reports it to the game through `sceCdGetDiskType`, fakes a CD TOC or a DVD physical-format block from it, and throttles Mode 1 reads to 900 KB/s for CD or 2200 KB/s for DVD (`modules/iopcore/cdvdman/cdvdman.c`, `ncmd.c`).
 
 ### 4.5 DVD-9 (dual layer) [V] `bdmLaunchGame`, `sbGetISO9660MaxLBA`, `sbProbeISO9660`
 - `layer1_start` = the PVD "volume space size" (u32 LE at sector 16, byte offset 80).
