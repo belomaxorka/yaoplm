@@ -53,8 +53,11 @@ fn rpc(request: Option<String>, pretty: bool) -> anyhow::Result<ExitCode> {
         }
     };
 
+    // PowerShell pipes text to native programs with a UTF-8 BOM.
+    let json = json.strip_prefix('\u{feff}').unwrap_or(&json);
+
     let api = Api::new();
-    match api.dispatch_json(&json) {
+    match api.dispatch_json(json) {
         Ok(response) => print_json(&response, pretty).map(|()| ExitCode::SUCCESS),
         Err(error) => print_json(&error, pretty).map(|()| ExitCode::FAILURE),
     }

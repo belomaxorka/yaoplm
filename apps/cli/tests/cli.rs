@@ -31,26 +31,32 @@ fn rpc_ping_from_argument() {
     assert_eq!(stdout(&output), r#"{"type":"Pong"}"#);
 }
 
-#[test]
-fn rpc_reads_request_from_stdin() {
+fn rpc_stdin(input: &[u8]) -> Output {
     let mut child = yaoplm()
         .arg("rpc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(br#"{"type":"Version"}"#)
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn rpc_reads_request_from_stdin() {
+    let output = rpc_stdin(br#"{"type":"Version"}"#);
     assert!(output.status.success());
 
     let answer: serde_json::Value = serde_json::from_str(stdout(&output)).unwrap();
     assert_eq!(answer["type"], "Version");
     assert_eq!(answer["version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn rpc_stdin_tolerates_utf8_bom() {
+    let output = rpc_stdin(b"\xef\xbb\xbf{\"type\":\"Ping\"}\r\n");
+    assert!(output.status.success());
+    assert_eq!(stdout(&output), r#"{"type":"Pong"}"#);
 }
 
 #[test]
