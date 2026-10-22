@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let state = AppState::new(
-        Arc::new(Api::new()),
+        Arc::new(Api::with_roots(roots.clone())),
         Config {
             token,
             roots,

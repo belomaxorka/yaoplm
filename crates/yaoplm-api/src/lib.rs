@@ -11,11 +11,16 @@
 
 mod error;
 mod events;
+pub mod library;
+mod paths;
 mod protocol;
 
 pub use error::{ApiError, ErrorCode};
 pub use events::{EventBus, Subscription};
+pub use paths::{PathPolicy, display_path};
 pub use protocol::{JobEvent, JobId, Request, Response};
+
+use library::{ImageDetails, Library, LoaderProfile};
 
 pub const NAME: &str = "YAOPLM";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -25,11 +30,21 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, Default)]
 pub struct Api {
     events: EventBus,
+    paths: PathPolicy,
 }
 
 impl Api {
+    /// Any path may be opened: the desktop app and the CLI.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Only paths inside `roots` (canonical) may be opened: the server.
+    pub fn with_roots(roots: Vec<std::path::PathBuf>) -> Self {
+        Self {
+            paths: PathPolicy::Within(roots),
+            ..Self::default()
+        }
     }
 
     pub fn dispatch(&self, request: Request) -> Result<Response, ApiError> {
@@ -39,6 +54,41 @@ impl Api {
                 name: NAME.to_owned(),
                 version: VERSION.to_owned(),
             }),
+            Request::ScanLibrary {
+                root,
+                profile,
+                verify,
+            } => {
+                let path = self.paths.resolve(&root)?;
+                let profile = profile.unwrap_or_default();
+                let options = yaoplm_core::ScanOptions {
+                    profile: profile.into(),
+                    verify_images: verify.unwrap_or(true),
+                };
+                let library =
+                    yaoplm_core::scan_library(&path, &options).map_err(|err| match err {
+                        yaoplm_core::ScanError::NotADirectory(_) => {
+                            ApiError::bad_request(err.to_string())
+                        }
+                        yaoplm_core::ScanError::Io { .. } => ApiError::internal(err.to_string()),
+                    })?;
+                Ok(Response::Library(Box::new(Library::from_core(
+                    &library, profile,
+                ))))
+            }
+            Request::ImageInfo { path, profile } => {
+                let path = self.paths.resolve(&path)?;
+                if path.is_dir() {
+                    return Err(ApiError::bad_request(format!(
+                        "{} is a folder",
+                        display_path(&path)
+                    )));
+                }
+                let profile: LoaderProfile = profile.unwrap_or_default();
+                let info = yaoplm_core::image_info(&path, profile.into())
+                    .map_err(|err| ApiError::bad_request(err.to_string()))?;
+                Ok(Response::ImageInfo(Box::new(ImageDetails::from(&info))))
+            }
         }
     }
 

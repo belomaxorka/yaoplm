@@ -17,6 +17,12 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ts-rs = { workspace = true, optional = true }
+yaoplm-core.workspace = true
+yaoplm-formats.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+yaoplm-test-support.workspace = true
 
 [lints]
 workspace = true

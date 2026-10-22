@@ -32,6 +32,7 @@ pub fn api_error(error: ApiError) -> Response {
     let status = match error.code {
         ErrorCode::BadRequest => StatusCode::BAD_REQUEST,
         ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+        ErrorCode::Forbidden => StatusCode::FORBIDDEN,
         ErrorCode::NotFound => StatusCode::NOT_FOUND,
         ErrorCode::Cancelled => StatusCode::CONFLICT,
         ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
