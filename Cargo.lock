@@ -4975,6 +4975,12 @@ dependencies = [
 [[package]]
 name = "yaoplm-core"
 version = "0.0.1"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.21",
+ "yaoplm-formats",
+ "yaoplm-test-support",
+]
 
 [[package]]
 name = "yaoplm-desktop"

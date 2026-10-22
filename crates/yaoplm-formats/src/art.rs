@@ -152,6 +152,33 @@ pub fn parse_art_file_name(name: &str) -> Option<ArtFileName> {
     })
 }
 
+/// The IHDR fields of a PNG file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PngHeader {
+    pub width: u32,
+    pub height: u32,
+    /// Bits per channel or palette index. RiptOPL rejects more than 8;
+    /// upstream OPL strips 16 to 8.
+    pub bit_depth: u8,
+    pub color_type: u8,
+}
+
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+
+/// Reads a PNG header from the first 26 bytes of a file.
+pub fn png_header(bytes: &[u8]) -> Option<PngHeader> {
+    if bytes.len() < 26 || &bytes[..8] != PNG_SIGNATURE || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let be32 = |i: usize| u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+    Some(PngHeader {
+        width: be32(16),
+        height: be32(20),
+        bit_depth: bytes[24],
+        color_type: bytes[25],
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArtSize {
     pub width: u32,
@@ -246,6 +273,22 @@ mod tests {
         ] {
             assert_eq!(parse_art_file_name(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn png_headers() {
+        let mut png = PNG_SIGNATURE.to_vec();
+        png.extend_from_slice(b"\0\0\0\x0dIHDR");
+        png.extend_from_slice(&140u32.to_be_bytes());
+        png.extend_from_slice(&200u32.to_be_bytes());
+        png.extend_from_slice(&[8, 6]);
+        let header = png_header(&png).unwrap();
+        assert_eq!(
+            (header.width, header.height, header.bit_depth),
+            (140, 200, 8)
+        );
+        assert_eq!(png_header(&png[..20]), None);
+        assert_eq!(png_header(&[0xFF; 30]), None);
     }
 
     #[test]
