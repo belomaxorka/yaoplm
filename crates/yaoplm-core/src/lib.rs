@@ -23,6 +23,7 @@ pub mod plan;
 pub mod recovery;
 mod scan;
 pub mod source;
+pub mod titles;
 
 pub use info::{ImageInfo, InfoError, Platform, image_info};
 pub use model::{

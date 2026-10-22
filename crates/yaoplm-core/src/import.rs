@@ -23,6 +23,7 @@ use yaoplm_formats::iso_name::{
     self, ImageExtension, NameError, NameFormat, NameStyle, TITLE_MAX, build_file_name,
     is_name_safe_startup, sanitize_title,
 };
+use yaoplm_formats::serial;
 use yaoplm_formats::ul_cfg::{self, UlRecord, split_plan};
 use yaoplm_formats::usba_crc32::usba_crc32;
 use yaoplm_formats::{LoaderProfile, Media};
@@ -31,6 +32,7 @@ use crate::device::{DeviceState, join, on_disk};
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
 use crate::scan::CD_MAX_BYTES;
 use crate::source::{ProbeError, Probed, probe, sheet_files};
+use crate::titles;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Transfer {
@@ -164,6 +166,15 @@ pub fn title_from_path(path: &Path) -> String {
     }
 }
 
+/// The database title for `startup` when the file name gave none: an empty
+/// title, or one that is just the ID again (`SLUS_200.62.iso`,
+/// `SLUS-20062.iso`), (META-1).
+fn known_title_for(from_name: &str, startup: &str) -> Option<String> {
+    let bare =
+        from_name.trim().is_empty() || serial::lookup_key(from_name) == serial::lookup_key(startup);
+    bare.then(|| titles::known_title(startup)).flatten()
+}
+
 /// A `ul.cfg` title: printable ASCII only (OPL hashes other bytes
 /// unpredictably), at most 32 bytes, no stray spaces.
 pub fn ul_title(title: &str) -> String {
@@ -283,9 +294,22 @@ impl Planner<'_> {
                 "more data than a PS2 CD holds; it is probably a DVD",
             ));
         }
-        let title = override_
-            .and_then(|o| o.title.clone())
-            .unwrap_or_else(|| title_from_path(path));
+        let title = match override_.and_then(|o| o.title.clone()) {
+            Some(title) => title,
+            None => {
+                let from_name = title_from_path(path);
+                match known_title_for(&from_name, &startup) {
+                    Some(known) => {
+                        notices.push(Notice::info(
+                            "titleFromDatabase",
+                            format!("the file name has no title; the bundled database calls {startup} {known:?}"),
+                        ));
+                        known
+                    }
+                    None => from_name,
+                }
+            }
+        };
 
         let profile = self.options.profile;
         let mut keep_zso = probed.zso && profile.reads_zso();

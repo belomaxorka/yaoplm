@@ -31,4 +31,8 @@ imageStartup: string | null,
 /**
  * DVD-9: the sector where OPL starts layer 1.
  */
-layer1Start: number | null, cfg: GameCfg | null, art: Array<Art>, cheats: number | null, warnings: Array<Notice>, };
+layer1Start: number | null, cfg: GameCfg | null, art: Array<Art>, cheats: number | null, warnings: Array<Notice>, 
+/**
+ * The title the bundled database gives this ID (META-1).
+ */
+knownTitle: string | null, };

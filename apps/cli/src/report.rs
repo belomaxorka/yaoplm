@@ -152,7 +152,12 @@ pub fn image(info: &ImageDetails) -> String {
     }
     line(&mut out, "Format:", &container);
     match &info.startup {
-        Some(id) => line(&mut out, "Game ID:", id),
+        Some(id) => {
+            line(&mut out, "Game ID:", id);
+            if let Some(title) = &info.known_title {
+                line(&mut out, "Known as:", title);
+            }
+        }
         None => line(
             &mut out,
             "Game ID:",

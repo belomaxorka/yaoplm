@@ -79,6 +79,7 @@
     "ulTitle": "ul.cfg holds at most 32 ASCII characters; the title is shortened",
     "alreadyOnDevice": "This game is already on the device",
     "storedAsUl": "FAT32 holds files up to 4 GiB: the game is split into 1 GiB ul chunks",
+    "titleFromDatabase": "The file name has no title; it comes from the bundled database",
     "noSpace": "Not enough free space on the device",
     "sourcesDeleted": "Source files are deleted after each game is copied",
     "nothingToImport": "No game to import",

@@ -36,6 +36,7 @@ anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }
 cc = "1.9.0"
 clap = { version = "4.6.7", features = ["derive", "env"] }
+flate2 = "1.1.10"
 lz4_flex = { version = "0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
 proptest = "1.12.0"
 rustix = { version = "1.1.5", features = ["fs"] }
