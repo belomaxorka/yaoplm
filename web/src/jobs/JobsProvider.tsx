@@ -24,6 +24,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [jobs, setJobs] = useState<JobMap>(new Map());
   const [dismissed, setDismissed] = useState<ReadonlySet<JobId>>(new Set());
+  const [executedPlans, setExecutedPlans] = useState<ReadonlySet<string>>(new Set());
   // Event handlers and callbacks read the newest map without re-subscribing.
   const latest = useRef<JobMap>(jobs);
   useEffect(() => {
@@ -146,6 +147,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   );
 
   const cancel = useCallback((id: JobId) => cancelJob(transport, id), [transport]);
+  const markExecuted = useCallback((plan: string) => setExecutedPlans((current) => new Set(current).add(plan)), []);
   const dismiss = useCallback((id: JobId) => setDismissed((current) => new Set(current).add(id)), []);
   const clearFinished = useCallback(() => {
     setDismissed((current) => {
@@ -165,8 +167,10 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       dismiss,
       clearFinished,
       load,
+      executedPlans,
+      markExecuted,
     };
-  }, [jobs, dismissed, cancel, dismiss, clearFinished, load]);
+  }, [jobs, dismissed, cancel, dismiss, clearFinished, load, executedPlans, markExecuted]);
 
   return <JobsContext value={value}>{children}</JobsContext>;
 }

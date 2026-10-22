@@ -23,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { GameCover } from "@/features/library/GameCover";
+import { CoverActions } from "@/features/art/CoverActions";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
@@ -67,7 +67,7 @@ export function GamePage() {
       </PageScroll>
     );
   }
-  return <GameDetails game={game} root={library.root} />;
+  return <GameDetails game={game} root={library.root} games={library.data?.games ?? []} />;
 }
 
 function Fact({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
@@ -79,11 +79,12 @@ function Fact({ label, children, mono = false }: { label: string; children: Reac
   );
 }
 
-function GameDetails({ game, root }: { game: Game; root: string }) {
+function GameDetails({ game, root, games }: { game: Game; root: string; games: readonly Game[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { settings } = useSettings();
   const [renameOpen, setRenameOpen] = useState(false);
+  const [presetTitle, setPresetTitle] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const flow = usePlan({
     onExecuted: () => void navigate("/library"),
@@ -101,7 +102,7 @@ function GameDetails({ game, root }: { game: Game; root: string }) {
           </Button>
         </div>
         <div className="grid gap-6 sm:grid-cols-[12rem_1fr]">
-          <GameCover game={game} className="w-48" />
+          <CoverActions game={game} root={root} games={games} />
           <div className="flex min-w-0 flex-col gap-4">
             <div>
               <h2 className="text-2xl font-semibold wrap-anywhere" data-testid="game-title">
@@ -152,6 +153,21 @@ function GameDetails({ game, root }: { game: Game; root: string }) {
             {game.imageStartup !== null && game.imageStartup !== game.startup && (
               <Fact label={t("game.imageId")} mono>
                 {game.imageStartup}
+              </Fact>
+            )}
+            {game.knownTitle !== null && game.knownTitle !== game.title && (
+              <Fact label={t("game.knownTitle")}>
+                <span data-testid="known-title">{game.knownTitle}</span>
+                <button
+                  type="button"
+                  className="ml-2 text-xs text-primary underline-offset-2 hover:underline"
+                  onClick={() => {
+                    setPresetTitle(game.knownTitle);
+                    setRenameOpen(true);
+                  }}
+                >
+                  {t("game.useKnownTitle")}
+                </button>
               </Fact>
             )}
             <Fact label={t("game.media")}>{game.media}</Fact>
@@ -262,7 +278,11 @@ function GameDetails({ game, root }: { game: Game; root: string }) {
       <RenameDialog
         game={game}
         open={renameOpen}
-        onOpenChange={setRenameOpen}
+        onOpenChange={(open) => {
+          setRenameOpen(open);
+          if (!open) setPresetTitle(null);
+        }}
+        presetTitle={presetTitle}
         defaultStyle={settings.nameStyle}
         onSubmit={(title, startup, nameStyle) => {
           setRenameOpen(false);
@@ -294,12 +314,15 @@ function RenameDialog({
   game,
   open,
   onOpenChange,
+  presetTitle,
   defaultStyle,
   onSubmit,
 }: {
   game: Game;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** A title to start from, e.g. the database title (META-1). */
+  presetTitle?: string | null;
   defaultStyle: NameStyle;
   onSubmit: (title: string, startup: string | null, nameStyle: NameStyle) => void;
 }) {
@@ -308,6 +331,13 @@ function RenameDialog({
   const [title, setTitle] = useState(game.title);
   const [startup, setStartup] = useState(game.startup);
   const [style, setStyle] = useState<NameStyle>(defaultStyle);
+  // The dialog mounts closed; a preset title arrives with the open flag.
+  const [seenPreset, setSeenPreset] = useState<string | null>(null);
+  if (open && presetTitle && presetTitle !== seenPreset) {
+    setSeenPreset(presetTitle);
+    setTitle(presetTitle);
+  }
+  if (!open && seenPreset !== null) setSeenPreset(null);
   const isUl = game.format === "UL";
   const maxTitle = isUl ? 32 : 160;
   const idChanged = startup.trim() !== game.startup;
@@ -318,7 +348,7 @@ function RenameDialog({
       open={open}
       onOpenChange={(next) => {
         if (next) {
-          setTitle(game.title);
+          setTitle(presetTitle ?? game.title);
           setStartup(game.startup);
           setStyle(defaultStyle);
         }

@@ -7,6 +7,8 @@ import {
   Disc3,
   FolderPlus,
   HardDrive,
+  ImageDown,
+  ImageOff,
   LayoutGrid,
   List,
   Plus,
@@ -20,6 +22,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 
 import type { Game } from "@/api/generated/Game";
 import type { Library } from "@/api/generated/Library";
+import { hasCover } from "@/api/media";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeList } from "@/components/Notices";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GameCover } from "@/features/library/GameCover";
+import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
+import { CoverThumb, GameCover } from "@/features/library/GameCover";
 import {
   applyFilters,
   filtersToParams,
@@ -115,10 +119,12 @@ function LibraryView({
   );
   const games = useMemo(() => (data ? applyFilters(data.games, filters) : []), [data, filters]);
   const withWarnings = data?.games.filter((g) => g.warnings.length > 0).length ?? 0;
+  const withoutCover = data?.games.filter((g) => !hasCover(g)).length ?? 0;
   const missingFolders = data?.folders.filter((f) => !f.present) ?? [];
   const initFlow = usePlan();
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
+  const [artOpen, setArtOpen] = useState(false);
 
   // "/" focuses the search box, like most lists.
   useEffect(() => {
@@ -186,6 +192,17 @@ function LibraryView({
             <AlertTriangle aria-hidden />
             {t("library.warnings", { count: withWarnings })}
           </Toggle>
+          <Toggle
+            variant="outline"
+            size="sm"
+            pressed={filters.noCover}
+            onPressedChange={(noCover) => setFilters({ noCover })}
+            aria-label={t("library.onlyNoCover")}
+            data-testid="filter-no-cover"
+          >
+            <ImageOff aria-hidden />
+            {t("library.noCover", { count: withoutCover })}
+          </Toggle>
           <div className="ml-auto flex items-center gap-2">
             <Select value={filters.sort} onValueChange={(sort) => setFilters({ sort: sort as SortKey })}>
               <SelectTrigger size="sm" aria-label={t("library.sort")}>
@@ -232,6 +249,16 @@ function LibraryView({
               </TooltipTrigger>
               <TooltipContent>{t("library.rescan")}</TooltipContent>
             </Tooltip>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setArtOpen(true)}
+              disabled={!data || data.games.length === 0}
+              data-testid="download-covers"
+            >
+              <ImageDown aria-hidden />
+              {t("library.downloadCovers")}
+            </Button>
             <Button asChild size="sm">
               <Link to="/library/add">
                 <Plus aria-hidden />
@@ -282,6 +309,7 @@ function LibraryView({
         )}
       </div>
       <PlanDialog flow={initFlow} />
+      {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} />}
 
       {data && data.games.length === 0 && !isPending && (
         <div className="flex flex-1 flex-col items-center justify-center p-6">
@@ -527,7 +555,7 @@ function GameTable({ games }: { games: Game[] }) {
               aria-label={`${game.title}, ${game.startup}`}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <Disc3 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <CoverThumb game={game} />
                 <span className="truncate font-medium" title={game.title}>
                   {game.title}
                 </span>

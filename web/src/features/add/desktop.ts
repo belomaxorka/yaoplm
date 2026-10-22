@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 /**
  * Native pickers and drag-and-drop exist only in the desktop app. The
@@ -23,6 +23,32 @@ export async function pickFolder(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({ directory: true, multiple: false });
   return typeof picked === "string" ? picked : null;
+}
+
+export const IMAGE_PICK_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
+
+/** One image file for a cover (ART-3). */
+export async function pickImage(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({
+    multiple: false,
+    filters: [{ name: "Images", extensions: IMAGE_PICK_EXTENSIONS }],
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+/**
+ * Lets the WebView load `<root>/ART` through the asset protocol (ART-2).
+ * Called after every scan, because the folder may be new.
+ */
+export async function allowArt(root: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke("allow_art", { root });
+  } catch {
+    // The folder does not exist yet; covers will show up after the next scan.
+  }
 }
 
 /** Calls `onDrop` with the paths dropped onto the window; returns an unlisten function. */
