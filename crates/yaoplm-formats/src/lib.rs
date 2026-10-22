@@ -7,6 +7,7 @@
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
 pub mod media;
+pub mod system_cnf;
 pub mod usba_crc32;
 
 pub use media::Media;
