@@ -1,14 +1,18 @@
 import { cn } from "cn";
 import { HardDrive, Library, ListChecks, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Badge } from "@/components/ui/badge";
+import { JobsDock } from "@/features/jobs/JobsDock";
+import { useJobs } from "@/jobs/context";
+import { useSettings } from "@/settings/context";
 
 const navItems = [
-  { to: "/", label: "nav.library", icon: Library },
+  { to: "/library", label: "nav.library", icon: Library },
   { to: "/devices", label: "nav.devices", icon: HardDrive },
   { to: "/jobs", label: "nav.jobs", icon: ListChecks },
   { to: "/settings", label: "nav.settings", icon: Settings },
@@ -17,7 +21,11 @@ const navItems = [
 export function AppShell() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const current = navItems.find((item) => item.to === pathname) ?? navItems[0];
+  const { active } = useJobs();
+  const { settings } = useSettings();
+  const current = navItems.find((item) => pathname.startsWith(item.to)) ?? navItems[0];
+  const title =
+    pathname === "/library/add" ? t("add.heading") : pathname.startsWith("/library/game/") ? t("game.heading") : t(current.label);
 
   return (
     <div className="flex h-dvh bg-background text-foreground">
@@ -42,7 +50,6 @@ export function AppShell() {
             <NavLink
               key={to}
               to={to}
-              end
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
@@ -53,7 +60,12 @@ export function AppShell() {
               }
             >
               <Icon className="size-4" aria-hidden />
-              {t(label)}
+              <span className="flex-1">{t(label)}</span>
+              {to === "/jobs" && active.length > 0 && (
+                <Badge className="h-5 min-w-5 justify-center px-1.5 tabular-nums" aria-label={t("jobs.active", { count: active.length })}>
+                  {active.length}
+                </Badge>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -64,15 +76,29 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-6">
-          <h1 className="flex-1 truncate text-lg font-semibold">{t(current.label)}</h1>
-          <LanguageSwitch />
-          <ThemeToggle />
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-6">
+          <h1 className="shrink-0 text-lg font-semibold">{title}</h1>
+          {settings.root && (
+            <Link
+              to="/devices"
+              className="hidden min-w-0 max-w-xs items-center gap-1.5 truncate rounded-md border px-2 py-1 font-mono text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:flex"
+              title={t("devices.changeDevice")}
+              data-testid="current-root"
+            >
+              <HardDrive className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{settings.root}</span>
+            </Link>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <LanguageSwitch />
+            <ThemeToggle />
+          </div>
         </header>
-        <main id="main" tabIndex={-1} className="flex-1 overflow-auto p-6 outline-none">
+        <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none">
           <Outlet />
         </main>
       </div>
+      <JobsDock />
     </div>
   );
 }

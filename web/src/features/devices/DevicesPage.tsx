@@ -1,9 +1,189 @@
-import { HardDrive } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { isTauri } from "@tauri-apps/api/core";
+import { cn } from "cn";
+import { CheckCircle2, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 
+import { useApi } from "@/api/context";
+import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import { listDevices } from "@/api/rpc";
 import { EmptyState } from "@/components/EmptyState";
+import { NoticeIcon, NoticeList } from "@/components/Notices";
+import { PageScroll } from "@/components/PageScroll";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
+import { pickFolder } from "@/features/add/desktop";
+import { formatBytes } from "@/lib/format";
+import { worstLevel } from "@/lib/notices";
+import { useSettings } from "@/settings/context";
 
+/**
+ * Device picker (DEV-1, DEV-2): every volume with the storage doctor's
+ * verdict for the chosen loader profile. The server lists its roots.
+ */
 export function DevicesPage() {
   const { t } = useTranslation();
-  return <EmptyState icon={HardDrive} title={t("devices.emptyTitle")} description={t("devices.emptyDescription")} />;
+  const { transport } = useApi();
+  const { settings, update } = useSettings();
+  const navigate = useNavigate();
+  const [showAll, setShowAll] = useState(transport.kind === "http");
+  const switchId = useId();
+  const devices = useQuery({
+    queryKey: ["devices", settings.profile],
+    queryFn: () => listDevices(transport, settings.profile),
+  });
+  const shown = (devices.data ?? []).filter((d) => showAll || (d.external && !d.system));
+
+  const open = (root: string) => {
+    update({ root });
+    void navigate("/library");
+  };
+
+  return (
+    <PageScroll>
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="flex-1 text-sm text-muted-foreground">
+            {t("devices.intro", { profile: t(`settings.profiles.${settings.profile}`) })}
+          </p>
+          {transport.kind !== "http" && (
+            <Label htmlFor={switchId} className="font-normal">
+              <Switch id={switchId} checked={showAll} onCheckedChange={setShowAll} />
+              {t("devices.showAll")}
+            </Label>
+          )}
+          <Button variant="outline" size="sm" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
+            <RefreshCw className={cn(devices.isFetching && "animate-spin")} aria-hidden />
+            {t("devices.refresh")}
+          </Button>
+          {isTauri() && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void pickFolder().then((folder) => {
+                  if (folder) open(folder);
+                });
+              }}
+            >
+              <FolderOpen aria-hidden />
+              {t("devices.openFolder")}
+            </Button>
+          )}
+        </div>
+
+        {devices.isPending && (
+          <p className="text-sm text-muted-foreground" role="status">
+            {t("devices.loading")}
+          </p>
+        )}
+        {devices.error && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            {devices.error.message}
+          </p>
+        )}
+        {devices.data && shown.length === 0 && (
+          <EmptyState
+            icon={Usb}
+            title={t("devices.emptyTitle")}
+            description={showAll ? t("devices.emptyAllDescription") : t("devices.emptyDescription")}
+          />
+        )}
+        <ul className="flex flex-col gap-3">
+          {shown.map((device) => (
+            <DeviceCard key={device.root} device={device} current={settings.root === device.root} onOpen={() => open(device.root)} />
+          ))}
+        </ul>
+      </div>
+    </PageScroll>
+  );
+}
+
+function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
+  const { t } = useTranslation();
+  const verdict = worstLevel(device.advice);
+  const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
+  return (
+    <li
+      className={cn("rounded-lg border bg-card p-4", current && "ring-2 ring-ring/40")}
+      data-testid="device-card"
+      data-verdict={verdict ?? "ok"}
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <HardDrive className="mt-1 size-6 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-base font-semibold">{device.root}</span>
+            {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
+            <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
+            {device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
+            <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>
+            {device.system && <Badge variant="destructive">{t("devices.systemDisk")}</Badge>}
+            {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
+            {current && <Badge>{t("devices.current")}</Badge>}
+          </div>
+          <div className="mt-2 flex items-center gap-3 text-sm">
+            <Progress value={used} className="h-1.5 max-w-xs" aria-label={t("devices.used", { percent: used })} />
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+              {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
+            </span>
+          </div>
+          <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {device.model && (
+              <div>
+                <dt className="inline">{t("devices.model")}: </dt>
+                <dd className="inline">{device.model}</dd>
+              </div>
+            )}
+            {device.serial && (
+              <div>
+                <dt className="inline">{t("devices.serial")}: </dt>
+                <dd className="inline font-mono">{device.serial}</dd>
+              </div>
+            )}
+            {device.clusterSize !== null && (
+              <div>
+                <dt className="inline">{t("devices.cluster")}: </dt>
+                <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
+              </div>
+            )}
+            {device.partition?.table && (
+              <div>
+                <dt className="inline">{t("devices.partition")}: </dt>
+                <dd className="inline">
+                  {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <span
+            className={cn(
+              "flex items-center gap-1.5 text-sm font-medium",
+              verdict === "error" && "text-destructive",
+              verdict === "warning" && "text-amber-600 dark:text-amber-400",
+              (verdict === null || verdict === "info") && "text-emerald-600 dark:text-emerald-400",
+            )}
+          >
+            {verdict === null || verdict === "info" ? (
+              <CheckCircle2 className="size-4" aria-hidden />
+            ) : (
+              <NoticeIcon level={verdict} />
+            )}
+            {t(`devices.verdict.${verdict ?? "ok"}`)}
+          </span>
+          <Button onClick={onOpen} variant={verdict === "error" ? "outline" : "default"} data-testid="device-open">
+            {t("devices.open")}
+          </Button>
+        </div>
+      </div>
+      {device.advice.length > 0 && <NoticeList notices={device.advice} className="mt-3 border-t pt-3" />}
+    </li>
+  );
 }

@@ -24,6 +24,8 @@ export default defineConfig([
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+      // `const { type: _type, ...rest } = response` strips the wire tag.
+      "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true, argsIgnorePattern: "^_" }],
     },
   },
   {
@@ -32,7 +34,7 @@ export default defineConfig([
     rules: { "react-refresh/only-export-components": "off" },
   },
   {
-    files: ["eslint.config.js"],
+    files: ["eslint.config.js", "tests/e2e/*.mjs"],
     languageOptions: { globals: globals.node },
   },
 ]);
