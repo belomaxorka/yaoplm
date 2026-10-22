@@ -23,6 +23,7 @@ jobs:
   checks:
     name: Format, core deps, TS bindings
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust (rust-toolchain.toml)
@@ -47,13 +48,19 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # The first uncached Windows build takes ~12 min; a hung step must not burn hours.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - name: Install Tauri system libraries
         if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 \
+            libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Install Rust (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -63,6 +70,7 @@ jobs:
   web:
     name: Web (lint, typecheck, unit tests, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -81,6 +89,7 @@ jobs:
   e2e:
     name: E2E (Playwright vs yaoplm-server)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust (rust-toolchain.toml)
