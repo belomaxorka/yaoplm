@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
+use yaoplm_api::jobs::{JobResult, JobStatus};
 use yaoplm_api::{Api, ApiError, ErrorCode, Request, Response};
 use yaoplm_test_support::Variant;
 
@@ -34,12 +35,23 @@ fn text(path: PathBuf) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn scan(api: &Api, root: PathBuf) -> Result<Response, ApiError> {
-    api.dispatch(Request::ScanLibrary {
+/// Runs the scan job to its end; the library comes back as JSON.
+fn scan(api: &Api, root: PathBuf) -> Result<Value, ApiError> {
+    let Response::Job { job } = api.dispatch(Request::ScanLibrary {
         root: text(root),
         profile: None,
         verify: None,
-    })
+    })?
+    else {
+        panic!("ScanLibrary answers with a job");
+    };
+    let info = api.jobs().wait(job).unwrap();
+    match (info.status, info.result) {
+        (JobStatus::Finished, Some(JobResult::Library(library))) => {
+            Ok(serde_json::to_value(library).unwrap())
+        }
+        _ => Err(info.error.unwrap()),
+    }
 }
 
 fn info(api: &Api, path: PathBuf) -> Result<Response, ApiError> {
@@ -53,7 +65,15 @@ fn info(api: &Api, path: PathBuf) -> Result<Response, ApiError> {
 fn scan_library_over_json() {
     let dir = library_dir();
     let request = json!({"type": "ScanLibrary", "root": dir.path()}).to_string();
-    let response = as_json(&Api::new().dispatch_json(&request).unwrap());
+    let api = Api::new();
+    let started = as_json(&api.dispatch_json(&request).unwrap());
+    assert_eq!(started["type"], "Job");
+    let job = serde_json::from_value(started["job"].clone()).unwrap();
+    api.jobs().wait(job).unwrap();
+    let state = as_json(&api.dispatch(Request::GetJob { job }).unwrap());
+    assert_eq!(state["type"], "JobState");
+    assert_eq!(state["status"], "finished");
+    let response = &state["result"];
     assert_eq!(response["type"], "Library");
     assert_eq!(response["profile"], "Opl120Beta");
     assert_eq!(response["games"].as_array().unwrap().len(), 1);
@@ -94,17 +114,18 @@ fn image_info_over_json() {
 fn errors() {
     let dir = library_dir();
     let api = Api::new();
-    let code = |result: Result<Response, ApiError>| result.unwrap_err().code;
     assert_eq!(
-        code(scan(&api, dir.path().join("nope"))),
+        scan(&api, dir.path().join("nope")).unwrap_err().code,
         ErrorCode::NotFound
     );
     assert_eq!(
-        code(scan(&api, dir.path().join("CD/Retail.iso"))),
+        scan(&api, dir.path().join("CD/Retail.iso"))
+            .unwrap_err()
+            .code,
         ErrorCode::BadRequest
     );
     assert_eq!(
-        code(info(&api, dir.path().to_path_buf())),
+        info(&api, dir.path().to_path_buf()).unwrap_err().code,
         ErrorCode::BadRequest
     );
 }

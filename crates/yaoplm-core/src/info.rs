@@ -12,7 +12,7 @@ use yaoplm_formats::zso::{ZsoError, ZsoHeader, ZsoProblem};
 use yaoplm_formats::{LoaderProfile, Media};
 
 use crate::model::{GameFormat, Warning};
-use crate::scan::CD_MAX_BYTES;
+use crate::source::MediaHints;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -39,7 +39,7 @@ pub struct ImageInfo {
     /// The ID OPL derives, or why it would hide the image.
     pub startup: Result<String, String>,
     pub platform: Platform,
-    /// IMP-3 heuristic: CD when the volume fits on an 80-minute CD.
+    /// IMP-3 guess, the same one imports use ([`MediaHints::suggest`]).
     pub suggested_media: Media,
     /// How OPL would read the file name, if it is an image name at all.
     pub file_name: Option<IsoFileName>,
@@ -99,13 +99,14 @@ pub fn image_info(path: &Path, profile: LoaderProfile) -> Result<ImageInfo, Info
     };
 
     let volume_sectors = pvd.as_ref().map(|p| p.volume_space_size);
-    let volume_bytes = volume_sectors.map_or(image.sector_count(), u64::from) * 2048;
-    let suggested_media =
-        if matches!(layers, Some(Layers::Dual { .. })) || volume_bytes > CD_MAX_BYTES {
-            Media::Dvd
-        } else {
-            Media::Cd
-        };
+    let hints = match &pvd {
+        Some(pvd) => MediaHints::read(&mut image, pvd, layers.unwrap_or(Layers::Single)),
+        None => MediaHints::default(),
+    };
+    let (suggested_media, conflict) = hints.suggest(image.sector_count());
+    if conflict.is_some() && matches!(suggested_media, Media::Cd) {
+        warnings.push(Warning::CdTooLarge(image.sector_count() * 2048));
+    }
 
     let file_name = path
         .file_name()

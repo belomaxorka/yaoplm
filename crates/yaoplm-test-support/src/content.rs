@@ -40,22 +40,30 @@ impl Content {
             }
             Self::Zeros(_) => buf.fill(0),
             Self::Noise { len, seed } => {
+                let mut word = (u64::MAX, [0u8; 8]);
                 for (i, b) in buf.iter_mut().enumerate() {
                     let at = offset + i as u64;
-                    *b = if at < *len { noise_byte(*seed, at) } else { 0 };
+                    if at >= *len {
+                        *b = 0;
+                        continue;
+                    }
+                    if word.0 != at / 8 {
+                        word = (at / 8, noise_word(*seed, at / 8));
+                    }
+                    *b = word.1[(at % 8) as usize];
                 }
             }
         }
     }
 }
 
-fn noise_byte(seed: u64, offset: u64) -> u8 {
+fn noise_word(seed: u64, word: u64) -> [u8; 8] {
     // splitmix64 of the 8-byte word, so neighbouring bytes look unrelated.
-    let mut z = seed ^ (offset / 8).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mut z = seed ^ word.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^= z >> 31;
-    z.to_le_bytes()[(offset % 8) as usize]
+    z.to_le_bytes()
 }
 
 /// A large file that exists only as a [`Content`] (TESTING.md

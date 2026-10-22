@@ -14,8 +14,9 @@ struct Listeners {
 /// Fans job events out to front-end subscribers.
 ///
 /// Listeners run on the publishing thread, so they must return quickly:
-/// forward the event to a channel or socket and nothing more.
-#[derive(Default)]
+/// forward the event to a channel or socket and nothing more. Clones share
+/// the listeners.
+#[derive(Default, Clone)]
 pub struct EventBus {
     inner: Arc<Mutex<Listeners>>,
 }

@@ -19,7 +19,11 @@ path: string, nameFormat: NameFormat | null,
 /**
  * `ul` chunks; empty for images.
  */
-parts: Array<UlPart>, size: number, 
+parts: Array<UlPart>, 
+/**
+ * Position in `ul.cfg`, for `ul` games (see `GameRef`).
+ */
+ulIndex: number | null, size: number, 
 /**
  * The ID in `SYSTEM.CNF`, when it was read.
  */

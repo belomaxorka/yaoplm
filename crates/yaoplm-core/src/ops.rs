@@ -1,0 +1,682 @@
+//! Planners for changing games already on the device: rename (GAME-1),
+//! delete (GAME-2), move between CD and DVD (GAME-3), and the folder set-up
+//! (LIB-3). Every CFG that is moved or removed is first copied to
+//! `.yaoplm/backup/` (CFG-5).
+//!
+//! What OPL ties to what (research/02 §4-§9, research/09 §3):
+//! - CFG, ART and CHT files are named after the game ID, VMC cards after
+//!   whatever `$VMC_0`/`$VMC_1` say. A new title therefore changes only the
+//!   image name, or the `ul.cfg` record and the chunk names (their hash
+//!   comes from the title). Only a new ID moves CFG, art and cheats.
+//! - VMC cards are never renamed or deleted: the CFG keeps pointing at
+//!   them, and cards are often shared by a series or `generic_*` (ADR-0020).
+//! - `sbRename()` in ps2homebrew/Open-PS2-Loader@b3a21997 renames the
+//!   chunks and rewrites `ul.cfg` without checking errors; here the chunk
+//!   renames come first, then `ul.cfg` atomically, and a failure undoes them.
+//! - `ul.cfg` keeps every byte of the other records, and its ragged tail.
+//! - FAT matches names case-insensitively, so a case-only rename goes
+//!   through a temporary name.
+
+use std::collections::HashSet;
+use std::io;
+
+use yaoplm_device::RelPath;
+use yaoplm_device::fs::{DeviceFs, DirEntry, TMP_SUFFIX, find_entry, list_or_empty};
+use yaoplm_formats::art::parse_art_file_name;
+use yaoplm_formats::image::{self, DiscImage};
+use yaoplm_formats::iso_name::{self, ImageExtension, IsoFileName, NameFormat, NameStyle};
+use yaoplm_formats::ul_cfg::{RECORD_SIZE, UlRecord};
+use yaoplm_formats::{Media, games_bin};
+
+use crate::device::{DeviceState, join, rel};
+use crate::import::image_name;
+use crate::journal::{self, BACKUP_DIR};
+use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction};
+
+/// Which game a request is about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameRef {
+    /// An image in `CD/` or `DVD/`.
+    Image { path: RelPath },
+    /// Record `index` of `ul.cfg`; `startup` and `name` must still match,
+    /// so a changed `ul.cfg` never hits the wrong game.
+    Ul {
+        index: usize,
+        startup: String,
+        name: String,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum OpError {
+    #[error("{0}")]
+    NotFound(String),
+    #[error("{0}")]
+    Invalid(String),
+    #[error("{0}")]
+    Conflict(String),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+fn invalid(message: impl Into<String>) -> OpError {
+    OpError::Invalid(message.into())
+}
+
+/// A game as the planners need it.
+struct Found {
+    media: Media,
+    kind: FoundKind,
+    /// The ID OPL uses for CFG, ART and CHT, when it could be read.
+    startup: Option<String>,
+}
+
+enum FoundKind {
+    Image {
+        path: RelPath,
+        name: IsoFileName,
+        len: u64,
+    },
+    Ul {
+        index: usize,
+        record: UlRecord,
+    },
+}
+
+fn image_startup(fs: &dyn DeviceFs, path: &RelPath) -> Option<String> {
+    let reader = fs.open(path).ok()?;
+    let mut image = DiscImage::open(reader).ok()?;
+    image::opl_startup(&mut image).ok()
+}
+
+fn media_of_folder(state: &DeviceState, folder: &str) -> Option<Media> {
+    [Media::Cd, Media::Dvd].into_iter().find(|m| {
+        state
+            .folder(*m)
+            .is_ok_and(|f| f.as_str().eq_ignore_ascii_case(folder))
+    })
+}
+
+fn find_game(fs: &dyn DeviceFs, state: &DeviceState, game: &GameRef) -> Result<Found, OpError> {
+    match game {
+        GameRef::Image { path } => {
+            let folder = path
+                .parent()
+                .filter(|p| !p.is_root())
+                .ok_or_else(|| invalid(format!("{path} is not in CD/ or DVD/")))?;
+            let media = media_of_folder(state, folder.as_str())
+                .ok_or_else(|| invalid(format!("{path} is not in CD/ or DVD/")))?;
+            let entry = find_entry(state.entries(media), path.file_name())
+                .filter(|e| !e.is_dir)
+                .ok_or_else(|| OpError::NotFound(format!("{path} does not exist")))?;
+            let path = join(&state.folder(media)?, &entry.name)?;
+            let name = iso_name::classify(&entry.name)
+                .map_err(|e| invalid(format!("OPL does not list {path}: {e}")))?;
+            let startup = match &name.startup {
+                Some(id) => Some(id.clone()),
+                None => image_startup(fs, &path),
+            };
+            Ok(Found {
+                media,
+                startup,
+                kind: FoundKind::Image {
+                    path,
+                    name,
+                    len: entry.len,
+                },
+            })
+        }
+        GameRef::Ul {
+            index,
+            startup,
+            name,
+        } => {
+            let record = state
+                .ul
+                .records
+                .get(*index)
+                .filter(|r| r.startup() == *startup && r.name() == *name)
+                .ok_or_else(|| {
+                    OpError::NotFound(format!(
+                        "ul.cfg no longer has {name} ({startup}) at position {index}"
+                    ))
+                })?;
+            Ok(Found {
+                media: record.media(),
+                startup: Some(record.startup()),
+                kind: FoundKind::Ul {
+                    index: *index,
+                    record: record.clone(),
+                },
+            })
+        }
+    }
+}
+
+/// IDs of every other game on the device, as OPL derives them.
+fn other_ids(
+    fs: &dyn DeviceFs,
+    state: &DeviceState,
+    except: &Found,
+) -> io::Result<HashSet<String>> {
+    let mut ids = HashSet::new();
+    for media in [Media::Cd, Media::Dvd] {
+        let folder = state.folder(media)?;
+        let cache = find_entry(state.entries(media), games_bin::FILE_NAME)
+            .and_then(|e| fs.read(&join(&folder, &e.name).ok()?).ok())
+            .map(|bytes| games_bin::parse(&bytes))
+            .unwrap_or_default();
+        for entry in state.entries(media).iter().filter(|e| !e.is_dir) {
+            let path = join(&folder, &entry.name)?;
+            if matches!(&except.kind, FoundKind::Image { path: p, .. } if *p == path) {
+                continue;
+            }
+            let Ok(name) = iso_name::classify(&entry.name) else {
+                continue;
+            };
+            let id = match name.startup {
+                Some(id) => Some(id),
+                None => games_bin::lookup(&cache, &entry.name)
+                    .map(|c| c.startup.clone())
+                    .or_else(|| image_startup(fs, &path)),
+            };
+            ids.extend(id);
+        }
+    }
+    for (index, record) in state.ul.records.iter().enumerate() {
+        if !matches!(except.kind, FoundKind::Ul { index: i, .. } if i == index) {
+            ids.insert(record.startup());
+        }
+    }
+    Ok(ids)
+}
+
+/// Files named after `startup`: `CFG/<ID>.cfg` (and wOPL's `.info`),
+/// `ART/<ID>_*`, `CHT/<ID>.cht`.
+fn related_files(
+    fs: &dyn DeviceFs,
+    state: &DeviceState,
+    startup: &str,
+) -> io::Result<Vec<(RelPath, DirEntry)>> {
+    let mut found = Vec::new();
+    let mut scan = |folder: &str, matches: &dyn Fn(&str) -> bool| -> io::Result<()> {
+        let Some(dir) = find_entry(&state.top, folder).filter(|e| e.is_dir) else {
+            return Ok(());
+        };
+        let dir = rel(&dir.name)?;
+        for entry in list_or_empty(fs, &dir)? {
+            if !entry.is_dir && matches(&entry.name) {
+                found.push((join(&dir, &entry.name)?, entry));
+            }
+        }
+        Ok(())
+    };
+    let lower = startup.to_lowercase();
+    scan("CFG", &|n| {
+        let n = n.to_lowercase();
+        n == format!("{lower}.cfg") || n == format!("{lower}.info")
+    })?;
+    scan("ART", &|n| {
+        parse_art_file_name(n).is_some_and(|a| a.key.to_lowercase() == lower)
+    })?;
+    scan("CHT", &|n| n.to_lowercase() == format!("{lower}.cht"))?;
+    Ok(found)
+}
+
+/// `CFG/SLUS_200.62.cfg` → `CFG/SLES_500.51.cfg`, keeping the suffix.
+fn renamed_related(path: &RelPath, entry: &DirEntry, old: &str, new: &str) -> io::Result<RelPath> {
+    let rest = entry.name.get(old.len()..).unwrap_or("");
+    join(&path.parent().unwrap_or_default(), &format!("{new}{rest}"))
+}
+
+fn backup_step(backup: &RelPath, path: &RelPath) -> io::Result<Step> {
+    Ok(Step::CopyFile {
+        from: path.clone(),
+        to: rel(&format!("{}/{}", backup.as_str(), path.as_str()))?,
+    })
+}
+
+fn new_backup_dir() -> io::Result<RelPath> {
+    rel(&format!("{BACKUP_DIR}/{}", journal::new_id()))
+}
+
+/// Renames `from` to `to`; a case-only change goes through a temporary name.
+fn rename_steps(from: &RelPath, to: &RelPath) -> io::Result<Vec<Step>> {
+    if from.as_str() != to.as_str() && from.as_str().to_lowercase() == to.as_str().to_lowercase() {
+        let tmp = from
+            .with_suffix(TMP_SUFFIX)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        return Ok(vec![
+            Step::Rename {
+                from: from.clone(),
+                to: tmp.clone(),
+            },
+            Step::Rename {
+                from: tmp,
+                to: to.clone(),
+            },
+        ]);
+    }
+    Ok(vec![Step::Rename {
+        from: from.clone(),
+        to: to.clone(),
+    }])
+}
+
+fn ul_cfg_with(state: &DeviceState, index: usize, record: Option<&UlRecord>) -> io::Result<Step> {
+    let current = state.ul_bytes.clone().unwrap_or_default();
+    let mut next = current.clone();
+    let at = index * RECORD_SIZE;
+    match record {
+        Some(record) => next[at..at + RECORD_SIZE].copy_from_slice(record.as_bytes()),
+        None => {
+            next.drain(at..at + RECORD_SIZE);
+        }
+    }
+    Ok(Step::PutFile {
+        path: state.ul_path()?,
+        content: Bytes(next),
+        expect: Expect::Content(Bytes(current)),
+    })
+}
+
+fn game_info(title: &str, startup: Option<&str>, media: Media, format: &str) -> GameInfo {
+    GameInfo {
+        title: title.to_owned(),
+        startup: startup.unwrap_or("").to_owned(),
+        media,
+        format: format.to_owned(),
+    }
+}
+
+fn new_plan(kind: PlanKind, title: String, state: &DeviceState) -> Plan {
+    let mut plan = Plan::new(
+        kind,
+        title,
+        state.info.fingerprint.clone(),
+        state.info.free_bytes,
+    );
+    plan.notices.extend(state.unfinished_notice());
+    plan
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RenameOptions {
+    pub title: String,
+    /// A corrected game ID (old-style names and `ul` only). CFG, art and
+    /// cheats move with it.
+    pub startup: Option<String>,
+    /// Switch between `ID.Title.iso` and `Title.iso`; `None` keeps it.
+    pub name_style: Option<NameStyle>,
+}
+
+/// Plans a rename (GAME-1).
+pub fn plan_rename(
+    fs: &dyn DeviceFs,
+    game: &GameRef,
+    options: &RenameOptions,
+) -> Result<Plan, OpError> {
+    let state = DeviceState::read(fs)?;
+    let found = find_game(fs, &state, game)?;
+    let mut tx = Transaction::new("Rename");
+    let mut notices = Vec::new();
+    let old_id = found.startup.clone();
+    let (new_id, title) = match &found.kind {
+        FoundKind::Image { path, name, .. } => {
+            let style = options.name_style.unwrap_or(match name.format {
+                NameFormat::Old => NameStyle::WithStartup,
+                NameFormat::New => NameStyle::TitleOnly,
+            });
+            let image_id = match name.format {
+                NameFormat::New => old_id.clone(),
+                NameFormat::Old => image_startup(fs, path),
+            };
+            let new_id = match (style, &options.startup) {
+                (NameStyle::WithStartup, Some(id)) => id.clone(),
+                (NameStyle::WithStartup, None) => old_id
+                    .clone()
+                    .ok_or_else(|| invalid("cannot read the game ID from the image"))?,
+                (NameStyle::TitleOnly, Some(_)) => {
+                    return Err(invalid(
+                        "a Title.iso name takes its ID from the image; use the ID.Title.iso style to set one",
+                    ));
+                }
+                (NameStyle::TitleOnly, None) => image_id
+                    .clone()
+                    .ok_or_else(|| invalid("cannot read the game ID from the image"))?,
+            };
+            if style == NameStyle::WithStartup && !iso_name::is_name_safe_startup(&new_id) {
+                return Err(invalid(format!("{new_id:?} cannot lead a file name")));
+            }
+            let clean = iso_name::sanitize_title(&options.title);
+            if clean.is_empty() {
+                return Err(invalid("the new title is empty"));
+            }
+            let ext = name.extension;
+            let new_name = image_name(&new_id, &clean, ext, style, &mut notices)
+                .map_err(|e| invalid(e.to_string()))?;
+            let folder = path.parent().unwrap_or_default();
+            let target = join(&folder, &new_name)?;
+            if target.as_str() == path.as_str() {
+                return Err(invalid("the name does not change"));
+            }
+            let case_only = target.as_str().to_lowercase() == path.as_str().to_lowercase();
+            if !case_only && find_entry(state.entries(found.media), &new_name).is_some() {
+                return Err(OpError::Conflict(format!("{target} already exists")));
+            }
+            if ext == ImageExtension::Zso && name.raw_extension != ".zso" {
+                notices.push(Notice::info(
+                    "extensionLowercased",
+                    "the extension becomes lower case",
+                ));
+            }
+            for step in rename_steps(path, &target)? {
+                tx.push(step);
+            }
+            tx.title = format!("Rename {} to {new_name}", path.file_name());
+            tx.game = Some(game_info(
+                &iso_name::classify(&new_name).map_or(clean, |n| n.title),
+                Some(&new_id),
+                found.media,
+                if ext == ImageExtension::Zso {
+                    "ZSO"
+                } else {
+                    "ISO"
+                },
+            ));
+            (Some(new_id), new_name)
+        }
+        FoundKind::Ul { index, record } => {
+            let title = options.title.clone();
+            let mut renamed = record.renamed(&title).map_err(|e| invalid(e.to_string()))?;
+            if let Some(id) = &options.startup {
+                renamed = renamed
+                    .with_startup(id)
+                    .map_err(|e| invalid(e.to_string()))?;
+            }
+            if renamed == *record {
+                return Err(invalid("the name does not change"));
+            }
+            for part in 0..record.parts() {
+                let (from, to) = (record.chunk_name(part), renamed.chunk_name(part));
+                if from == to {
+                    continue;
+                }
+                if find_entry(&state.top, &from).is_none() {
+                    return Err(OpError::NotFound(format!(
+                        "chunk {from} is missing; the game cannot be renamed"
+                    )));
+                }
+                if find_entry(&state.top, &to).is_some() {
+                    return Err(OpError::Conflict(format!("{to} already exists")));
+                }
+                for step in rename_steps(&rel(&from)?, &rel(&to)?)? {
+                    tx.push(step);
+                }
+            }
+            tx.push(ul_cfg_with(&state, *index, Some(&renamed))?);
+            if state.info.remote {
+                notices.push(Notice::info(
+                    "restartOpl",
+                    "OPL notices ul.cfg changes by size only: restart it to see the new name",
+                ));
+            }
+            tx.title = format!("Rename {} to {title}", record.name());
+            tx.game = Some(game_info(
+                &title,
+                Some(&renamed.startup()),
+                found.media,
+                "UL",
+            ));
+            (Some(renamed.startup()), title)
+        }
+    };
+
+    if let (Some(old), Some(new)) = (&old_id, &new_id)
+        && old != new
+    {
+        let others = other_ids(fs, &state, &found)?;
+        let shared = others.contains(old);
+        let related = related_files(fs, &state, old)?;
+        let backup = new_backup_dir()?;
+        for (path, entry) in &related {
+            let target = renamed_related(path, entry, old, new)?;
+            if fs.metadata(&target)?.is_some() {
+                return Err(OpError::Conflict(format!(
+                    "{target} already exists; move or delete it first"
+                )));
+            }
+            if path.as_str().to_lowercase().ends_with(".cfg") {
+                tx.push(backup_step(&backup, path)?);
+            }
+            if shared {
+                tx.push(Step::CopyFile {
+                    from: path.clone(),
+                    to: target,
+                });
+            } else {
+                tx.push(Step::Rename {
+                    from: path.clone(),
+                    to: target,
+                });
+            }
+        }
+        if !related.is_empty() {
+            notices.push(Notice::info(
+                if shared { "relatedCopied" } else { "relatedMoved" },
+                format!(
+                    "the game ID changes from {old} to {new}: {} CFG, art and cheat files {} (VMC cards keep their names)",
+                    related.len(),
+                    if shared { "are copied, another game still uses the old ID" } else { "move with it" }
+                ),
+            ));
+        }
+    }
+    if let FoundKind::Image { .. } = found.kind
+        && let Some(cache) = state.drop_cache(found.media)?
+    {
+        tx.then(cache);
+    }
+    tx.notices = notices;
+    let mut plan = new_plan(PlanKind::Rename, format!("Rename to {title}"), &state);
+    plan.transactions.push(tx);
+    Ok(plan)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DeleteOptions {
+    /// Also delete `CFG/<ID>.cfg`, `ART/<ID>_*` and `CHT/<ID>.cht`, unless
+    /// another game uses the ID. VMC cards are never deleted.
+    pub related: bool,
+}
+
+/// Plans deleting a game (GAME-2). Executing it needs explicit confirmation.
+pub fn plan_delete(
+    fs: &dyn DeviceFs,
+    game: &GameRef,
+    options: &DeleteOptions,
+) -> Result<Plan, OpError> {
+    let state = DeviceState::read(fs)?;
+    let found = find_game(fs, &state, game)?;
+    let mut tx = Transaction::new("Delete");
+    let mut notices = Vec::new();
+    let title = match &found.kind {
+        FoundKind::Image { path, name, len } => {
+            tx.then(Step::Remove {
+                path: path.clone(),
+                len: *len,
+                what: Removal::UserData,
+            });
+            if let Some(cache) = state.drop_cache(found.media)? {
+                tx.then(cache);
+            }
+            tx.game = Some(game_info(
+                &name.title,
+                found.startup.as_deref(),
+                found.media,
+                if name.extension == ImageExtension::Zso {
+                    "ZSO"
+                } else {
+                    "ISO"
+                },
+            ));
+            name.title.clone()
+        }
+        FoundKind::Ul { index, record } => {
+            tx.push(ul_cfg_with(&state, *index, None)?);
+            for part in 0..record.parts() {
+                let chunk = record.chunk_name(part);
+                if let Some(entry) = find_entry(&state.top, &chunk) {
+                    tx.then(Step::Remove {
+                        path: rel(&entry.name)?,
+                        len: entry.len,
+                        what: Removal::UserData,
+                    });
+                }
+            }
+            tx.game = Some(game_info(
+                &record.name(),
+                Some(&record.startup()),
+                found.media,
+                "UL",
+            ));
+            record.name()
+        }
+    };
+    if let Some(startup) = &found.startup {
+        let related = related_files(fs, &state, startup)?;
+        if options.related && !related.is_empty() {
+            if other_ids(fs, &state, &found)?.contains(startup) {
+                notices.push(Notice::info(
+                    "relatedKept",
+                    format!("CFG, art and cheats stay: another game also uses {startup}"),
+                ));
+            } else {
+                let backup = new_backup_dir()?;
+                for (path, entry) in &related {
+                    if path.as_str().to_lowercase().ends_with(".cfg") {
+                        let step = backup_step(&backup, path)?;
+                        // Backups happen before the commit point.
+                        tx.steps.insert(tx.commit, step);
+                        tx.commit += 1;
+                    }
+                    tx.then(Step::Remove {
+                        path: path.clone(),
+                        len: entry.len,
+                        what: Removal::UserData,
+                    });
+                }
+            }
+        } else if !related.is_empty() {
+            notices.push(Notice::info(
+                "relatedKept",
+                format!(
+                    "{} CFG, art and cheat files for {startup} stay",
+                    related.len()
+                ),
+            ));
+        }
+        notices.push(Notice::info("vmcKept", "VMC cards are never deleted"));
+    }
+    let archived = ["ART/art.tar", "CHT/cht.tar"]
+        .iter()
+        .any(|p| rel(p).is_ok_and(|p| fs.metadata(&p).ok().flatten().is_some()));
+    if archived {
+        notices.push(Notice::info(
+            "archiveKept",
+            "art and cheats inside art.tar or cht.tar are not touched",
+        ));
+    }
+    tx.title = format!("Delete {title}");
+    tx.notices = notices;
+    let mut plan = new_plan(PlanKind::Delete, format!("Delete {title}"), &state);
+    plan.transactions.push(tx);
+    Ok(plan)
+}
+
+/// Plans moving a game between `CD/` and `DVD/` (GAME-3). For `ul` games
+/// only the media byte changes.
+pub fn plan_move(fs: &dyn DeviceFs, game: &GameRef, media: Media) -> Result<Plan, OpError> {
+    let state = DeviceState::read(fs)?;
+    let found = find_game(fs, &state, game)?;
+    if found.media == media {
+        return Err(invalid(format!("the game is already a {media} game")));
+    }
+    let mut tx = Transaction::new(format!("Move to {media}"));
+    let title = match &found.kind {
+        FoundKind::Image { path, name, .. } => {
+            if !state.has_folder(media.folder()) {
+                tx.push(Step::CreateDir {
+                    path: state.folder(media)?,
+                });
+            }
+            let target = join(&state.folder(media)?, path.file_name())?;
+            if find_entry(state.entries(media), path.file_name()).is_some() {
+                return Err(OpError::Conflict(format!("{target} already exists")));
+            }
+            tx.push(Step::Rename {
+                from: path.clone(),
+                to: target,
+            });
+            for cache in [state.drop_cache(found.media)?, state.drop_cache(media)?]
+                .into_iter()
+                .flatten()
+            {
+                tx.then(cache);
+            }
+            tx.game = Some(game_info(
+                &name.title,
+                found.startup.as_deref(),
+                media,
+                if name.extension == ImageExtension::Zso {
+                    "ZSO"
+                } else {
+                    "ISO"
+                },
+            ));
+            name.title.clone()
+        }
+        FoundKind::Ul { index, record } => {
+            tx.push(ul_cfg_with(
+                &state,
+                *index,
+                Some(&record.with_media(media)),
+            )?);
+            tx.game = Some(game_info(
+                &record.name(),
+                Some(&record.startup()),
+                media,
+                "UL",
+            ));
+            record.name()
+        }
+    };
+    tx.title = format!("Move {title} to {media}");
+    let mut plan = new_plan(PlanKind::Move, tx.title.clone(), &state);
+    plan.transactions.push(tx);
+    Ok(plan)
+}
+
+/// Plans creating the standard OPL folders that are missing (LIB-3).
+pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
+    let state = DeviceState::read(fs)?;
+    let mut plan = new_plan(
+        PlanKind::InitLibrary,
+        "Create the OPL folders".into(),
+        &state,
+    );
+    let steps = state.missing_folders()?;
+    if steps.is_empty() {
+        plan.notices.push(Notice::info(
+            "foldersPresent",
+            "all OPL folders already exist",
+        ));
+    } else {
+        let mut tx = Transaction::new("Create the OPL folders");
+        for step in steps {
+            tx.push(step);
+        }
+        plan.transactions.push(tx);
+    }
+    Ok(plan)
+}
