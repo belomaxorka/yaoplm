@@ -8,6 +8,7 @@
 
 pub mod art;
 pub mod cfg;
+pub mod cht;
 pub mod image;
 pub mod iso9660;
 pub mod iso_name;
