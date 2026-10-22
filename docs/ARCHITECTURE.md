@@ -92,8 +92,9 @@ yaoplm/
 
 ## 4. Слой API
 
-- Каждая операция — вариант `Request` в `yaoplm-api`. Например: `OpenDevice`, `ScanLibrary`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `ReadCfg`, `WriteCfg`, `CancelJob`.
-- `dispatch(Request) -> Result<Response, ApiError>`. Долгие операции сразу возвращают `JobId`, а прогресс приходит потоком `JobEvent`.
+- Каждая операция — вариант `Request` в `yaoplm-api`. Например: `ListDevices`, `InspectDevice`, `ScanLibrary`, `ListDir`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `ReadCfg`, `WriteCfg`, `CancelJob`.
+- `dispatch(Request) -> Result<Response, ApiError>`. Долгие операции сразу возвращают `JobId`, а прогресс приходит потоком `JobEvent`. Планы ещё и ведут журнал шагов (`JobEvent::Log`: транзакция или шаг начат, выполнен, откачен, провален); `GetJob` отдаёт его целиком, поэтому переподключившийся клиент ничего не теряет.
+- `ListDir` показывает папки для выбора источников в браузере: сервер отдаёт только свои корни и то, что внутри них (`PathPolicy`), десктоп — тома; скрытые файлы и симлинки не показываются.
 - Транспорты:
   - **desktop**: команда Tauri `rpc(req)` и `subscribe(channel)` через `tauri::ipc::Channel`;
   - **server**: `POST /api/rpc` и WebSocket `/api/events`;
@@ -122,6 +123,7 @@ yaoplm/
   - манифест источников: ETag, дата, лицензия, атрибуция;
   - результаты «не найдено» с TTL.
 - Источник истины — файлы на устройстве. Кэш можно удалить без потерь.
+- Настройки интерфейса (профиль загрузчика, стиль имён, открытый корень, вид библиотеки, проверка образов) с M3 хранятся в `localStorage` браузера или WebView (`yaoplm.settings`). `settings.toml` появится, когда настройки понадобятся CLI и серверу.
 
 ## 7. Источники данных
 
