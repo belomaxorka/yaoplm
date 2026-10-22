@@ -11,6 +11,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use crate::source::ReadSeek;
 use crate::volume::{FsKind, VolumeKind, volume_for_path};
 
 /// Suffix of a file still being written. OPL lists neither `*.iso.yaoplm-part`
@@ -28,8 +29,35 @@ pub enum PathError {
 }
 
 /// A path inside a device root. The empty path is the root itself.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+/// Serialised as its string; deserialising validates it again.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
 pub struct RelPath(String);
+
+impl TryFrom<String> for RelPath {
+    type Error = PathError;
+
+    fn try_from(path: String) -> Result<Self, PathError> {
+        Self::new(&path)
+    }
+}
+
+impl From<RelPath> for String {
+    fn from(path: RelPath) -> Self {
+        path.0
+    }
+}
 
 fn check_component(path: &str, part: &str) -> Result<(), PathError> {
     if part.is_empty() || part == "." || part == ".." {
@@ -157,6 +185,10 @@ pub trait DeviceFs: Send + Sync {
     /// Entries of a folder, sorted by name. A missing folder is `NotFound`.
     fn list(&self, dir: &RelPath) -> io::Result<Vec<DirEntry>>;
     fn read(&self, path: &RelPath) -> io::Result<Vec<u8>>;
+    /// Opens a file for reading, e.g. an image to read its game ID.
+    fn open(&self, path: &RelPath) -> io::Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(io::Cursor::new(self.read(path)?)))
+    }
     /// Creates a new file; fails with `AlreadyExists` if anything is there.
     fn create(&self, path: &RelPath) -> io::Result<Box<dyn DeviceFile>>;
     /// Creates a folder; succeeds if it already exists.
@@ -337,6 +369,10 @@ impl DeviceFs for HostFs {
 
     fn read(&self, path: &RelPath) -> io::Result<Vec<u8>> {
         fs::read(self.resolve_checked(path)?)
+    }
+
+    fn open(&self, path: &RelPath) -> io::Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(File::open(self.resolve_checked(path)?)?))
     }
 
     fn create(&self, path: &RelPath) -> io::Result<Box<dyn DeviceFile>> {

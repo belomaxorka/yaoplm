@@ -9,6 +9,8 @@
 //!   selected root (CLAUDE.md rule 1).
 //! - [`copy`]: sequential copies with preallocation, progress and
 //!   cancellation (IMP-7).
+//! - [`source`]: read access to import sources on the host, which are never
+//!   written ([`SourceFs`]).
 //!
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003). OS calls are
 //! made directly (ADR-0019); `unsafe` is confined to `sys/windows.rs`.
@@ -16,12 +18,14 @@
 pub mod advice;
 pub mod copy;
 pub mod fs;
+pub mod source;
 mod sys;
 pub mod volume;
 
 pub use advice::{Advice, DiagnoseOptions, Level, diagnose};
 pub use copy::{CancelToken, CopyError, copy_exact};
-pub use fs::{DeviceFile, DeviceFs, DirEntry, FileMeta, HostFs, PathError, RelPath};
+pub use fs::{DeviceFile, DeviceFs, DirEntry, FileMeta, FsInfo, HostFs, PathError, RelPath};
+pub use source::{HostSources, ReadSeek, SourceFs, SourceMeta};
 pub use volume::{
     Bus, FsKind, PartitionInfo, PartitionStyle, Volume, VolumeKind, list_volumes, volume_for_path,
 };
