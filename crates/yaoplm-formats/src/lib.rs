@@ -17,6 +17,7 @@ pub mod profile;
 pub mod system_cnf;
 pub mod ul_cfg;
 pub mod usba_crc32;
+pub mod vmc;
 pub mod zso;
 
 pub use media::Media;
