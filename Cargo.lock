@@ -5000,6 +5000,13 @@ dependencies = [
 [[package]]
 name = "yaoplm-device"
 version = "0.0.1"
+dependencies = [
+ "rustix",
+ "tempfile",
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+ "yaoplm-formats",
+]
 
 [[package]]
 name = "yaoplm-formats"

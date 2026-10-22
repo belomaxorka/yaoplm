@@ -72,7 +72,7 @@ Read before working:
 - Rust stable (MSVC on Windows) pinned in `rust-toolchain.toml`.
 - Tauri 2.12, axum 0.8, clap, ts-rs 12.
 - Do not use tauri-specta (still RC), `serde_yaml` (archived) or `serde_yml` (unsound). Use `serde_norway` or `serde_yaml_ng` for YAML.
-- Formats and data: hadris-iso 2.5, chd 0.4 (feature `chd`), zip 9, sevenz-rust2 0.24, `unrar` only behind feature `rar`, crc32fast, sha1/md-5 0.11, lz4_flex 0.14, image 0.25, fast_image_resize 6, quick-xml 0.42, reqwest 0.13 (rustls), rusqlite (bundled), sysinfo 0.39, smb 0.12 (feature `smb`).
+- Formats and data: hadris-iso 2.5, chd 0.4 (feature `chd`), zip 9, sevenz-rust2 0.24, `unrar` only behind feature `rar`, crc32fast, sha1/md-5 0.11, lz4_flex 0.14, image 0.25, fast_image_resize 6, quick-xml 0.42, reqwest 0.13 (rustls), rusqlite (bundled), windows-sys 0.61 and rustix 1.1 for volumes (ADR-0019; no sysinfo), smb 0.12 (feature `smb`).
 - Frontend: React 19, TypeScript 6 (strict), Vite 8, pnpm 12 (via corepack), TanStack Query, TanStack Virtual, shadcn/ui (`radix-nova`, `cn` helper), Tailwind 4, React Router 7, react-i18next (`en`, `ru`), vitest, Playwright.
   - Stay on TypeScript 6 until typescript-eslint supports TS 7 (it requires `<6.1` as of 2026-10-22).
   - React Router 8 exists; moving to it needs an ADR.
