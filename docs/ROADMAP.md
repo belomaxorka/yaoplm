@@ -24,22 +24,26 @@
 
 ## M0 — Фундамент
 Цель: пустой, но собирающийся на всех ОС каркас с тремя интерфейсами.
-- [ ] Установить toolchain: rustup (MSVC, stable), `cargo-tauri` / `@tauri-apps/cli`, pnpm через corepack. Проверить C++-нагрузку VS Build Tools 2026.
-- [ ] Cargo workspace по [ARCHITECTURE.md §3](ARCHITECTURE.md), `rust-toolchain.toml`, lint-настройки (`clippy -D warnings`, `rustfmt.toml`).
-- [ ] `yaoplm-api`: заглушки `Request::Ping`, `Request::Version`, `JobEvent`; генерация TS-типов через ts-rs.
-- [ ] `apps/cli`: `yaoplm --version`, `yaoplm rpc`.
-- [ ] `apps/server`: axum, `/health`, `/api/rpc`, `/api/events`, раздача SPA; `--bind`, `--token`, `--root`.
-- [ ] `apps/desktop`: окно Tauri 2 с SPA, команды `rpc` и `subscribe`.
-- [ ] `web/`: Vite + React + TS + Tailwind + shadcn/ui, переключатель транспорта, i18n en/ru, светлая и тёмная тема, пустой экран библиотеки.
-- [ ] `.claude/launch.json` для превью веб-интерфейса (dev-сервер Vite и `yaoplm-server`).
-- [ ] Smoke-тест Playwright против `yaoplm-server`.
-- [ ] CI `ci.yml` на Windows, Linux и macOS. Проверка, что ядро не зависит от tauri/axum/tokio.
+- [x] Установить toolchain: rustup (MSVC, stable), `cargo-tauri` / `@tauri-apps/cli`, pnpm через corepack. Проверить C++-нагрузку VS Build Tools 2026.
+- [x] Cargo workspace по [ARCHITECTURE.md §3](ARCHITECTURE.md), `rust-toolchain.toml`, lint-настройки (`clippy -D warnings`, `rustfmt.toml`).
+- [x] `yaoplm-api`: заглушки `Request::Ping`, `Request::Version`, `JobEvent`; генерация TS-типов через ts-rs.
+- [x] `apps/cli`: `yaoplm --version`, `yaoplm rpc`.
+- [x] `apps/server`: axum, `/health`, `/api/rpc`, `/api/events`, раздача SPA; `--bind`, `--token`, `--root`.
+- [x] `apps/desktop`: окно Tauri 2 с SPA, команды `rpc` и `subscribe`.
+- [x] `web/`: Vite + React + TS + Tailwind + shadcn/ui, переключатель транспорта, i18n en/ru, светлая и тёмная тема, пустой экран библиотеки.
+- [x] `.claude/launch.json` для превью веб-интерфейса (dev-сервер Vite и `yaoplm-server`).
+- [x] Smoke-тест Playwright против `yaoplm-server`.
+- [x] CI `ci.yml` на Windows, Linux и macOS. Проверка, что ядро не зависит от tauri/axum/tokio.
+
+Итог: PR #1, тег `v0.0.1`. Решения по ходу — ADR-0012…0015.
 
 **Готово, когда:** CI зелёный, `pnpm tauri dev` открывает окно на Windows, `yaoplm-server` отдаёт тот же UI в браузере, `yaoplm rpc '{"type":"Ping"}'` отвечает.
 
 ## M1 — Форматы OPL (ядро без UI)
 Цель: побайтно точная работа с форматами OPL, покрытая тестами.
+- [ ] Для каждого формата сначала читаем код в официальном OPL и форках из `D:\yaoplm-testdata\refs\` (ADR-0015) и записываем найденные граничные случаи в тесты.
 - [ ] Фикстуры в `yaoplm-test-support`: крошечный ISO с `SYSTEM.CNF`, образ без `BOOT2`, CD- и DVD-варианты.
+- [ ] Загрузочный тестовый ISO из открытого homebrew-ELF для проверки на консоли, плюс вариант > 4 ГиБ с файлом-заполнителем для `ul`.
 - [ ] Чтение ISO9660 и разбор `SYSTEM.CNF` точно как в OPL (IMP-2). Тесты на краевые случаи: регистр, `cdrom0:\`, `;1`, ID длиннее 11 символов.
 - [ ] Правила имён OPL: старый формат `XXXX_YYY.ZZ.` и лимиты 160/159 (IMP-4).
 - [ ] `USBA_crc32` с тестовыми векторами. Векторы получить из исходника OPL (скомпилировать C-функцию локально в тесте сравнения или вычислить вручную; см. research/02 §5.3).
@@ -70,7 +74,10 @@
 2. FAT32, DVD-игра до 4 ГиБ — видна и запускается.
 3. FAT32, игра больше 4 ГиБ (`ul`) — видна и запускается.
 4. exFAT с OPL 1.2 beta, игра больше 4 ГиБ — видна и запускается.
-5. Переименованная игра не потеряла настройки.
+5. Те же игры на SD-карте в MX4SIO — видны и запускаются.
+6. OPL, запущенный с эмулятора карты памяти, видит игры на флешке и MX4SIO так же, как запущенный с карты Sony.
+7. Переименованная игра не потеряла настройки.
+8. Тестовый homebrew-ISO (CD и вариант `ul` > 4 ГиБ) виден в списке.
 
 ## M3 — Десктопный интерфейс (MVP)
 - [ ] Экран библиотеки: сетка и список, поиск, фильтры, виртуализация (LIB-5).
@@ -99,17 +106,24 @@
 - [ ] Остальные типы обложек, импорт арт-паков (ART-2, ART-5).
 - [ ] Проверка фрагментации (IMP-7b, LIB-4).
 - [ ] `yaoplm-server` и Docker-образ (SRV-1).
+- [ ] Процесс-помощник с повышенными правами и форматирование съёмных носителей с защитой (DEV-3, ADR-0013, research/06).
+- [ ] Каталог загрузчиков, загрузка с официальных релизов, установка официального OPL на флешку и MX4SIO (LDR-1, LDR-2, LDR-3).
+- [ ] Мастер подготовки носителя: форматирование → папки → загрузчик (DEV-4).
 
 **Проверка на PS2:**
 1. ZSO-игра запускается.
 2. Режимы совместимости применяются.
 3. VMC работает: сейв создаётся и читается.
 4. Игра с SMB-шары на домашнем сервере видна и запускается.
+5. Флешка и SD-карта, отформатированные и подготовленные YAOPLM с нуля, работают в OPL.
 
 ## M6 — PS1, APPS, RiptOPL, читы → v0.3.0
 - [ ] PS1: VCD и POPStarter (PS1-1); APPS (APP-1).
 - [ ] Профиль RiptOPL: 8-битный PNG, размеры, `art.tar`, дополнительные ключи CFG и биты (ART-6).
 - [ ] Редактор CHT (CHT-1), пресеты совместимости (CFG-3), метаданные в CFG (META-3).
+- [ ] Установка форков (RiptOPL, форк с MMCE) и игры на SD эмулятора карты памяти (LDR-3); определение и обновление установленного загрузчика (LDR-4).
+
+**Проверка на PS2:** RiptOPL показывает обложки, подготовленные YAOPLM; игры с SD эмулятора карты памяти запускаются через MMCE.
 
 ## M7 — Публичный релиз
 - [ ] Перевести репозиторий в public. Сначала перепроверить, что в истории нет секретов.
@@ -118,4 +132,4 @@
 - [ ] Документация пользователя на en и ru, анонс на psx-place.
 
 ## Later
-SMB-помощник (NET-2), внутренний HDD через hdl-dump/pfsshell, затем нативно (HDD-1), NBD (HDD-2), ScreenScraper (META-4), pnach → cht (CHT-2), менеджер сейвов VMC (VMC-2), экспорт CSV/HTML (LIB-6), профили NHDDL/Neutrino и PSBBN, глобальные CFG (CFG-4).
+SMB-помощник (NET-2), внутренний HDD через hdl-dump/pfsshell, затем нативно (HDD-1), NBD (HDD-2), ScreenScraper (META-4), pnach → cht (CHT-2), менеджер сейвов VMC (VMC-2), установка загрузчика внутрь образа карты памяти на SD эмулятора (LDR-5), обложки PSBBN и иконки HDD-OSD (ART-7), экспорт CSV/HTML (LIB-6), профили NHDDL/Neutrino и PSBBN, глобальные CFG (CFG-4).
