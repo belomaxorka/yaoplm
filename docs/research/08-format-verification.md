@@ -160,7 +160,24 @@ Other behaviour:
 - **Zero-filled cards fail.** OrbitPS2 writes such a "card" and claims OPL formats it on first boot (`vmc.service.ts`); OPL rejects it.
 - **Name buffers are 32 bytes** (`src/guigame.c`), so names are at most 31 characters.
 
-## 10. Test images
+## 10. Which forks fix these bugs (checked 2026-10-22)
+
+✓ = fixed, ✗ = still present. Upstream, wOPL `4ae74148`, OPL-Evolution `47119b71` and ps2-mmce `mmce_support` `e554796` carry all eight.
+
+| Bug | Where (upstream) | RiptOPL C `40c52ceb` | RiptOPL C++ `6edea174` |
+|---|---|---|---|
+| Indented comment line becomes a blank-named cheat (§6) | `src/cheatman.c` `parse_buf`/`trim_str` | ✗ | ✗ |
+| Directory record with a name length of 0 hangs the scan (§3) | `modules/isofs/isofs.c` `cdvdman_locatefile` | ✗ | ✗ |
+| ZSO `align > 11` divides by zero (§7) | `read_raw_data` in `modules/isofs/isofs.c`, `src/zso.c`, `modules/iopcore/cdvdman/cdvdman.c` | ✗ | ✗ |
+| 251st cheat written past the array (§6) | `src/cheatman.c` (`cheat_index < MAX_CODES`) | ✓ | ✓ |
+| `BOOT2` without `=` dereferences NULL (§2) | `src/ps2cnf.c` | ✗ | ✓ |
+| Ragged `ul.cfg` writes past the list (§4) | `src/supportbase.c` `sbReadList` (`while (size > 0)`) | ✗ | ✓ (`while (size >= recordSize)`) |
+| `updateISOGameList` compares `games[i]` in the `j` loop (§8) | `src/supportbase.c` | ✓ | ✓ |
+| Signed `char` in `USBA_crc32` (§4) | `src/system.c` | ✓ | ✓ |
+
+RiptOPL also guards short names in `isValidIsoName` and the 16-byte name copy in `cdvdman_findfile`. Its fixes are AFL-3.0 like OPL itself, so an OPL fork may port them with credit.
+
+## 11. Test images
 
 - **`yaoplm-test-support` writes its own ISO9660 images** (ADR-0016). Images are generated on the fly through `Read + Seek`, so 4+ GiB fixtures use no disk space.
 - **Ten variants** cover the cases above: retail, LF-only, no BOOT2, lower-case key, ELF in a subfolder, long ID, PS1, no `;1`, lower-case name, DVD-9.
