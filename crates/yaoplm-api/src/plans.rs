@@ -67,6 +67,7 @@ pub enum PlanKind {
     Delete,
     Move,
     Recovery,
+    Art,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +173,7 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Delete => PlanKind::Delete,
         core::PlanKind::Move => PlanKind::Move,
         core::PlanKind::Recovery => PlanKind::Recovery,
+        core::PlanKind::Art => PlanKind::Art,
     }
 }
 
