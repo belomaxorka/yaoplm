@@ -61,6 +61,12 @@ Read before working:
    - `yaoplm-core`, `-formats`, `-hash` and `-device` must not depend on tauri, axum or tokio. CI checks this with `cargo tree -i <crate>`.
    - The core is synchronous.
 5. **Secrets.** Never commit tokens, signing keys or `.env`. The updater signing key lives only in GitHub Secrets.
+6. **Prior art first (ADR-0015).** Upstream OPL, its forks and neighbouring tools hold years of fixes for edge cases and hardware quirks.
+   - Before implementing a format, a device feature or a loader rule, read the matching code in upstream OPL and the forks, plus their commits and issues. The index is `docs/research/REFERENCES.md`; clones live in `D:\yaoplm-testdata\refs\<owner>__<repo>` (`git -C <dir> pull` to refresh).
+   - Upstream OPL defines behaviour. Forks and other managers are a source of edge cases to verify, not to copy blindly.
+   - Cite the source file and commit in a code comment. Record new findings in `docs/research/`.
+   - Licences: never copy AFL code (OPL, ps2sdk) — reimplement from the logic (ADR-0002). GPL-3-compatible code may be ported with attribution.
+   - Forums: psx-place blocks bots; read threads through the user's Chrome (Claude in Chrome), never bypass the check.
 
 ## Stack (versions verified 2026-10-22; re-check before adding a dependency)
 - Rust stable (MSVC on Windows) pinned in `rust-toolchain.toml`.
@@ -111,4 +117,5 @@ Update this section if they change.
 - Python 3.14, Go, git, `gh` (account `belomaxorka`).
 - Docker is not local: Docker images build in CI.
 - Test data lives in `D:\yaoplm-testdata\` (outside the repo). Never commit game images or anything from that folder.
+- The user's PS2 hardware (FMCB card, memory card emulator, MX4SIO, USB sticks) and the console test matrix are in `docs/TESTING.md`. When the user connects a device, inspect it read-only first; write only after a plan, the user's confirmation and a re-check of the disk identity. D: is the user's data drive: write only under `D:\yaoplm-testdata`.
 - The user has authorised installing whatever the dev environment needs. Prefer `winget`, `rustup`, `corepack` and `cargo install` from official sources.
