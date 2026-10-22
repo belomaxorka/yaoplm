@@ -1,15 +1,23 @@
 //! Fixture builders for tests: tiny ISO9660 images with `SYSTEM.CNF`,
-//! BIN/CUE, ZSO, Logiqx DATs, FAT32 images and virtual large files.
+//! BIN/CUE, ZSO, Logiqx DATs, FAT32 images and virtual large files, plus
+//! test devices (in memory, FAT32 image) and in-memory import sources.
 //!
 //! Fixtures are generated at test time. Real game images are never committed.
 
+pub mod bincue;
 mod content;
+pub mod fatimg;
 pub mod fixtures;
 pub mod iso;
+pub mod memfs;
+pub mod sources;
 
 pub use content::{Content, VirtualFile};
+pub use fatimg::FatImage;
 pub use fixtures::Variant;
 pub use iso::{IsoBuilder, VirtualIso};
+pub use memfs::MemFs;
+pub use sources::VirtualSources;
 
 #[cfg(test)]
 mod tests {
