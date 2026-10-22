@@ -5,3 +5,8 @@
 //! One format per module. Each module links the section of
 //! `docs/research/02-opl-formats.md` and the OPL source file it mirrors.
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
+
+pub mod media;
+pub mod usba_crc32;
+
+pub use media::Media;

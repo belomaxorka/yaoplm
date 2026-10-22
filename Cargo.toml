@@ -32,10 +32,14 @@ yaoplm-test-support = { path = "crates/yaoplm-test-support" }
 
 anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }
+cc = "1.9.0"
 clap = { version = "4.6.7", features = ["derive", "env"] }
+lz4_flex = { version = "0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
+proptest = "1.12.0"
 rust-embed = { version = "8.13.0", features = ["mime-guess"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+tempfile = "3.27.0"
 tauri = "2.12.5"
 tauri-build = "2.7.4"
 thiserror = "2.0.21"
