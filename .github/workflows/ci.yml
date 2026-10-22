@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+  NODE_VERSION: 26
+  COREPACK_VERSION: 0.36.0
+
+jobs:
+  checks:
+    name: Format, core deps, TS bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - name: Core crates do not depend on tauri, axum or tokio (ADR-0003)
+        run: scripts/check-core-deps.sh
+      - name: Generated TS types match the Rust API
+        run: |
+          cargo test -p yaoplm-api --features ts-export
+          if [ -n "$(git status --porcelain -- web/src/api/generated)" ]; then
+            git status --short -- web/src/api/generated
+            echo "::error::web/src/api/generated is stale. Run: cargo test -p yaoplm-api --features ts-export"
+            exit 1
+          fi
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Tauri system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace
+
+  web:
+    name: Web (lint, typecheck, unit tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Enable pnpm via corepack
+        run: |
+          npm install -g corepack@${COREPACK_VERSION}
+          corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C web lint
+      - run: pnpm -C web typecheck
+      - run: pnpm -C web test
+      - run: pnpm -C web build
+
+  e2e:
+    name: E2E (Playwright vs yaoplm-server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Enable pnpm via corepack
+        run: |
+          npm install -g corepack@${COREPACK_VERSION}
+          corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C web build
+      - run: cargo build -p yaoplm-server
+      - run: pnpm -C web exec playwright install --with-deps chromium
+      - run: pnpm -C web e2e
+      - name: Upload report and screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
