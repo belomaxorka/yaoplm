@@ -101,6 +101,48 @@ jobs:
       - name: Fuzz targets compile (they run weekly in fuzz.yml)
         run: cargo check --manifest-path fuzz/Cargo.toml
 
+  real-fs:
+    name: Imports onto loop-mounted FAT32 and exFAT images
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install mkfs.vfat and mkfs.exfat
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 dosfstools exfatprogs
+      # Image files only, never a real drive (CLAUDE.md rule 1). /mnt is the
+      # runner's large scratch disk; the 4.3 GB test game needs the room.
+      - name: Create and mount the images
+        run: |
+          # Azure runner kernels ship the exfat driver in linux-modules-extra.
+          sudo modprobe exfat 2>/dev/null || {
+            sudo apt-get install -y -q --no-install-recommends "linux-modules-extra-$(uname -r)"
+            sudo modprobe exfat
+          }
+          sudo truncate -s 6G /mnt/fat32.img /mnt/exfat.img
+          sudo mkfs.vfat -F 32 -s 64 -n YAOPLM /mnt/fat32.img
+          sudo mkfs.exfat -L YAOPLM /mnt/exfat.img
+          sudo mkdir -p /mnt/fat32 /mnt/exfat
+          sudo mount -o loop,uid="$(id -u)",gid="$(id -g)" /mnt/fat32.img /mnt/fat32
+          sudo mount -o loop,uid="$(id -u)",gid="$(id -g)" /mnt/exfat.img /mnt/exfat
+      - name: Import, split, rename and delete on the real drivers
+        env:
+          YAOPLM_FAT32_DIR: /mnt/fat32
+          YAOPLM_EXFAT_DIR: /mnt/exfat
+        run: cargo test -p yaoplm-core --test real_fs -- --ignored --nocapture
+      - name: Check the images with fsck
+        if: ${{ !cancelled() }}
+        run: |
+          sudo umount /mnt/fat32 /mnt/exfat
+          sudo fsck.vfat -n /mnt/fat32.img
+          sudo fsck.exfat -n /mnt/exfat.img
+
   web:
     name: Web (lint, typecheck, unit tests, build)
     runs-on: ubuntu-latest
