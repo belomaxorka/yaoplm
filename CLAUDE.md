@@ -67,8 +67,11 @@ Read before working:
 - Tauri 2.12, axum 0.8, clap, ts-rs 12.
 - Do not use tauri-specta (still RC), `serde_yaml` (archived) or `serde_yml` (unsound). Use `serde_norway` or `serde_yaml_ng` for YAML.
 - Formats and data: hadris-iso 2.5, chd 0.4 (feature `chd`), zip 9, sevenz-rust2 0.24, `unrar` only behind feature `rar`, crc32fast, sha1/md-5 0.11, lz4_flex 0.14, image 0.25, fast_image_resize 6, quick-xml 0.42, reqwest 0.13 (rustls), rusqlite (bundled), sysinfo 0.39, smb 0.12 (feature `smb`).
-- Frontend: React 19, TypeScript (strict), Vite, pnpm (via corepack), TanStack Query, TanStack Virtual, shadcn/ui, Tailwind, React Router 7, react-i18next (`en`, `ru`), vitest, Playwright.
+- Frontend: React 19, TypeScript 6 (strict), Vite 8, pnpm 12 (via corepack), TanStack Query, TanStack Virtual, shadcn/ui (`radix-nova`, `cn` helper), Tailwind 4, React Router 7, react-i18next (`en`, `ru`), vitest, Playwright.
+  - Stay on TypeScript 6 until typescript-eslint supports TS 7 (it requires `<6.1` as of 2026-10-22).
+  - React Router 8 exists; moving to it needs an ADR.
 - Before adding a crate or npm package, check its maintenance and licence. GPL-3-compatible only.
+- Pin exact npm versions. pnpm refuses releases younger than a day (`minimumReleaseAge`): pick an older version, never add `minimumReleaseAgeExclude`.
 
 ## Code style
 - Rust:
@@ -81,13 +84,16 @@ Read before working:
 - Keep comments sparse and factual: why, not what.
 
 ## Commands
-These exist once M0 is done; update this section if they change.
-- Rust: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-- Types: `cargo test -p yaoplm-api --features ts-export` (regenerates `web/src/api/generated/`)
-- Web: `pnpm -C web lint`, `pnpm -C web typecheck`, `pnpm -C web test`, `pnpm -C web e2e`
-- Desktop dev: `pnpm tauri dev` (from `apps/desktop`)
-- Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878`
-- CLI: `cargo run -p yaoplm-cli -- scan <root>`
+Update this section if they change.
+- Rust: `cargo fmt --all`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace`
+- Core purity (ADR-0003): `bash scripts/check-core-deps.sh`
+- Types: `cargo test -p yaoplm-api --features ts-export` (regenerates `web/src/api/generated/`; CI fails if it is stale)
+- Web: `pnpm install`, then `pnpm -C web lint`, `pnpm -C web typecheck`, `pnpm -C web test`
+- E2E: `pnpm -C web build`, then `pnpm -C web e2e` (starts `yaoplm-server` on 127.0.0.1:7879; once per machine: `pnpm -C web exec playwright install chromium`)
+- Desktop dev: `pnpm tauri dev` (from `apps/desktop`; starts Vite on 5173)
+- Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878` (serves `web/dist`; debug builds read it from disk)
+- CLI: `cargo run -p yaoplm-cli -- rpc '{"type":"Ping"}'`; on Windows PowerShell 5.1 pipe the JSON instead: `'{"type":"Ping"}' | cargo run -p yaoplm-cli -- rpc`
+- Previews: `.claude/launch.json` has `yaoplm-server` (7878) and `web-dev` (Vite, 5173, proxies `/api` to 7878). Stop the server preview before `cargo test`: Windows locks the running `.exe`.
 - Real-data tests: set `YAOPLM_TESTDATA=D:\yaoplm-testdata`, then `cargo test --workspace -- --ignored`
 
 ## Workflow (details in docs/ROADMAP.md)
@@ -100,8 +106,9 @@ These exist once M0 is done; update this section if they change.
 
 ## Environment (developer machine)
 - Windows 11, PowerShell plus Git Bash. VS Build Tools 2026 and WebView2 are installed.
-- Rust, pnpm and Docker are not installed yet; M0 installs Rust and pnpm.
-- Node 26, Python 3.14, git, `gh` (account `belomaxorka`).
+- Rust via rustup (`stable-x86_64-pc-windows-msvc`; the repo pins its version in `rust-toolchain.toml`), in `%USERPROFILE%\.cargo\bin`.
+- Node 26 no longer bundles corepack: it is installed with `npm install -g corepack`, then `corepack enable pnpm`. Set `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` in non-interactive shells.
+- Python 3.14, Go, git, `gh` (account `belomaxorka`).
 - Docker is not local: Docker images build in CI.
 - Test data lives in `D:\yaoplm-testdata\` (outside the repo). Never commit game images or anything from that folder.
 - The user has authorised installing whatever the dev environment needs. Prefer `winget`, `rustup`, `corepack` and `cargo install` from official sources.
