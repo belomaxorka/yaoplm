@@ -82,7 +82,12 @@ pub fn library(lib: &Library) -> String {
     for game in &lib.games {
         let mut title = game.title.clone();
         if !game.parts.is_empty() {
-            let _ = write!(title, " ({} parts)", game.parts.len());
+            let parts = game.parts.len();
+            let _ = write!(
+                title,
+                " ({parts} part{})",
+                if parts == 1 { "" } else { "s" }
+            );
         }
         let _ = writeln!(
             out,
