@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "id": "pcsx2",
+      "name": "PCSX2 GameIndex",
+      "url": "https://github.com/PCSX2/pcsx2/blob/master/bin/resources/GameIndex.yaml",
+      "license": "GPL-3.0",
+      "licenseUrl": "https://github.com/PCSX2/pcsx2/blob/master/COPYING.GPLv3",
+      "credits": "PCSX2 team; game data based on sonyindex.com, serialstation.com, psxdatacenter.com and redump.org",
+      "fields": "name, name-en, region, memcardFilters",
+      "use": "titles"
+    },
+    {
+      "id": "libretro",
+      "name": "libretro-database, Sony - PlayStation 2 (Redump)",
+      "url": "https://github.com/libretro/libretro-database/blob/master/metadat/redump/Sony%20-%20PlayStation%202.dat",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://github.com/libretro/libretro-database/blob/master/LICENSE",
+      "credits": "Redump contributors, via libretro-database (robloach/libretro-dats)",
+      "fields": "name, region, serial",
+      "use": "redumpNames"
+    }
+  ],
+  "art": [
+    {
+      "id": "xlenore",
+      "name": "xlenore/ps2-covers",
+      "url": "https://github.com/xlenore/ps2-covers",
+      "license": null,
+      "credits": "xlenore; covers from pcsx2.net, psxdatacenter.com, gvcover.top and imkira3",
+      "use": "front covers by serial (COV)"
+    },
+    {
+      "id": "libretro",
+      "name": "libretro-thumbnails, Sony - PlayStation 2",
+      "url": "https://github.com/libretro-thumbnails/Sony_-_PlayStation_2",
+      "license": null,
+      "credits": "libretro-thumbnails contributors",
+      "use": "front covers by Redump name (COV)"
+    }
+  ]
+}

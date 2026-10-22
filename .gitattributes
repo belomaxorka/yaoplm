@@ -4,3 +4,4 @@
 crates/**/tests/golden/** binary
 *.png binary
 *.bin binary
+*.gz binary
