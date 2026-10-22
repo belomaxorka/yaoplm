@@ -2,14 +2,17 @@
 //! and the plan → confirm → execute engine for every write.
 //!
 //! - [`scan_library`] and [`image_info`] read what OPL would see.
-//! - [`exec::execute`] runs a [`plan::Plan`] with a journal, rollback before
-//!   each commit point and resume after it.
+//! - [`import::plan_import`] builds a [`plan::Plan`]; nothing is written
+//!   while planning.
+//! - [`exec::execute`] runs a plan with a journal, rollback before each
+//!   commit point and resume after it.
 //!
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
 pub mod device;
 pub mod exec;
 mod fsutil;
+pub mod import;
 mod info;
 pub mod journal;
 mod model;
