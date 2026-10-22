@@ -70,6 +70,37 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace
 
+  oracles:
+    name: OPL cross-checks (USBA_crc32 in C, ziso.py), fuzz targets build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # OPL is AFL-3.0: its files are fetched at test time, never committed
+      # (ADR-0002). Bump together with docs/research/02-opl-formats.md.
+      OPL_COMMIT: b3a2199795fe89ba7e2dd7b843354472dff2c3eb
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Fetch OPL src/system.c and pc/ziso.py
+        run: |
+          mkdir -p "$RUNNER_TEMP/opl/src" "$RUNNER_TEMP/opl/pc"
+          base="https://raw.githubusercontent.com/ps2homebrew/Open-PS2-Loader/$OPL_COMMIT"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/opl/src/system.c" "$base/src/system.c"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/opl/pc/ziso.py" "$base/pc/ziso.py"
+      - name: Python with lz4 for ziso.py
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet lz4==4.4.5
+      - name: Cross-check against OPL's own code
+        env:
+          YAOPLM_OPL_SRC: ${{ runner.temp }}/opl
+          YAOPLM_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: cargo test -p yaoplm-formats --test opl_oracles -- --ignored
+      - name: Fuzz targets compile (they run weekly in fuzz.yml)
+        run: cargo check --manifest-path fuzz/Cargo.toml
+
   web:
     name: Web (lint, typecheck, unit tests, build)
     runs-on: ubuntu-latest
