@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Golden fixtures are byte-exact (CFG files use CRLF on purpose)
+crates/**/tests/golden/** binary
+*.png binary
+*.bin binary

@@ -1,0 +1,46 @@
+# Rust
+/target/
+**/target/
+*.pdb
+
+# Node / web
+node_modules/
+web/dist/
+apps/desktop/dist/
+*.tsbuildinfo
+.vite/
+playwright-report/
+test-results/
+
+# Tauri
+apps/desktop/src-tauri/gen/schemas/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Game images and test data must never be committed
+*.iso
+*.zso
+*.cso
+*.bin
+!crates/**/tests/golden/**/*.bin
+*.cue
+*.chd
+*.vcd
+ul.*.*
+/testdata/
+
+# Fuzzing
+fuzz/artifacts/
+fuzz/corpus/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
