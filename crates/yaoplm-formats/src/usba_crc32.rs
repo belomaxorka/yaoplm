@@ -115,6 +115,14 @@ mod tests {
             (&z(32), 0xC5B9_1150),
             (&z(33), 0x92A4_6C81),
             (&z(60), 0x92A4_6C81),
+            ("AG", 0x017A_9F71),
+            ("Test Game", 0x1C9B_6AE0),
+            // From ulmake's test suite, via JO0812/TinyPS2Manager@b1b10794
+            // internal/usbextreme/split_test.go and gecm0/POUM core/crc.rs.
+            ("f", 0x8433_E5CC),
+            ("F", 0xA490_D3EA),
+            (&format!("f{}", "o".repeat(31)), 0x84BA_9D95),
+            (&format!("F{}", "O".repeat(31)), 0x8CAF_0142),
         ] {
             assert_eq!(usba_crc32(name.as_bytes()), crc, "{name:?}");
         }

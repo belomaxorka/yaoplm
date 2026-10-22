@@ -292,6 +292,16 @@ mod tests {
     }
 
     #[test]
+    fn utf8_bom_is_not_skipped() {
+        // Unlike OPL's CFG reader, ps2cnf.c has no BOM handling.
+        let bom = b"\xEF\xBB\xBF".as_slice();
+        let first_line = [bom, b"BOOT2 = cdrom0:\\A;1"].concat();
+        assert_eq!(opl_startup(&first_line), Err(CnfError::NoBoot2));
+        let second_line = [bom, b"\nBOOT2 = cdrom0:\\A;1"].concat();
+        assert_eq!(opl_startup(&second_line).as_deref(), Ok("A"));
+    }
+
+    #[test]
     fn prefix_match_needs_equals() {
         assert_eq!(id("BOOT2X = cdrom0:\\A;1"), Err(CnfError::MissingEquals));
         assert_eq!(id("BOOT2 cdrom0:\\A;1"), Err(CnfError::MissingEquals));

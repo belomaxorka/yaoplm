@@ -145,6 +145,9 @@ fn usba_crc32_matches_opl_c_function() {
         vec![b'Z'; 32],
         vec![b'Z'; 33],
         vec![b'Z'; 60],
+        b"AG".to_vec(),
+        b"f".to_vec(),
+        format!("F{}", "O".repeat(31)).into_bytes(),
     ];
     let mut rng = XorShift(0x5EED_0F0C_0FFE_E001);
     for _ in 0..5000 {
