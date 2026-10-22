@@ -9,6 +9,7 @@ Background research done before development started. Facts were checked against 
 | 03 | [data-sources.md](03-data-sources.md) | Cover-art, metadata, Redump, GameIndex, compatibility lists, cheats. Licences, auth, limits, recommended priority |
 | 04 | [stack.md](04-stack.md) | Tauri 2 vs Wails v3 vs Electron vs others, Rust/Go library availability, CI/signing, testing, repo layout, risks |
 | 05 | [oplnova-audit.md](05-oplnova-audit.md) | Source audit of OPLNova. "RIP" = RiptOPL art formats and what supporting them takes; §3.4 has the RiptOPL author's art spec verbatim |
+| 06 | [device-formatting.md](06-device-formatting.md) | Preparing USB sticks and SD cards for OPL, MX4SIO and memory card emulators: filesystems, partitioning, 512-byte sectors, cluster sizes, per-OS device access, own Rust formatter, safety pipeline (SPEC DEV-2, DEV-3) |
 | 07 | [loaders-and-boot.md](07-loaders-and-boot.md) | Loader catalogue (OPL, forks, NHDDL/Neutrino), boot setups (FreeMcBoot, PS2BBL, MX4SIO, MMCE emulators), where ELFs go (SPEC LDR-*) |
 | — | [REFERENCES.md](REFERENCES.md) | Index of reference repositories (local clones in `D:\yaoplm-testdata\refs\`) and forum threads (ADR-0015) |
 
