@@ -143,7 +143,7 @@ SYSTEM.CNF parsing (`src/ps2cnf.c` `ps2cnfGetBootFile`):
 
 Example: `BOOT2 = cdrom0:\SLUS_200.62;1` gives `SLUS_200.62`.
 
-Consequences:
+Consequences (more edge cases in research/08 §2–3: a missing `:`, a BOM, NUL bytes, the exact `SYSTEM.CNF;1` lookup):
 
 - An image with no `BOOT2` line (PS1 disc, DVD video, corrupt image) **silently disappears** from the list.
 - An ELF in a sub-folder (`cdrom0:\DATA\MAIN.ELF;1`) gives the useless ID `DATA\MAIN.E` [D].
@@ -242,13 +242,13 @@ This is **not** standard CRC-32 (zlib/IEEE).
    - start with `crc = t << 24` (signed 32-bit),
    - repeat 8 times: if the top bit **is set**, `crc <<= 1`; otherwise `crc = (crc << 1) ^ 0x04C11DB7`. This is the inverse of the usual condition.
    - store the result at `tab[255 - t]`.
-2. `crc` is **not reset** before hashing. It starts with the value left by the last table iteration, `t = 255` (= `tab[0]`).
+2. `crc` is **not reset** before hashing. It starts with the value left by the last table iteration, `t = 255` (= `tab[0]`), which is 0.
 3. Bytes are processed **including the terminating NUL**, `crc = tab[b ^ ((crc >> 24) & 0xFF)] ^ ((crc << 8) & 0xFFFFFF00)`. The loop stops after the NUL or after 33 bytes (condition `count <= 32`).
 4. No final XOR. The result is formatted as `%08X`.
 5. The parameter is `const char *`, which is signed on the EE. A byte ≥0x80 becomes a negative index into the table (undefined behaviour). **Restrict ul names to 7-bit ASCII.**
 6. The hash input is the name **as stored in ul.cfg**, at most 32 characters. OPL hashes the NUL-terminated copy `g->name[33]`.
 
-Python port, written for this report and faithful to the steps above [D]. **Validate it against a known USBUtil/OPL-created set before release; no test vector was computed here**:
+Python port, written for this report and faithful to the steps above [D]. The Rust port in `yaoplm-formats` was checked against OPL's own C function on 5,000+ names; test vectors are in research/08 §4:
 ```python
 def usba_crc32(name: bytes) -> int:
     tab = [0] * 256
@@ -294,7 +294,8 @@ def ul_chunk_name(name: str, game_id: str, part: int) -> str:
 ### 6.1 Text format [V] `src/config.c`
 - One `key=value` per line. Leading spaces and tabs are skipped. The key is the text before the first `=` and the value is the rest of the line. **Trailing whitespace is not trimmed.**
 - Section syntax: a line `name:` with no `=` sets a prefix. Following **indented** lines become `name_key`, and any non-indented line clears the prefix. Themes use this (`main0:` then `\ttype=Background`).
-- There is no comment syntax. A `#` line without `=` is logged as malformed.
+- Lines whose first byte is `#` are comments: `readFileBuffer()` (`src/util.c`) skips them, so `#key=value` lines in a file are never loaded. An indented `#` line is parsed normally. (Corrected 2026-10-22, see research/08 §5.)
+- A UTF-8 BOM at the start of the file is skipped.
 - Written lines use `"%s=%s\r\n"` (**CRLF**). Keys starting with `#` are **never written**: they are runtime-only values injected by OPL.
 - Limits: `CONFIG_KEY_NAME_LEN 32` (key ≤31 chars), `CONFIG_KEY_VALUE_LEN 256` (value ≤255 chars). Integers are written with `%d` and read with `atoi`.
 - Reads use a 4096-byte buffer.

@@ -43,11 +43,11 @@
 | UI-компоненты | shadcn/ui + Tailwind CSS | | без тяжёлых CSS-эффектов (WebKitGTK) |
 | Роутинг | React Router (library mode) | 7.x | |
 | i18n | react-i18next | | языки `en`, `ru` |
-| ISO9660 | hadris-iso | 2.5 | чтение и запись (запись нужна и для фикстур) |
+| ISO9660 | свой код (ADR-0016) | — | ридер повторяет isofs OPL; генератор фикстур в `yaoplm-test-support` |
 | CHD | chd | 0.4 | pure Rust, за фичей `chd` |
 | Архивы | zip 9, sevenz-rust2 0.24 | | RAR — `unrar` за фичей `rar` (лицензия!) |
 | Хеши | crc32fast 1.5, sha1 0.11, md-5 0.11 | | один проход чтения, параллельные хешеры |
-| ZSO | lz4_flex 0.14 | | формат пишем сами (24-байтный заголовок) |
+| ZSO | lz4_flex 0.14 | | формат пишем сами (24-байтный заголовок); режима LZ4 HC нет, поэтому файлы чуть больше, чем у `ziso.py -c 9` |
 | Картинки | image 0.25, fast_image_resize 6 | | PNG, позже 8-битная палитра для RiptOPL |
 | XML / YAML | quick-xml 0.42; serde_norway или serde_yaml_ng | | `serde_yaml` архивирован, `serde_yml` небезопасен — не используем |
 | HTTP | reqwest 0.13 (rustls) | | ретраи, лимиты запросов, ETag |
