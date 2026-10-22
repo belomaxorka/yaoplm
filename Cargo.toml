@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/yaoplm-core",
+    "crates/yaoplm-formats",
+    "crates/yaoplm-hash",
+    "crates/yaoplm-device",
+    "crates/yaoplm-net",
+    "crates/yaoplm-test-support",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/belomaxorka/yaoplm"
+publish = false
+
+[workspace.dependencies]
+yaoplm-api = { path = "crates/yaoplm-api" }
+yaoplm-core = { path = "crates/yaoplm-core" }
+yaoplm-device = { path = "crates/yaoplm-device" }
+yaoplm-formats = { path = "crates/yaoplm-formats" }
+yaoplm-hash = { path = "crates/yaoplm-hash" }
+yaoplm-net = { path = "crates/yaoplm-net" }
+yaoplm-test-support = { path = "crates/yaoplm-test-support" }
+
+anyhow = "1.0.104"
+axum = { version = "0.8.9", features = ["ws"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+rust-embed = { version = "8.13.0", features = ["mime-guess"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = "2.12.5"
+tauri-build = "2.7.4"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ts-rs = "12.0.1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+expect_used = "warn"
+todo = "warn"
+unwrap_used = "warn"
