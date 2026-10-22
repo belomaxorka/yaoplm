@@ -136,6 +136,19 @@ async fn token_is_enforced_when_configured() {
 }
 
 #[tokio::test]
+async fn token_allows_reverse_proxy_host() {
+    let body = r#"{"type":"Ping"}"#;
+    let request = Request::post("/api/rpc")
+        .header(header::HOST, "ps2.home.example")
+        .header(header::ORIGIN, "https://ps2.home.example")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, "Bearer s3cret")
+        .body(Body::from(body))
+        .unwrap();
+    assert_eq!(send(state(Some("s3cret")), request).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn unknown_api_route_is_not_the_spa() {
     let request = Request::get("/api/nope")
         .header(header::HOST, HOST)

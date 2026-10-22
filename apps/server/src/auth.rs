@@ -9,13 +9,14 @@ use yaoplm_api::ApiError;
 use crate::AppState;
 use crate::rpc::error_response;
 
-/// Guards `/api` (ADR-0009): same-origin requests only, loopback `Host` when
-/// listening on loopback, and the token when one is configured.
+/// Guards `/api` (ADR-0009, ADR-0012): same-origin requests only, the token
+/// when one is configured, and without a token a loopback `Host` (DNS
+/// rebinding cannot forge a token, so a reverse proxy may pass its own host).
 pub async fn require(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let config = state.config();
     let headers = request.headers();
 
-    if config.loopback_only && !host_is_loopback(headers) {
+    if config.loopback_only && config.token.is_none() && !host_is_loopback(headers) {
         return forbidden("Host header is not a loopback address");
     }
     if !origin_matches_host(headers) {

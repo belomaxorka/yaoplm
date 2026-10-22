@@ -23,10 +23,10 @@ use yaoplm_api::{Api, JobEvent, Subscription};
 pub struct Config {
     /// Required on every `/api` request when set.
     pub token: Option<String>,
-    /// Library roots the UI may open. Nothing outside them is reachable.
+    /// Allow-list of library roots the UI may open.
     pub roots: Vec<PathBuf>,
-    /// The server listens on loopback only, so `/api` also rejects foreign
-    /// `Host` headers (DNS rebinding).
+    /// The server listens on loopback only. Without a token, `/api` then
+    /// also rejects foreign `Host` headers (DNS rebinding).
     pub loopback_only: bool,
 }
 
