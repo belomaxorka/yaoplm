@@ -459,6 +459,7 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
         id: job,
         kind: yaoplm_api::jobs::JobKind::ExecutePlan,
         title: String::new(),
+        root: None,
         status: JobStatus::Failed,
         done: 0,
         total: None,
@@ -466,6 +467,7 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
         item: None,
         result: None,
         error: Some(yaoplm_api::ApiError::internal("the job vanished")),
+        log: Vec::new(),
     });
     if *line.lock().unwrap_or_else(|e| e.into_inner()) {
         eprintln!();

@@ -2,13 +2,18 @@
 import type { ApiError } from "./ApiError";
 import type { JobId } from "./JobId";
 import type { JobKind } from "./JobKind";
+import type { JobLogEntry } from "./JobLogEntry";
 import type { JobResult } from "./JobResult";
 import type { JobStatus } from "./JobStatus";
 
 /**
  * A job as front ends see it.
  */
-export type JobInfo = { id: JobId, kind: JobKind, title: string, status: JobStatus, 
+export type JobInfo = { id: JobId, kind: JobKind, title: string, 
+/**
+ * The device the job works on, when it has one.
+ */
+root: string | null, status: JobStatus, 
 /**
  * Bytes for plans, items for scans.
  */
@@ -24,4 +29,8 @@ item: string | null,
 /**
  * Set once the job finished; `ListJobs` leaves it out.
  */
-result?: JobResult, error: ApiError | null, };
+result?: JobResult, error: ApiError | null, 
+/**
+ * Transactions and steps so far (plans only); `ListJobs` leaves it out.
+ */
+log: Array<JobLogEntry>, };

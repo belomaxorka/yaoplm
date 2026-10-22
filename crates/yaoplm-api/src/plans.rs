@@ -183,7 +183,7 @@ fn format(format: &str) -> GameFormat {
     }
 }
 
-fn step(plan: &core::Plan, step: &Step) -> PlanStep {
+pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
     let source = |index: usize| plan.sources.get(index).map(|s| display_path(&s.path));
     let base = |op, path: &RelPath| PlanStep {
         op,

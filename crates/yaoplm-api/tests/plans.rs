@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use yaoplm_api::jobs::{JobResult, JobStatus, TxOutcome};
+use yaoplm_api::jobs::{JobLogEntry, JobResult, JobStatus, StepLogState, TxLogState, TxOutcome};
 use yaoplm_api::{Api, ErrorCode, JobEvent, JobId, Request, Response};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
@@ -241,4 +241,133 @@ fn recovery_plans_through_the_api() {
         panic!()
     };
     assert_eq!(jobs.len(), 1);
+}
+
+#[test]
+fn job_log_reports_transactions_and_steps() {
+    let s = setup();
+    let api = Api::new();
+    let events = Arc::new(Mutex::new(Vec::<JobEvent>::new()));
+    let log = Arc::clone(&events);
+    let _sub = api.subscribe(move |e: &JobEvent| log.lock().unwrap().push(e.clone()));
+
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": s.device, "sources": [s.sources.join("Retail.iso")]}),
+    )
+    .unwrap();
+    let started = call(&api, json!({"type": "ExecutePlan", "plan": plan["id"]})).unwrap();
+    let job: JobId = serde_json::from_value(started["job"].clone()).unwrap();
+    let info = api.jobs().wait(job).unwrap();
+    assert_eq!(info.status, JobStatus::Finished);
+    assert_eq!(info.root.as_deref(), plan["root"].as_str());
+
+    // Every transaction is logged as started and done, with the plan's own
+    // title, and every step as started and then done.
+    let txs = plan["transactions"].as_array().unwrap();
+    let states: Vec<String> = info
+        .log
+        .iter()
+        .map(|entry| match entry {
+            JobLogEntry::Transaction {
+                state,
+                title,
+                index,
+                ..
+            } => {
+                assert_eq!(Some(title.as_str()), txs[*index as usize]["title"].as_str());
+                format!("tx{index}:{state:?}")
+            }
+            JobLogEntry::Step {
+                op, state, path, ..
+            } => format!("{op:?}:{state:?}:{path}"),
+        })
+        .collect();
+    assert_eq!(states.first().map(String::as_str), Some("tx0:Started"));
+    assert_eq!(
+        states.last().map(String::as_str),
+        Some(format!("tx{}:Done", txs.len() - 1).as_str())
+    );
+    let write_started = states
+        .iter()
+        .position(|s| s.starts_with("WriteFile:Started:CD/"))
+        .expect("the write step is logged");
+    assert_eq!(
+        states[write_started + 1],
+        states[write_started].replace("Started", "Done")
+    );
+    assert!(states[1].starts_with("CreateDir:Started:"), "{states:?}");
+    let steps: usize = txs
+        .iter()
+        .map(|tx| tx["steps"].as_array().unwrap().len())
+        .sum();
+    assert_eq!(states.len(), 2 * txs.len() + 2 * steps);
+    let published = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|e| matches!(e, JobEvent::Log { job: id, .. } if *id == job))
+        .count();
+    assert_eq!(published, info.log.len());
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, JobEvent::Queued { job: id, root: Some(_), .. } if *id == job))
+    );
+
+    // ListJobs leaves the log out; GetJob has it.
+    let Response::Jobs { jobs } = api.dispatch(Request::ListJobs).unwrap() else {
+        panic!()
+    };
+    assert!(jobs.iter().all(|j| j.log.is_empty()));
+    let Response::JobState(state) = api.dispatch(Request::GetJob { job }).unwrap() else {
+        panic!()
+    };
+    assert_eq!(state.log.len(), states.len());
+
+    // A failed step is logged with its error, and the transaction rolls back.
+    let library = scan(&api, &s.device);
+    let retail = library["games"][0]["path"].as_str().unwrap().to_owned();
+    let plan = call(
+        &api,
+        json!({"type": "RenameGame", "root": s.device, "game": {"kind": "image", "path": retail}, "title": "Taken"}),
+    )
+    .unwrap();
+    fs::write(
+        Path::new(&s.device).join("CD/SLUS_200.62.Taken.iso"),
+        b"someone else's file",
+    )
+    .unwrap();
+    let started = call(&api, json!({"type": "ExecutePlan", "plan": plan["id"]})).unwrap();
+    let job: JobId = serde_json::from_value(started["job"].clone()).unwrap();
+    let info = api.jobs().wait(job).unwrap();
+    let Some(JobResult::Execution(report)) = &info.result else {
+        panic!("{info:?}");
+    };
+    assert_eq!(report.outcomes, [TxOutcome::RolledBack]);
+    assert!(report.error.is_some());
+    let failed = info.log.iter().find_map(|entry| match entry {
+        JobLogEntry::Step {
+            state: StepLogState::Failed,
+            error,
+            ..
+        } => error.clone(),
+        _ => None,
+    });
+    assert!(
+        failed
+            .as_deref()
+            .is_some_and(|e| e.contains("already exists")),
+        "{:?}",
+        info.log
+    );
+    assert!(matches!(
+        info.log.last(),
+        Some(JobLogEntry::Transaction {
+            state: TxLogState::RolledBack,
+            ..
+        })
+    ));
 }

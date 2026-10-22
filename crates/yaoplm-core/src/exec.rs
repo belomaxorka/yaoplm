@@ -32,6 +32,43 @@ pub struct Progress {
     pub total: u64,
 }
 
+/// How a transaction ended, as reported while the plan runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxEvent {
+    Started,
+    Done,
+    RolledBack,
+    Interrupted,
+}
+
+/// What happened to one step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepEvent {
+    Started,
+    Done,
+    Failed(String),
+    /// Rolled back after a failure or a cancel.
+    Undone,
+}
+
+/// Everything the executor reports while it runs: byte progress, plus the
+/// start and end of every transaction and step for a live log in the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event<'a> {
+    Progress(&'a Progress),
+    Transaction {
+        index: usize,
+        title: &'a str,
+        state: TxEvent,
+    },
+    Step {
+        transaction: usize,
+        index: usize,
+        step: &'a Step,
+        state: StepEvent,
+    },
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExecError {
     #[error("the plan cannot run: {0}")]
@@ -197,14 +234,31 @@ struct Runner<'a, 'b> {
     mode: Mode,
     done: u64,
     total: u64,
-    progress: &'a mut dyn FnMut(&Progress),
+    events: &'a mut dyn FnMut(Event<'_>),
     current: Progress,
 }
 
 impl Runner<'_, '_> {
     fn report(&mut self) {
         self.current.done = self.done;
-        (self.progress)(&self.current);
+        (self.events)(Event::Progress(&self.current));
+    }
+
+    fn step_event(&mut self, index: usize, step: &Step, state: StepEvent) {
+        (self.events)(Event::Step {
+            transaction: self.current.transaction,
+            index,
+            step,
+            state,
+        });
+    }
+
+    fn tx_event(&mut self, state: TxEvent) {
+        (self.events)(Event::Transaction {
+            index: self.current.transaction,
+            title: &self.current.title,
+            state,
+        });
     }
 
     /// Runs one step; in resume mode a step already done is skipped. A
@@ -353,11 +407,11 @@ impl Runner<'_, '_> {
         let _ = file.preallocate(len);
         let start = self.done;
         let result = {
-            let progress = &mut *self.progress;
+            let events = &mut *self.events;
             let current = &mut self.current;
             copy_exact(&mut reader, &mut *file, len, self.ctx.cancel, &mut |n| {
                 current.done = start + n;
-                progress(current);
+                events(Event::Progress(current));
             })
         };
         match result {
@@ -392,12 +446,19 @@ impl Runner<'_, '_> {
         let saved = self.mode;
         self.mode = Mode::Resume;
         let mut first_error = None;
-        for step in steps.iter().rev() {
+        for (index, step) in steps.iter().enumerate().rev() {
+            let mut failed = None;
             for undo_step in undo(step) {
                 if let Err(err) = self.run(&undo_step) {
+                    failed.get_or_insert(err.to_string());
                     first_error.get_or_insert(err);
                 }
             }
+            let state = match failed {
+                None => StepEvent::Undone,
+                Some(error) => StepEvent::Failed(error),
+            };
+            self.step_event(index, step, state);
         }
         self.mode = saved;
         first_error.map_or(Ok(()), Err)
@@ -478,6 +539,19 @@ fn preflight(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
 /// Runs `plan`. Never panics on device errors: the report says what
 /// happened and whether a journal was left for recovery.
 pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progress)) -> Report {
+    execute_with_events(plan, ctx, &mut |event| {
+        if let Event::Progress(p) = event {
+            progress(p);
+        }
+    })
+}
+
+/// [`execute`], reporting every transaction and step as well as progress.
+pub fn execute_with_events(
+    plan: &Plan,
+    ctx: &Context<'_>,
+    events: &mut dyn FnMut(Event<'_>),
+) -> Report {
     let count = plan.transactions.len();
     let mut report = Report {
         outcomes: vec![Outcome::NotStarted; count],
@@ -508,7 +582,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
         mode,
         done: 0,
         total: plan.write_bytes(),
-        progress,
+        events,
         current: Progress {
             transaction: 0,
             transactions: count,
@@ -533,6 +607,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
         runner.current.transaction = index;
         runner.current.title = tx.title.clone();
         runner.report();
+        runner.tx_event(TxEvent::Started);
         let committed_at_start = tx.commit == 0;
         journal.progress[index] = TxProgress {
             state: if committed_at_start {
@@ -552,13 +627,16 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
                     failure = Some((i, ExecError::Cancelled, false));
                     break;
                 }
+                runner.step_event(i, step, StepEvent::Started);
                 if let Err(err) = runner.run(step) {
+                    runner.step_event(i, step, StepEvent::Failed(err.to_string()));
                     // A precondition failure did nothing; anything else may
                     // have left a partial result.
                     let touched = !matches!(err, ExecError::Precondition(_));
                     failure = Some((i, err, touched));
                     break;
                 }
+                runner.step_event(i, step, StepEvent::Done);
                 journal.progress[index].done = i + 1;
                 if i + 1 == tx.commit {
                     journal.progress[index].state = TxState::Committed;
@@ -574,6 +652,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
             None => {
                 journal.progress[index].state = TxState::Done;
                 report.outcomes[index] = Outcome::Done;
+                runner.tx_event(TxEvent::Done);
                 if let Err(err) = journal::save(ctx.fs, &journal) {
                     report.error = Some(ExecError::io("cannot write the journal")(err));
                     report.journal = Some(journal.id.clone());
@@ -594,6 +673,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
                             done: 0,
                         };
                         report.outcomes[index] = Outcome::RolledBack;
+                        runner.tx_event(TxEvent::RolledBack);
                         if journal::save(ctx.fs, &journal).is_err() {
                             report.journal = Some(journal.id.clone());
                             return report;
@@ -601,6 +681,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
                     }
                     Err(rollback_err) => {
                         report.outcomes[index] = Outcome::Interrupted;
+                        runner.tx_event(TxEvent::Interrupted);
                         report.journal = Some(journal.id.clone());
                         report.error.get_or_insert(rollback_err);
                         return report;
@@ -610,6 +691,7 @@ pub fn execute(plan: &Plan, ctx: &Context<'_>, progress: &mut dyn FnMut(&Progres
             }
             Some((_, err, _)) => {
                 report.outcomes[index] = Outcome::Interrupted;
+                runner.tx_event(TxEvent::Interrupted);
                 report.error = Some(err);
                 report.journal = Some(journal.id.clone());
                 return report;
