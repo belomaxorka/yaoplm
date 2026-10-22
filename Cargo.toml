@@ -8,6 +8,7 @@ members = [
     "crates/yaoplm-net",
     "crates/yaoplm-api",
     "crates/yaoplm-test-support",
+    "apps/cli",
 ]
 
 [workspace.package]
