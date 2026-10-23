@@ -635,7 +635,6 @@ function GameGrid({ games }: { games: Game[] }) {
 }
 
 function GameCard({ game, index }: { game: Game; index: number }) {
-  const { t } = useTranslation();
   return (
     <Link
       to={`/library/game/${encodeURIComponent(gameKey(game))}`}
@@ -645,24 +644,19 @@ function GameCard({ game, index }: { game: Game; index: number }) {
       aria-label={`${game.title}, ${game.startup}`}
     >
       <GameCover game={game} className="shrink-0 transition-transform group-hover:scale-[1.02]" />
-      {/* A fixed height, part of the row height in `gridLayout`: text never spills into the next row. */}
-      <div className="h-14 min-w-0 overflow-hidden">
+      {/* A fixed height, part of the row height in `gridLayout`: text never spills into the next row.
+          Two lines: the title, then the ID OPL shows with the marks; the size is in the list view. */}
+      <div className="h-9 min-w-0 overflow-hidden">
         <div className="truncate text-sm font-medium" title={game.title}>
           {game.title}
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="truncate font-mono">{game.startup}</span>
-          <span className="flex shrink-0 items-center gap-1 tabular-nums">
+          <span className="flex shrink-0 items-center gap-1">
+            {game.warnings.length > 0 && <WarningMark count={game.warnings.length} />}
             {game.dump && <DumpMark game={game} />}
-            {formatBytes(game.size, 1)}
           </span>
         </div>
-        {game.warnings.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 truncate text-xs text-amber-700 dark:text-amber-400">
-            <AlertTriangle className="size-3 shrink-0" aria-hidden />
-            {t("library.warningCount", { count: game.warnings.length })}
-          </div>
-        )}
       </div>
     </Link>
   );
@@ -730,6 +724,18 @@ function GameTable({ games }: { games: Game[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** Warnings as an icon; the game card lists them. */
+function WarningMark({ count }: { count: number }) {
+  const { t } = useTranslation();
+  const label = t("library.warningCount", { count });
+  return (
+    <span className="flex items-center text-amber-700 dark:text-amber-400" title={label} data-testid="warning-mark">
+      <AlertTriangle className="size-3.5" aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 

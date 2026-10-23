@@ -91,20 +91,20 @@ describe("grid layout", () => {
   });
 
   it("grows the row with the column, so a card never reaches the next row", () => {
-    // A card: 8 px padding on each side, the 7:10 cover, 8 px gap, 56 px of text.
+    // A card: 8 px padding on each side, the 7:10 cover, 8 px gap, 36 px of text.
     for (let width = 300; width <= 2600; width += 37) {
       const { columns, rowHeight } = gridLayout(width);
       const column = (width - GRID_GAP * (columns - 1)) / columns;
-      const card = 8 + ((column - 16) * 10) / 7 + 8 + 56 + 8;
+      const card = 8 + ((column - 16) * 10) / 7 + 8 + 36 + 8;
       expect(rowHeight).toBeGreaterThanOrEqual(card + GRID_GAP);
       expect(rowHeight).toBeLessThan(card + GRID_GAP + 1);
     }
   });
 
   it("follows the root font size", () => {
-    // 500 px: three 156 px columns. At 20 px per rem the padding is 10 px and the text 70 px.
+    // 500 px: three 161⅓ px columns. At 20 px per rem the padding is 10 px and the text 45 px.
     expect(gridLayout(500, 20).columns).toBe(3);
-    expect(gridLayout(500, 20).rowHeight).toBe(Math.ceil(10 + ((156 - 20) * 10) / 7 + 10 + 70 + 10) + GRID_GAP);
+    expect(gridLayout(500, 20).rowHeight).toBe(Math.ceil(10 + (((500 - 2 * GRID_GAP) / 3 - 20) * 10) / 7 + 10 + 45 + 10) + GRID_GAP);
   });
 });
 

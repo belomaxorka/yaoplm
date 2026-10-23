@@ -1,11 +1,12 @@
 /** About OPL's own 140 px cover plus the card's padding. */
 export const GRID_MIN_COLUMN = 150;
-export const GRID_GAP = 16;
+/** Between cards; their own padding adds to it, so covers end up 24 px apart. */
+export const GRID_GAP = 8;
 /** The card around the cover: `p-2` on each side and `gap-2` under the cover, in rem. */
 const CARD_PADDING_REM = 0.5;
 const CARD_GAP_REM = 0.5;
-/** Title, ID and size, warning: `h-14`, kept even when there is no warning. */
-const CARD_TEXT_REM = 3.5;
+/** The title, then the ID with the warning and dump marks: `h-9`. */
+const CARD_TEXT_REM = 2.25;
 /** OPL's COV proportions (140×200), as `GameCover` draws them. */
 const COVER_RATIO = 10 / 7;
 
