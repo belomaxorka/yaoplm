@@ -72,9 +72,14 @@ for (const language of ["en", "ru"] as const) {
         await browser.getByRole("button", { name: "sources" }).click();
         await browser.getByRole("checkbox", { name: /Lf Game\.iso/ }).check();
         await browser.getByRole("checkbox", { name: /Disc Image\.cue/ }).check();
+        await browser.getByRole("checkbox", { name: /New Game\.cue/ }).check();
         await browser.getByTestId("browser-add").click();
         await page.getByTestId("preview-plan").click();
-        await expect(page.getByTestId("import-plan").getByTestId("plan-transaction")).toHaveCount(2);
+        // The cover search runs under the plan, which comes back with the cover (ART-8).
+        await expect(page.getByTestId("cover-search")).toHaveAttribute("data-status", "done");
+        await expect(page.getByTestId("import-plan").getByTestId("plan-transaction")).toHaveCount(4);
+        await expect(page.getByTestId("plan-confirm")).toBeEnabled();
+        await page.getByTestId("import-plan").scrollIntoViewIfNeeded();
         await shot("import-plan");
         await page.getByTestId("import-plan").getByRole("button", { name: language === "en" ? "Cancel" : "Отмена" }).click();
 

@@ -165,6 +165,24 @@ fn main() -> ExitCode {
         &mirror.join("libretro/Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
         &cover(256, 362, 110, image::ImageFormat::Png),
     );
+    // A CD to add, dumped raw as Redump does: xlenore has its cover and the
+    // DAT its data track, so adding it writes the cover and verifies it
+    // (ART-8, GAME-5).
+    let new_game = to_bin(
+        &yaoplm_test_support::fixtures::boot_iso(
+            yaoplm_test_support::fixtures::placeholder_elf(),
+            "SLUS_299.99",
+            0,
+        )
+        .build()
+        .to_vec(),
+        RawMode::Mode2_2352,
+        0,
+    );
+    write(
+        &mirror.join("xlenore/covers/default/SLUS-29999.jpg"),
+        &cover(300, 420, 160, image::ImageFormat::Jpeg),
+    );
     // A Redump DAT to import (GAME-5): the retail game and the DVD-9 game
     // match, the split game's ID is listed with other bytes (a bad dump),
     // the uppercase one is not listed at all.
@@ -172,7 +190,7 @@ fn main() -> ExitCode {
     let last = lf_damaged.len() - 1;
     lf_damaged[last] ^= 0xFF;
     write(
-        &mirror.join("redump/Sony - PlayStation 2 - Datfile (3) (2026-10-23 01-56-22).dat"),
+        &mirror.join("redump/Sony - PlayStation 2 - Datfile (4) (2026-10-23 01-56-22).dat"),
         DatBuilder::new()
             .iso(
                 "Retail Game (USA)",
@@ -189,6 +207,7 @@ fn main() -> ExitCode {
                 Some("SCES-50003"),
                 &lf_damaged,
             )
+            .bin_cue("New Game (USA)", Some("SLUS-29999"), &new_game)
             .build()
             .as_bytes(),
     );
@@ -222,6 +241,11 @@ fn main() -> ExitCode {
     write(
         &sources.join("folder/SLUS_200.62.Retail Copy.iso"),
         &Variant::Retail.build().to_vec(),
+    );
+    write(&sources.join("New Game.bin"), &new_game);
+    write(
+        &sources.join("New Game.cue"),
+        cue_sheet("New Game.bin", RawMode::Mode2_2352, 0).as_bytes(),
     );
     write(&sources.join("notes.txt"), b"not an image\n");
 
