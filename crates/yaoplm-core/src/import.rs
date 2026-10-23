@@ -425,7 +425,7 @@ impl Planner<'_> {
         if !name.is_ascii() {
             notices.push(Notice::warning(
                 "nonAsciiName",
-                "non-ASCII characters in the name may not display or open on the console",
+                "non-ASCII characters in the name: the console may garble it or fail to open the file",
             ));
         }
         let folder = self
@@ -682,7 +682,7 @@ pub fn plan_import(
     }
     if games == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
-            .push(Notice::error("nothingToImport", "no game to import"));
+            .push(Notice::error("nothingToImport", "no game to add"));
     }
     Ok(plan)
 }

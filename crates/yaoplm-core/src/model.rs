@@ -275,7 +275,7 @@ impl fmt::Display for Warning {
             }
             Self::NonAsciiName => write!(
                 f,
-                "non-ASCII characters in the name may not display or open on the console"
+                "non-ASCII characters in the name: the console may garble it or fail to open the file"
             ),
             Self::SmbNameTooLong(len) => write!(
                 f,

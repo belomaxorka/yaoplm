@@ -225,8 +225,13 @@ impl Planner<'_> {
             kind,
             startup,
         } = found;
-        let startup = startup
-            .ok_or_else(|| skip(&what, "noStartup", "cannot read the game ID from the image"))?;
+        let startup = startup.ok_or_else(|| {
+            skip(
+                &what,
+                "noStartup",
+                "OPL hides this image: no usable game ID",
+            )
+        })?;
         match kind {
             FoundKind::Image { path, name, len } => {
                 let current = match name.extension {
@@ -237,7 +242,7 @@ impl Planner<'_> {
                     return Err(skip(
                         &what,
                         "alreadyThatFormat",
-                        format!("the game is already a {}", target.label()),
+                        "the game is already in this format",
                     ));
                 }
                 let mut magic = [0u8; 4];
@@ -299,7 +304,11 @@ impl Planner<'_> {
             }
             FoundKind::Ul { record, .. } => {
                 if target == Target::Ul {
-                    return Err(skip(&what, "alreadyThatFormat", "the game is already ul"));
+                    return Err(skip(
+                        &what,
+                        "alreadyThatFormat",
+                        "the game is already in this format",
+                    ));
                 }
                 self.ul_to_image(&what, &record, &startup, target)
             }

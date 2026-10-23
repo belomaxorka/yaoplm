@@ -427,7 +427,7 @@ pub fn plan_rename(
             if state.info.remote {
                 notices.push(Notice::info(
                     "restartOpl",
-                    "OPL notices ul.cfg changes by size only: restart it to see the new name",
+                    "restart OPL to see the new name: it notices ul.cfg changes by size only",
                 ));
             }
             tx.title = format!("Rename {} to {title}", record.name());

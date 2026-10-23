@@ -17,10 +17,22 @@ export function useNoticeText() {
     // Codes are open-ended (the core may add one before the catalogue does),
     // so the key is looked up dynamically.
     const label: string = t(key as never);
-    // The core's message repeats a label without specifics only in case.
-    const same = notice.message.toLowerCase() === label.toLowerCase();
+    // A message without names or sizes in it is the English label: it adds
+    // nothing, in English or in a translation.
+    const english: string = t(key as never, { lng: "en" });
+    const message = plain(notice.message);
+    const same = message === plain(english) || message === plain(label);
     return { label, detail: same ? null : notice.message };
   };
+}
+
+/** Text without case, punctuation or runs of spaces, for comparing. */
+function plain(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[.,:;!?’']+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The worst level among notices, for a verdict badge. */
