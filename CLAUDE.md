@@ -87,7 +87,7 @@ Read before working:
   - small modules, one format per module in `yaoplm-formats`.
 - Each format module starts with a doc comment that links the research/02 section and the OPL source file it mirrors.
 - TS: strict mode, no `any`. API types come only from `web/src/api/generated/` (ts-rs output), never hand-written.
-- i18n (`docs/I18N.md`): every user-visible string goes through i18n, with keys in every supported language (`en`, `ru`) in the same commit as the feature, following the glossary, plural and typography rules there. A new notice code in the core needs `notices.<code>` in every language. `pnpm -C web test` checks key parity, plural forms, placeholders, duplicate keys, typography, untranslated copies and that every core notice code and keyed enum value has a translation; reread new strings in both languages before a PR.
+- i18n (`docs/I18N.md`): every user-visible string goes through i18n, with keys in every supported language (`en`, `ru`) in the same commit as the feature, following the glossary, plural and typography rules there. Texts the core shows to users are `Phrase`s (`yaoplm_core::Phrase::title`/`error` with named params), never English-only strings: the core renders English from the `en` catalogue, so a new key goes into `titles.*`/`errors.*` of every language in the same commit (ADR-0029). A new notice code in the core needs `notices.<code>` in every language. `pnpm -C web test` checks key parity, plural forms, placeholders, duplicate keys, typography, untranslated copies and that every core notice code and keyed enum value has a translation; reread new strings in both languages before a PR.
 - Keep comments sparse and factual: why, not what.
 
 ## Commands
