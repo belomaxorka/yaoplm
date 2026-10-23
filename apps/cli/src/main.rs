@@ -109,6 +109,17 @@ enum Command {
         /// is written and compared with the stored Redump DAT.
         #[arg(long)]
         no_verify: bool,
+        /// Look for the covers of the games being added (as `art fetch`
+        /// does) and write them together with the games.
+        #[arg(long)]
+        covers: bool,
+        /// With --covers: read a source from a folder with its repository
+        /// layout, xlenore=DIR or libretro=DIR. Repeatable.
+        #[arg(long = "mirror", value_name = "SOURCE=DIR", requires = "covers")]
+        mirrors: Vec<String>,
+        /// With --covers: skip a source, xlenore or libretro. Repeatable.
+        #[arg(long = "skip-source", value_name = "SOURCE", requires = "covers")]
+        skipped: Vec<String>,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -452,6 +463,9 @@ fn main() -> anyhow::Result<ExitCode> {
             ul,
             zso,
             no_verify,
+            covers,
+            mirrors,
+            skipped,
             title,
             media,
             name_style,
@@ -469,7 +483,7 @@ fn main() -> anyhow::Result<ExitCode> {
                     media: media.map(Into::into),
                 })
                 .collect();
-            let request = Request::PlanImport {
+            let mut request = Request::PlanImport {
                 root: text(&root),
                 sources: sources.iter().map(|s| absolute(s)).collect(),
                 profile: Some(apply.profile.into()),
@@ -483,7 +497,14 @@ fn main() -> anyhow::Result<ExitCode> {
                 overrides: (!overrides.is_empty()).then_some(overrides),
                 compress: Some(zso),
                 verify: Some(!no_verify),
+                covers: None,
             };
+            if covers {
+                let found = find_import_covers(&api, &request, &root, &mirrors, &skipped, &apply)?;
+                if let (Some(id), Request::PlanImport { covers, .. }) = (found, &mut request) {
+                    *covers = Some(id);
+                }
+            }
             plan_and_apply(&api, request, &apply)
         }
         Command::Convert {
@@ -681,6 +702,70 @@ fn main() -> anyhow::Result<ExitCode> {
     }
 }
 
+/// Plans `request` once to learn its games, then searches their covers
+/// (ART-8). The id of the cover set, or `None` when there is nothing to
+/// search or the search failed: the games are then added without covers.
+fn find_import_covers(
+    api: &Api,
+    request: &Request,
+    root: &Path,
+    mirrors: &[String],
+    skipped: &[String],
+    apply: &Apply,
+) -> anyhow::Result<Option<String>> {
+    let plan = match api.dispatch(request.clone()) {
+        Ok(Response::Plan(plan)) => plan,
+        // The real planning call reports the problem.
+        _ => return Ok(None),
+    };
+    let games = plan.transactions.iter().any(|t| t.game.is_some());
+    let sources = art_sources(mirrors, skipped)?;
+    let job = games.then(|| {
+        api.dispatch(Request::FetchArt {
+            root: text(root),
+            profile: Some(apply.profile.into()),
+            scope: None,
+            games: None,
+            sources: (!sources.is_empty()).then_some(sources),
+            kind: None,
+            import: Some(plan.id.clone()),
+        })
+    });
+    let found = match job {
+        Some(Ok(Response::Job { job })) => {
+            let info = wait_job(api, job, io::stderr().is_terminal() && !apply.json);
+            match (info.status, info.result) {
+                (JobStatus::Finished, Some(JobResult::Covers(search))) => {
+                    if !apply.json {
+                        eprintln!(
+                            "Covers: {} found, {} not found, {} already on the device",
+                            search.found, search.missing, search.present
+                        );
+                    }
+                    Some(search.id)
+                }
+                _ => {
+                    let message = info
+                        .error
+                        .map_or_else(|| "the cover search failed".to_owned(), |e| e.message);
+                    eprintln!("yaoplm: {message}; the games are added without covers");
+                    None
+                }
+            }
+        }
+        Some(Err(error)) => {
+            eprintln!(
+                "yaoplm: {}; the games are added without covers",
+                error.message
+            );
+            None
+        }
+        _ => None,
+    };
+    let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
+    Ok(found)
+}
+
 /// `xlenore=DIR` and `--skip-source` flags as the API wants them.
 fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<ArtSourceSetting>> {
     let mut settings = Vec::new();
@@ -726,6 +811,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                 games: (!games.is_empty()).then_some(games),
                 sources: (!sources.is_empty()).then_some(sources),
                 kind: None,
+                import: None,
             };
             let job = match api.dispatch(request) {
                 Ok(Response::Job { job }) => job,

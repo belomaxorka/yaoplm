@@ -514,3 +514,116 @@ fn the_default_data_dir_is_the_platform_folder_unless_overridden() {
     let custom = Api::new().with_data_dir("C:/custom");
     assert_eq!(custom.data_dir(), Path::new("C:/custom"));
 }
+
+/// Covers for games being added (ART-8): a search over an import plan,
+/// then the import planned again with the cover set. One confirmation
+/// writes the games and their covers.
+#[test]
+fn covers_found_for_an_import_land_with_the_games() {
+    let s = setup();
+    let incoming = s.mirror.parent().unwrap().join("incoming");
+    fs::create_dir_all(&incoming).unwrap();
+    // On the device already with a cover: nothing to search.
+    fs::write(
+        incoming.join("Retail.iso"),
+        Variant::Retail.build().to_vec(),
+    )
+    .unwrap();
+    // In the libretro mirror.
+    fs::write(incoming.join("Doa.iso"), Variant::LfOnly.build().to_vec()).unwrap();
+    // Nowhere.
+    fs::write(incoming.join("Big.iso"), Variant::Dvd9.build().to_vec()).unwrap();
+    let device = s.mirror.parent().unwrap().join("empty");
+    fs::create_dir_all(device.join("ART")).unwrap();
+    fs::write(
+        device.join("ART/SLUS_200.62_COV.png"),
+        image_bytes(140, 200, image::ImageFormat::Png),
+    )
+    .unwrap();
+    let device = device.to_string_lossy().into_owned();
+    let import = json!({
+        "type": "PlanImport",
+        "root": device,
+        "sources": [incoming.to_string_lossy()],
+    });
+    let first = call(&s.api, import.clone()).unwrap();
+    let search = wait(
+        &s.api,
+        &call(
+            &s.api,
+            json!({
+                "type": "FetchArt",
+                "root": device,
+                "sources": sources(&s.mirror),
+                "import": first["id"],
+            }),
+        )
+        .unwrap(),
+    );
+    assert_eq!(search.status, JobStatus::Finished, "{search:?}");
+    let Some(JobResult::Covers(found)) = search.result.clone() else {
+        panic!("expected a cover set: {:?}", search.result);
+    };
+    assert_eq!((found.found, found.missing, found.present), (1, 1, 1));
+    let lines = search
+        .log
+        .iter()
+        .filter(|e| matches!(e, JobLogEntry::Art { .. }))
+        .count();
+    assert_eq!(lines, 2, "one line per game searched");
+
+    let mut with_covers = import.clone();
+    with_covers["covers"] = json!(found.id);
+    let plan = call(&s.api, with_covers.clone()).unwrap();
+    assert_eq!(plan["executable"], true, "{plan}");
+    let writes: Vec<String> = plan["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["steps"].as_array().unwrap().clone())
+        .filter(|s| s["op"] == "writeFile")
+        .map(|s| s["path"].as_str().unwrap().to_owned())
+        .collect();
+    let doa = writes
+        .iter()
+        .position(|p| p == "CD/SCES_500.03.Doa.iso")
+        .unwrap();
+    assert_eq!(writes[doa + 1], "ART/SCES_500.03_COV.png", "{writes:?}");
+    assert!(!writes.iter().any(|p| p == "ART/SLUS_200.62_COV.png"));
+    // The cover nobody had is listed, the game is still added.
+    let skipped = plan["skipped"].as_array().unwrap();
+    assert!(
+        skipped
+            .iter()
+            .any(|s| s["path"].as_str().unwrap().starts_with("SLUS_212.18")),
+        "{skipped:?}"
+    );
+    // The set stays for the next re-plan (a title edited on the plan).
+    let again = call(&s.api, with_covers).unwrap();
+    assert_eq!(again["transactions"], plan["transactions"]);
+
+    let report = execute(&s.api, &again, false);
+    assert!(report.error.is_none(), "{report:?}");
+    let cover = fs::read(Path::new(&device).join("ART/SCES_500.03_COV.png")).unwrap();
+    let header = png_header(&cover).unwrap();
+    assert_eq!((header.width, header.height), (140, 200));
+
+    // Another device's plan, or one that is not an import, is refused.
+    let err = call(
+        &s.api,
+        json!({"type": "FetchArt", "root": s.device, "import": again["id"]}),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound, "{err:?}");
+    let other = call(&s.api, import.clone()).unwrap();
+    let err = call(
+        &s.api,
+        json!({"type": "FetchArt", "root": s.device, "import": other["id"]}),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::BadRequest, "{err:?}");
+    let mut stale = import;
+    stale["covers"] = json!("nope");
+    let err = call(&s.api, stale).unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+}

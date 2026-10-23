@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use yaoplm_device::fs::{DeviceFs, find_entry};
 use yaoplm_device::source::SourceFs;
+use yaoplm_formats::art::ArtKind;
 use yaoplm_formats::iso_name::{
     self, ImageExtension, NameError, NameFormat, NameStyle, TITLE_MAX, build_file_name,
     is_name_safe_startup, sanitize_title,
@@ -29,6 +30,7 @@ use yaoplm_formats::usba_crc32::usba_crc32;
 use yaoplm_formats::{LoaderProfile, Media, zso};
 use yaoplm_i18n::Phrase;
 
+use crate::art::{ArtFolder, ArtItem};
 use crate::device::{DeviceState, join, on_disk};
 use crate::plan::{
     Bytes, Check, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction,
@@ -74,6 +76,10 @@ pub struct ImportOptions {
     pub compress: bool,
     /// Hash every image while it is written, for a dump check (GAME-5).
     pub check: bool,
+    /// Pictures found for the games being added (ART-8): each is written
+    /// right after its game, once per game ID and kind, unless the device
+    /// already has that picture.
+    pub covers: Vec<ArtItem>,
 }
 
 /// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
@@ -261,6 +267,9 @@ struct Planner<'a> {
     sources: &'a dyn SourceFs,
     options: &'a ImportOptions,
     plan: Plan,
+    art: ArtFolder,
+    /// Pictures already planned, as lower-case ID and kind.
+    covered: HashSet<(String, ArtKind)>,
     /// Names claimed by this plan, lower-case, as `CD/x.iso` or `ul.x`.
     claimed: HashSet<String>,
     /// Game IDs on the device or in this plan.
@@ -377,9 +386,48 @@ impl Planner<'_> {
             }
         }
         tx.notices = notices;
+        let game = tx.game.clone();
         self.plan.transactions.push(tx);
         self.games += 1;
+        if let Some(game) = game {
+            self.plan_covers(&game);
+        }
         Ok(())
+    }
+
+    /// The pictures of `game` that the options carry, right after it.
+    fn plan_covers(&mut self, game: &GameInfo) {
+        let key = serial::lookup_key(&game.startup);
+        let items: Vec<&ArtItem> = self
+            .options
+            .covers
+            .iter()
+            .filter(|item| serial::lookup_key(&item.startup) == key)
+            .collect();
+        for item in items {
+            if !self
+                .covered
+                .insert((game.startup.to_lowercase(), item.kind))
+            {
+                continue;
+            }
+            // Named and shown as the game is added, whatever the search saw.
+            let item = ArtItem {
+                startup: game.startup.clone(),
+                title: game.title.clone(),
+                media: game.media,
+                format: game.format.clone(),
+                ..item.clone()
+            };
+            match self.art.write(&mut self.plan, self.sources, &item, false) {
+                Ok(Ok((tx, _))) => self.plan.transactions.push(tx),
+                Ok(Err(skipped)) => self.plan.skipped.push(skipped),
+                Err(err) => self.plan.skipped.push(skip(
+                    &item.file,
+                    Phrase::notice("unreadable").with("error", err.to_string()),
+                )),
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -633,12 +681,15 @@ pub fn plan_import(
     let folders = state.missing_folders()?;
     let (candidates, skipped) = expand_inputs(sources, inputs);
     plan.skipped = skipped;
+    let art = ArtFolder::read(fs, &state)?;
 
     let mut planner = Planner {
         state,
         sources,
         options,
         plan,
+        art,
+        covered: HashSet::new(),
         claimed: HashSet::new(),
         startups,
         ul_next: None,

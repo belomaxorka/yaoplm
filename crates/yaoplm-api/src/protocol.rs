@@ -189,6 +189,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
+        /// A cover set from `FetchArt` with `import` (ART-8): every game
+        /// gets its cover written right after it, in the same plan.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        covers: Option<String>,
     },
     /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
     /// form is deleted after the new one is complete, so executing needs
@@ -262,7 +267,9 @@ pub enum Request {
     },
     /// Finds covers for the games on a device (ART-1, ART-4): a job whose
     /// result is a plan to write them (`JobResult::Plan`). Network access
-    /// happens only here and only for the games in scope.
+    /// happens only here and only for the games in scope. With `import`,
+    /// the games are those an import plan adds (ART-8) and the result is a
+    /// cover set for `PlanImport.covers` (`JobResult::Covers`).
     FetchArt {
         root: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -284,6 +291,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         kind: Option<String>,
+        /// The id of an import plan: look for the covers of the games it
+        /// adds, `missing` scope (ART-8).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        import: Option<String>,
     },
     /// Plans writing a cover the user supplied (ART-3): a file on the host
     /// or image bytes, transcoded like a downloaded one.

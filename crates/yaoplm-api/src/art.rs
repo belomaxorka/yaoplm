@@ -92,6 +92,19 @@ pub enum ArtLogState {
     Failed,
 }
 
+/// What a cover search for an import plan found (ART-8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CoverSearch {
+    /// Pass to `PlanImport` as `covers`.
+    pub id: String,
+    pub found: u32,
+    pub missing: u32,
+    /// Games whose cover is on the device already.
+    pub present: u32,
+}
+
 /// A data or art source, for the About screen (`data/attribution.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -328,7 +341,7 @@ pub(crate) fn art_kind(kind: Option<&str>) -> Result<ArtKind, ApiError> {
 }
 
 /// A game as the fetch job needs it.
-struct Target {
+pub(crate) struct Target {
     startup: String,
     title: String,
     media: yaoplm_core::Media,
@@ -376,6 +389,53 @@ pub(crate) struct FetchParams {
     pub games: Option<Vec<String>>,
     pub sources: Vec<SourceConfig>,
     pub kind: ArtKind,
+    /// The games of an import plan, and how many have the picture already
+    /// (ART-8): the job then ends with a cover set, not a plan.
+    pub import: Option<(Vec<Target>, usize)>,
+}
+
+/// The games an import plan adds, once per ID, without those whose `kind`
+/// is on the device already (ART-8, scope `missing`).
+pub(crate) fn import_targets(
+    plans: &PlanStore,
+    plan_id: &str,
+    root: &Path,
+    kind: ArtKind,
+) -> Result<(Vec<Target>, usize), ApiError> {
+    let (plan, plan_root) = plans.peek(plan_id).ok_or_else(|| {
+        ApiError::phrased(
+            ErrorCode::NotFound,
+            &Said::error("planExpired").with("id", plan_id),
+        )
+    })?;
+    if plan_root != root || plan.kind != yaoplm_core::plan::PlanKind::Import {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("notAnImportPlan").with("id", plan_id),
+        ));
+    }
+    let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
+    let present = yaoplm_core::art::present_art(&fs, kind).map_err(ApiError::internal_error)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut already = 0;
+    let mut targets = Vec::new();
+    for game in plan.transactions.iter().filter_map(|t| t.game.as_ref()) {
+        if !seen.insert(serial::lookup_key(&game.startup)) {
+            continue;
+        }
+        if present.contains(&game.startup.to_lowercase()) {
+            already += 1;
+            continue;
+        }
+        targets.push(Target {
+            startup: game.startup.clone(),
+            title: game.title.clone(),
+            media: game.media,
+            format: game.format.clone(),
+            has_cover: false,
+        });
+    }
+    Ok((targets, already))
 }
 
 /// The body of a `FetchArt` job.
@@ -383,37 +443,45 @@ pub(crate) fn fetch_job(
     ctx: &JobContext,
     net: &Net,
     plans: &PlanStore,
-    params: FetchParams,
+    mut params: FetchParams,
 ) -> Result<JobResult, ApiError> {
     let profile: LoaderProfile = params.profile.into();
     let service = net.service()?;
-    let wanted: Option<Vec<String>> = params
-        .games
-        .as_ref()
-        .map(|ids| ids.iter().map(|id| serial::lookup_key(id)).collect());
-    let all = targets(&params.root, profile, params.kind)?;
-    let mut already = 0usize;
-    let targets: Vec<Target> = all
-        .into_iter()
-        .filter(|t| {
-            wanted
+    let for_import = params.import.is_some();
+    let (targets, already) = match params.import.take() {
+        Some(import) => import,
+        None => {
+            let wanted: Option<Vec<String>> = params
+                .games
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&serial::lookup_key(&t.startup)))
-        })
-        .filter(|t| {
-            if params.scope == ArtScope::Missing && t.has_cover {
-                already += 1;
-                false
-            } else {
-                true
-            }
-        })
-        .collect();
+                .map(|ids| ids.iter().map(|id| serial::lookup_key(id)).collect());
+            let all = targets(&params.root, profile, params.kind)?;
+            let mut already = 0usize;
+            let targets: Vec<Target> = all
+                .into_iter()
+                .filter(|t| {
+                    wanted
+                        .as_ref()
+                        .is_none_or(|ids| ids.contains(&serial::lookup_key(&t.startup)))
+                })
+                .filter(|t| {
+                    if params.scope == ArtScope::Missing && t.has_cover {
+                        already += 1;
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            (targets, already)
+        }
+    };
     let total = targets.len() as u64;
     ctx.progress(0, Some(total), None);
 
     let mut items = Vec::new();
     let mut skipped = Vec::new();
+    let mut missing = Vec::new();
     for (index, target) in targets.iter().enumerate() {
         if ctx.is_cancelled() {
             return Err(ApiError::cancelled());
@@ -504,17 +572,33 @@ pub(crate) fn fetch_job(
                 file: cover.png,
                 origin: format!("{} ({})", cover.source, cover.origin),
             }),
-            None => skipped.push(Skipped {
-                path: PathBuf::from(format!("{} {}", target.startup, target.title)),
-                reason: match (state, detail) {
-                    (ArtLogState::Failed, Some(phrase)) => Notice::warning(phrase),
-                    (_, Some(phrase)) => Notice::info(phrase),
-                    (_, None) => Notice::info(Said::notice("noArtSource")),
-                },
-            }),
+            None => {
+                let skip = Skipped {
+                    path: PathBuf::from(format!("{} {}", target.startup, target.title)),
+                    reason: match (state, detail) {
+                        (ArtLogState::Failed, Some(phrase)) => Notice::warning(phrase),
+                        (_, Some(phrase)) => Notice::info(phrase),
+                        (_, None) => Notice::info(Said::notice("noArtSource")),
+                    },
+                };
+                missing.push((target.startup.clone(), skip.clone()));
+                skipped.push(skip);
+            }
         }
     }
     ctx.progress(total, Some(total), None);
+
+    if for_import {
+        let found = u32::try_from(items.len()).unwrap_or(u32::MAX);
+        let not_found = u32::try_from(missing.len()).unwrap_or(u32::MAX);
+        let id = plans.insert_covers(params.root, items, missing);
+        return Ok(JobResult::Covers(CoverSearch {
+            id,
+            found,
+            missing: not_found,
+            present: u32::try_from(already).unwrap_or(u32::MAX),
+        }));
+    }
 
     let fs = HostFs::new(&params.root).map_err(ApiError::internal_error)?;
     let mut plan = plan_set_art(&fs, &HostSources, &items, params.scope == ArtScope::All)

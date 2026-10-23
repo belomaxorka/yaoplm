@@ -288,6 +288,7 @@
     "title": "Plan",
     "on": "On {{root}}",
     "building": "Building the plan…",
+    "updating": "Updating the plan…",
     "writes": "Writes",
     "deletes": "Deletes",
     "freeNow": "Free now",
@@ -356,7 +357,14 @@
     "confirmMove": "Move to device",
     "compress": "Compress to ZSO",
     "compressHint": "Smaller on the device; OPL 1.2.0 beta and newer read ZSO. Compressing takes longer than copying.",
-    "compressNotForProfile": "OPL 1.1.0 does not read ZSO. Choose another loader in Settings to compress."
+    "compressNotForProfile": "OPL 1.1.0 does not read ZSO. Choose another loader in Settings to compress.",
+    "coversTitle": "Covers",
+    "coversSearching": "Looking for the covers of the games being added…",
+    "coversSkip": "Add without covers",
+    "coversResult": "Found: {{found}}, not found: {{missing}}, already on the device: {{present}}.",
+    "coversSkipped": "The cover search was stopped: the games are added without covers. Covers can be downloaded later from the library.",
+    "coversFailed": "The cover search failed: {{error}}. The games are added without covers.",
+    "coversFailedPlain": "The cover search failed. The games are added without covers."
   },
   "art": {
     "fetchTitle": "Download covers",
@@ -770,6 +778,8 @@
     "planEmpty": "The plan has nothing to do",
     "confirmDelete": "This plan deletes files; confirm with confirmDelete",
     "planExpired": "Plan {{id}} expired or already ran",
+    "notAnImportPlan": "Plan {{id}} does not add games to this device.",
+    "coversExpired": "The cover search {{id}} is no longer kept: search again.",
     "jobGone": "No job {{id}}",
     "jobPanicked": "The job stopped on an internal error",
     "notOnDevice": "{{path}} is not on this device",

@@ -56,6 +56,7 @@ fn import(root: &Path, sources: &[PathBuf], layout: Layout) {
     let Response::Plan(plan) = api
         .dispatch(Request::PlanImport {
             verify: None,
+            covers: None,
             root: root.to_string_lossy().into_owned(),
             sources: sources
                 .iter()

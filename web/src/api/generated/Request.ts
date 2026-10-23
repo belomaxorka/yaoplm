@@ -43,7 +43,12 @@ compress?: boolean,
  * the stored Redump DAT (GAME-5); the verdicts land in the job log
  * and the hash cache. Off when absent.
  */
-verify?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+verify?: boolean, 
+/**
+ * A cover set from `FetchArt` with `import` (ART-8): every game
+ * gets its cover written right after it, in the same plan.
+ */
+covers?: string, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
 /**
  * How images made from `ul` chunks are named.
  */
@@ -63,7 +68,12 @@ sources?: Array<ArtSourceSetting>,
 /**
  * `COV` for now.
  */
-kind?: string, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
+kind?: string, 
+/**
+ * The id of an import plan: look for the covers of the games it
+ * adds, `missing` scope (ART-8).
+ */
+import?: string, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
 /**
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use yaoplm_device::CancelToken;
 
-use crate::art::ArtLogState;
+use crate::art::{ArtLogState, CoverSearch};
 use crate::events::EventBus;
 use crate::library::Library;
 use crate::phrase::Phrase;
@@ -107,6 +107,8 @@ pub enum JobResult {
     Execution(ExecutionReport),
     /// A plan to confirm with `ExecutePlan` (`FetchArt`).
     Plan(Box<PlanView>),
+    /// Covers for the games of an import plan (`FetchArt` with `import`).
+    Covers(CoverSearch),
     Verification(Box<VerificationReport>),
     Redump(Box<RedumpResult>),
 }

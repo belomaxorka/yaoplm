@@ -1,10 +1,24 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::cell::RefCell;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
+thread_local! {
+    /// The app data folder of the running test (each test has a thread):
+    /// writes check dumps and keep hashes, never in the real folder.
+    static DATA_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
 fn yaoplm() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_yaoplm"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_yaoplm"));
+    DATA_DIR.with(|dir| {
+        if let Some(dir) = &*dir.borrow() {
+            command.env("YAOPLM_DATA_DIR", dir);
+        }
+    });
+    command
 }
 
 fn stdout(output: &Output) -> &str {
@@ -161,6 +175,7 @@ fn stick() -> Stick {
     let games = dir.path().join("games");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&games).unwrap();
+    DATA_DIR.with(|data| *data.borrow_mut() = Some(dir.path().join("data")));
     std::fs::write(games.join("Retail.iso"), Variant::Retail.build().to_vec()).unwrap();
     std::fs::write(games.join("Dvd Nine.iso"), Variant::Dvd9.build().to_vec()).unwrap();
     Stick {
@@ -643,4 +658,76 @@ fn add_compressed_then_convert() {
     );
     assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
     assert!(!s.root.join("CD/SLUS_200.62.Retail.zso").exists());
+}
+
+/// `add --covers` (ART-8): the covers of the games being added are looked
+/// up first and written in the same plan; the dump check runs by default
+/// (GAME-5) and `--no-verify` turns it off.
+#[test]
+fn add_with_covers_and_dump_checks() {
+    let s = stick();
+    let mirror = s.root.parent().unwrap().join("mirror");
+    let covers = mirror.join("covers/default");
+    std::fs::create_dir_all(&covers).unwrap();
+    let jpeg = {
+        let img = image::ImageBuffer::from_fn(300, 420, |x, y| image::Rgb([x as u8, y as u8, 7]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut out),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        out
+    };
+    std::fs::write(covers.join("SLUS-20062.jpg"), jpeg).unwrap();
+    let mirror_arg = format!("xlenore={}", mirror.display());
+    let done = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--covers".as_ref(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "libretro".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    let errors = String::from_utf8_lossy(&done.stderr);
+    assert!(done.status.success(), "{text}\n{errors}");
+    assert!(
+        errors.contains("Covers: 1 found, 1 not found, 0 already on the device"),
+        "{errors}"
+    );
+    assert!(text.contains("+ write ART/SLUS_200.62_COV.png"), "{text}");
+    assert!(s.root.join("ART/SLUS_200.62_COV.png").is_file());
+    // No DAT yet: the images were hashed, nothing to compare with.
+    assert!(text.contains("Dump checks"), "{text}");
+    assert!(
+        text.contains("0 verified, 0 bad, 2 unknown, 0 failed"),
+        "{text}"
+    );
+
+    // --mirror needs --covers.
+    let bad = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+    ]);
+    assert!(!bad.status.success());
+
+    let other = s.root.parent().unwrap().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let quiet = run(&[
+        "add".as_ref(),
+        other.as_os_str(),
+        s.games.as_os_str(),
+        "--no-verify".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(quiet.status.success());
+    assert!(!stdout(&quiet).contains("Dump checks"));
 }

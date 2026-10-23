@@ -332,8 +332,23 @@ impl Api {
                 overrides,
                 compress,
                 verify,
+                covers,
             } => {
                 let (path, fs) = self.root(&root)?;
+                let covers = match covers {
+                    Some(id) => Some(
+                        self.plans
+                            .covers(&id)
+                            .filter(|c| c.root == path)
+                            .ok_or_else(|| {
+                                ApiError::phrased(
+                                    ErrorCode::NotFound,
+                                    &Said::error("coversExpired").with("id", &id),
+                                )
+                            })?,
+                    ),
+                    None => None,
+                };
                 // Sources are read, and deleted in move mode: the same
                 // allow-list applies to them.
                 let inputs = sources
@@ -365,10 +380,29 @@ impl Api {
                     overrides,
                     compress: compress.unwrap_or(false),
                     check: verify.unwrap_or(false),
+                    covers: covers.as_ref().map(|c| c.items.clone()).unwrap_or_default(),
                 };
                 let sources = ArchiveSources::new(&HostSources);
-                let plan =
+                let mut plan =
                     import::plan_import(&fs, &sources, &inputs, &options).map_err(io_error)?;
+                if let Some(covers) = covers {
+                    // What the search could not find, for the games added.
+                    let added: std::collections::HashSet<String> = plan
+                        .transactions
+                        .iter()
+                        .filter_map(|t| t.game.as_ref())
+                        .map(|g| yaoplm_formats::serial::lookup_key(&g.startup))
+                        .collect();
+                    plan.skipped.extend(
+                        covers
+                            .missing
+                            .into_iter()
+                            .filter(|(startup, _)| {
+                                added.contains(&yaoplm_formats::serial::lookup_key(startup))
+                            })
+                            .map(|(_, skipped)| skipped),
+                    );
+                }
                 Ok(self.store(path, plan))
             }
             Request::ConvertGames {
@@ -605,10 +639,16 @@ impl Api {
                 games,
                 sources,
                 kind,
+                import,
             } => {
                 let (path, _fs) = self.root(&root)?;
                 let kind = art::art_kind(kind.as_deref())?;
                 let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
+                // The plan may be replaced while the search runs: its games
+                // are read now.
+                let import = import
+                    .map(|id| art::import_targets(&self.plans, &id, &path, kind))
+                    .transpose()?;
                 let params = art::FetchParams {
                     root: path.clone(),
                     profile: profile.unwrap_or_default(),
@@ -616,6 +656,7 @@ impl Api {
                     games,
                     sources,
                     kind,
+                    import,
                 };
                 let net = Arc::clone(&self.net);
                 let plans = self.plans.clone();

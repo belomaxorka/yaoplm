@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
+use yaoplm_core::art::ArtItem;
 use yaoplm_core::plan::{self as core, Level, Removal, Step};
 use yaoplm_device::RelPath;
 
@@ -325,11 +326,23 @@ pub struct StoredPlan {
     created: Instant,
 }
 
+/// Pictures a search found for the games of an import plan (ART-8), kept
+/// for `PlanImport.covers` like a plan: an hour at most.
+#[derive(Debug, Clone)]
+pub struct CoverSet {
+    pub root: PathBuf,
+    pub items: Vec<ArtItem>,
+    /// Games with nothing found, and why: by game ID.
+    pub missing: Vec<(String, core::Skipped)>,
+    created: Instant,
+}
+
 /// Plans waiting for confirmation. Clones share the store, so a job can
 /// add the plan it produced.
 #[derive(Default, Clone)]
 pub struct PlanStore {
     plans: Arc<Mutex<HashMap<String, StoredPlan>>>,
+    covers: Arc<Mutex<HashMap<String, CoverSet>>>,
 }
 
 impl std::fmt::Debug for PlanStore {
@@ -390,6 +403,56 @@ impl PlanStore {
 
     pub fn discard(&self, id: &str) -> bool {
         self.lock().remove(id).is_some()
+    }
+
+    /// A copy of a plan that is still waiting, and its root.
+    pub fn peek(&self, id: &str) -> Option<(core::Plan, PathBuf)> {
+        self.lock()
+            .get(id)
+            .filter(|p| p.created.elapsed() < PLAN_TTL)
+            .map(|p| (p.plan.clone(), p.root.clone()))
+    }
+
+    /// Keeps a cover set and returns its id.
+    pub fn insert_covers(
+        &self,
+        root: PathBuf,
+        items: Vec<ArtItem>,
+        missing: Vec<(String, core::Skipped)>,
+    ) -> String {
+        let id = yaoplm_core::journal::new_id();
+        let mut covers = self.covers.lock().unwrap_or_else(PoisonError::into_inner);
+        covers.retain(|_, c| c.created.elapsed() < PLAN_TTL);
+        while covers.len() >= MAX_PLANS {
+            let Some(oldest) = covers
+                .iter()
+                .min_by_key(|(_, c)| c.created)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            covers.remove(&oldest);
+        }
+        covers.insert(
+            id.clone(),
+            CoverSet {
+                root,
+                items,
+                missing,
+                created: Instant::now(),
+            },
+        );
+        id
+    }
+
+    /// A cover set, which stays for the next re-plan.
+    pub fn covers(&self, id: &str) -> Option<CoverSet> {
+        self.covers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(id)
+            .filter(|c| c.created.elapsed() < PLAN_TTL)
+            .cloned()
     }
 }
 
