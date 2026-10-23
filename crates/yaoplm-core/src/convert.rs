@@ -699,7 +699,7 @@ pub fn plan_convert(
     if count > 0 {
         plan.notices.push(Notice::info(
             "idKept",
-            "game IDs do not change: settings, covers, cheats and memory cards keep working",
+            "game IDs do not change: settings, art, cheats and memory cards keep working",
         ));
     }
     Ok(plan)
