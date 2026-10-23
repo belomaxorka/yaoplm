@@ -15,7 +15,7 @@ export type JobInfo = { id: JobId, kind: JobKind, title: string,
  */
 root: string | null, status: JobStatus, 
 /**
- * Bytes for plans, items for scans.
+ * Bytes for plans and verification, items for scans.
  */
 done: number, total: number | null, 
 /**

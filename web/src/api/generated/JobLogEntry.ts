@@ -3,6 +3,8 @@ import type { ArtLogState } from "./ArtLogState";
 import type { StepLogState } from "./StepLogState";
 import type { StepOp } from "./StepOp";
 import type { TxLogState } from "./TxLogState";
+import type { UnknownReason } from "./UnknownReason";
+import type { VerifyStatus } from "./VerifyStatus";
 
 /**
  * One line of a plan job's live log (the idea comes from OrbitPS2
@@ -28,4 +30,12 @@ source: string | null,
 /**
  * Where it came from, or why it is missing.
  */
-detail: string | null, };
+detail: string | null, } | { "kind": "verify", at: number, startup: string, title: string, status: VerifyStatus, reason: UnknownReason | null, 
+/**
+ * The Redump name of the matching dump.
+ */
+redump: string | null, 
+/**
+ * The hashes came from the cache.
+ */
+cached: boolean, error: string | null, };

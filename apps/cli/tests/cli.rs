@@ -492,3 +492,73 @@ fn art_fetch_set_and_remove_from_mirrors() {
     assert!(stdout(&about).contains("PCSX2 GameIndex"));
     assert!(stdout(&about).contains("xlenore/ps2-covers"));
 }
+
+#[test]
+fn redump_import_and_verify() {
+    use yaoplm_test_support::Variant;
+    use yaoplm_test_support::dat::DatBuilder;
+    let lib = library();
+    let data = tempfile::tempdir().unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", data.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let status = cli(&["redump".as_ref()]);
+    assert!(status.status.success());
+    assert!(
+        stdout(&status).starts_with("No Redump DAT yet"),
+        "{}",
+        stdout(&status)
+    );
+
+    let dat = data.path().join("ps2.dat");
+    let retail = Variant::Retail.build().to_vec();
+    std::fs::write(
+        &dat,
+        DatBuilder::new()
+            .iso("Grand Theft Auto III (USA)", Some("SLUS-20062"), &retail)
+            .build(),
+    )
+    .unwrap();
+    let imported = cli(&["redump".as_ref(), "--import".as_ref(), dat.as_os_str()]);
+    assert!(
+        imported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    assert!(
+        stdout(&imported).contains("Imported."),
+        "{}",
+        stdout(&imported)
+    );
+    assert!(stdout(&imported).contains("1 games with serials"));
+
+    let verified = cli(&["verify".as_ref(), lib.path().as_os_str()]);
+    let text = stdout(&verified);
+    assert!(verified.status.success(), "{text}");
+    assert!(text.contains("SLUS_200.62  verified"), "{text}");
+    assert!(
+        text.contains("Redump: Grand Theft Auto III (USA)"),
+        "{text}"
+    );
+
+    let json = cli(&[
+        "verify".as_ref(),
+        lib.path().as_os_str(),
+        "--game".as_ref(),
+        "SLUS_200.62".as_ref(),
+        "--md5".as_ref(),
+        "--json".as_ref(),
+    ]);
+    assert!(json.status.success());
+    let report: serde_json::Value = serde_json::from_str(stdout(&json)).unwrap();
+    assert_eq!(report["games"][0]["status"], "verified");
+    assert_eq!(
+        report["games"][0]["hashes"]["md5"].as_str().map(str::len),
+        Some(32)
+    );
+}

@@ -424,7 +424,7 @@ impl<S: SectorSource> Read for SectorReader<S> {
     }
 }
 
-fn sector_stream<S: SectorSource + Send + 'static>(
+pub(crate) fn sector_stream<S: SectorSource + Send + 'static>(
     src: S,
     offset: u64,
 ) -> io::Result<Box<dyn Read + Send>> {

@@ -4,6 +4,7 @@
 //! - [`scan_library`] and [`image_info`] read what OPL would see.
 //! - [`import::plan_import`], [`ops`] and [`art`] build [`plan::Plan`]s;
 //!   nothing is written while planning.
+//! - [`verify`] hashes the images on a device for dump verification.
 //! - [`exec::execute`] runs a plan with a journal, rollback before each
 //!   commit point and resume after it; [`recovery::plan_recovery`] picks up
 //!   what a crash left behind.
@@ -25,6 +26,7 @@ pub mod recovery;
 mod scan;
 pub mod source;
 pub mod titles;
+pub mod verify;
 
 pub use info::{ImageInfo, InfoError, Platform, image_info};
 pub use model::{

@@ -10,6 +10,7 @@ use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
 use crate::plans::PlanView;
+use crate::verify::RedumpInfo;
 
 /// `ID.Title.iso` (ADR-0006, the default) or `Title.iso`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -274,6 +275,32 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         kind: Option<String>,
     },
+    /// Hashes games on a device and matches them against the stored Redump
+    /// DAT (GAME-5): a job whose result is a `VerificationReport`. Reads
+    /// only; unchanged images come from the hash cache.
+    VerifyGames {
+        root: String,
+        /// Only these games; every game when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        games: Option<Vec<GameRef>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Also compute MD5 (CRC-32 and SHA-1 always).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        md5: Option<bool>,
+    },
+    /// The stored Redump DAT, if any.
+    RedumpStatus,
+    /// A job that downloads the Redump DAT (at most once a week, META-2) or,
+    /// with `file`, imports a `.dat` or Redump `.zip` the user has.
+    UpdateRedump {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        file: Option<String>,
+    },
     /// Credits, licences and versions of the bundled data and the cover
     /// sources, for the About screen.
     Attribution,
@@ -312,6 +339,10 @@ pub enum Response {
     },
     Attribution(Box<Attribution>),
     ArtCache(ArtCacheInfo),
+    /// The stored Redump DAT; `None` before the first download or import.
+    Redump {
+        dat: Option<Box<RedumpInfo>>,
+    },
 }
 
 /// Identifies a long-running job for its whole lifetime.

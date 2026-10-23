@@ -15,6 +15,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 yaoplm-device.workspace = true
 yaoplm-formats.workspace = true
+yaoplm-hash.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

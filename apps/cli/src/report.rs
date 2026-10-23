@@ -10,6 +10,7 @@ use yaoplm_api::library::{
     GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice, Platform,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
+use yaoplm_api::verify::{RedumpInfo, UnknownReason, VerificationReport, VerifyStatus};
 
 pub fn profile_name(profile: LoaderProfile) -> &'static str {
     match profile {
@@ -522,6 +523,141 @@ pub fn progress(done: u64, total: Option<u64>, rate: Option<u64>, item: Option<&
         let _ = write!(line, "  {item}");
     }
     line
+}
+
+fn verify_status(status: VerifyStatus, reason: Option<UnknownReason>) -> &'static str {
+    match (status, reason) {
+        (VerifyStatus::Verified, _) => "verified",
+        (VerifyStatus::BadDump, _) => "BAD DUMP",
+        (VerifyStatus::Failed, _) => "FAILED",
+        (VerifyStatus::Unknown, Some(UnknownReason::NoDat)) => "no DAT",
+        (VerifyStatus::Unknown, Some(UnknownReason::CdImage)) => "CD ISO",
+        (VerifyStatus::Unknown, _) => "unknown",
+    }
+}
+
+/// One live line of a `VerifyGames` job.
+pub fn verify_line(entry: &JobLogEntry) -> String {
+    match entry {
+        JobLogEntry::Verify {
+            startup,
+            title,
+            status,
+            reason,
+            redump,
+            cached,
+            error,
+            ..
+        } => {
+            let detail = redump
+                .clone()
+                .or_else(|| error.clone())
+                .unwrap_or_else(|| title.clone());
+            let cached = if *cached { " (cached)" } else { "" };
+            format!(
+                "{startup:<12} {:<9} {detail}{cached}",
+                verify_status(*status, *reason)
+            )
+        }
+        _ => String::new(),
+    }
+}
+
+pub fn redump(dat: Option<&RedumpInfo>) -> String {
+    let Some(dat) = dat else {
+        return "No Redump DAT yet: `yaoplm redump --update` downloads one (at most once a week), `yaoplm redump --import FILE` uses one you have.\n".to_owned();
+    };
+    let mut out = String::new();
+    let _ = writeln!(out, "{}", dat.description);
+    let _ = writeln!(
+        out,
+        "  {} games{}, from {}",
+        dat.games,
+        if dat.serials {
+            " with serials"
+        } else {
+            ", no serials"
+        },
+        dat.source
+    );
+    let _ = writeln!(out, "  stored at {}", dat.path);
+    out
+}
+
+pub fn verification(report: &VerificationReport) -> String {
+    let mut out = String::new();
+    match &report.dat {
+        Some(dat) => {
+            let _ = writeln!(out, "Compared with {}", dat.description);
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "No Redump DAT: hashes only (`yaoplm redump --update` or --import FILE)"
+            );
+        }
+    }
+    for game in &report.games {
+        let _ = writeln!(
+            out,
+            "{:<12} {:<9} {}",
+            game.startup,
+            verify_status(game.status, game.reason),
+            game.title
+        );
+        if let Some(entry) = &game.redump {
+            let _ = writeln!(
+                out,
+                "    Redump: {}{}",
+                entry.name,
+                entry
+                    .url
+                    .as_deref()
+                    .map(|u| format!(" ({u})"))
+                    .unwrap_or_default()
+            );
+        }
+        if game.status == VerifyStatus::BadDump {
+            for candidate in &game.candidates {
+                let _ = writeln!(
+                    out,
+                    "    differs from {} ({}{})",
+                    candidate.name,
+                    size(candidate.size),
+                    if candidate.same_size {
+                        ", same size"
+                    } else {
+                        ""
+                    }
+                );
+            }
+        }
+        if game.reason == Some(UnknownReason::CdImage) {
+            let _ = writeln!(
+                out,
+                "    Redump lists this CD as BIN/CUE; an ISO cannot match its hashes"
+            );
+        }
+        if let Some(hashes) = &game.hashes {
+            let _ = writeln!(out, "    CRC-32 {}  SHA-1 {}", hashes.crc32, hashes.sha1);
+            if let Some(md5) = &hashes.md5 {
+                let _ = writeln!(out, "    MD5 {md5}");
+            }
+        }
+        if let Some(error) = &game.error {
+            let _ = writeln!(out, "    {error}");
+        }
+    }
+    let count = |status| report.games.iter().filter(|g| g.status == status).count();
+    let _ = writeln!(
+        out,
+        "{} verified, {} bad, {} unknown, {} failed",
+        count(VerifyStatus::Verified),
+        count(VerifyStatus::BadDump),
+        count(VerifyStatus::Unknown),
+        count(VerifyStatus::Failed)
+    );
+    out
 }
 
 #[cfg(test)]

@@ -53,4 +53,12 @@ kind?: string, } | { "type": "SetArt", root: string, startup: string, input: Art
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.
  */
-overwrite?: boolean, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };
+overwrite?: boolean, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
+/**
+ * Only these games; every game when absent.
+ */
+games?: Array<GameRef>, profile?: LoaderProfile, 
+/**
+ * Also compute MD5 (CRC-32 and SHA-1 always).
+ */
+md5?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };

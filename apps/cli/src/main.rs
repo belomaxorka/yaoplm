@@ -18,6 +18,7 @@ use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
+use yaoplm_api::verify::{RedumpUpdate, VerifyStatus};
 use yaoplm_api::{
     Api, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request, Response, Transfer,
 };
@@ -155,6 +156,33 @@ enum Command {
     Art {
         #[command(subcommand)]
         command: ArtCommand,
+    },
+    /// Check games against Redump: CRC-32 and SHA-1 (and MD5 with --md5)
+    /// in one read of each image, then a match with the stored DAT.
+    ///
+    /// Unchanged images are not read again (hash cache). Exits with 1 when
+    /// a game is a bad dump or cannot be read.
+    Verify {
+        root: PathBuf,
+        /// Only this game: ID, title, file name, path or ul:<index>. Repeatable.
+        #[arg(long = "game", value_name = "GAME")]
+        games: Vec<String>,
+        /// Also compute MD5.
+        #[arg(long)]
+        md5: bool,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// The Redump DAT used by `verify`: show it, download a newer one (at
+    /// most once a week), or import a .dat or Redump .zip you have.
+    Redump {
+        #[arg(long)]
+        update: bool,
+        #[arg(long, value_name = "FILE", conflicts_with = "update")]
+        import: Option<PathBuf>,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Credits and licences of the bundled data and the cover sources.
     About {
@@ -467,6 +495,99 @@ fn main() -> anyhow::Result<ExitCode> {
             plan_and_apply(&api, request, &apply)
         }
         Command::Art { command } => art(&api, command),
+        Command::Verify {
+            root,
+            games,
+            md5,
+            common,
+        } => {
+            let mut refs = Vec::new();
+            for game in &games {
+                refs.push(find_game(&api, &root, game, common.profile)?);
+            }
+            let request = Request::VerifyGames {
+                root: text(&root),
+                games: (!refs.is_empty()).then_some(refs),
+                profile: Some(common.profile.into()),
+                md5: Some(md5),
+            };
+            let job = match api.dispatch(request) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, common.json),
+            };
+            let info = wait_job(&api, job, io::stderr().is_terminal() && !common.json);
+            match info.result {
+                Some(JobResult::Verification(report)) => {
+                    if common.json {
+                        print_json(&report, true);
+                    } else {
+                        print!("{}", report::verification(&report));
+                    }
+                    let bad = report
+                        .games
+                        .iter()
+                        .any(|g| matches!(g.status, VerifyStatus::BadDump | VerifyStatus::Failed));
+                    Ok(if bad {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    })
+                }
+                _ => fail(
+                    &info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("verification failed")),
+                    common.json,
+                ),
+            }
+        }
+        Command::Redump {
+            update,
+            import,
+            json,
+        } => {
+            if !update && import.is_none() {
+                let response = api.dispatch(Request::RedumpStatus);
+                return show(response, json, |response| match response {
+                    Response::Redump { dat } => print!("{}", report::redump(dat.as_deref())),
+                    other => print_json(other, true),
+                });
+            }
+            let job = match api.dispatch(Request::UpdateRedump {
+                file: import.as_deref().map(absolute),
+            }) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, json),
+            };
+            let info = wait_job(&api, job, false);
+            match info.result {
+                Some(JobResult::Redump(result)) => {
+                    if json {
+                        print_json(&result, true);
+                    } else {
+                        let what = match result.update {
+                            RedumpUpdate::Downloaded => "Downloaded a new DAT.",
+                            RedumpUpdate::NotModified => "Redump has nothing newer.",
+                            RedumpUpdate::TooSoon => {
+                                "Redump was asked less than a week ago; the stored DAT stays."
+                            }
+                            RedumpUpdate::Imported => "Imported.",
+                        };
+                        println!("{what}");
+                        print!("{}", report::redump(Some(&result.dat)));
+                    }
+                    Ok(ExitCode::SUCCESS)
+                }
+                _ => fail(
+                    &info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("the update failed")),
+                    json,
+                ),
+            }
+        }
         Command::About { json } => {
             let response = api.dispatch(Request::Attribution);
             show(response, json, |response| match response {
@@ -667,6 +788,14 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
             } if *id == job => {
                 let mut stderr = io::stderr().lock();
                 let _ = writeln!(stderr, "\r\x1b[2K{}", report::art_line(entry));
+                let _ = stderr.flush();
+            }
+            JobEvent::Log {
+                job: id,
+                entry: entry @ JobLogEntry::Verify { .. },
+            } if *id == job => {
+                let mut stderr = io::stderr().lock();
+                let _ = writeln!(stderr, "\r\x1b[2K{}", report::verify_line(entry));
                 let _ = stderr.flush();
             }
             _ => {}

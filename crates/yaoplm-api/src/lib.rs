@@ -24,6 +24,7 @@ pub mod library;
 mod paths;
 pub mod plans;
 mod protocol;
+pub mod verify;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -246,6 +247,7 @@ impl Api {
                 };
                 let title = format!("Scan {}", display_path(&path));
                 let root = display_path(&path);
+                let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
                     JobKind::ScanLibrary,
                     title,
@@ -268,9 +270,9 @@ impl Api {
                                     ApiError::internal(err.to_string())
                                 }
                             })?;
-                        Ok(JobResult::Library(Box::new(Library::from_core(
-                            &library, profile,
-                        ))))
+                        let mut wire = Library::from_core(&library, profile);
+                        verify::attach_checks(&mut wire, &library.games, &net);
+                        Ok(JobResult::Library(Box::new(wire)))
                     },
                 );
                 Ok(Response::Job { job })
@@ -570,6 +572,47 @@ impl Api {
                 let kind = art::art_kind(kind.as_deref())?;
                 let plan = art::delete_art(&path, &startup, kind)?;
                 Ok(self.store(path, plan))
+            }
+            Request::VerifyGames {
+                root,
+                games,
+                profile,
+                md5,
+            } => {
+                let (path, _fs) = self.root(&root)?;
+                let params = verify::VerifyParams {
+                    games: games.map(|list| verify::wanted_list(&path, &list)),
+                    root: path.clone(),
+                    profile: profile.unwrap_or_default(),
+                    md5: md5.unwrap_or(false),
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::VerifyGames,
+                    "Verify games against Redump",
+                    Some(display_path(&path)),
+                    Queue::Read,
+                    move |ctx| verify::verify_job(ctx, &net, params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::RedumpStatus => Ok(Response::Redump {
+                dat: self.net.redump_info()?.map(Box::new),
+            }),
+            Request::UpdateRedump { file } => {
+                let file = file.map(|f| self.paths.resolve(&f)).transpose()?;
+                let title = if file.is_some() {
+                    "Import a Redump DAT"
+                } else {
+                    "Update the Redump DAT"
+                };
+                let net = Arc::clone(&self.net);
+                let job =
+                    self.jobs
+                        .spawn(JobKind::UpdateRedump, title, None, Queue::Read, move |_| {
+                            verify::update_job(&net, file)
+                        });
+                Ok(Response::Job { job })
             }
             Request::Attribution => Ok(Response::Attribution(Box::new(art::attribution()?))),
             Request::ArtCache => Ok(Response::ArtCache(self.net.cache_info()?)),
