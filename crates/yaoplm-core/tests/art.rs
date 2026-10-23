@@ -94,7 +94,7 @@ fn existing_covers_are_skipped_or_moved_to_the_backup_folder() {
     let plan = plan_set_art(&fs, &src, &[item("SLUS_200.62", "a.png")], false).unwrap();
     assert!(!plan.is_executable());
     assert_eq!(plan.skipped.len(), 1);
-    assert_eq!(plan.skipped[0].reason.code, "coverExists");
+    assert_eq!(plan.skipped[0].reason.code, "artExists");
     assert_eq!(plan.notices[0].code, "nothingToWrite");
 
     let plan = plan_set_art(&fs, &src, &[item("SLUS_200.62", "a.png")], true).unwrap();
@@ -107,7 +107,7 @@ fn existing_covers_are_skipped_or_moved_to_the_backup_folder() {
     assert!(
         matches!(&tx.steps[1], Step::WriteFile { path, .. } if path.as_str() == "art/SLUS_200.62_COV.png")
     );
-    assert!(tx.notices.iter().any(|n| n.code == "coverReplaced"));
+    assert!(tx.notices.iter().any(|n| n.code == "artReplaced"));
     let report = run(&plan, &fs, &src);
     assert!(report.succeeded(), "{:?}", report.error);
     assert_eq!(fs.bytes("art/SLUS_200.62_COV.png").unwrap(), b"PNG-A");
@@ -153,7 +153,7 @@ fn unreadable_sources_and_duplicates_are_skipped() {
     .unwrap();
     assert_eq!(plan.transactions.len(), 2);
     assert_eq!(plan.skipped.len(), 1);
-    assert_eq!(plan.skipped[0].reason.code, "coverUnreadable");
+    assert_eq!(plan.skipped[0].reason.code, "artUnreadable");
     assert_eq!(plan.skipped[0].reason.level, Level::Warning);
 
     // A changed source is refused at execution time.
@@ -271,7 +271,7 @@ fn covers_ride_along_with_an_import() {
         .iter()
         .map(|s| s.reason.code.as_str())
         .collect();
-    assert_eq!(kept, ["coverExists"]);
+    assert_eq!(kept, ["artExists"]);
     // Space covers the pictures too.
     assert!(plan.write_bytes() > Variant::Retail.build().len());
 

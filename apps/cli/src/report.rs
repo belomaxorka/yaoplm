@@ -466,6 +466,7 @@ pub fn art_line(entry: &JobLogEntry) -> String {
         JobLogEntry::Art {
             startup,
             title,
+            art,
             state,
             source,
             detail,
@@ -482,7 +483,7 @@ pub fn art_line(entry: &JobLogEntry) -> String {
                 (None, Some(detail)) => detail.clone(),
                 (None, None) => String::new(),
             };
-            format!("{startup:<12} {state:<10} {via:<10} {title}")
+            format!("{startup:<12} {art:<4} {state:<10} {via:<10} {title}")
         }
         _ => String::new(),
     }

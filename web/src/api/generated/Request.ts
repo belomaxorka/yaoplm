@@ -2,6 +2,7 @@
 import type { ArtInput } from "./ArtInput";
 import type { ArtScope } from "./ArtScope";
 import type { ArtSourceSetting } from "./ArtSourceSetting";
+import type { ArtType } from "./ArtType";
 import type { ConvertTarget } from "./ConvertTarget";
 import type { GameRef } from "./GameRef";
 import type { ImportOverride } from "./ImportOverride";
@@ -66,14 +67,19 @@ games?: Array<string>,
  */
 sources?: Array<ArtSourceSetting>, 
 /**
- * `COV` for now.
+ * One picture type by its suffix; `kinds` takes several.
  */
 kind?: string, 
+/**
+ * The picture types to look for (ART-2); COV when neither this nor
+ * `kind` is given.
+ */
+kinds?: Array<ArtType>, 
 /**
  * The id of an import plan: look for the covers of the games it
  * adds, `missing` scope (ART-8).
  */
-import?: string, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
+import?: string, } | { "type": "FindArt", root: string, startup: string, kind: ArtType, profile?: LoaderProfile, sources?: Array<ArtSourceSetting>, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
 /**
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.

@@ -16,7 +16,8 @@ pub mod transcode;
 
 use std::path::{Path, PathBuf};
 
-use yaoplm_formats::art::ArtSize;
+use transcode::Fit;
+use yaoplm_formats::art::{ArtKind, ArtSize};
 
 use cache::{Cache, Download, Record, Status};
 use http::{Fetched, Http};
@@ -64,14 +65,15 @@ impl From<rusqlite::Error> for NetError {
     }
 }
 
-/// One game's cover to find.
+/// One game's picture to find.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoverRequest<'a> {
     /// `SLUS-20062`.
     pub serial: &'a str,
     /// Redump names in the order worth trying (region first).
     pub redump_names: &'a [String],
-    /// The profile's COV size.
+    pub kind: ArtKind,
+    /// The profile's size for `kind`.
     pub size: ArtSize,
     /// Sources in priority order; an empty list means nothing is asked.
     pub sources: &'a [SourceConfig],
@@ -146,21 +148,23 @@ impl ArtService {
         &self.http
     }
 
-    fn derived_label(size: ArtSize) -> String {
-        format!("COV-{}x{}", size.width, size.height)
+    /// `COV-140x200`: the kind decides how the picture is fitted.
+    fn derived_label(kind: ArtKind, size: ArtSize) -> String {
+        format!("{}-{}x{}", kind.suffix(), size.width, size.height)
     }
 
     fn cover_from(
         &self,
         record: &Record,
+        kind: ArtKind,
         size: ArtSize,
         from_cache: bool,
         origin: &str,
     ) -> Result<Cover, NetError> {
         let png = self
             .cache
-            .derived(record, &Self::derived_label(size), |bytes| {
-                transcode::to_png(bytes, size).map(|t| t.png)
+            .derived(record, &Self::derived_label(kind, size), |bytes| {
+                transcode::to_png_fit(bytes, size, Fit::for_kind(kind)).map(|t| t.png)
             })?;
         Ok(Cover {
             png,
@@ -175,40 +179,56 @@ impl ArtService {
         })
     }
 
-    /// Tries the sources in order and returns the first cover found, with
-    /// every attempt made along the way.
+    fn candidates(request: &CoverRequest<'_>, source: SourceId, variants: bool) -> Vec<Candidate> {
+        let names: Vec<String> = request
+            .redump_names
+            .iter()
+            .take(MAX_LIBRETRO_CANDIDATES)
+            .cloned()
+            .collect();
+        sources::candidates(source, request.kind, request.serial, &names, variants)
+    }
+
+    async fn try_candidate(
+        &self,
+        config: &SourceConfig,
+        candidate: &Candidate,
+        request: &CoverRequest<'_>,
+        attempts: &mut Vec<Attempt>,
+    ) -> Option<Cover> {
+        match &config.location {
+            Location::Mirror(dir) => self.via_mirror(
+                config.id,
+                candidate,
+                dir,
+                request.kind,
+                request.size,
+                attempts,
+            ),
+            Location::Remote => {
+                self.via_remote(
+                    config.id,
+                    candidate,
+                    request.kind,
+                    request.size,
+                    request.revalidate,
+                    attempts,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Tries the sources in order and returns the first picture found,
+    /// with every attempt made along the way.
     pub async fn fetch_cover(&self, request: &CoverRequest<'_>) -> CoverOutcome {
         let mut attempts = Vec::new();
         for config in request.sources {
-            let candidates = match config.id {
-                SourceId::Xlenore => sources::xlenore_candidates(request.serial),
-                SourceId::Libretro => {
-                    let names: Vec<String> = request
-                        .redump_names
-                        .iter()
-                        .take(MAX_LIBRETRO_CANDIDATES)
-                        .cloned()
-                        .collect();
-                    sources::libretro_candidates(&names)
-                }
-            };
-            for candidate in &candidates {
-                let found = match &config.location {
-                    Location::Mirror(dir) => {
-                        self.via_mirror(config.id, candidate, dir, request.size, &mut attempts)
-                    }
-                    Location::Remote => {
-                        self.via_remote(
-                            config.id,
-                            candidate,
-                            request.size,
-                            request.revalidate,
-                            &mut attempts,
-                        )
-                        .await
-                    }
-                };
-                if let Some(cover) = found {
+            for candidate in &Self::candidates(request, config.id, false) {
+                if let Some(cover) = self
+                    .try_candidate(config, candidate, request, &mut attempts)
+                    .await
+                {
                     return CoverOutcome {
                         cover: Some(cover),
                         attempts,
@@ -222,11 +242,36 @@ impl ArtService {
         }
     }
 
+    /// Every picture the sources have for the request, in source order,
+    /// with the alternatives (3-D covers): what a user picks from (SPEC
+    /// §5.4.1). A source answers once per place, a second apart.
+    pub async fn find_variants(&self, request: &CoverRequest<'_>) -> (Vec<Cover>, Vec<Attempt>) {
+        let mut attempts = Vec::new();
+        let mut found: Vec<Cover> = Vec::new();
+        for config in request.sources {
+            for candidate in &Self::candidates(request, config.id, true) {
+                if let Some(cover) = self
+                    .try_candidate(config, candidate, request, &mut attempts)
+                    .await
+                {
+                    // Several Redump names often lead to the same file.
+                    let same =
+                        |c: &Cover| std::fs::read(&c.png).ok() == std::fs::read(&cover.png).ok();
+                    if !found.iter().any(same) {
+                        found.push(cover);
+                    }
+                }
+            }
+        }
+        (found, attempts)
+    }
+
     fn via_mirror(
         &self,
         source: SourceId,
         candidate: &Candidate,
         dir: &Path,
+        kind: ArtKind,
         size: ArtSize,
         attempts: &mut Vec<Attempt>,
     ) -> Option<Cover> {
@@ -275,7 +320,7 @@ impl ArtService {
                 return None;
             }
         };
-        match self.cover_from(&record, size, false, &target) {
+        match self.cover_from(&record, kind, size, false, &target) {
             Ok(cover) => {
                 attempt(AttemptResult::Downloaded);
                 Some(cover)
@@ -291,6 +336,7 @@ impl ArtService {
         &self,
         source: SourceId,
         candidate: &Candidate,
+        kind: ArtKind,
         size: ArtSize,
         revalidate: bool,
         attempts: &mut Vec<Attempt>,
@@ -314,7 +360,7 @@ impl ArtService {
         {
             match record.status {
                 Status::Ok if self.cache.original_path(record).is_some() => {
-                    let result = self.cover_from(record, size, true, &record.url);
+                    let result = self.cover_from(record, kind, size, true, &record.url);
                     attempts.push(Attempt {
                         source: id.to_owned(),
                         target: record.url.clone(),
@@ -347,7 +393,7 @@ impl ArtService {
             let fetched = self.http.get(id, url, &validators).await;
             let (result, cover) = match fetched {
                 Ok(Fetched::NotModified) => match record.as_ref().map(|r| self.cache.touch(r)) {
-                    Some(Ok(fresh)) => match self.cover_from(&fresh, size, true, url) {
+                    Some(Ok(fresh)) => match self.cover_from(&fresh, kind, size, true, url) {
                         Ok(cover) => (AttemptResult::NotModified, Some(cover)),
                         Err(err) => (AttemptResult::Error(err.to_string()), None),
                     },
@@ -381,7 +427,7 @@ impl ArtService {
                                 attribution: info.attribution,
                             },
                         );
-                        match stored.and_then(|r| self.cover_from(&r, size, false, url)) {
+                        match stored.and_then(|r| self.cover_from(&r, kind, size, false, url)) {
                             Ok(cover) => (AttemptResult::Downloaded, Some(cover)),
                             Err(err) => (AttemptResult::Error(err.to_string()), None),
                         }
@@ -410,11 +456,12 @@ impl ArtService {
         None
     }
 
-    /// Stores a cover the user supplied (ART-3) and derives the PNG for
-    /// `size`. `label` is kept as the origin for the log.
+    /// Stores a picture the user supplied (ART-3) and derives the PNG of
+    /// `kind` at `size`. `label` is kept as the origin for the log.
     pub fn import_local(
         &self,
         bytes: &[u8],
+        kind: ArtKind,
         size: ArtSize,
         label: &str,
     ) -> Result<Cover, NetError> {
@@ -435,7 +482,7 @@ impl ArtService {
                 attribution: "supplied by the user",
             },
         )?;
-        self.cover_from(&record, size, false, label)
+        self.cover_from(&record, kind, size, false, label)
     }
 }
 
@@ -592,7 +639,14 @@ mod tests {
         };
         let mut attempts = Vec::new();
         let cover = service
-            .via_remote(source, &candidate, SIZE, revalidate, &mut attempts)
+            .via_remote(
+                source,
+                &candidate,
+                ArtKind::Cov,
+                SIZE,
+                revalidate,
+                &mut attempts,
+            )
             .await;
         (cover, attempts)
     }
@@ -824,6 +878,7 @@ mod tests {
         let names = vec!["Dead or Alive 2 (Europe) (En,Fr,De,Es,It)".to_owned()];
         let outcome = service
             .fetch_cover(&CoverRequest {
+                kind: ArtKind::Cov,
                 serial: "SLUS-20062",
                 redump_names: &[],
                 size: SIZE,
@@ -838,6 +893,7 @@ mod tests {
         // xlenore has nothing: libretro by name.
         let outcome = service
             .fetch_cover(&CoverRequest {
+                kind: ArtKind::Cov,
                 serial: "SCES-50003",
                 redump_names: &names,
                 size: SIZE,
@@ -855,6 +911,7 @@ mod tests {
         // Nothing anywhere.
         let outcome = service
             .fetch_cover(&CoverRequest {
+                kind: ArtKind::Cov,
                 serial: "SLUS-00000",
                 redump_names: &[],
                 size: SIZE,
@@ -871,11 +928,92 @@ mod tests {
 
         // A user-supplied file.
         let local = service
-            .import_local(&png(30, 30), SIZE, "C:\\covers\\mine.png")
+            .import_local(&png(30, 30), ArtKind::Cov, SIZE, "C:\\covers\\mine.png")
             .unwrap();
         assert_eq!(local.source, LOCAL_SOURCE);
         assert_eq!(local.origin, "C:\\covers\\mine.png");
         assert!(local.png.is_file());
-        assert!(service.import_local(b"junk", SIZE, "x").is_err());
+        assert!(
+            service
+                .import_local(b"junk", ArtKind::Cov, SIZE, "x")
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn variants_and_kinds_from_mirrors() {
+        let (_dir, service) = service();
+        let mirror = tempfile::tempdir().unwrap();
+        for (path, bytes) in [
+            ("covers/default/SLUS-20062.jpg", jpeg(200, 300)),
+            ("covers/3d/SLUS-20062.png", png(220, 300)),
+        ] {
+            let path = mirror.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        let thumbs = tempfile::tempdir().unwrap();
+        for (folder, bytes) in [
+            ("Named_Boxarts", png(50, 70)),
+            ("Named_Snaps", png(64, 48)),
+            ("Named_Logos", png(90, 30)),
+        ] {
+            let dir = thumbs.path().join(folder);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("Retail (USA).png"), bytes).unwrap();
+        }
+        let sources = [
+            SourceConfig::mirror(SourceId::Xlenore, mirror.path()),
+            SourceConfig::mirror(SourceId::Libretro, thumbs.path()),
+        ];
+        let names = vec!["Retail (USA)".to_owned()];
+        let request = |kind, size| CoverRequest {
+            serial: "SLUS-20062",
+            redump_names: &names,
+            kind,
+            size,
+            sources: &sources,
+            revalidate: false,
+        };
+        // Front covers: xlenore's 2-D and 3-D, then libretro's box art.
+        let (covers, _) = service.find_variants(&request(ArtKind::Cov, SIZE)).await;
+        let origins: Vec<&str> = covers.iter().map(|c| c.origin.as_str()).collect();
+        assert_eq!(covers.len(), 3, "{origins:?}");
+        assert!(origins[0].ends_with("SLUS-20062.jpg"));
+        assert!(origins[1].ends_with("SLUS-20062.png"));
+        assert_eq!(covers[2].source, "libretro");
+
+        // A logo keeps its shape in its size; snaps come from their folder.
+        let logo_size = ArtSize {
+            width: 300,
+            height: 125,
+        };
+        let logo = service
+            .fetch_cover(&request(ArtKind::Lgo, logo_size))
+            .await
+            .cover
+            .unwrap();
+        assert!(logo.origin.contains("Named_Logos"));
+        let header = png_header(&std::fs::read(&logo.png).unwrap()).unwrap();
+        assert_eq!(
+            (header.width, header.height, header.color_type),
+            (300, 125, 6)
+        );
+        let snap_size = ArtSize {
+            width: 250,
+            height: 188,
+        };
+        let snap = service
+            .fetch_cover(&request(ArtKind::Scr, snap_size))
+            .await
+            .cover
+            .unwrap();
+        assert!(snap.origin.contains("Named_Snaps"));
+        // The box art the COV search cached is still there for COV.
+        let again = service.fetch_cover(&request(ArtKind::Cov, SIZE)).await;
+        assert_eq!(again.cover.unwrap().source, "xlenore");
+        // No source has icons.
+        let none = service.fetch_cover(&request(ArtKind::Ico, SIZE)).await;
+        assert!(none.cover.is_none() && none.attempts.is_empty());
     }
 }

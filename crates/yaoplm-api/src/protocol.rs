@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ApiError;
-use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, Attribution};
+use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, ArtType, Attribution};
 use crate::devices::DeviceInfo;
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
@@ -287,15 +287,34 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         sources: Option<Vec<ArtSourceSetting>>,
-        /// `COV` for now.
+        /// One picture type by its suffix; `kinds` takes several.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         kind: Option<String>,
+        /// The picture types to look for (ART-2); COV when neither this nor
+        /// `kind` is given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kinds: Option<Vec<ArtType>>,
         /// The id of an import plan: look for the covers of the games it
         /// adds, `missing` scope (ART-8).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         import: Option<String>,
+    },
+    /// Every picture of one type the sources have for one game, to pick
+    /// from (ART-2, SPEC §5.4.1): a job whose result is `ArtVariants`.
+    /// The chosen one goes back through `SetArt` as bytes.
+    FindArt {
+        root: String,
+        startup: String,
+        kind: ArtType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        sources: Option<Vec<ArtSourceSetting>>,
     },
     /// Plans writing a cover the user supplied (ART-3): a file on the host
     /// or image bytes, transcoded like a downloaded one.

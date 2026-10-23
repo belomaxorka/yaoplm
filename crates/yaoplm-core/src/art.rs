@@ -1,4 +1,4 @@
-//! Plans that put cover art on the device or take it off (ART-1, ART-3,
+//! Plans that put pictures on the device or take them off (ART-1 to
 //! ART-4; SPEC §6 "every write is a plan").
 //!
 //! The covers themselves are PNG files on the host, ready-made by
@@ -34,6 +34,20 @@ use crate::plan::{
     Transaction,
 };
 use crate::reasons;
+
+/// What a picture type is called (ART-2): "cover", "icon", "spine"...
+pub fn kind_name(kind: ArtKind) -> Phrase {
+    match kind {
+        ArtKind::Cov => Phrase::reason("artCov"),
+        ArtKind::Cov2 => Phrase::reason("artCov2"),
+        ArtKind::Lab => Phrase::reason("artLab"),
+        ArtKind::Ico => Phrase::reason("artIco"),
+        ArtKind::Lgo => Phrase::reason("artLgo"),
+        ArtKind::Scr => Phrase::reason("artScr"),
+        ArtKind::Scr2 => Phrase::reason("artScr2"),
+        ArtKind::Bg => Phrase::reason("artBg"),
+    }
+}
 
 /// A cover to write.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +145,7 @@ impl ArtFolder {
             _ => {
                 return Ok(Err(Skipped {
                     path: item.file.clone(),
-                    reason: Notice::warning(Phrase::notice("coverUnreadable")),
+                    reason: Notice::warning(Phrase::notice("artUnreadable")),
                 }));
             }
         };
@@ -140,9 +154,9 @@ impl ArtFolder {
             return Ok(Err(Skipped {
                 path: item.file.clone(),
                 reason: Notice::info(
-                    Phrase::notice("coverExists")
+                    Phrase::notice("artExists")
                         .with("startup", &item.startup)
-                        .with("kind", item.kind.to_string()),
+                        .with("kind", kind_name(item.kind)),
                 ),
             }));
         }
@@ -160,8 +174,8 @@ impl ArtFolder {
         });
         let source = plan.sources.len() - 1;
         let mut tx = Transaction::titled(
-            Phrase::title("coverFor")
-                .with("kind", item.kind.to_string())
+            Phrase::title("artFor")
+                .with("kind", kind_name(item.kind))
                 .with("title", &item.title),
         );
         tx.game = Some(GameInfo {
@@ -184,11 +198,11 @@ impl ArtFolder {
         });
         if !existing.is_empty() {
             tx.notices.push(Notice::info(
-                Phrase::notice("coverReplaced").with("folder", self.backup.to_string()),
+                Phrase::notice("artReplaced").with("folder", self.backup.to_string()),
             ));
         }
         tx.notices.push(Notice::info(
-            Phrase::notice("coverFrom").with("origin", &item.origin),
+            Phrase::notice("artFrom").with("origin", &item.origin),
         ));
         Ok(Ok((tx, !existing.is_empty())))
     }
@@ -281,9 +295,11 @@ pub fn plan_set_art(
     let count = transactions.len();
     plan.transactions.extend(transactions);
     plan.set_title(if count == 0 {
-        Phrase::title("noCoverToWrite")
-    } else {
+        Phrase::title("noArtToWrite")
+    } else if items.iter().all(|i| i.kind == ArtKind::Cov) {
         Phrase::title("writeCovers").count(count)
+    } else {
+        Phrase::title("writeArt").count(count)
     });
     if count == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
@@ -309,9 +325,9 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
     let existing = existing_art(&entries, startup, kind);
     if existing.is_empty() {
         return Err(OpError::NotFound(
-            Phrase::error("noCover")
+            Phrase::error("noArt")
                 .with("startup", startup)
-                .with("kind", kind.to_string()),
+                .with("kind", kind_name(kind)),
         ));
     }
     let backup = rel(&format!(
@@ -319,8 +335,8 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
         journal::new_id(),
         folder.as_str()
     ))?;
-    let title = Phrase::title("deleteCover")
-        .with("kind", kind.to_string())
+    let title = Phrase::title("deleteArt")
+        .with("kind", kind_name(kind))
         .with("startup", startup);
     let mut plan = Plan::titled(
         PlanKind::Art,

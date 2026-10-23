@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
-use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting};
+use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting, ArtType};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
@@ -259,25 +259,36 @@ enum ArtCommand {
         /// Skip a source: xlenore or libretro. Repeatable.
         #[arg(long = "skip-source", value_name = "SOURCE")]
         skipped: Vec<String>,
+        /// Picture types to look for: COV (default), SCR, SCR2, LGO; ICO,
+        /// COV2, LAB and BG have no open source. Repeatable.
+        #[arg(long = "kind", value_name = "TYPE")]
+        kinds: Vec<String>,
         #[command(flatten)]
         apply: Apply,
     },
-    /// Use an image file as a game's cover (resized and stored as PNG).
+    /// Use an image file as a game's picture (resized and stored as PNG).
     Set {
         root: PathBuf,
         /// ID, title, file name, path or ul:<index> (see `yaoplm scan`).
         game: String,
         image: PathBuf,
-        /// Leave an existing cover alone instead of replacing it.
+        /// Leave an existing picture alone instead of replacing it.
         #[arg(long)]
         keep_existing: bool,
+        /// The picture type: COV (default), COV2, LAB, ICO, LGO, SCR, SCR2
+        /// or BG.
+        #[arg(long, value_name = "TYPE")]
+        kind: Option<String>,
         #[command(flatten)]
         apply: Apply,
     },
-    /// Delete a game's cover (a copy stays in .yaoplm/backup/).
+    /// Delete a game's picture (a copy stays in .yaoplm/backup/).
     Rm {
         root: PathBuf,
         game: String,
+        /// The picture type, COV by default.
+        #[arg(long, value_name = "TYPE")]
+        kind: Option<String>,
         #[command(flatten)]
         apply: Apply,
     },
@@ -728,6 +739,7 @@ fn find_import_covers(
             games: None,
             sources: (!sources.is_empty()).then_some(sources),
             kind: None,
+            kinds: None,
             import: Some(plan.id.clone()),
         })
     });
@@ -797,9 +809,14 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             games,
             mirrors,
             skipped,
+            kinds,
             apply,
         } => {
             let sources = art_sources(&mirrors, &skipped)?;
+            let kinds = kinds
+                .iter()
+                .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             let request = Request::FetchArt {
                 root: text(&root),
                 profile: Some(apply.profile.into()),
@@ -811,6 +828,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                 games: (!games.is_empty()).then_some(games),
                 sources: (!sources.is_empty()).then_some(sources),
                 kind: None,
+                kinds: (!kinds.is_empty()).then_some(kinds),
                 import: None,
             };
             let job = match api.dispatch(request) {
@@ -841,6 +859,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             game,
             image,
             keep_existing,
+            kind,
             apply,
         } => {
             let startup = find_startup(api, &root, &game, apply.profile)?;
@@ -851,17 +870,22 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                     path: absolute(&image),
                 },
                 profile: Some(apply.profile.into()),
-                kind: None,
+                kind,
                 overwrite: Some(!keep_existing),
             };
             plan_and_apply(api, request, &apply)
         }
-        ArtCommand::Rm { root, game, apply } => {
+        ArtCommand::Rm {
+            root,
+            game,
+            kind,
+            apply,
+        } => {
             let startup = find_startup(api, &root, &game, apply.profile)?;
             let request = Request::DeleteArt {
                 root: text(&root),
                 startup,
-                kind: None,
+                kind,
             };
             plan_and_apply(api, request, &apply)
         }

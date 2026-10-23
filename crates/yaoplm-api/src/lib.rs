@@ -58,6 +58,7 @@ use yaoplm_core::plan::Plan;
 use yaoplm_core::recovery;
 use yaoplm_device::advice::{DiagnoseOptions, count_apple_double};
 use yaoplm_device::{HostFs, HostSources, RelPath};
+use yaoplm_formats::art::ArtKind;
 use yaoplm_formats::iso_name;
 
 pub const NAME: &str = "YAOPLM";
@@ -639,23 +640,31 @@ impl Api {
                 games,
                 sources,
                 kind,
+                kinds,
                 import,
             } => {
                 let (path, _fs) = self.root(&root)?;
-                let kind = art::art_kind(kind.as_deref())?;
+                let mut wanted: Vec<ArtKind> = match kinds {
+                    Some(kinds) if !kinds.is_empty() => kinds.into_iter().map(Into::into).collect(),
+                    _ => vec![art::art_kind(kind.as_deref())?],
+                };
+                wanted.dedup();
                 let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
                 // The plan may be replaced while the search runs: its games
-                // are read now.
+                // are read now. Games being added get their front cover.
                 let import = import
-                    .map(|id| art::import_targets(&self.plans, &id, &path, kind))
+                    .map(|id| art::import_targets(&self.plans, &id, &path, ArtKind::Cov))
                     .transpose()?;
+                if import.is_some() {
+                    wanted = vec![ArtKind::Cov];
+                }
                 let params = art::FetchParams {
                     root: path.clone(),
                     profile: profile.unwrap_or_default(),
                     scope: scope.unwrap_or_default(),
                     games,
                     sources,
-                    kind,
+                    kinds: wanted,
                     import,
                 };
                 let net = Arc::clone(&self.net);
@@ -666,6 +675,36 @@ impl Api {
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| art::fetch_job(ctx, &net, &plans, params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::FindArt {
+                root,
+                startup,
+                kind,
+                profile,
+                sources,
+            } => {
+                let (path, _fs) = self.root(&root)?;
+                let kind: ArtKind = kind.into();
+                let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
+                let title = Said::title("findArt")
+                    .with("startup", &startup)
+                    .with("kind", yaoplm_core::art::kind_name(kind));
+                let params = art::FindParams {
+                    root: path.clone(),
+                    profile: profile.unwrap_or_default(),
+                    startup,
+                    kind,
+                    sources,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::FetchArt,
+                    &title,
+                    Some(display_path(&path)),
+                    Queue::Read,
+                    move |ctx| art::find_job(ctx, &net, params),
                 );
                 Ok(Response::Job { job })
             }

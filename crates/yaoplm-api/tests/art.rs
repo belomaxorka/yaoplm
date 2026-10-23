@@ -212,7 +212,7 @@ fn fetch_missing_covers_then_write_them() {
     );
     let skipped = plan["skipped"].as_array().unwrap();
     assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0]["reason"]["code"], "coverNotFound");
+    assert_eq!(skipped[0]["reason"]["code"], "artNotFound");
 
     let report = execute(&s.api, &plan, false);
     assert!(report.error.is_none(), "{report:?}");
@@ -233,7 +233,7 @@ fn fetch_missing_covers_then_write_them() {
         panic!("expected a plan");
     };
     assert!(!plan.executable);
-    assert_eq!(plan.title, "No cover to write");
+    assert_eq!(plan.title, "No picture to write");
     assert!(
         plan.notices.iter().any(|n| n.code == "nothingToWrite"),
         "{plan:#?}"
@@ -363,7 +363,7 @@ fn set_art_from_a_file_and_from_bytes_delete_art() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|n| n["code"] == "coverReplaced")
+            .any(|n| n["code"] == "artReplaced")
     );
     let report = execute(&s.api, &plan, false);
     assert!(report.error.is_none(), "{report:?}");
@@ -462,7 +462,7 @@ fn source_settings_cache_and_attribution() {
     }
     let err = call(
         &s.api,
-        json!({"type": "FetchArt", "root": s.device, "kind": "ICO"}),
+        json!({"type": "FetchArt", "root": s.device, "kind": "LOGO2"}),
     )
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::BadRequest);
@@ -626,4 +626,175 @@ fn covers_found_for_an_import_land_with_the_games() {
     stale["covers"] = json!("nope");
     let err = call(&s.api, stale).unwrap_err();
     assert_eq!(err.code, ErrorCode::NotFound);
+}
+
+/// Picture types beyond the front cover (ART-2): several types in one
+/// bulk run, the variants of one slot to pick from, a manual picture of
+/// another type and its removal.
+#[test]
+fn other_picture_types_and_variants() {
+    let s = setup();
+    let libretro = s.mirror.join("libretro");
+    for folder in ["Named_Snaps", "Named_Logos"] {
+        fs::create_dir_all(libretro.join(folder)).unwrap();
+        fs::write(
+            libretro
+                .join(folder)
+                .join("Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
+            image_bytes(320, 240, image::ImageFormat::Png),
+        )
+        .unwrap();
+    }
+    let threed = s.mirror.join("xlenore/covers/3d");
+    fs::create_dir_all(&threed).unwrap();
+    fs::write(
+        threed.join("SLUS-20062.png"),
+        image_bytes(250, 300, image::ImageFormat::Png),
+    )
+    .unwrap();
+
+    // Screenshots, logos and icons for every game in one run.
+    let started = call(
+        &s.api,
+        json!({
+            "type": "FetchArt",
+            "root": s.device,
+            "kinds": ["SCR", "LGO", "ICO"],
+            "sources": sources(&s.mirror),
+        }),
+    )
+    .unwrap();
+    let info = wait(&s.api, &started);
+    let Some(JobResult::Plan(plan)) = info.result.clone() else {
+        panic!("expected a plan: {info:?}");
+    };
+    let writes: Vec<String> = plan
+        .transactions
+        .iter()
+        .flat_map(|t| &t.steps)
+        .filter(|s| matches!(s.op, yaoplm_api::plans::StepOp::WriteFile))
+        .map(|s| s.path.clone())
+        .collect();
+    assert_eq!(
+        writes,
+        ["ART/SCES_500.03_SCR.png", "ART/SCES_500.03_LGO.png"],
+        "{plan:#?}"
+    );
+    assert_eq!(plan.title, "Write 2 pictures");
+    // One log line per game and type; icons have no source at all.
+    let lines: Vec<(String, String)> = info
+        .log
+        .iter()
+        .filter_map(|e| match e {
+            JobLogEntry::Art {
+                startup,
+                art,
+                detail,
+                ..
+            } => Some((
+                format!("{startup} {art}"),
+                detail.clone().unwrap_or_default(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 9, "{lines:?}");
+    let icon = lines.iter().find(|(k, _)| k == "SLUS_200.62 ICO").unwrap();
+    assert!(icon.1.contains("No open source"), "{icon:?}");
+    assert!(
+        plan.skipped.iter().any(|s| s.path.contains("(ICO)")),
+        "{:?}",
+        plan.skipped
+    );
+    let report = execute(&s.api, &serde_json::to_value(&*plan).unwrap(), false);
+    assert!(report.error.is_none());
+    let logo = fs::read(Path::new(&s.device).join("ART/SCES_500.03_LGO.png")).unwrap();
+    let header = png_header(&logo).unwrap();
+    assert_eq!(
+        (header.width, header.height, header.color_type),
+        (300, 125, 6)
+    );
+    let snap = fs::read(Path::new(&s.device).join("ART/SCES_500.03_SCR.png")).unwrap();
+    assert_eq!(png_header(&snap).unwrap().width, 250);
+
+    // The variants of one front cover: xlenore's 2-D and 3-D.
+    let started = call(
+        &s.api,
+        json!({
+            "type": "FindArt",
+            "root": s.device,
+            "startup": "SLUS_200.62",
+            "kind": "COV",
+            "sources": sources(&s.mirror),
+        }),
+    )
+    .unwrap();
+    let info = wait(&s.api, &started);
+    let Some(JobResult::ArtVariants(found)) = info.result else {
+        panic!("expected variants: {info:?}");
+    };
+    assert_eq!(found.variants.len(), 2, "{:?}", found.variants);
+    assert!(found.variants[1].origin.ends_with("SLUS-20062.png"));
+    assert_eq!(
+        (found.variants[0].width, found.variants[0].height),
+        (140, 200)
+    );
+    // The chosen one goes back as bytes.
+    let plan = call(
+        &s.api,
+        json!({
+            "type": "SetArt",
+            "root": s.device,
+            "startup": "SLUS_200.62",
+            "kind": "COV",
+            "input": {"kind": "bytes", "data": found.variants[1].png, "name": "xlenore 3D"},
+        }),
+    )
+    .unwrap();
+    assert!(
+        plan["notices"].to_string().contains("xlenore 3D")
+            || plan["transactions"].to_string().contains("xlenore 3D")
+    );
+    // An icon nobody has: no variant, and the log says why.
+    let started = call(
+        &s.api,
+        json!({"type": "FindArt", "root": s.device, "startup": "SLUS_200.62", "kind": "ICO"}),
+    )
+    .unwrap();
+    let info = wait(&s.api, &started);
+    let Some(JobResult::ArtVariants(none)) = info.result else {
+        panic!("expected variants");
+    };
+    assert!(none.variants.is_empty());
+    assert_eq!(info.log.len(), 1);
+
+    // A manual background, then its removal, by type.
+    let bg = image_bytes(800, 600, image::ImageFormat::Jpeg);
+    let plan = call(
+        &s.api,
+        json!({
+            "type": "SetArt",
+            "root": s.device,
+            "startup": "SLUS_212.18",
+            "kind": "bg",
+            "input": {"kind": "bytes", "data": base64::engine::general_purpose::STANDARD.encode(&bg)},
+        }),
+    )
+    .unwrap();
+    assert!(
+        plan["transactions"]
+            .to_string()
+            .contains("ART/SLUS_212.18_BG.png")
+    );
+    execute(&s.api, &plan, false);
+    let written = fs::read(Path::new(&s.device).join("ART/SLUS_212.18_BG.png")).unwrap();
+    assert_eq!(png_header(&written).unwrap().width, 640);
+    let plan = call(
+        &s.api,
+        json!({"type": "DeleteArt", "root": s.device, "startup": "SLUS_212.18", "kind": "BG"}),
+    )
+    .unwrap();
+    assert_eq!(plan["title"], "Delete from SLUS_212.18: background");
+    execute(&s.api, &plan, true);
+    assert!(!Path::new(&s.device).join("ART/SLUS_212.18_BG.png").exists());
 }
