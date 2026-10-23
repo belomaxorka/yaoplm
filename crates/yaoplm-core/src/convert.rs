@@ -420,7 +420,7 @@ impl Planner<'_> {
         let record = UlRecord::new(&name, startup, chunks.len(), media).map_err(|e| {
             skip(
                 what,
-                Phrase::notice("cannotSplit").with("reason", reasons::text(&e)),
+                Phrase::notice("badName").with("reason", reasons::ul(&e)),
             )
         })?;
         let crc = usba_crc32(name.as_bytes());
@@ -512,6 +512,7 @@ impl Planner<'_> {
                     what,
                     Phrase::notice("ulPartSize")
                         .with("part", part)
+                        .with("name", &chunk)
                         .with("size", entry.len),
                 ));
             }

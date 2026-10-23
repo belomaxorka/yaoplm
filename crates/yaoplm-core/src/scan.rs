@@ -334,7 +334,11 @@ impl Scanner<'_> {
                         name: name.clone(),
                     }),
                     Some(e) if part + 1 < count && e.len != ul_cfg::CHUNK_SIZE => {
-                        warnings.push(Warning::UlPartSize { part, size: e.len });
+                        warnings.push(Warning::UlPartSize {
+                            part,
+                            name: name.clone(),
+                            size: e.len,
+                        });
                     }
                     Some(_) => {}
                 }
@@ -631,7 +635,8 @@ pub fn scan_library_with(
     }
     for game in &mut library.games {
         if seen.get(&game.startup).is_some_and(|&n| n > 1) {
-            game.warnings.push(Warning::DuplicateStartup);
+            game.warnings
+                .push(Warning::DuplicateStartup(game.startup.clone()));
         }
         if let Some(cfg) = cfgs.find_file(&format!("{}.cfg", game.startup)) {
             game.cfg = Some(read_cfg(&cfg.path, profile, &vmcs, &mut game.warnings));

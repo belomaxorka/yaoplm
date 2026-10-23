@@ -34,22 +34,16 @@ pub(crate) fn bad_name(err: &(dyn std::error::Error + 'static)) -> Phrase {
         return name(err);
     }
     if let Some(err) = err.downcast_ref::<PathError>() {
-        return path(err);
+        return err.phrase();
     }
     let inner = err
         .downcast_ref::<io::Error>()
         .and_then(io::Error::get_ref)
         .and_then(|e| e.downcast_ref::<PathError>());
     match inner {
-        Some(err) => path(err),
+        Some(err) => err.phrase(),
         None => system(err),
     }
-}
-
-/// A path the device rejects, as a whole message.
-pub(crate) fn path(err: &PathError) -> Phrase {
-    let (PathError::BadComponent(path) | PathError::BadCharacter(path)) = err;
-    Phrase::error("badPath").with("path", path)
 }
 
 /// A file name OPL would not take, as a whole message.
@@ -236,7 +230,8 @@ mod tests {
         let reasons = [
             text("x"),
             system("x"),
-            path(&PathError::BadComponent("a/../b".into())),
+            PathError::BadComponent("a/../b".into()).phrase(),
+            PathError::BadCharacter("a/b:c".into()).phrase(),
             name(&NameError::EmptyTitle),
             name(&NameError::TitleTooLong(170)),
             name(&NameError::UnsuitableStartup("ABCD".into())),
@@ -352,7 +347,11 @@ mod tests {
                 part: 1,
                 name: "ul.0.SLUS_200.62.01".into(),
             },
-            Warning::UlPartSize { part: 0, size: 5 },
+            Warning::UlPartSize {
+                part: 0,
+                name: "ul.0.SLUS_200.62.00".into(),
+                size: 5,
+            },
             Warning::UlTooManyPartsForSmb(11),
             Warning::CfgLibconfig,
             Warning::CfgUnreadable("x".into()),
@@ -376,7 +375,7 @@ mod tests {
                 height: 2000,
             },
             Warning::Cheats(ChtWarning::TooManyCheats),
-            Warning::DuplicateStartup,
+            Warning::DuplicateStartup("SLUS_200.62".into()),
             Warning::UlCfgTrailingBytes(12),
             Warning::AppBootMissing("boot.elf".into()),
             Warning::UnfinishedOperation("20261023-1".into()),

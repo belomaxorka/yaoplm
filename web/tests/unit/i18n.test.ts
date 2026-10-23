@@ -112,7 +112,7 @@ const rust = import.meta.glob<string>(
   [
     "../../../crates/yaoplm-core/src/**/*.rs",
     "../../../crates/yaoplm-api/src/**/*.rs",
-    "../../../crates/yaoplm-device/src/advice.rs",
+    "../../../crates/yaoplm-device/src/**/*.rs",
   ],
   { query: "?raw", import: "default", eager: true },
 );

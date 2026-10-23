@@ -107,12 +107,7 @@ pub(crate) fn scan_error(err: &yaoplm_core::ScanError) -> ApiError {
 
 /// A path the core refuses as a device path.
 pub(crate) fn path_error(err: &yaoplm_device::PathError) -> ApiError {
-    let (yaoplm_device::PathError::BadComponent(path)
-    | yaoplm_device::PathError::BadCharacter(path)) = err;
-    ApiError::phrased(
-        ErrorCode::BadRequest,
-        &Said::error("badPath").with("path", path),
-    )
+    ApiError::phrased(ErrorCode::BadRequest, &err.phrase())
 }
 
 fn name_style(style: Option<protocol::NameStyle>) -> Option<iso_name::NameStyle> {

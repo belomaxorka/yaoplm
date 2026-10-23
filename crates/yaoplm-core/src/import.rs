@@ -359,7 +359,9 @@ impl Planner<'_> {
             )?
         };
         if !self.startups.insert(startup.clone()) {
-            notices.push(Notice::warning(Phrase::notice("duplicateStartup")));
+            notices.push(Notice::warning(
+                Phrase::notice("duplicateStartup").with("startup", &startup),
+            ));
         }
         if self.options.transfer == Transfer::Move {
             if self.sources.in_archive(&probed.data_path) {
@@ -510,7 +512,7 @@ impl Planner<'_> {
         let record = UlRecord::new(&name, startup, chunks.len(), media).map_err(|e| {
             skip(
                 path,
-                Phrase::notice("cannotSplit").with("reason", reasons::text(&e)),
+                Phrase::notice("badName").with("reason", reasons::ul(&e)),
             )
         })?;
         let crc = usba_crc32(name.as_bytes());

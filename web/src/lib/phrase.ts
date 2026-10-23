@@ -10,18 +10,28 @@ i18n.services.formatter?.add("bytes", (value: unknown) => formatBytes(Number(val
 /**
  * A text from the core in the current language (docs/I18N.md, ADR-0029):
  * the phrase's key with its parameters, nested phrases translated first.
- * A key the catalogue does not have (a newer core) shows the core's
- * English text instead.
+ * If the catalogue lacks any of its keys (a newer core), the whole text is
+ * the core's English instead.
  */
 export function phraseText(phrase: Phrase | null | undefined, english: string): string {
   if (!phrase) return english;
+  return translate(phrase) ?? english;
+}
+
+function translate(phrase: Phrase): string | undefined {
   const params: Record<string, string | number> = {};
   for (const [name, value] of Object.entries(phrase.params)) {
     if (value === undefined) continue;
-    params[name] = typeof value === "object" ? phraseText(value, "") : value;
+    if (typeof value === "object") {
+      const nested = translate(value);
+      if (nested === undefined) return undefined;
+      params[name] = nested;
+    } else {
+      params[name] = value;
+    }
   }
-  if (!i18n.exists(phrase.key, params)) return english;
-  const text: string = i18n.t(phrase.key, { ...params, defaultValue: english });
+  if (!i18n.exists(phrase.key, params)) return undefined;
+  const text: string = i18n.t(phrase.key, { ...params, defaultValue: "" });
   return text;
 }
 

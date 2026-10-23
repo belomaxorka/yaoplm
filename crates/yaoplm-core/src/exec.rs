@@ -184,9 +184,7 @@ enum Mode {
 }
 
 fn rel_err(e: yaoplm_device::PathError) -> ExecError {
-    let (yaoplm_device::PathError::BadComponent(path)
-    | yaoplm_device::PathError::BadCharacter(path)) = e;
-    ExecError::Precondition(Phrase::error("badPath").with("path", path))
+    ExecError::Precondition(e.phrase())
 }
 
 fn part_path(path: &RelPath) -> Result<RelPath, ExecError> {

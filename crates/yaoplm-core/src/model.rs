@@ -198,6 +198,7 @@ pub enum Warning {
     /// Every part but the last must be exactly 1 GiB.
     UlPartSize {
         part: u8,
+        name: String,
         size: u64,
     },
     UlTooManyPartsForSmb(u8),
@@ -224,8 +225,8 @@ pub enum Warning {
         height: u32,
     },
     Cheats(ChtWarning),
-    /// Several entries share one ID, and with it CFG, ART, CHT and VMC.
-    DuplicateStartup,
+    /// Several entries share this ID, and with it CFG, ART, CHT and VMC.
+    DuplicateStartup(String),
     UlCfgTrailingBytes(usize),
     AppBootMissing(String),
     /// A YAOPLM operation did not finish; its journal is still on the device.
@@ -257,7 +258,7 @@ impl Warning {
             Self::ArtNotLoaded(_) => "artNotLoaded",
             Self::ArtTooLarge { .. } => "artTooLarge",
             Self::Cheats(_) => "cheats",
-            Self::DuplicateStartup => "duplicateStartup",
+            Self::DuplicateStartup(_) => "duplicateStartup",
             Self::UlCfgTrailingBytes(_) => "ulCfgTrailingBytes",
             Self::AppBootMissing(_) => "appBootMissing",
             Self::UnfinishedOperation(_) => "unfinishedOperation",
@@ -277,8 +278,8 @@ impl Warning {
             Self::UppercaseExtension
             | Self::NonAsciiName
             | Self::ZsoUnsupportedByProfile
-            | Self::CfgLibconfig
-            | Self::DuplicateStartup => phrase,
+            | Self::CfgLibconfig => phrase,
+            Self::DuplicateStartup(startup) => phrase.with("startup", startup),
             Self::SmbNameTooLong(len) => phrase.with("length", *len),
             Self::ContainerMismatch { extension, content } => phrase
                 .with("extension", extension.to_string())
@@ -287,7 +288,10 @@ impl Warning {
             Self::CdTooLarge(size) => phrase.with("size", *size),
             Self::UlRecord(anomaly) => phrase.with("reason", crate::reasons::record(anomaly)),
             Self::UlPartMissing { part, name } => phrase.with("part", *part).with("name", name),
-            Self::UlPartSize { part, size } => phrase.with("part", *part).with("size", *size),
+            Self::UlPartSize { part, name, size } => phrase
+                .with("part", *part)
+                .with("name", name)
+                .with("size", *size),
             Self::UlTooManyPartsForSmb(parts) => phrase.with("parts", *parts),
             Self::CfgUnreadable(why) => phrase.with("error", why),
             Self::CompatibilityBits { value, allowed } => phrase
