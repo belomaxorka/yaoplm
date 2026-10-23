@@ -48,3 +48,6 @@ Thumbs.db
 # Claude Code: only launch.json is shared
 .claude/*
 !.claude/launch.json
+
+# Playwright MCP session output
+.playwright-mcp/

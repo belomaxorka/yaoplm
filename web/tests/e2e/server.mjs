@@ -10,11 +10,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-// `node server.mjs [port]`; 7878 serves the Vite dev server's /api proxy.
-const port = process.argv[2] ?? process.env.YAOPLM_E2E_PORT ?? "7879";
+// `node server.mjs [port] [--games N] [--root DIR]...`; 7878 serves the Vite
+// dev server's /api proxy. `--games` grows the fixture library (virtualization
+// checks); `--root` adds a folder of real test data as one more server root.
+const args = process.argv.slice(2);
+const option = (name) => args.flatMap((arg, i) => (arg === name && args[i + 1] ? [args[i + 1]] : []));
+const port = args.find((arg, i) => !arg.startsWith("--") && !args[i - 1]?.startsWith("--")) ?? process.env.YAOPLM_E2E_PORT ?? "7879";
+const games = option("--games").at(-1);
+const extraRoots = option("--root");
 const dir = mkdtempSync(path.join(tmpdir(), "yaoplm-e2e-"));
 
-const made = spawnSync("cargo", ["run", "-q", "-p", "yaoplm-api", "--example", "make_library", "--", dir], {
+const made = spawnSync("cargo", ["run", "-q", "-p", "yaoplm-api", "--example", "make_library", "--", dir, ...(games ? ["--games", games] : [])], {
   cwd: repo,
   stdio: "inherit",
 });
@@ -41,6 +47,7 @@ const server = spawn(
     path.join(dir, "mirror"),
     "--data-dir",
     path.join(dir, "data"),
+    ...extraRoots.flatMap((root) => ["--root", root]),
   ],
   { cwd: repo, stdio: "inherit" },
 );
