@@ -36,7 +36,7 @@ import { artTypes } from "@/features/art/kinds";
 import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
 import { DumpIcon } from "@/features/verify/DumpBadge";
 import { VerificationResults } from "@/features/verify/VerificationResults";
-import { useJobs } from "@/jobs/context";
+import { isUserJob, useJobs } from "@/jobs/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 import { errorText, phraseText } from "@/lib/phrase";
 
@@ -48,7 +48,7 @@ import { errorText, phraseText } from "@/lib/phrase";
 export function JobsPage() {
   const { t } = useTranslation();
   const { jobs, dismissed, clearFinished } = useJobs();
-  const shown = jobs.filter((job) => !dismissed.has(job.id));
+  const shown = jobs.filter((job) => isUserJob(job) && !dismissed.has(job.id));
   const finished = shown.filter((job) => job.status !== "queued" && job.status !== "running");
 
   return (

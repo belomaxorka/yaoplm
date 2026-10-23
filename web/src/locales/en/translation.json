@@ -454,7 +454,7 @@
   },
   "jobs": {
     "emptyTitle": "No jobs",
-    "emptyDescription": "Scans, additions, renames, deletions, conversions, cover searches and dump checks show their progress here.",
+    "emptyDescription": "Adding, renaming, deleting and converting games, picture searches and dump checks show their progress here.",
     "clearFinished": "Clear finished",
     "status": {
       "queued": "Queued",

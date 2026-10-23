@@ -5,12 +5,12 @@ import { Link, useLocation } from "react-router";
 import { Button } from "@/components/ui/button";
 import { JobProgressLine, JobStatusIcon } from "@/features/jobs/JobsPage";
 import { jobTitle } from "@/features/jobs/jobTitle";
-import { useJobs } from "@/jobs/context";
+import { isUserJob, useJobs } from "@/jobs/context";
 
 /** Active jobs at a glance from any screen; the Jobs page has the rest. */
 export function JobsDock() {
   const { t } = useTranslation();
-  const { active } = useJobs();
+  const active = useJobs().active.filter(isUserJob);
   const { pathname } = useLocation();
   if (active.length === 0 || pathname === "/jobs") return null;
   const shown = active.slice(0, 3);

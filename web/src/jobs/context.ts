@@ -22,6 +22,14 @@ export interface JobsContextValue {
 
 export const JobsContext = createContext<JobsContextValue | null>(null);
 
+/**
+ * Jobs the user started and may want to follow. Library scans are the app's
+ * own business: their progress shows in the library (`ScanProgress`).
+ */
+export function isUserJob(job: JobInfo): boolean {
+  return job.kind !== "scanLibrary";
+}
+
 export function useJobs(): JobsContextValue {
   const value = use(JobsContext);
   if (!value) throw new Error("useJobs must be used inside <JobsProvider>");

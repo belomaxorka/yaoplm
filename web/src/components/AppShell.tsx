@@ -8,7 +8,8 @@ import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { JobsDock } from "@/features/jobs/JobsDock";
-import { useJobs } from "@/jobs/context";
+import { LibraryKeeper } from "@/features/library/useLibrary";
+import { isUserJob, useJobs } from "@/jobs/context";
 import { useSettings } from "@/settings/context";
 
 const navItems = [
@@ -21,7 +22,7 @@ const navItems = [
 export function AppShell() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { active } = useJobs();
+  const active = useJobs().active.filter(isUserJob);
   const { settings } = useSettings();
   const current = navItems.find((item) => pathname.startsWith(item.to)) ?? navItems[0];
   const title =
@@ -99,6 +100,7 @@ export function AppShell() {
         </main>
       </div>
       <JobsDock />
+      <LibraryKeeper />
     </div>
   );
 }
