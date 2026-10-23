@@ -49,14 +49,23 @@ function DialogOverlay({
   )
 }
 
+/** Where focus goes back to when each open dialog closes. */
+const openers = new WeakMap<Element, HTMLElement>()
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  // Radix returns focus to a Dialog.Trigger only, and the dialogs here open
+  // from plain buttons or after a request (WAI-ARIA dialog pattern: focus
+  // goes back to what opened the dialog).
+  const opener = React.useRef<HTMLElement | null>(null)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -66,6 +75,29 @@ function DialogContent({
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          const active = document.activeElement
+          // Opened by a dialog that is closing (a form, then its plan): go
+          // back to where that one would have.
+          const from = active?.closest('[data-slot="dialog-content"]')
+          opener.current = from
+            ? (openers.get(from) ?? null)
+            : active instanceof HTMLElement && active !== document.body
+              ? active
+              : null
+          if (event.target instanceof Element && opener.current) {
+            openers.set(event.target, opener.current)
+          }
+          onOpenAutoFocus?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          event.preventDefault()
+          // Another dialog took over (the plan after its form): it keeps focus.
+          if (document.querySelector('[data-slot="dialog-content"][data-state="open"]')) return
+          if (opener.current?.isConnected) opener.current.focus()
+        }}
         {...props}
       >
         {children}
