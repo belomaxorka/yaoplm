@@ -17,7 +17,6 @@ env:
   CARGO_INCREMENTAL: 0
   COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
   NODE_VERSION: 26
-  COREPACK_VERSION: 0.36.0
 
 jobs:
   build:
@@ -63,13 +62,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Enable pnpm via corepack
-        # bash on every OS: the Windows runner defaults to PowerShell, which
-        # does not expand ${COREPACK_VERSION}.
-        shell: bash
-        run: |
-          npm install -g corepack@${COREPACK_VERSION}
-          corepack enable pnpm
+      # pnpm from the packageManager field of package.json. The corepack
+      # route of ci.yml fails on the Windows runner: npm will not overwrite
+      # the corepack shims that ship with Node.
+      - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
 
       # tauri-action reads the version from apps/desktop/src-tauri/Cargo.toml
