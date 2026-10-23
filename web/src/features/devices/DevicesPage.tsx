@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { pickFolder } from "@/features/add/desktop";
 import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 /**
@@ -84,7 +85,7 @@ export function DevicesPage() {
         )}
         {devices.error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-            {devices.error.message}
+            {errorText(devices.error)}
           </p>
         )}
         {devices.data && shown.length === 0 && (

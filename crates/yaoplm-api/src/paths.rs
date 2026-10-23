@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::ApiError;
+use yaoplm_core::Phrase;
+
+use crate::{ApiError, ErrorCode};
 
 /// The desktop app and the CLI may open any path the user picks; the server
 /// only paths inside its `--root` allow-list.
@@ -18,16 +20,26 @@ impl PathPolicy {
     /// Resolves `raw` (symlinks and `..` included) and checks it.
     pub fn resolve(&self, raw: &str) -> Result<PathBuf, ApiError> {
         if raw.is_empty() {
-            return Err(ApiError::bad_request("path is empty"));
+            return Err(ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Phrase::error("emptyPath"),
+            ));
         }
-        let path = std::fs::canonicalize(raw)
-            .map_err(|err| ApiError::not_found(format!("{raw}: {err}")))?;
+        let path = std::fs::canonicalize(raw).map_err(|err| {
+            ApiError::phrased(
+                ErrorCode::NotFound,
+                &Phrase::error("pathError")
+                    .with("path", raw)
+                    .with("error", err.to_string()),
+            )
+        })?;
         match self {
             Self::Any => Ok(path),
             Self::Within(roots) if roots.iter().any(|root| path.starts_with(root)) => Ok(path),
-            Self::Within(_) => Err(ApiError::forbidden(format!(
-                "{raw} is outside the library roots this server may open"
-            ))),
+            Self::Within(_) => Err(ApiError::phrased(
+                ErrorCode::Forbidden,
+                &Phrase::error("outsideRoots").with("path", raw),
+            )),
         }
     }
 }

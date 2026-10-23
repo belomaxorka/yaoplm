@@ -26,6 +26,7 @@ use yaoplm_formats::art::{ART_FOLDER, ArtKind, art_file_name, parse_art_file_nam
 use crate::device::{DeviceState, join, rel};
 use crate::journal::{self, BACKUP_DIR};
 use crate::ops::OpError;
+use crate::phrase::Phrase;
 use crate::plan::{
     GameInfo, Notice, Plan, PlanKind, Removal, Skipped, Source, SourceFile, SourceKind, Step,
     Transaction,
@@ -166,7 +167,11 @@ pub fn plan_set_art(
             on_device: false,
         });
         let source = plan.sources.len() - 1;
-        let mut tx = Transaction::new(format!("{} cover for {}", item.kind, item.title));
+        let mut tx = Transaction::titled(
+            Phrase::title("coverFor")
+                .with("kind", item.kind.to_string())
+                .with("title", &item.title),
+        );
         tx.game = Some(GameInfo {
             title: item.title.clone(),
             startup: item.startup.clone(),
@@ -199,7 +204,7 @@ pub fn plan_set_art(
         transactions.push(tx);
     }
 
-    let mut prepare = Transaction::new("Prepare folders");
+    let mut prepare = Transaction::titled(Phrase::title("prepareFolders"));
     if !transactions.is_empty() && !state.has_folder(folder.as_str()) {
         prepare.push(Step::CreateDir {
             path: folder.clone(),
@@ -215,11 +220,11 @@ pub fn plan_set_art(
     }
     let count = transactions.len();
     plan.transactions.extend(transactions);
-    plan.title = match count {
-        0 => "No cover to write".into(),
-        1 => "Write 1 cover".into(),
-        n => format!("Write {n} covers"),
-    };
+    plan.set_title(if count == 0 {
+        Phrase::title("noCoverToWrite")
+    } else {
+        Phrase::title("writeCovers").count(count)
+    });
     if count == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
             .push(Notice::error("nothingToWrite", "no cover to write"));
@@ -245,21 +250,28 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
     let entries = list_or_empty(fs, &folder)?;
     let existing = existing_art(&entries, startup, kind);
     if existing.is_empty() {
-        return Err(OpError::NotFound(format!("{startup} has no {kind} cover")));
+        return Err(OpError::NotFound(
+            Phrase::error("noCover")
+                .with("startup", startup)
+                .with("kind", kind.to_string()),
+        ));
     }
     let backup = rel(&format!(
         "{BACKUP_DIR}/{}/{}",
         journal::new_id(),
         folder.as_str()
     ))?;
-    let mut plan = Plan::new(
+    let title = Phrase::title("deleteCover")
+        .with("kind", kind.to_string())
+        .with("startup", startup);
+    let mut plan = Plan::titled(
         PlanKind::Art,
-        format!("Delete the {kind} cover of {startup}"),
+        title.clone(),
         state.info.fingerprint.clone(),
         state.info.free_bytes,
     );
     plan.notices.extend(state.unfinished_notice());
-    let mut tx = Transaction::new(format!("Delete the {kind} cover of {startup}"));
+    let mut tx = Transaction::titled(title);
     for step in backup_dirs(&backup)? {
         tx.push(step);
     }

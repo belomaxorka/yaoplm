@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use yaoplm_device::RelPath;
 use yaoplm_formats::Media;
 
+use crate::phrase::Phrase;
+
 /// How a source turns into image bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -258,7 +260,12 @@ mod media_name {
 /// One unit that either happens completely or not at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
+    /// English, from [`Transaction::title_phrase`] when there is one.
     pub title: String,
+    /// For front ends that translate the title; journals written before
+    /// it existed have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_phrase: Option<Phrase>,
     pub game: Option<GameInfo>,
     pub steps: Vec<Step>,
     /// Steps `..commit` are undoable; `commit..` only finish the job.
@@ -270,11 +277,23 @@ impl Transaction {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
+            title_phrase: None,
             game: None,
             steps: Vec::new(),
             commit: 0,
             notices: Vec::new(),
         }
+    }
+
+    pub fn titled(title: Phrase) -> Self {
+        let mut tx = Self::new(String::new());
+        tx.set_title(title);
+        tx
+    }
+
+    pub fn set_title(&mut self, title: Phrase) {
+        self.title = title.english();
+        self.title_phrase = Some(title);
     }
 
     /// Adds an undoable step before the commit point.
@@ -361,6 +380,8 @@ pub enum PlanKind {
 pub struct Plan {
     pub kind: PlanKind,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_phrase: Option<Phrase>,
     /// The device as it was when planned ([`yaoplm_device::FsInfo::fingerprint`]).
     pub fingerprint: String,
     pub sources: Vec<Source>,
@@ -381,6 +402,7 @@ impl Plan {
         Self {
             kind,
             title: title.into(),
+            title_phrase: None,
             fingerprint,
             sources: Vec::new(),
             transactions: Vec::new(),
@@ -388,6 +410,17 @@ impl Plan {
             notices: Vec::new(),
             free_bytes,
         }
+    }
+
+    pub fn titled(kind: PlanKind, title: Phrase, fingerprint: String, free_bytes: u64) -> Self {
+        let mut plan = Self::new(kind, String::new(), fingerprint, free_bytes);
+        plan.set_title(title);
+        plan
+    }
+
+    pub fn set_title(&mut self, title: Phrase) {
+        self.title = title.english();
+        self.title_phrase = Some(title);
     }
 
     pub fn write_bytes(&self) -> u64 {

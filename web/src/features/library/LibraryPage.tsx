@@ -56,6 +56,7 @@ import { VerifyDialog } from "@/features/verify/VerifyDialog";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, percent } from "@/lib/format";
 import { gameKey } from "@/lib/gameKey";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
 
@@ -88,7 +89,7 @@ export function LibraryPage() {
       data={library.data}
       isPending={library.isPending}
       isFetching={library.isFetching}
-      error={library.error ? library.error.message : null}
+      error={library.error ? errorText(library.error) : null}
       rescan={() => void library.rescan()}
       view={settings.view}
       setView={(view) => update({ view })}

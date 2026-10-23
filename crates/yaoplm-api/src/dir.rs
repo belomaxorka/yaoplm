@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
-use crate::ApiError;
+use yaoplm_core::Phrase;
+
 use crate::paths::{PathPolicy, display_path};
+use crate::{ApiError, ErrorCode};
 
 /// Entries beyond this many are dropped and `truncated` is set.
 pub const MAX_ENTRIES: usize = 5000;
@@ -113,13 +115,19 @@ pub fn list_top(policy: &PathPolicy) -> DirListing {
 pub fn list_dir(policy: &PathPolicy, raw: &str) -> Result<DirListing, ApiError> {
     let dir = policy.resolve(raw)?;
     if !dir.is_dir() {
-        return Err(ApiError::bad_request(format!(
-            "{} is not a folder",
-            display_path(&dir)
-        )));
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Phrase::error("notAFolder").with("path", display_path(&dir)),
+        ));
     }
-    let read = fs::read_dir(&dir)
-        .map_err(|err| ApiError::internal(format!("cannot list {}: {err}", display_path(&dir))))?;
+    let read = fs::read_dir(&dir).map_err(|err| {
+        ApiError::phrased(
+            ErrorCode::Internal,
+            &Phrase::error("cannotList")
+                .with("path", display_path(&dir))
+                .with("error", err.to_string()),
+        )
+    })?;
     let mut entries = Vec::new();
     let mut truncated = false;
     for entry in read.flatten() {

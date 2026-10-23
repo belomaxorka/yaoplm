@@ -17,13 +17,14 @@ use std::sync::{Arc, PoisonError};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
-use yaoplm_core::{Game as CoreGame, GameLocation, ScanOptions};
+use yaoplm_core::{Game as CoreGame, GameLocation, Phrase, ScanOptions};
 use yaoplm_hash::redump::{Candidate, Data, RedumpIndex, Unknown, Verdict};
 use yaoplm_hash::{Algorithms, HashError, Hashes};
 use yaoplm_net::cache::{Cache, HashedFile};
 use yaoplm_net::redump::{DatInfo, RedumpStore, Update};
 
 use crate::art::Net;
+use crate::error::net_error;
 use crate::jobs::{JobContext, JobLogEntry, JobResult, now_ms};
 use crate::library::{GameFormat, LoaderProfile, Media};
 use crate::paths::display_path;
@@ -317,7 +318,7 @@ pub(crate) fn update_job(net: &Net, file: Option<PathBuf>) -> Result<JobResult, 
         Some(path) => {
             let dat = store
                 .import(&path)
-                .map_err(|e| ApiError::bad_request(e.to_string()))?;
+                .map_err(|e| net_error(ErrorCode::BadRequest, &e))?;
             (RedumpUpdate::Imported, Some(dat))
         }
         None => {
@@ -326,7 +327,7 @@ pub(crate) fn update_job(net: &Net, file: Option<PathBuf>) -> Result<JobResult, 
                 Ok(Update::Stored(dat)) => (RedumpUpdate::Downloaded, Some(dat)),
                 Ok(Update::NotModified(dat)) => (RedumpUpdate::NotModified, Some(dat)),
                 Ok(Update::TooSoon { info, .. }) => (RedumpUpdate::TooSoon, info),
-                Err(err) => return Err(ApiError::internal(err.to_string())),
+                Err(err) => return Err(net_error(ErrorCode::Internal, &err)),
             }
         }
     };
@@ -428,17 +429,17 @@ pub(crate) fn verify_job(
         profile: params.profile.into(),
         verify_images: false,
     };
-    let library = yaoplm_core::scan_library(&params.root, &options)
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let library =
+        yaoplm_core::scan_library(&params.root, &options).map_err(|e| crate::scan_error(&e))?;
     if let Some(list) = &params.games
         && let Some(missing) = list
             .iter()
             .position(|w| !library.games.iter().any(|g| names(&library.root, g, w)))
     {
-        return Err(ApiError::not_found(format!(
-            "game {} of the request is not on this device",
-            missing + 1
-        )));
+        return Err(ApiError::phrased(
+            ErrorCode::NotFound,
+            &Phrase::error("gameNotInRequest").with("index", missing + 1),
+        ));
     }
     let games: Vec<&CoreGame> = library
         .games
@@ -451,7 +452,10 @@ pub(crate) fn verify_job(
         })
         .collect();
     if games.is_empty() {
-        return Err(ApiError::not_found("no game to verify"));
+        return Err(ApiError::phrased(
+            ErrorCode::NotFound,
+            &Phrase::error("noGameToVerify"),
+        ));
     }
     let (dat, index) = net.redump().unzip();
     // The cache only saves time: without it every image is read.
@@ -485,7 +489,7 @@ pub(crate) fn verify_job(
     ctx.progress(0, Some(total), None);
     for (game, files, cached) in work {
         if ctx.is_cancelled() {
-            return Err(ApiError::new(ErrorCode::Cancelled, "cancelled"));
+            return Err(ApiError::cancelled());
         }
         let file_bytes: u64 = files
             .as_ref()
@@ -520,7 +524,7 @@ pub(crate) fn verify_job(
                         Ok(hashes)
                     }
                     Err(HashError::Cancelled) => {
-                        return Err(ApiError::new(ErrorCode::Cancelled, "cancelled"));
+                        return Err(ApiError::cancelled());
                     }
                     Err(HashError::Io(err)) => Err(err.to_string()),
                 }

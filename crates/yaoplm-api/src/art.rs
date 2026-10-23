@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use yaoplm_core::art::{ArtItem, plan_delete_art, plan_set_art};
 use yaoplm_core::plan::{Notice, Skipped};
-use yaoplm_core::{LoaderProfile, ScanOptions, titles};
+use yaoplm_core::{LoaderProfile, Phrase, ScanOptions, titles};
 use yaoplm_device::{HostFs, HostSources};
 use yaoplm_formats::art::{ArtKind, ArtSubject, recommended_size};
 use yaoplm_formats::serial;
@@ -144,7 +144,7 @@ static ATTRIBUTION: &str = include_str!("../../../data/attribution.json");
 
 pub fn attribution() -> Result<Attribution, ApiError> {
     let file: AttributionFile = serde_json::from_str(ATTRIBUTION)
-        .map_err(|e| ApiError::internal(format!("attribution.json: {e}")))?;
+        .map_err(|e| ApiError::internal_error(format!("attribution.json: {e}")))?;
     let info = titles::database().info();
     Ok(Attribution {
         name: crate::NAME.to_owned(),
@@ -229,7 +229,7 @@ impl Net {
                     .map_err(|e| e.to_string())
             })
             .as_ref()
-            .map_err(|e| ApiError::internal(format!("cannot start the network runtime: {e}")))
+            .map_err(|e| ApiError::internal_error(format!("cannot start the network runtime: {e}")))
     }
 
     pub(crate) fn service(&self) -> Result<Arc<ArtService>, ApiError> {
@@ -240,7 +240,7 @@ impl Net {
                     .map_err(|e| e.to_string())
             })
             .clone()
-            .map_err(|e| ApiError::internal(format!("cannot open the art cache: {e}")))
+            .map_err(|e| ApiError::internal_error(format!("cannot open the art cache: {e}")))
     }
 
     /// Runs a future to completion on the network runtime, from a job
@@ -254,10 +254,7 @@ impl Net {
 
     pub(crate) fn cache_info(&self) -> Result<ArtCacheInfo, ApiError> {
         let service = self.service()?;
-        let (objects, bytes) = service
-            .cache()
-            .stats()
-            .map_err(|e| ApiError::internal(e.to_string()))?;
+        let (objects, bytes) = service.cache().stats().map_err(ApiError::internal_error)?;
         Ok(ArtCacheInfo {
             path: display_path(service.cache().root()),
             objects,
@@ -269,7 +266,7 @@ impl Net {
         self.service()?
             .cache()
             .clear()
-            .map_err(|e| ApiError::internal(e.to_string()))
+            .map_err(ApiError::internal_error)
     }
 }
 
@@ -292,7 +289,10 @@ pub(crate) fn source_configs(
             Some(mirror) => {
                 let dir = policy.resolve(mirror)?;
                 if !dir.is_dir() {
-                    return Err(ApiError::bad_request(format!("{mirror} is not a folder")));
+                    return Err(ApiError::phrased(
+                        ErrorCode::BadRequest,
+                        &Phrase::error("notAFolder").with("path", mirror),
+                    ));
                 }
                 // Without the Windows verbatim prefix: the path ends up in
                 // the plan and the log.
@@ -303,10 +303,10 @@ pub(crate) fn source_configs(
     }
     for setting in settings {
         if SourceId::parse(&setting.id).is_none() {
-            return Err(ApiError::bad_request(format!(
-                "unknown art source {}",
-                setting.id
-            )));
+            return Err(ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Phrase::error("unknownArtSource").with("id", &setting.id),
+            ));
         }
     }
     Ok(configs)
@@ -317,7 +317,12 @@ pub(crate) fn art_kind(kind: Option<&str>) -> Result<ArtKind, ApiError> {
         None => Ok(ArtKind::Cov),
         Some(k) => ArtKind::from_suffix(&k.to_ascii_uppercase())
             .filter(|k| *k == ArtKind::Cov)
-            .ok_or_else(|| ApiError::bad_request(format!("art type {k} is not supported yet"))),
+            .ok_or_else(|| {
+                ApiError::phrased(
+                    ErrorCode::BadRequest,
+                    &Phrase::error("artKindUnsupported").with("kind", k),
+                )
+            }),
     }
 }
 
@@ -335,8 +340,7 @@ fn targets(root: &Path, profile: LoaderProfile, kind: ArtKind) -> Result<Vec<Tar
         profile,
         verify_images: false,
     };
-    let library = yaoplm_core::scan_library(root, &options)
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let library = yaoplm_core::scan_library(root, &options).map_err(|e| crate::scan_error(&e))?;
     let mut seen = std::collections::HashSet::new();
     Ok(library
         .games
@@ -411,7 +415,7 @@ pub(crate) fn fetch_job(
     let mut skipped = Vec::new();
     for (index, target) in targets.iter().enumerate() {
         if ctx.is_cancelled() {
-            return Err(ApiError::new(ErrorCode::Cancelled, "cancelled"));
+            return Err(ApiError::cancelled());
         }
         ctx.progress(index as u64, Some(total), Some(&target.title));
         let serial_id = serial::opl_to_serial(&target.startup);
@@ -508,9 +512,9 @@ pub(crate) fn fetch_job(
     }
     ctx.progress(total, Some(total), None);
 
-    let fs = HostFs::new(&params.root).map_err(|e| ApiError::internal(e.to_string()))?;
+    let fs = HostFs::new(&params.root).map_err(ApiError::internal_error)?;
     let mut plan = plan_set_art(&fs, &HostSources, &items, params.scope == ArtScope::All)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+        .map_err(ApiError::internal_error)?;
     plan.skipped.extend(skipped);
     if already > 0 {
         plan.notices.push(Notice::info(
@@ -541,31 +545,37 @@ pub(crate) fn input_bytes(
     match input {
         ArtInput::File { path } => {
             let path = policy.resolve(path)?;
-            let meta = std::fs::metadata(&path)
-                .map_err(|e| ApiError::bad_request(format!("{}: {e}", display_path(&path))))?;
+            let meta = std::fs::metadata(&path).map_err(|e| path_error(&path, &e))?;
             if !meta.is_file() {
-                return Err(ApiError::bad_request(format!(
-                    "{} is not a file",
-                    display_path(&path)
-                )));
+                return Err(ApiError::phrased(
+                    ErrorCode::BadRequest,
+                    &Phrase::error("notAFile").with("path", display_path(&path)),
+                ));
             }
             if meta.len() > MAX_INPUT {
-                return Err(ApiError::bad_request(format!(
-                    "{} is too large for a cover",
-                    display_path(&path)
-                )));
+                return Err(ApiError::phrased(
+                    ErrorCode::BadRequest,
+                    &Phrase::error("imageTooLarge").with("path", display_path(&path)),
+                ));
             }
-            let bytes = std::fs::read(&path)
-                .map_err(|e| ApiError::bad_request(format!("{}: {e}", display_path(&path))))?;
+            let bytes = std::fs::read(&path).map_err(|e| path_error(&path, &e))?;
             Ok((bytes, display_path(&path)))
         }
         ArtInput::Bytes { data, name } => {
             if data.len() as u64 > MAX_INPUT * 4 / 3 {
-                return Err(ApiError::bad_request("the image is too large for a cover"));
+                return Err(ApiError::phrased(
+                    ErrorCode::BadRequest,
+                    &Phrase::error("pastedImageTooLarge"),
+                ));
             }
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(data.trim())
-                .map_err(|e| ApiError::bad_request(format!("image data is not base64: {e}")))?;
+                .map_err(|e| {
+                    ApiError::phrased(
+                        ErrorCode::BadRequest,
+                        &Phrase::error("badImageData").with("error", e.to_string()),
+                    )
+                })?;
             Ok((
                 bytes,
                 name.clone().unwrap_or_else(|| "clipboard".to_owned()),
@@ -600,14 +610,22 @@ pub(crate) fn set_art(
         },
         params.kind,
     );
-    let cover = service
-        .import_local(&bytes, size, &label)
-        .map_err(|e| ApiError::bad_request(format!("{label}: {e}")))?;
+    let cover = service.import_local(&bytes, size, &label).map_err(|e| {
+        ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Phrase::error("pathError")
+                .with("path", &label)
+                .with("error", e.to_string()),
+        )
+    })?;
     let game = targets(&params.root, profile, params.kind)?
         .into_iter()
         .find(|t| t.startup.eq_ignore_ascii_case(&params.startup))
         .ok_or_else(|| {
-            ApiError::not_found(format!("no game with ID {} on this device", params.startup))
+            ApiError::phrased(
+                ErrorCode::NotFound,
+                &Phrase::error("noGameWithId").with("startup", &params.startup),
+            )
         })?;
     let item = ArtItem {
         startup: game.startup,
@@ -618,9 +636,18 @@ pub(crate) fn set_art(
         file: cover.png,
         origin: label,
     };
-    let fs = HostFs::new(&params.root).map_err(|e| ApiError::internal(e.to_string()))?;
-    plan_set_art(&fs, &HostSources, &[item], params.overwrite)
-        .map_err(|e| ApiError::internal(e.to_string()))
+    let fs = HostFs::new(&params.root).map_err(ApiError::internal_error)?;
+    plan_set_art(&fs, &HostSources, &[item], params.overwrite).map_err(ApiError::internal_error)
+}
+
+/// A file the user picked that cannot be read.
+fn path_error(path: &Path, err: &std::io::Error) -> ApiError {
+    ApiError::phrased(
+        ErrorCode::BadRequest,
+        &Phrase::error("pathError")
+            .with("path", display_path(path))
+            .with("error", err.to_string()),
+    )
 }
 
 pub(crate) fn delete_art(
@@ -628,6 +655,6 @@ pub(crate) fn delete_art(
     startup: &str,
     kind: ArtKind,
 ) -> Result<yaoplm_core::plan::Plan, ApiError> {
-    let fs = HostFs::new(root).map_err(|e| ApiError::internal(e.to_string()))?;
+    let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
     plan_delete_art(&fs, startup, kind).map_err(crate::op_error)
 }

@@ -7,11 +7,11 @@ import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
 import { redumpStatus, updateRedump, waitForJob } from "@/api/rpc";
-import { RpcError } from "@/api/transport";
 import { Button } from "@/components/ui/button";
 import { pickDat } from "@/features/add/desktop";
 import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
 import { formatDate } from "@/lib/format";
+import { errorText } from "@/lib/phrase";
 
 /**
  * The Redump DAT on this computer (META-2): what it is, when Redump may be
@@ -49,10 +49,10 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
           }),
         );
       } else if (info.error) {
-        setError(info.error.message);
+        setError(errorText(info.error));
       }
     } catch (err) {
-      setError(err instanceof RpcError ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setBusy(false);
       await queryClient.invalidateQueries({ queryKey: ["redump"] });

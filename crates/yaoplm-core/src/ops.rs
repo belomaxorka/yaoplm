@@ -25,12 +25,13 @@ use yaoplm_device::fs::{DeviceFs, DirEntry, TMP_SUFFIX, find_entry, list_or_empt
 use yaoplm_formats::art::parse_art_file_name;
 use yaoplm_formats::image::{self, DiscImage};
 use yaoplm_formats::iso_name::{self, ImageExtension, IsoFileName, NameFormat, NameStyle};
-use yaoplm_formats::ul_cfg::{RECORD_SIZE, UlRecord};
+use yaoplm_formats::ul_cfg::{self, RECORD_SIZE, UlError, UlRecord};
 use yaoplm_formats::{Media, games_bin};
 
 use crate::device::{DeviceState, join, rel};
 use crate::import::image_name;
 use crate::journal::{self, BACKUP_DIR};
+use crate::phrase::Phrase;
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction};
 
 /// Which game a request is about.
@@ -47,20 +48,62 @@ pub enum GameRef {
     },
 }
 
+/// Why a plan cannot be made: a phrase front ends translate, whose
+/// English text is the `Display` (ADR-0029).
 #[derive(Debug, thiserror::Error)]
 pub enum OpError {
     #[error("{0}")]
-    NotFound(String),
+    NotFound(Phrase),
     #[error("{0}")]
-    Invalid(String),
+    Invalid(Phrase),
     #[error("{0}")]
-    Conflict(String),
+    Conflict(Phrase),
     #[error(transparent)]
     Io(#[from] io::Error),
 }
 
-fn invalid(message: impl Into<String>) -> OpError {
-    OpError::Invalid(message.into())
+impl OpError {
+    pub fn phrase(&self) -> Phrase {
+        match self {
+            Self::NotFound(phrase) | Self::Invalid(phrase) | Self::Conflict(phrase) => {
+                phrase.clone()
+            }
+            Self::Io(err) => Phrase::error("system").with("error", err.to_string()),
+        }
+    }
+}
+
+fn invalid(phrase: Phrase) -> OpError {
+    OpError::Invalid(phrase)
+}
+
+/// A file name OPL would not take, as the user reads it.
+pub(crate) fn name_error(err: &iso_name::NameError) -> Phrase {
+    match err {
+        iso_name::NameError::EmptyTitle => Phrase::error("titleEmptyAfterCleanup"),
+        iso_name::NameError::TitleTooLong(len) => Phrase::error("titleTooLong")
+            .with("length", *len)
+            .with("max", iso_name::TITLE_MAX),
+        iso_name::NameError::UnsuitableStartup(id) => {
+            Phrase::error("startupNotForOldName").with("id", id)
+        }
+        iso_name::NameError::LooksLikeOldFormat(name) => {
+            Phrase::error("looksLikeOldName").with("name", name)
+        }
+    }
+}
+
+/// A `ul.cfg` title or ID OPL would not take.
+fn ul_error(err: &UlError) -> Phrase {
+    match err {
+        UlError::EmptyName => Phrase::error("emptyTitle"),
+        UlError::NameTooLong(len) => Phrase::error("ulTitleTooLong")
+            .with("length", *len)
+            .with("max", ul_cfg::NAME_MAX),
+        UlError::NameNotAscii => Phrase::error("ulTitleNotAscii"),
+        UlError::BadStartup(id) => Phrase::error("startupNotForChunks").with("id", id),
+        other => Phrase::error("system").with("error", other.to_string()),
+    }
 }
 
 /// A game as the planners need it.
@@ -104,18 +147,25 @@ pub(crate) fn find_game(
 ) -> Result<Found, OpError> {
     match game {
         GameRef::Image { path } => {
-            let folder = path
-                .parent()
-                .filter(|p| !p.is_root())
-                .ok_or_else(|| invalid(format!("{path} is not in CD/ or DVD/")))?;
-            let media = media_of_folder(state, folder.as_str())
-                .ok_or_else(|| invalid(format!("{path} is not in CD/ or DVD/")))?;
+            let folder = path.parent().filter(|p| !p.is_root()).ok_or_else(|| {
+                invalid(Phrase::error("notInMediaFolder").with("path", path.to_string()))
+            })?;
+            let media = media_of_folder(state, folder.as_str()).ok_or_else(|| {
+                invalid(Phrase::error("notInMediaFolder").with("path", path.to_string()))
+            })?;
             let entry = find_entry(state.entries(media), path.file_name())
                 .filter(|e| !e.is_dir)
-                .ok_or_else(|| OpError::NotFound(format!("{path} does not exist")))?;
+                .ok_or_else(|| {
+                    OpError::NotFound(Phrase::error("doesNotExist").with("path", path.to_string()))
+                })?;
             let path = join(&state.folder(media)?, &entry.name)?;
-            let name = iso_name::classify(&entry.name)
-                .map_err(|e| invalid(format!("OPL does not list {path}: {e}")))?;
+            let name = iso_name::classify(&entry.name).map_err(|e| {
+                invalid(
+                    Phrase::error("notListedByOpl")
+                        .with("path", path.to_string())
+                        .with("reason", e.to_string()),
+                )
+            })?;
             let startup = match &name.startup {
                 Some(id) => Some(id.clone()),
                 None => image_startup(fs, &path),
@@ -141,9 +191,12 @@ pub(crate) fn find_game(
                 .get(*index)
                 .filter(|r| r.startup() == *startup && r.name() == *name)
                 .ok_or_else(|| {
-                    OpError::NotFound(format!(
-                        "ul.cfg no longer has {name} ({startup}) at position {index}"
-                    ))
+                    OpError::NotFound(
+                        Phrase::error("ulRecordMoved")
+                            .with("name", name)
+                            .with("startup", startup)
+                            .with("index", *index),
+                    )
                 })?;
             Ok(Found {
                 media: record.media(),
@@ -298,8 +351,8 @@ pub(crate) fn game_info(
     }
 }
 
-pub(crate) fn new_plan(kind: PlanKind, title: String, state: &DeviceState) -> Plan {
-    let mut plan = Plan::new(
+pub(crate) fn new_plan(kind: PlanKind, title: Phrase, state: &DeviceState) -> Plan {
+    let mut plan = Plan::titled(
         kind,
         title,
         state.info.fingerprint.clone(),
@@ -327,7 +380,7 @@ pub fn plan_rename(
 ) -> Result<Plan, OpError> {
     let state = DeviceState::read(fs)?;
     let found = find_game(fs, &state, game)?;
-    let mut tx = Transaction::new("Rename");
+    let mut tx = Transaction::new(String::new());
     let mut notices = Vec::new();
     let old_id = found.startup.clone();
     let (new_id, title) = match &found.kind {
@@ -344,34 +397,36 @@ pub fn plan_rename(
                 (NameStyle::WithStartup, Some(id)) => id.clone(),
                 (NameStyle::WithStartup, None) => old_id
                     .clone()
-                    .ok_or_else(|| invalid("cannot read the game ID from the image"))?,
+                    .ok_or_else(|| invalid(Phrase::error("noGameId")))?,
                 (NameStyle::TitleOnly, Some(_)) => {
-                    return Err(invalid(
-                        "a Title.iso name takes its ID from the image; use the ID.Title.iso style to set one",
-                    ));
+                    return Err(invalid(Phrase::error("titleOnlyNoId")));
                 }
                 (NameStyle::TitleOnly, None) => image_id
                     .clone()
-                    .ok_or_else(|| invalid("cannot read the game ID from the image"))?,
+                    .ok_or_else(|| invalid(Phrase::error("noGameId")))?,
             };
             if style == NameStyle::WithStartup && !iso_name::is_name_safe_startup(&new_id) {
-                return Err(invalid(format!("{new_id:?} cannot lead a file name")));
+                return Err(invalid(
+                    Phrase::error("idCannotStartName").with("id", &new_id),
+                ));
             }
             let clean = iso_name::sanitize_title(&options.title);
             if clean.is_empty() {
-                return Err(invalid("the new title is empty"));
+                return Err(invalid(Phrase::error("emptyTitle")));
             }
             let ext = name.extension;
             let new_name = image_name(&new_id, &clean, ext, style, &mut notices)
-                .map_err(|e| invalid(e.to_string()))?;
+                .map_err(|e| invalid(name_error(&e)))?;
             let folder = path.parent().unwrap_or_default();
             let target = join(&folder, &new_name)?;
             if target.as_str() == path.as_str() {
-                return Err(invalid("the name does not change"));
+                return Err(invalid(Phrase::error("nameUnchanged")));
             }
             let case_only = target.as_str().to_lowercase() == path.as_str().to_lowercase();
             if !case_only && find_entry(state.entries(found.media), &new_name).is_some() {
-                return Err(OpError::Conflict(format!("{target} already exists")));
+                return Err(OpError::Conflict(
+                    Phrase::error("alreadyExists").with("path", target.to_string()),
+                ));
             }
             if ext == ImageExtension::Zso && name.raw_extension != ".zso" {
                 notices.push(Notice::info(
@@ -382,7 +437,11 @@ pub fn plan_rename(
             for step in rename_steps(path, &target)? {
                 tx.push(step);
             }
-            tx.title = format!("Rename {} to {new_name}", path.file_name());
+            tx.set_title(
+                Phrase::title("renameFile")
+                    .with("from", path.file_name())
+                    .with("to", &new_name),
+            );
             tx.game = Some(game_info(
                 &iso_name::classify(&new_name).map_or(clean, |n| n.title),
                 Some(&new_id),
@@ -397,14 +456,14 @@ pub fn plan_rename(
         }
         FoundKind::Ul { index, record } => {
             let title = options.title.clone();
-            let mut renamed = record.renamed(&title).map_err(|e| invalid(e.to_string()))?;
+            let mut renamed = record.renamed(&title).map_err(|e| invalid(ul_error(&e)))?;
             if let Some(id) = &options.startup {
                 renamed = renamed
                     .with_startup(id)
-                    .map_err(|e| invalid(e.to_string()))?;
+                    .map_err(|e| invalid(ul_error(&e)))?;
             }
             if renamed == *record {
-                return Err(invalid("the name does not change"));
+                return Err(invalid(Phrase::error("nameUnchanged")));
             }
             for part in 0..record.parts() {
                 let (from, to) = (record.chunk_name(part), renamed.chunk_name(part));
@@ -412,12 +471,14 @@ pub fn plan_rename(
                     continue;
                 }
                 if find_entry(&state.top, &from).is_none() {
-                    return Err(OpError::NotFound(format!(
-                        "chunk {from} is missing; the game cannot be renamed"
-                    )));
+                    return Err(OpError::NotFound(
+                        Phrase::error("chunkMissing").with("name", &from),
+                    ));
                 }
                 if find_entry(&state.top, &to).is_some() {
-                    return Err(OpError::Conflict(format!("{to} already exists")));
+                    return Err(OpError::Conflict(
+                        Phrase::error("alreadyExists").with("path", &to),
+                    ));
                 }
                 for step in rename_steps(&rel(&from)?, &rel(&to)?)? {
                     tx.push(step);
@@ -430,7 +491,11 @@ pub fn plan_rename(
                     "restart OPL to see the new name: it notices ul.cfg changes by size only",
                 ));
             }
-            tx.title = format!("Rename {} to {title}", record.name());
+            tx.set_title(
+                Phrase::title("renameFile")
+                    .with("from", record.name())
+                    .with("to", &title),
+            );
             tx.game = Some(game_info(
                 &title,
                 Some(&renamed.startup()),
@@ -451,9 +516,9 @@ pub fn plan_rename(
         for (path, entry) in &related {
             let target = renamed_related(path, entry, old, new)?;
             if fs.metadata(&target)?.is_some() {
-                return Err(OpError::Conflict(format!(
-                    "{target} already exists; move or delete it first"
-                )));
+                return Err(OpError::Conflict(
+                    Phrase::error("existsMoveFirst").with("path", target.to_string()),
+                ));
             }
             if path.as_str().to_lowercase().ends_with(".cfg") {
                 tx.push(backup_step(&backup, path)?);
@@ -487,7 +552,11 @@ pub fn plan_rename(
         tx.then(cache);
     }
     tx.notices = notices;
-    let mut plan = new_plan(PlanKind::Rename, format!("Rename to {title}"), &state);
+    let mut plan = new_plan(
+        PlanKind::Rename,
+        Phrase::title("renameGame").with("title", &title),
+        &state,
+    );
     plan.transactions.push(tx);
     Ok(plan)
 }
@@ -507,7 +576,7 @@ pub fn plan_delete(
 ) -> Result<Plan, OpError> {
     let state = DeviceState::read(fs)?;
     let found = find_game(fs, &state, game)?;
-    let mut tx = Transaction::new("Delete");
+    let mut tx = Transaction::new(String::new());
     let mut notices = Vec::new();
     let title = match &found.kind {
         FoundKind::Image { path, name, len } => {
@@ -596,9 +665,10 @@ pub fn plan_delete(
             "art and cheats inside art.tar or cht.tar are not touched",
         ));
     }
-    tx.title = format!("Delete {title}");
+    let phrase = Phrase::title("deleteGame").with("title", &title);
+    tx.set_title(phrase.clone());
     tx.notices = notices;
-    let mut plan = new_plan(PlanKind::Delete, format!("Delete {title}"), &state);
+    let mut plan = new_plan(PlanKind::Delete, phrase, &state);
     plan.transactions.push(tx);
     Ok(plan)
 }
@@ -609,9 +679,11 @@ pub fn plan_move(fs: &dyn DeviceFs, game: &GameRef, media: Media) -> Result<Plan
     let state = DeviceState::read(fs)?;
     let found = find_game(fs, &state, game)?;
     if found.media == media {
-        return Err(invalid(format!("the game is already a {media} game")));
+        return Err(invalid(
+            Phrase::error("alreadyOnMedia").with("media", media.to_string()),
+        ));
     }
-    let mut tx = Transaction::new(format!("Move to {media}"));
+    let mut tx = Transaction::new(String::new());
     let title = match &found.kind {
         FoundKind::Image { path, name, .. } => {
             if !state.has_folder(media.folder()) {
@@ -621,7 +693,9 @@ pub fn plan_move(fs: &dyn DeviceFs, game: &GameRef, media: Media) -> Result<Plan
             }
             let target = join(&state.folder(media)?, path.file_name())?;
             if find_entry(state.entries(media), path.file_name()).is_some() {
-                return Err(OpError::Conflict(format!("{target} already exists")));
+                return Err(OpError::Conflict(
+                    Phrase::error("alreadyExists").with("path", target.to_string()),
+                ));
             }
             tx.push(Step::Rename {
                 from: path.clone(),
@@ -660,8 +734,11 @@ pub fn plan_move(fs: &dyn DeviceFs, game: &GameRef, media: Media) -> Result<Plan
             record.name()
         }
     };
-    tx.title = format!("Move {title} to {media}");
-    let mut plan = new_plan(PlanKind::Move, tx.title.clone(), &state);
+    let phrase = Phrase::title("moveGame")
+        .with("title", &title)
+        .with("media", media.to_string());
+    tx.set_title(phrase.clone());
+    let mut plan = new_plan(PlanKind::Move, phrase, &state);
     plan.transactions.push(tx);
     Ok(plan)
 }
@@ -671,7 +748,7 @@ pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
     let state = DeviceState::read(fs)?;
     let mut plan = new_plan(
         PlanKind::InitLibrary,
-        "Create the OPL folders".into(),
+        Phrase::title("createFolders"),
         &state,
     );
     let steps = state.missing_folders()?;
@@ -681,7 +758,7 @@ pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
             "all OPL folders already exist",
         ));
     } else {
-        let mut tx = Transaction::new("Create the OPL folders");
+        let mut tx = Transaction::titled(Phrase::title("createFolders"));
         for step in steps {
             tx.push(step);
         }

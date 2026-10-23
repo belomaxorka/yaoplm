@@ -22,6 +22,7 @@ use yaoplm_device::CancelToken;
 use crate::art::ArtLogState;
 use crate::events::EventBus;
 use crate::library::Library;
+use crate::phrase::Phrase;
 use crate::plans::{PlanView, StepOp};
 use crate::verify::{RedumpResult, UnknownReason, VerificationReport, VerifyStatus};
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
@@ -84,6 +85,10 @@ pub struct ExecutionReport {
     pub outcomes: Vec<TxOutcome>,
     pub cancelled: bool,
     pub error: Option<String>,
+    /// `error` for front ends that translate it.
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_phrase: Option<Phrase>,
     /// A journal left on the device: run `PlanRecovery`.
     pub journal: Option<String>,
 }
@@ -139,6 +144,9 @@ pub enum JobLogEntry {
         at: u64,
         index: u32,
         title: String,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title_phrase: Option<Phrase>,
         state: TxLogState,
     },
     Step {
@@ -151,6 +159,9 @@ pub enum JobLogEntry {
         to: Option<String>,
         state: StepLogState,
         error: Option<String>,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_phrase: Option<Phrase>,
     },
     /// One game of a `FetchArt` job.
     Art {
@@ -187,7 +198,11 @@ pub enum JobLogEntry {
 pub struct JobInfo {
     pub id: JobId,
     pub kind: JobKind,
+    /// English; `title_phrase` says it in the front end's language.
     pub title: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_phrase: Option<Phrase>,
     /// The device the job works on, when it has one.
     pub root: Option<String>,
     pub status: JobStatus,
@@ -198,6 +213,10 @@ pub struct JobInfo {
     pub rate: Option<u64>,
     /// What is being worked on, e.g. the game being copied.
     pub item: Option<String>,
+    /// `item` as a phrase, when it is a text rather than a name.
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_phrase: Option<Phrase>,
     /// Set once the job finished; `ListJobs` leaves it out.
     #[cfg_attr(feature = "ts-export", ts(optional))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -268,6 +287,18 @@ impl JobContext {
     /// Records progress; events go out at most every 100 ms, and always
     /// when `done == total`.
     pub fn progress(&self, done: u64, total: Option<u64>, item: Option<&str>) {
+        self.progress_with(done, total, item, None);
+    }
+
+    /// [`JobContext::progress`] with the item as a phrase too.
+    pub fn progress_with(
+        &self,
+        done: u64,
+        total: Option<u64>,
+        item: Option<&str>,
+        item_phrase: Option<&yaoplm_core::Phrase>,
+    ) {
+        let item_phrase = item_phrase.map(Phrase::from);
         let rate = self.rate.then(|| {
             let secs = self.started.elapsed().as_secs_f64();
             (secs > 0.5).then(|| (done as f64 / secs) as u64)
@@ -281,6 +312,7 @@ impl JobContext {
                 record.info.rate = rate;
                 if let Some(item) = item {
                     record.info.item = Some(item.to_owned());
+                    record.info.item_phrase.clone_from(&item_phrase);
                 }
             }
         }
@@ -297,6 +329,7 @@ impl JobContext {
                 total,
                 rate,
                 item: item.map(str::to_owned),
+                item_phrase,
             });
         }
     }
@@ -317,6 +350,14 @@ impl JobContext {
             entry,
         });
     }
+}
+
+/// `NotFound` for a job this server does not know (any more).
+pub(crate) fn job_gone(id: JobId) -> ApiError {
+    ApiError::phrased(
+        ErrorCode::NotFound,
+        &yaoplm_core::Phrase::error("jobGone").with("id", id.0),
+    )
 }
 
 /// Milliseconds since the Unix epoch, for log entries.
@@ -346,7 +387,7 @@ impl JobManager {
     pub fn spawn(
         &self,
         kind: JobKind,
-        title: impl Into<String>,
+        title: &yaoplm_core::Phrase,
         root: Option<String>,
         queue: Queue,
         work: impl FnOnce(&JobContext) -> Result<JobResult, ApiError> + Send + 'static,
@@ -356,13 +397,15 @@ impl JobManager {
         let info = JobInfo {
             id,
             kind,
-            title: title.into(),
+            title: title.english(),
+            title_phrase: Some(Phrase::from(title)),
             root,
             status: JobStatus::Queued,
             done: 0,
             total: None,
             rate: None,
             item: None,
+            item_phrase: None,
             result: None,
             error: None,
             log: Vec::new(),
@@ -382,6 +425,7 @@ impl JobManager {
             job: id,
             kind,
             title: info.title,
+            title_phrase: info.title_phrase,
             root: info.root,
         });
         let inner = Arc::clone(&self.inner);
@@ -404,9 +448,7 @@ impl JobManager {
     /// in progress; a queued job never starts.
     pub fn cancel(&self, id: JobId) -> Result<(), ApiError> {
         let jobs = lock(&self.inner.jobs);
-        let record = jobs
-            .get(&id.0)
-            .ok_or_else(|| ApiError::not_found(format!("no job {}", id.0)))?;
+        let record = jobs.get(&id.0).ok_or_else(|| job_gone(id))?;
         record.cancel.cancel();
         Ok(())
     }
@@ -515,7 +557,12 @@ fn run_job(inner: &Arc<Inner>, id: JobId, cancel: CancelToken, kind: JobKind, wo
         rate: matches!(kind, JobKind::ExecutePlan | JobKind::VerifyGames),
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&context)))
-        .unwrap_or_else(|_| Err(ApiError::internal("the job panicked")));
+        .unwrap_or_else(|_| {
+            Err(ApiError::phrased(
+                ErrorCode::Internal,
+                &yaoplm_core::Phrase::error("jobPanicked"),
+            ))
+        });
     match result {
         Ok(result) => {
             let cancelled = matches!(&result, JobResult::Execution(r) if r.cancelled);
@@ -572,6 +619,7 @@ mod tests {
             outcomes: Vec::new(),
             cancelled,
             error: None,
+            error_phrase: None,
             journal: None,
         })
     }
@@ -586,7 +634,7 @@ mod tests {
                 let (running, order) = (Arc::clone(&running), Arc::clone(&order));
                 jobs.spawn(
                     JobKind::ExecutePlan,
-                    format!("job {n}"),
+                    &yaoplm_core::Phrase::title("plan").with("title", format!("job {n}")),
                     None,
                     Queue::Write,
                     move |_| {
@@ -621,7 +669,8 @@ mod tests {
             lock(&log).push(name);
         });
         let jobs = JobManager::new(bus);
-        let id = jobs.spawn(JobKind::ExecutePlan, "copy", None, Queue::Write, |ctx| {
+        let title = yaoplm_core::Phrase::title("plan").with("title", "copy");
+        let id = jobs.spawn(JobKind::ExecutePlan, &title, None, Queue::Write, |ctx| {
             for done in 0..=10 {
                 ctx.progress(done, Some(10), Some("Game"));
             }
@@ -645,14 +694,15 @@ mod tests {
             "{events:?}"
         );
 
-        let failed = jobs.spawn(JobKind::ScanLibrary, "scan", None, Queue::Read, |_| {
+        let scan = yaoplm_core::Phrase::title("scanLibrary");
+        let failed = jobs.spawn(JobKind::ScanLibrary, &scan, None, Queue::Read, |_| {
             Err(ApiError::not_found("gone"))
         });
         let info = jobs.wait(failed).unwrap();
         assert_eq!(info.status, JobStatus::Failed);
         assert_eq!(info.error.unwrap().code, ErrorCode::NotFound);
 
-        let panics = jobs.spawn(JobKind::ScanLibrary, "scan", None, Queue::Read, |_| {
+        let panics = jobs.spawn(JobKind::ScanLibrary, &scan, None, Queue::Read, |_| {
             panic!("boom")
         });
         assert_eq!(jobs.wait(panics).unwrap().status, JobStatus::Failed);

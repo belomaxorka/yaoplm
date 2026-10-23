@@ -35,6 +35,7 @@ use crate::device::{DeviceState, join, on_disk, rel};
 use crate::import::{image_name, ul_title};
 use crate::multipart::Joined;
 use crate::ops::{Found, FoundKind, GameRef, OpError, find_game, game_info, new_plan};
+use crate::phrase::Phrase;
 use crate::plan::{
     Bytes, Expect, Notice, Plan, PlanKind, Removal, Skipped, Source, SourceFile, SourceKind, Step,
     Transaction,
@@ -139,10 +140,9 @@ impl Planner<'_> {
         };
         let removed = records.iter().filter(|r| same(r)).count();
         if removed == 0 {
-            return Err(OpError::NotFound(format!(
-                "ul.cfg no longer lists {}",
-                record.name()
-            )));
+            return Err(OpError::NotFound(
+                Phrase::error("ulRecordGone").with("name", record.name()),
+            ));
         }
         let mut next: Vec<u8> = records
             .iter()
@@ -345,7 +345,11 @@ impl Planner<'_> {
             ));
         }
         let iso_len = source.len;
-        let mut tx = Transaction::new(format!("Convert {file_name} to {}", target.label()));
+        let mut tx = Transaction::titled(
+            Phrase::title("convertImage")
+                .with("name", file_name)
+                .with("format", target.label()),
+        );
         tx.game = Some(game_info(title, Some(startup), media, target.label()));
         self.plan.sources.push(source);
         let index = self.plan.sources.len() - 1;
@@ -432,7 +436,11 @@ impl Planner<'_> {
                 format!("ul.cfg already lists {name} ({startup})"),
             ));
         }
-        let mut tx = Transaction::new(format!("Convert {title} into {} ul chunks", chunks.len()));
+        let mut tx = Transaction::titled(
+            Phrase::title("convertToUl")
+                .with("title", title)
+                .count(chunks.len()),
+        );
         tx.game = Some(game_info(&name, Some(startup), media, "UL"));
         if name != title {
             tx.notices.push(Notice::info(
@@ -564,12 +572,12 @@ impl Planner<'_> {
                 format!("{target_path} already exists on the device"),
             ));
         }
-        let mut tx = Transaction::new(format!(
-            "Convert {} ({} ul chunks) to {}",
-            record.name(),
-            parts.len(),
-            target.label()
-        ));
+        let mut tx = Transaction::titled(
+            Phrase::title("convertFromUl")
+                .with("name", record.name())
+                .count(parts.len())
+                .with("format", target.label()),
+        );
         tx.game = Some(game_info(
             &iso_name::classify(&name).map_or(title.clone(), |n| n.title),
             Some(startup),
@@ -650,11 +658,12 @@ pub fn plan_convert(
     options: &ConvertOptions,
 ) -> Result<Plan, OpError> {
     let state = DeviceState::read(fs)?;
-    let plan = new_plan(
-        PlanKind::Convert,
-        format!("Convert to {}", target.label()),
-        &state,
-    );
+    let title = |count: usize| {
+        Phrase::title("convertGames")
+            .count(count)
+            .with("format", target.label())
+    };
+    let plan = new_plan(PlanKind::Convert, title(games.len()), &state);
     let mut planner = Planner {
         fs,
         state,
@@ -673,10 +682,7 @@ pub fn plan_convert(
         state, mut plan, ..
     } = planner;
     let count = plan.transactions.len();
-    plan.title = match count {
-        1 => format!("Convert 1 game to {}", target.label()),
-        n => format!("Convert {n} games to {}", target.label()),
-    };
+    plan.set_title(title(count));
     if count == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
             .push(Notice::error("nothingToConvert", "no game to convert"));

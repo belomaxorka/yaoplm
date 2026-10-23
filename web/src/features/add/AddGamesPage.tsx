@@ -21,6 +21,7 @@ import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
 import { PlanDetails } from "@/features/plan/PlanDetails";
 import { usePlan } from "@/features/plan/usePlan";
 import { baseName } from "@/lib/format";
+import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 interface Override {
@@ -280,7 +281,7 @@ export function AddGamesPage() {
         {flow.plan && (
           <section className="flex flex-col gap-4 rounded-lg border bg-card p-4" data-testid="import-plan">
             <div>
-              <h3 className="text-base font-semibold">{flow.plan.title}</h3>
+              <h3 className="text-base font-semibold">{phraseText(flow.plan.titlePhrase, flow.plan.title)}</h3>
               <p className="text-xs text-muted-foreground">{t("add.planHint")}</p>
             </div>
             <PlanDetails plan={flow.plan} renderTransaction={renderOverride} />

@@ -16,9 +16,10 @@ use ts_rs::TS;
 use yaoplm_core::plan::{self as core, Level, Removal, Step};
 use yaoplm_device::RelPath;
 
-use crate::ApiError;
 use crate::library::{GameFormat, Media};
 use crate::paths::display_path;
+use crate::phrase::Phrase;
+use crate::{ApiError, ErrorCode};
 
 const MAX_PLANS: usize = 32;
 const PLAN_TTL: Duration = Duration::from_secs(3600);
@@ -132,6 +133,9 @@ pub struct PlanGame {
 #[serde(rename_all = "camelCase")]
 pub struct PlanTransaction {
     pub title: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_phrase: Option<Phrase>,
     pub game: Option<PlanGame>,
     pub steps: Vec<PlanStep>,
     /// Steps before this index are undone if anything fails.
@@ -156,6 +160,9 @@ pub struct PlanView {
     pub id: String,
     pub kind: PlanKind,
     pub title: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_phrase: Option<Phrase>,
     pub root: String,
     pub write_bytes: u64,
     /// The user's files this plan deletes.
@@ -271,6 +278,7 @@ impl PlanView {
             id,
             kind: kind(plan.kind),
             title: plan.title.clone(),
+            title_phrase: plan.title_phrase.as_ref().map(Phrase::from),
             root: display_path(root),
             write_bytes: plan.write_bytes(),
             delete_bytes: plan.delete_bytes(),
@@ -282,6 +290,7 @@ impl PlanView {
                 .iter()
                 .map(|tx| PlanTransaction {
                     title: tx.title.clone(),
+                    title_phrase: tx.title_phrase.as_ref().map(Phrase::from),
                     game: tx.game.as_ref().map(|g| PlanGame {
                         title: g.title.clone(),
                         startup: g.startup.clone(),
@@ -370,14 +379,19 @@ impl PlanStore {
         let stored = plans
             .get(id)
             .filter(|p| p.created.elapsed() < PLAN_TTL)
-            .ok_or_else(|| ApiError::not_found(format!("plan {id} expired or already ran")))?;
+            .ok_or_else(|| expired(id))?;
         check(stored)?;
-        plans
-            .remove(id)
-            .ok_or_else(|| ApiError::not_found(format!("plan {id} expired or already ran")))
+        plans.remove(id).ok_or_else(|| expired(id))
     }
 
     pub fn discard(&self, id: &str) -> bool {
         self.lock().remove(id).is_some()
     }
+}
+
+fn expired(id: &str) -> ApiError {
+    ApiError::phrased(
+        ErrorCode::NotFound,
+        &yaoplm_core::Phrase::error("planExpired").with("id", id),
+    )
 }

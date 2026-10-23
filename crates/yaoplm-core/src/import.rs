@@ -29,6 +29,7 @@ use yaoplm_formats::usba_crc32::usba_crc32;
 use yaoplm_formats::{LoaderProfile, Media, zso};
 
 use crate::device::{DeviceState, join, on_disk};
+use crate::phrase::Phrase;
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
 use crate::scan::CD_MAX_BYTES;
 use crate::source::{ProbeError, Probed, probe, sheet_files};
@@ -449,11 +450,11 @@ impl Planner<'_> {
         };
         let len = source.len;
         self.plan.sources.push(source);
-        let mut tx = Transaction::new(if compress {
-            format!("Compress {name} into {folder}")
-        } else {
-            format!("Copy {name} to {folder}")
-        });
+        let mut tx = Transaction::titled(
+            Phrase::title(if compress { "compressGame" } else { "copyGame" })
+                .with("name", &name)
+                .with("folder", folder.to_string()),
+        );
         tx.game = Some(GameInfo {
             title: iso_name::classify(&name).map_or(clean.clone(), |n| n.title),
             startup: startup.to_owned(),
@@ -556,7 +557,11 @@ impl Planner<'_> {
 
         self.plan.sources.push(probed.iso_source());
         let source = self.plan.sources.len() - 1;
-        let mut tx = Transaction::new(format!("Split {name} into {} ul chunks", chunks.len()));
+        let mut tx = Transaction::titled(
+            Phrase::title("splitGame")
+                .with("name", &name)
+                .count(chunks.len()),
+        );
         tx.game = Some(GameInfo {
             title: name.clone(),
             startup: startup.to_owned(),
@@ -647,16 +652,13 @@ pub fn plan_import(
     } = planner;
 
     if games > 0 && !folders.is_empty() {
-        let mut tx = Transaction::new("Create the OPL folders");
+        let mut tx = Transaction::titled(Phrase::title("createFolders"));
         for step in folders {
             tx.push(step);
         }
         plan.transactions.insert(0, tx);
     }
-    plan.title = match games {
-        1 => "Import 1 game".into(),
-        n => format!("Import {n} games"),
-    };
+    plan.set_title(Phrase::title("importGames").count(games));
     let cluster = state.info.cluster_size;
     let needed: u64 = plan
         .transactions

@@ -5,8 +5,8 @@ import type { JobId } from "@/api/generated/JobId";
 import type { PlanView } from "@/api/generated/PlanView";
 import type { Request } from "@/api/generated/Request";
 import { discardPlan, executePlan, requestPlan } from "@/api/rpc";
-import { RpcError } from "@/api/transport";
 import { useJobs } from "@/jobs/context";
+import { errorText } from "@/lib/phrase";
 
 export interface PlanState {
   plan: PlanView | null;
@@ -20,8 +20,7 @@ export interface PlanState {
 const idle: PlanState = { plan: null, pending: false, executing: false, error: null };
 
 function message(error: unknown): string {
-  if (error instanceof RpcError) return error.message;
-  return String(error);
+  return errorText(error);
 }
 
 /**

@@ -48,7 +48,8 @@ function pluralForms(entries: Record<string, string>): Map<string, string[]> {
 }
 
 function placeholders(text: string): string[] {
-  return [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1] ?? ""))].sort();
+  // `{{name}}`, or `{{name, bytes}}` with a format.
+  return [...new Set([...text.matchAll(/\{\{(\w+)(?:,\s*\w+)?\}\}/g)].map((m) => m[1] ?? ""))].sort();
 }
 
 /** Whether `key` is in the catalogue, as a string or as plural forms. */
@@ -131,6 +132,24 @@ function noticeCodes(): string[] {
   return [...codes].sort();
 }
 
+/** Keys of the phrases the core sends (ADR-0029): `titles.*`, `errors.*`, `notices.*`. */
+function phraseKeys(): string[] {
+  const keys = new Set<string>();
+  const section = { title: "titles", error: "errors", notice: "notices" } as const;
+  const named = /\b(?:Phrase|Said)::(title|error|notice)\(\s*"([a-z][A-Za-z0-9]+)"/g;
+  // `Phrase::title(if compress { "compressGame" } else { "copyGame" })`.
+  const either = /\b(?:Phrase|Said)::(title|error)\(\s*if [^{]+\{\s*"(\w+)"\s*\}\s*else\s*\{\s*"(\w+)"/g;
+  for (const source of Object.values(rust)) {
+    for (const [, kind, code] of source.matchAll(named)) keys.add(`${section[kind as keyof typeof section]}.${code}`);
+    for (const [, kind, a, b] of source.matchAll(either)) {
+      for (const code of [a, b]) keys.add(`${section[kind as keyof typeof section]}.${code}`);
+    }
+    // The executor's `doing("cannotWrite", path)`.
+    for (const [, code] of source.matchAll(/\bdoing\(\s*"(\w+)"/g)) keys.add(`errors.${code}`);
+  }
+  return [...keys].sort();
+}
+
 describe("locales", () => {
   it("have the same keys in every language", () => {
     for (const language of languages) expect(baseKeys(flats[language]), language).toEqual(baseKeys(flats.en));
@@ -193,6 +212,25 @@ describe("locales", () => {
       const missing = codes.filter((code) => !has(flats[language], `notices.${code}`));
       expect(missing, language).toEqual([]);
     }
+  });
+
+  it("translate every phrase the core sends", () => {
+    const keys = phraseKeys();
+    expect(keys.length).toBeGreaterThan(80);
+    for (const language of languages) {
+      const missing = keys.filter((key) => !has(flats[language], key));
+      expect(missing, language).toEqual([]);
+    }
+  });
+
+  it("keep no title or error the core never sends", () => {
+    const source = Object.values(rust).join("\n");
+    const codes = new Set(
+      Object.keys(flats.en)
+        .filter((key) => key.startsWith("titles.") || key.startsWith("errors."))
+        .map((key) => key.replace(PLURAL_SUFFIX, "").split(".")[1] ?? ""),
+    );
+    expect([...codes].filter((code) => !source.includes(`"${code}"`))).toEqual([]);
   });
 
   it("translate every value the UI turns into a key", () => {

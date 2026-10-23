@@ -10,7 +10,6 @@ import type { JobId } from "@/api/generated/JobId";
 import type { PlanView } from "@/api/generated/PlanView";
 import { hasCover } from "@/api/media";
 import { fetchArt, waitForJob } from "@/api/rpc";
-import { RpcError } from "@/api/transport";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,6 +26,7 @@ import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { useJobs } from "@/jobs/context";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 /**
@@ -135,7 +135,7 @@ function FetchBody({
         onPlan(plan);
       }
     } catch (err) {
-      setError(err instanceof RpcError ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setStarting(false);
       onRunning(false);
@@ -203,7 +203,7 @@ function FetchBody({
           <JobProgressLine job={job} />
           {job.error && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-              {job.error.message}
+              {errorText(job.error)}
             </p>
           )}
           {job.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("art.cancelled")}</p>}

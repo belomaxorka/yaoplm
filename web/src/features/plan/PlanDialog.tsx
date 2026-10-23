@@ -15,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { PlanDetails } from "@/features/plan/PlanDetails";
 import type { usePlan } from "@/features/plan/usePlan";
+import { phraseText } from "@/lib/phrase";
 
 type PlanFlow = ReturnType<typeof usePlan>;
 
@@ -42,7 +43,7 @@ export function PlanDialog({ flow, description }: { flow: PlanFlow; description?
     >
       <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl" data-testid="plan-dialog">
         <DialogHeader>
-          <DialogTitle>{plan?.title ?? t("plan.title")}</DialogTitle>
+          <DialogTitle>{plan ? phraseText(plan.titlePhrase, plan.title) : t("plan.title")}</DialogTitle>
           <DialogDescription>{description ?? (plan ? t("plan.on", { root: plan.root }) : t("plan.building"))}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto pr-1">

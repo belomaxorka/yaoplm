@@ -5,11 +5,16 @@ import type { JobKind } from "./JobKind";
 import type { JobLogEntry } from "./JobLogEntry";
 import type { JobResult } from "./JobResult";
 import type { JobStatus } from "./JobStatus";
+import type { Phrase } from "./Phrase";
 
 /**
  * A job as front ends see it.
  */
-export type JobInfo = { id: JobId, kind: JobKind, title: string, 
+export type JobInfo = { id: JobId, kind: JobKind, 
+/**
+ * English; `title_phrase` says it in the front end's language.
+ */
+title: string, titlePhrase?: Phrase, 
 /**
  * The device the job works on, when it has one.
  */
@@ -26,6 +31,10 @@ rate: number | null,
  * What is being worked on, e.g. the game being copied.
  */
 item: string | null, 
+/**
+ * `item` as a phrase, when it is a text rather than a name.
+ */
+itemPhrase?: Phrase, 
 /**
  * Set once the job finished; `ListJobs` leaves it out.
  */
