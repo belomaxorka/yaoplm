@@ -42,6 +42,8 @@ pub struct Body {
     pub content_type: Option<String>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    /// The `filename` of `Content-Disposition`, without any path.
+    pub file_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +109,18 @@ impl Http {
         url: &str,
         validators: &Validators,
     ) -> Result<Fetched, NetError> {
+        self.get_large(limiter, url, validators, MAX_BODY as u64)
+            .await
+    }
+
+    /// [`Self::get`] for bodies up to `max_body` bytes (a DAT, a loader).
+    pub async fn get_large(
+        &self,
+        limiter: &str,
+        url: &str,
+        validators: &Validators,
+        max_body: u64,
+    ) -> Result<Fetched, NetError> {
         let mut headers = HeaderMap::new();
         if let Some(etag) = &validators.etag
             && let Ok(value) = HeaderValue::from_str(etag)
@@ -129,7 +143,7 @@ impl Http {
                     match status {
                         StatusCode::NOT_MODIFIED => return Ok(Fetched::NotModified),
                         StatusCode::NOT_FOUND | StatusCode::GONE => return Ok(Fetched::NotFound),
-                        s if s.is_success() => return read_body(response).await,
+                        s if s.is_success() => return read_body(response, max_body).await,
                         s if s == StatusCode::TOO_MANY_REQUESTS || s.is_server_error() => {
                             retry_after_header(response.headers())
                         }
@@ -179,12 +193,22 @@ fn header_string(headers: &HeaderMap, name: header::HeaderName) -> Option<String
         .map(str::to_owned)
 }
 
-async fn read_body(response: reqwest::Response) -> Result<Fetched, NetError> {
+/// `attachment; filename="Sony - PlayStation 2 - Datfile (11845).zip"`.
+fn disposition_file_name(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(header::CONTENT_DISPOSITION)?.to_str().ok()?;
+    let start = value.find("filename=")? + "filename=".len();
+    let rest = value[start..].trim();
+    let name = match rest.strip_prefix('"') {
+        Some(quoted) => &quoted[..quoted.find('"')?],
+        None => rest.split(';').next()?.trim(),
+    };
+    let name = name.rsplit(['/', '\\']).next()?.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+async fn read_body(response: reqwest::Response, max_body: u64) -> Result<Fetched, NetError> {
     let url = response.url().to_string();
-    if response
-        .content_length()
-        .is_some_and(|len| len > MAX_BODY as u64)
-    {
+    if response.content_length().is_some_and(|len| len > max_body) {
         return Err(NetError::TooLarge(url));
     }
     let headers = response.headers().clone();
@@ -192,7 +216,7 @@ async fn read_body(response: reqwest::Response) -> Result<Fetched, NetError> {
         .bytes()
         .await
         .map_err(|e| NetError::Http(format!("{url}: {e}")))?;
-    if bytes.len() > MAX_BODY {
+    if bytes.len() as u64 > max_body {
         return Err(NetError::TooLarge(url));
     }
     Ok(Fetched::Ok(Body {
@@ -200,5 +224,37 @@ async fn read_body(response: reqwest::Response) -> Result<Fetched, NetError> {
         content_type: header_string(&headers, header::CONTENT_TYPE),
         etag: header_string(&headers, header::ETAG),
         last_modified: header_string(&headers, header::LAST_MODIFIED),
+        file_name: disposition_file_name(&headers),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_names_from_content_disposition() {
+        let name = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(value).unwrap(),
+            );
+            disposition_file_name(&headers)
+        };
+        assert_eq!(
+            name(r#"attachment; filename="Sony - PlayStation 2 - Datfile (11845) (2026-10-23 01-56-22).zip""#)
+                .as_deref(),
+            Some("Sony - PlayStation 2 - Datfile (11845) (2026-10-23 01-56-22).zip")
+        );
+        assert_eq!(
+            name("attachment; filename=a.zip; size=3").as_deref(),
+            Some("a.zip")
+        );
+        assert_eq!(
+            name(r#"attachment; filename="../../x.zip""#).as_deref(),
+            Some("x.zip")
+        );
+        assert_eq!(name("inline"), None);
+    }
 }

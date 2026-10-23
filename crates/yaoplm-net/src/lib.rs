@@ -1,5 +1,6 @@
 //! Cover-art sources, the download cache, request limits and PNG
-//! transcoding (ART-1, ART-2, ADR-0007).
+//! transcoding (ART-1, ART-2, ADR-0007), and the Redump DAT for dump
+//! verification (META-2).
 //!
 //! Asynchronous on purpose: the core never uses this crate (ADR-0003);
 //! `yaoplm-api` drives [`ArtService`] from a job thread through a tokio
@@ -9,6 +10,7 @@
 
 pub mod cache;
 pub mod http;
+pub mod redump;
 pub mod sources;
 pub mod transcode;
 
@@ -37,6 +39,8 @@ pub enum NetError {
     Image(String),
     #[error("cache: {0}")]
     Cache(String),
+    #[error("Redump DAT: {0}")]
+    Dat(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
@@ -135,6 +139,11 @@ impl ArtService {
 
     pub fn cache(&self) -> &Cache {
         &self.cache
+    }
+
+    /// The shared client, for other downloads (the Redump DAT).
+    pub fn http(&self) -> &Http {
+        &self.http
     }
 
     fn derived_label(size: ArtSize) -> String {
