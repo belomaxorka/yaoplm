@@ -49,6 +49,7 @@ import {
   type SortKey,
   sortKeys,
 } from "@/features/library/filters";
+import { GRID_GAP, GRID_MIN_COLUMN, type GridLayout, gridLayout } from "@/features/library/gridLayout";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
@@ -62,9 +63,6 @@ import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
 
-const GRID_MIN_COLUMN = 168;
-const GRID_GAP = 16;
-const GRID_ROW_HEIGHT = 300;
 const LIST_ROW_HEIGHT = 56;
 
 export function LibraryPage() {
@@ -469,35 +467,68 @@ function useRovingFocus(count: number, columns: number, scrollTo: (index: number
   return onKeyDown;
 }
 
-function useColumns(ref: React.RefObject<HTMLElement | null>): number {
-  const [columns, setColumns] = useState(4);
-  useEffect(() => {
+/** The grid's layout for the width of `ref`'s content box, kept up to date. */
+function useGridLayout(ref: React.RefObject<HTMLElement | null>): GridLayout {
+  const [layout, setLayout] = useState<GridLayout>(() => gridLayout(4 * (GRID_MIN_COLUMN + GRID_GAP)));
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
+    const update = (width: number) => {
+      // Rem-based card parts follow the root font size the user may have changed.
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const next = gridLayout(width, rem);
+      setLayout((current) =>
+        current.columns === next.columns && current.rowHeight === next.rowHeight ? current : next,
+      );
+    };
+    update(element.clientWidth - Number.parseFloat(getComputedStyle(element).paddingLeft) * 2);
     const observer = new ResizeObserver(([entry]) => {
-      const width = entry?.contentRect.width ?? element.clientWidth;
-      setColumns(Math.max(1, Math.floor((width + GRID_GAP) / (GRID_MIN_COLUMN + GRID_GAP))));
+      if (entry) update(entry.contentRect.width);
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [ref]);
-  return columns;
+  return layout;
 }
 
 function GameGrid({ games }: { games: Game[] }) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const columns = useColumns(scrollRef);
+  const { columns, rowHeight } = useGridLayout(scrollRef);
   const rows = Math.ceil(games.length / columns);
   const virtualizer = useVirtualizer({
     count: rows,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => GRID_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 2,
   });
   const onKeyDown = useRovingFocus(games.length, columns, (index) =>
     virtualizer.scrollToIndex(Math.floor(index / columns), { align: "auto" }),
   );
+
+  // A new width changes the row height and the games per row: drop the old
+  // sizes and keep the first game on screen where it was.
+  const firstShown = useRef(0);
+  const shownLayout = useRef({ columns, rowHeight });
+  useLayoutEffect(() => {
+    const before = shownLayout.current;
+    if (before.columns === columns && before.rowHeight === rowHeight) return;
+    shownLayout.current = { columns, rowHeight };
+    virtualizer.measure();
+    if ((scrollRef.current?.scrollTop ?? 0) > 0) {
+      virtualizer.scrollToIndex(Math.floor(firstShown.current / columns), { align: "start" });
+    }
+  }, [columns, rowHeight, virtualizer]);
+  const items = virtualizer.getVirtualItems();
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => {
+      firstShown.current = Math.floor(scroller.scrollTop / shownLayout.current.rowHeight) * shownLayout.current.columns;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-grid">
@@ -508,15 +539,15 @@ function GameGrid({ games }: { games: Game[] }) {
         style={{ height: virtualizer.getTotalSize() }}
         onKeyDown={onKeyDown}
       >
-        {virtualizer.getVirtualItems().map((row) => (
+        {items.map((row) => (
           <div
             key={row.key}
             className="absolute top-0 left-0 grid w-full"
             style={{
               transform: `translateY(${row.start}px)`,
-              height: row.size,
+              height: row.size - GRID_GAP,
               gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-              gap: GRID_GAP,
+              columnGap: GRID_GAP,
             }}
           >
             {games.slice(row.index * columns, (row.index + 1) * columns).map((game, i) => (
@@ -539,21 +570,22 @@ function GameCard({ game, index }: { game: Game; index: number }) {
       className="group flex flex-col gap-2 rounded-lg p-2 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
       aria-label={`${game.title}, ${game.startup}`}
     >
-      <GameCover game={game} className="transition-transform group-hover:scale-[1.02]" />
-      <div className="min-w-0">
+      <GameCover game={game} className="shrink-0 transition-transform group-hover:scale-[1.02]" />
+      {/* A fixed height, part of the row height in `gridLayout`: text never spills into the next row. */}
+      <div className="h-14 min-w-0 overflow-hidden">
         <div className="truncate text-sm font-medium" title={game.title}>
           {game.title}
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="font-mono">{game.startup}</span>
-          <span className="flex items-center gap-1 tabular-nums">
+          <span className="truncate font-mono">{game.startup}</span>
+          <span className="flex shrink-0 items-center gap-1 tabular-nums">
             {game.dump && <DumpMark game={game} />}
             {formatBytes(game.size, 1)}
           </span>
         </div>
         {game.warnings.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="size-3" aria-hidden />
+          <div className="mt-1 flex items-center gap-1 truncate text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="size-3 shrink-0" aria-hidden />
             {t("library.warningCount", { count: game.warnings.length })}
           </div>
         )}
