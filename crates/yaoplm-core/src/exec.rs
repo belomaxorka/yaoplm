@@ -854,6 +854,9 @@ pub fn execute_with_events(
         }
     }
 
+    // The last step may have reported less than it counts for (a ZSO is
+    // counted at its worst case): end on the true total.
+    runner.report();
     if journal.is_settled() {
         if let Err(err) = journal::remove(ctx.fs, &journal.id) {
             report

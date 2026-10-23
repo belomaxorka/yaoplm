@@ -461,7 +461,7 @@ fn audio_dropped(count: usize) -> Notice {
     Notice::warning(
         "audioTracksDropped",
         format!(
-            "{tracks} left out: OPL plays a one-track disc, so music played from CD audio is missing"
+            "{tracks} left out: OPL reads only the data track, so music played from CD audio is missing"
         ),
     )
 }

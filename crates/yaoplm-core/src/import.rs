@@ -468,7 +468,7 @@ impl Planner<'_> {
             });
             notices.push(Notice::info(
                 "compressedToZso",
-                "stored as ZSO: smaller on the device; OPL 1.2.0 beta reads it",
+                "stored as ZSO: smaller on the device; OPL 1.2.0 beta and newer read it",
             ));
         } else {
             tx.push(Step::WriteFile {

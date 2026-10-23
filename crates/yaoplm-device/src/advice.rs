@@ -160,7 +160,7 @@ impl fmt::Display for Advice {
             ),
             Self::ClusterTooLarge(size) => write!(
                 f,
-                "{} KiB clusters are reported to cause problems; 32-128 KiB is safe",
+                "{} KiB clusters are reported to cause problems; up to 32 KiB on FAT32 and 32-128 KiB on exFAT are safe",
                 kib(*size)
             ),
             Self::ClusterSmall(size) => write!(
