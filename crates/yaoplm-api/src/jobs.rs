@@ -48,6 +48,8 @@ pub enum JobKind {
     VerifyGames,
     /// Downloads or imports the Redump DAT (META-2).
     UpdateRedump,
+    /// Reads picture sets and ends with a plan to write them (ART-5).
+    ImportArt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -52,6 +52,21 @@ export async function pickImage(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+/** Archives a picture set comes in (ART-5); folders are picked with `pickFolder`. */
+export const PICTURE_SET_EXTENSIONS = ["zip", "7z", "tar"];
+
+/** Picture sets: OPL Manager's art backups, `art.tar`, or single pictures. */
+export async function pickPictureSets(): Promise<string[]> {
+  if (!isTauri()) return [];
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({
+    multiple: true,
+    filters: [{ name: "Picture sets", extensions: [...PICTURE_SET_EXTENSIONS, ...IMAGE_PICK_EXTENSIONS] }],
+  });
+  if (!picked) return [];
+  return Array.isArray(picked) ? picked : [picked];
+}
+
 /**
  * Lets the WebView load `<root>/ART` through the asset protocol (ART-2).
  * Called after every scan, because the folder may be new.

@@ -51,7 +51,7 @@ exFAT-образ локально не проверить: нет Rust-библ�
 ## Fuzz и property-тесты
 
 - `crates/yaoplm-formats/tests/properties.rs` (proptest, в обычном `cargo test`): CFG без потерь, `set` не трогает чужие ключи, `ul.cfg` и ZSO round-trip, парсеры не падают на мусоре.
-- `fuzz/` (cargo-fuzz, nightly): цели `iso`, `system_cnf`, `cfg`, `ul_cfg`, `zso`, `cht` с теми же инвариантами. В CI раз в неделю (`fuzz.yml`), в обычном CI только проверка сборки. Цель `iso` стартует с корпуса фикстур (`write_fixtures`).
+- `fuzz/` (cargo-fuzz, nightly): цели `iso`, `system_cnf`, `cfg`, `ul_cfg`, `zso`, `cht`, `tar` с теми же инвариантами. В CI раз в неделю (`fuzz.yml`), в обычном CI только проверка сборки. Цель `iso` стартует с корпуса фикстур (`write_fixtures`).
 
 ## Тестовый диск для консоли
 

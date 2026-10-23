@@ -406,15 +406,16 @@ pub(crate) fn art_kind(kind: Option<&str>) -> Result<ArtKind, ApiError> {
 /// A game as the fetch job needs it.
 #[derive(Clone)]
 pub(crate) struct Target {
-    startup: String,
-    title: String,
-    media: yaoplm_core::Media,
-    format: String,
+    pub startup: String,
+    pub title: String,
+    pub media: yaoplm_core::Media,
+    pub format: String,
     /// Picture types the device has for it, in a format the profile loads.
-    present: Vec<ArtKind>,
+    pub present: Vec<ArtKind>,
 }
 
-fn targets(root: &Path, profile: LoaderProfile) -> Result<Vec<Target>, ApiError> {
+/// The games on the device, once per ID.
+pub(crate) fn targets(root: &Path, profile: LoaderProfile) -> Result<Vec<Target>, ApiError> {
     let options = ScanOptions {
         profile,
         verify_images: false,

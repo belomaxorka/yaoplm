@@ -746,3 +746,49 @@ fn add_with_covers_and_dump_checks() {
     assert!(quiet.status.success());
     assert!(!stdout(&quiet).contains("Dump checks"));
 }
+
+/// `art import`: a folder set fills the icon of a game on the device; the
+/// picture of a game that is not there is left out (ART-5).
+#[test]
+fn art_import_from_a_folder_set() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--no-verify".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+    let set = s.root.parent().unwrap().join("set");
+    std::fs::create_dir_all(&set).unwrap();
+    let png = {
+        let img = image::ImageBuffer::from_fn(32, 32, |x, y| image::Rgb([x as u8, y as u8, 1]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    };
+    std::fs::write(set.join("SLUS_200.62_ICO.png"), &png).unwrap();
+    std::fs::write(set.join("SLES_999.99_ICO.png"), &png).unwrap();
+    let done = run(&[
+        "art".as_ref(),
+        "import".as_ref(),
+        s.root.as_os_str(),
+        set.as_os_str(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    assert!(
+        done.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(text.contains("+ write ART/SLUS_200.62_ICO.png"), "{text}");
+    assert!(
+        text.contains("Left out, for games not on this device: 1"),
+        "{text}"
+    );
+    assert!(s.root.join("ART/SLUS_200.62_ICO.png").is_file());
+}

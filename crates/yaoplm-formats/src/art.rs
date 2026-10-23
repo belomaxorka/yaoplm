@@ -152,6 +152,55 @@ pub fn parse_art_file_name(name: &str) -> Option<ArtFileName> {
     })
 }
 
+/// A picture in a picture set (ART-5): whose it is and of which type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackPicture {
+    /// The game ID as the file names it, either spelling.
+    pub key: String,
+    pub kind: ArtKind,
+    /// Lower case: `png`, `jpg`...
+    pub extension: String,
+}
+
+/// Image formats a picture set may hold; they are transcoded to PNG.
+pub const PACK_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
+
+/// Reads a file name of a picture set, wherever it sits in the set:
+/// `SLUS_200.62_COV.png` as OPL names art, and OPL Manager's backups with
+/// numbered screenshots and backgrounds, `SLUS_200.62_SCR_00.jpg` (the
+/// first two are SCR and SCR2, the first background is BG; further ones
+/// have no place in OPL). Case does not matter, as in RiptOPL's tar
+/// lookups. Other names, and other types, give `None`.
+pub fn pack_picture(file_name: &str) -> Option<PackPicture> {
+    let (stem, extension) = file_name.rsplit_once('.')?;
+    let extension = extension.to_ascii_lowercase();
+    if !PACK_EXTENSIONS.contains(&extension.as_str()) {
+        return None;
+    }
+    let (rest, last) = stem.rsplit_once('_')?;
+    let numbered = last.len() == 2 && last.bytes().all(|b| b.is_ascii_digit());
+    let (key, kind) = if numbered {
+        let (key, suffix) = rest.rsplit_once('_')?;
+        let kind = match (suffix.to_ascii_uppercase().as_str(), last) {
+            ("SCR", "00") => ArtKind::Scr,
+            ("SCR", "01") => ArtKind::Scr2,
+            ("BG", "00") => ArtKind::Bg,
+            _ => return None,
+        };
+        (key, kind)
+    } else {
+        (rest, ArtKind::from_suffix(&last.to_ascii_uppercase())?)
+    };
+    if key.is_empty() {
+        return None;
+    }
+    Some(PackPicture {
+        key: key.to_owned(),
+        kind,
+        extension,
+    })
+}
+
 /// The IHDR fields of a PNG file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PngHeader {
@@ -272,6 +321,40 @@ mod tests {
             "SLUS_200.62_COV.",
         ] {
             assert_eq!(parse_art_file_name(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn picture_set_names() {
+        let pic = |name| pack_picture(name).map(|p| (p.key, p.kind, p.extension));
+        assert_eq!(
+            pic("SLUS_200.62_COV.png"),
+            Some(("SLUS_200.62".into(), ArtKind::Cov, "png".into()))
+        );
+        assert_eq!(
+            pic("slus_200.62_cov2.JPG"),
+            Some(("slus_200.62".into(), ArtKind::Cov2, "jpg".into()))
+        );
+        // OPL Manager's numbered screenshots and backgrounds.
+        assert_eq!(pic("SLUS_200.62_SCR_00.jpg").unwrap().1, ArtKind::Scr);
+        assert_eq!(pic("SLUS_200.62_SCR_01.jpg").unwrap().1, ArtKind::Scr2);
+        assert_eq!(pic("SLUS_200.62_BG_00.jpg").unwrap().1, ArtKind::Bg);
+        assert_eq!(pic("SLUS_200.62_SCR_02.jpg"), None);
+        assert_eq!(pic("SLUS_200.62_BG_01.png"), None);
+        // An ID ending in two digits is not mistaken for a number.
+        assert_eq!(
+            pic("SLPM_123.45_ICO.png"),
+            Some(("SLPM_123.45".into(), ArtKind::Ico, "png".into()))
+        );
+        for bad in [
+            "PS2_LIST.CSV",
+            "SLUS_200.62_COV.txt",
+            "SLUS_200.62_LOGO2.png",
+            "_COV.png",
+            "COV.png",
+            "SLUS_200.62_COV",
+        ] {
+            assert_eq!(pack_picture(bad), None, "{bad}");
         }
     }
 

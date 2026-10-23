@@ -27,5 +27,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "tests/unit/**/*.test.{ts,tsx}"],
+    // The i18n test reads the Rust sources through import.meta.glob; a cached
+    // transform would miss files added since and check a stale list.
+    fsModuleCache: false,
   },
 });

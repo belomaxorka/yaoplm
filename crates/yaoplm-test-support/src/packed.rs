@@ -139,3 +139,25 @@ pub fn seven_zip(files: &[(&str, &[u8])]) -> io::Result<Vec<u8>> {
     }
     Ok(out.into_inner())
 }
+
+/// A ustar archive of `files` (name, bytes), like RiptOPL's `art.tar`.
+pub fn tar(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, bytes) in files {
+        let mut header = vec![0u8; 512];
+        header[..name.len().min(100)].copy_from_slice(&name.as_bytes()[..name.len().min(100)]);
+        header[100..108].copy_from_slice(b"0000644\0");
+        header[124..136].copy_from_slice(format!("{:011o}\0", bytes.len()).as_bytes());
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        header[148..156].copy_from_slice(b"        ");
+        let sum: u32 = header.iter().map(|&b| u32::from(b)).sum();
+        header[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(bytes);
+        out.resize(out.len().div_ceil(512) * 512, 0);
+    }
+    out.extend(vec![0u8; 1024]);
+    out
+}

@@ -157,12 +157,15 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
                 .collect()
         }
     };
-    // Folders that only appear in the paths of files.
+    // Folders that only appear in the paths of files. A picture set holds
+    // tens of thousands of entries: look names up, do not scan for them.
+    let known: std::collections::HashSet<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    let mut seen = std::collections::HashSet::new();
     let mut implied = Vec::new();
     for entry in &entries {
         let mut path = entry.name.as_str();
         while let Some((parent, _)) = path.rsplit_once('/') {
-            if !entries.iter().any(|e| e.name == parent) && !implied.contains(&parent.to_owned()) {
+            if !known.contains(parent) && seen.insert(parent) {
                 implied.push(parent.to_owned());
             }
             path = parent;
@@ -174,6 +177,65 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
         is_dir: true,
     }));
     Ok(entries)
+}
+
+/// Hands every file of the archive to `visit`, in stored order, with a
+/// reader of its bytes; what `visit` leaves unread is skipped. One pass
+/// over the archive: a picture set (ART-5) holds thousands of small files,
+/// and opening them one by one would decode a solid 7z block again for
+/// each. Encrypted zip entries are left out.
+pub fn for_each_file(
+    kind: Kind,
+    source: &mut dyn Source,
+    visit: &mut dyn FnMut(&Entry, &mut dyn Read) -> io::Result<()>,
+) -> Result<(), ArchiveError> {
+    source.seek(SeekFrom::Start(0))?;
+    match kind {
+        Kind::Zip => {
+            let mut archive = zip::ZipArchive::new(&mut *source)?;
+            for index in 0..archive.len() {
+                let (name, size, skip) = {
+                    let raw = archive.by_index_raw(index)?;
+                    (
+                        raw.name()?.to_string(),
+                        raw.size(),
+                        raw.is_dir() || raw.encrypted(),
+                    )
+                };
+                let Some(name) = safe_name(&name).filter(|_| !skip) else {
+                    continue;
+                };
+                let mut file = archive.by_index(index)?;
+                let entry = Entry {
+                    name,
+                    size,
+                    is_dir: false,
+                };
+                visit(&entry, &mut file)?;
+            }
+        }
+        Kind::SevenZip => {
+            let mut reader =
+                sevenz_rust2::ArchiveReader::new(&mut *source, sevenz_rust2::Password::empty())?;
+            reader.for_each_entries(|file, data| {
+                if file.is_directory {
+                    return Ok(true);
+                }
+                if let Some(name) = safe_name(&file.name) {
+                    let entry = Entry {
+                        name,
+                        size: file.size,
+                        is_dir: false,
+                    };
+                    visit(&entry, data)?;
+                }
+                // The rest of the file is decoded and dropped by the block.
+                io::copy(data, &mut io::sink())?;
+                Ok(true)
+            })?;
+        }
+    }
+    Ok(())
 }
 
 /// One entry, readable and seekable.
@@ -683,6 +745,73 @@ mod tests {
                 Err(ArchiveError::NotFound(_))
             ));
         }
+    }
+
+    /// Names and bytes of every file, read in one pass.
+    fn walk(kind: Kind, archive: &[u8], read: impl Fn(&str) -> bool) -> Vec<(String, Vec<u8>)> {
+        let mut out = Vec::new();
+        for_each_file(
+            kind,
+            &mut Cursor::new(archive.to_vec()),
+            &mut |entry, data| {
+                let mut bytes = Vec::new();
+                if read(&entry.name) {
+                    data.read_to_end(&mut bytes)?;
+                }
+                out.push((entry.name.clone(), bytes));
+                Ok(())
+            },
+        )
+        .unwrap();
+        out
+    }
+
+    #[test]
+    fn every_file_in_one_pass() {
+        let files: Vec<(String, Vec<u8>)> = (0..40)
+            .map(|i| {
+                (
+                    format!("PS2/SLUS_200.{i:02}/SLUS_200.{i:02}_COV.jpg"),
+                    data(500 + i),
+                )
+            })
+            .collect();
+        let refs: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(n, b)| (n.as_str(), b.as_slice()))
+            .collect();
+        for method in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
+            let archive = zip_of(&refs, method);
+            // Only every fifth file read; the rest are passed over.
+            let seen = walk(Kind::Zip, &archive, |name| {
+                name.contains("0_COV") || name.contains("5_COV")
+            });
+            assert_eq!(seen.len(), 40);
+            assert_eq!(seen[5].0, files[5].0);
+            assert_eq!(seen[5].1, files[5].1);
+            assert!(seen[6].1.is_empty());
+        }
+        let mut out = Cursor::new(Vec::new());
+        {
+            let mut writer = sevenz_rust2::ArchiveWriter::new(&mut out).unwrap();
+            for (name, bytes) in &files {
+                writer
+                    .push_archive_entry(
+                        sevenz_rust2::ArchiveEntry::new_file(name),
+                        Some(Cursor::new(bytes.clone())),
+                    )
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let seen = walk(Kind::SevenZip, out.get_ref(), |name| {
+            name.ends_with("39_COV.jpg")
+        });
+        assert_eq!(seen.len(), 40);
+        assert_eq!(seen[39].1, files[39].1);
     }
 
     #[test]

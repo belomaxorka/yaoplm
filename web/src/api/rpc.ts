@@ -71,6 +71,11 @@ export function findArt(transport: Transport, request: Extract<Request, { type: 
   return call(transport, request, "Job").then((r) => r.job);
 }
 
+/** Starts reading picture sets (ART-5); the job ends with a plan to confirm. */
+export function importArt(transport: Transport, request: Extract<Request, { type: "ImportArt" }>): Promise<JobId> {
+  return call(transport, request, "Job").then((r) => r.job);
+}
+
 /** Starts hashing games and comparing them with the Redump DAT (GAME-5). */
 export function verifyGames(transport: Transport, request: Extract<Request, { type: "VerifyGames" }>): Promise<JobId> {
   return call(transport, request, "Job").then((r) => r.job);

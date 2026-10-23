@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Disc3, File, Folder, HardDrive, Image as ImageIcon } from "lucide-react";
+import { ArrowUp, Disc3, File, FileArchive, Folder, HardDrive, Image as ImageIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,21 +16,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DAT_EXTENSIONS } from "@/features/add/desktop";
+import { DAT_EXTENSIONS, PICTURE_SET_EXTENSIONS } from "@/features/add/desktop";
 import { isImageName } from "@/features/art/clipboard";
 import { formatBytes } from "@/lib/format";
 import { errorText } from "@/lib/phrase";
 
-function isDatName(name: string): boolean {
+function hasExtension(name: string, extensions: readonly string[]): boolean {
   const dot = name.lastIndexOf(".");
-  return dot >= 0 && DAT_EXTENSIONS.includes(name.slice(dot + 1).toLowerCase());
+  return dot >= 0 && extensions.includes(name.slice(dot + 1).toLowerCase());
 }
+
+const isDatName = (name: string) => hasExtension(name, DAT_EXTENSIONS);
+const isSetArchive = (name: string) => hasExtension(name, PICTURE_SET_EXTENSIONS);
+
+const titleKeys = { games: "add", image: "art", dat: "dump", pack: "artImport" } as const;
 
 /**
  * Picks import sources in server mode, where the browser has no file paths
  * to give: folders are listed by the core, inside its roots only (IMP-1,
  * ADR-0009). In `image` mode it picks one image file for a cover (ART-3),
- * in `dat` mode one Redump DAT to import (META-2).
+ * in `dat` mode one Redump DAT to import (META-2), in `pack` mode picture
+ * sets: folders, archives and pictures (ART-5).
  */
 export function FolderBrowserDialog({
   open,
@@ -41,13 +47,27 @@ export function FolderBrowserDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (paths: string[]) => void;
-  mode?: "games" | "image" | "dat";
+  mode?: "games" | "image" | "dat" | "pack";
 }) {
   const { t } = useTranslation();
   const images = mode === "image";
-  const single = mode !== "games";
+  const single = mode === "image" || mode === "dat";
   const usableFile = (entry: DirEntry): boolean =>
-    mode === "image" ? isImageName(entry.name) : mode === "dat" ? isDatName(entry.name) : entry.importable;
+    mode === "image"
+      ? isImageName(entry.name)
+      : mode === "dat"
+        ? isDatName(entry.name)
+        : mode === "pack"
+          ? isSetArchive(entry.name) || isImageName(entry.name)
+          : entry.importable;
+  const fileIcon = (entry: DirEntry) =>
+    !usableFile(entry)
+      ? File
+      : images || (mode === "pack" && isImageName(entry.name))
+        ? ImageIcon
+        : mode === "pack"
+          ? FileArchive
+          : Disc3;
   const { transport } = useApi();
   const [path, setPath] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -83,12 +103,8 @@ export function FolderBrowserDialog({
     >
       <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-xl" data-testid="folder-browser">
         <DialogHeader>
-          <DialogTitle>
-            {images ? t("art.browseTitle") : mode === "dat" ? t("dump.browseTitle") : t("add.browseTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {images ? t("art.browseDescription") : mode === "dat" ? t("dump.browseDescription") : t("add.browseDescription")}
-          </DialogDescription>
+          <DialogTitle>{t(`${titleKeys[mode]}.browseTitle`)}</DialogTitle>
+          <DialogDescription>{t(`${titleKeys[mode]}.browseDescription`)}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 text-sm">
           <Button
@@ -112,7 +128,7 @@ export function FolderBrowserDialog({
           )}
           {listing.data?.entries.map((entry) => {
             const usable = entry.kind !== "dir" && usableFile(entry);
-            const Icon = entry.kind === "dir" ? (path === null ? HardDrive : Folder) : usable ? (images ? ImageIcon : Disc3) : File;
+            const Icon = entry.kind === "dir" ? (path === null ? HardDrive : Folder) : fileIcon(entry);
             const selectable = pickable(entry);
             return (
               <li key={entry.path} className="flex items-center gap-2 border-b px-2 py-1 text-sm last:border-0">
@@ -160,7 +176,13 @@ export function FolderBrowserDialog({
             }}
             data-testid="browser-add"
           >
-            {images ? t("art.useImage") : mode === "dat" ? t("dump.importThis") : t("add.addSelected", { count: selected.size })}
+            {images
+              ? t("art.useImage")
+              : mode === "dat"
+                ? t("dump.importThis")
+                : mode === "pack"
+                  ? t("artImport.useSelected", { count: selected.size })
+                  : t("add.addSelected", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

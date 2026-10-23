@@ -7,6 +7,7 @@ import {
   CircleX,
   Clock,
   Database,
+  FolderInput,
   History,
   ImageDown,
   ListChecks,
@@ -325,6 +326,7 @@ const kindIcons = {
   fetchArt: ImageDown,
   verifyGames: ShieldCheck,
   updateRedump: Database,
+  importArt: FolderInput,
 } as const;
 
 const stepStateColours = {

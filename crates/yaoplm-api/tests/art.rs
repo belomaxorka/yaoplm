@@ -798,3 +798,130 @@ fn other_picture_types_and_variants() {
     execute(&s.api, &plan, true);
     assert!(!Path::new(&s.device).join("ART/SLUS_212.18_BG.png").exists());
 }
+
+/// Picture sets (ART-5): an OPL Manager backup (zip), a folder and an
+/// `art.tar`, read for the games on the device only.
+#[test]
+fn picture_sets_fill_the_games_on_the_device() {
+    use yaoplm_test_support::packed;
+
+    let s = setup();
+    let sets = s.mirror.parent().unwrap().join("sets");
+    fs::create_dir_all(sets.join("folder/ART")).unwrap();
+    let jpg = |w, h| image_bytes(w, h, image::ImageFormat::Jpeg);
+    let png = |w, h| image_bytes(w, h, image::ImageFormat::Png);
+    // OPL Manager's layout: PS2/<ID>/<ID>_<TYPE>.jpg, numbered screenshots.
+    let backup = packed::zip(
+        &[
+            ("PS2/SLUS_200.62/SLUS_200.62_COV.jpg", &jpg(300, 420)),
+            ("PS2/SLUS_200.62/SLUS_200.62_SCR_00.jpg", &jpg(640, 480)),
+            ("PS2/SLUS_200.62/SLUS_200.62_SCR_01.jpg", &jpg(640, 480)),
+            ("PS2/SLUS_200.62/SLUS_200.62_SCR_02.jpg", &jpg(640, 480)),
+            ("PS2/SLUS_200.62/SLUS_200.62_BG_00.jpg", &jpg(800, 600)),
+            ("PS2/SLUS_999.98/SLUS_999.98_COV.jpg", &jpg(300, 420)),
+            ("PS2/SLUS_999.98/SLUS_999.98_ICO.png", &png(64, 64)),
+            ("PS2_LIST.CSV", b"sep=,\nID,ID2,Title\n"),
+        ],
+        false,
+    )
+    .unwrap();
+    fs::write(sets.join("OPLM_ART_2023_07.zip"), backup).unwrap();
+    fs::write(sets.join("folder/ART/SCES_500.03_LGO.png"), png(400, 100)).unwrap();
+    fs::write(sets.join("folder/notes.txt"), b"hello").unwrap();
+    // A JPEG and a PNG of the same icon: the PNG wins.
+    let art_tar = packed::tar(&[
+        ("SLUS_212.18_ICO.jpg", &jpg(128, 128)),
+        ("SLUS_212.18_ICO.png", &png(128, 128)),
+    ]);
+    fs::write(sets.join("art.tar"), art_tar).unwrap();
+
+    let import = |overwrite: bool| {
+        let started = call(
+            &s.api,
+            json!({
+                "type": "ImportArt",
+                "root": s.device,
+                "sources": [
+                    sets.join("OPLM_ART_2023_07.zip").to_string_lossy(),
+                    sets.join("folder").to_string_lossy(),
+                    sets.join("art.tar").to_string_lossy(),
+                ],
+                "overwrite": overwrite,
+            }),
+        )
+        .unwrap();
+        let info = wait(&s.api, &started);
+        assert_eq!(info.status, JobStatus::Finished, "{info:?}");
+        let Some(JobResult::Plan(plan)) = info.result else {
+            panic!("expected a plan: {info:?}");
+        };
+        plan
+    };
+    let plan = import(false);
+    let mut writes: Vec<String> = plan
+        .transactions
+        .iter()
+        .flat_map(|t| &t.steps)
+        .filter(|s| matches!(s.op, yaoplm_api::plans::StepOp::WriteFile))
+        .map(|s| s.path.clone())
+        .collect();
+    writes.sort();
+    assert_eq!(
+        writes,
+        [
+            "ART/SCES_500.03_LGO.png",
+            "ART/SLUS_200.62_BG.png",
+            "ART/SLUS_200.62_SCR.png",
+            "ART/SLUS_200.62_SCR2.png",
+            "ART/SLUS_212.18_ICO.png",
+        ],
+        "{plan:#?}"
+    );
+    let codes: Vec<&str> = plan.notices.iter().map(|n| n.code.as_str()).collect();
+    // Retail's cover is on the device; the other game's two are not ours.
+    assert!(codes.contains(&"artPresent"), "{codes:?}");
+    let left_out = plan
+        .notices
+        .iter()
+        .find(|n| n.code == "otherGamesLeftOut")
+        .unwrap();
+    assert!(left_out.message.ends_with(": 2"), "{}", left_out.message);
+    let icon = plan
+        .transactions
+        .iter()
+        .find(|t| t.steps.iter().any(|s| s.path == "ART/SLUS_212.18_ICO.png"))
+        .unwrap();
+    assert!(
+        icon.notices
+            .iter()
+            .any(|n| n.message.contains("SLUS_212.18_ICO.png")),
+        "the PNG of the two: {icon:?}"
+    );
+    execute(&s.api, &serde_json::to_value(&*plan).unwrap(), false);
+    let size = |name: &str| {
+        let bytes = fs::read(Path::new(&s.device).join("ART").join(name)).unwrap();
+        let h = png_header(&bytes).unwrap();
+        (h.width, h.height)
+    };
+    assert_eq!(size("SLUS_200.62_SCR2.png"), (250, 188));
+    assert_eq!(size("SLUS_200.62_BG.png"), (640, 480));
+    assert_eq!(size("SCES_500.03_LGO.png"), (300, 125));
+    assert_eq!(size("SLUS_212.18_ICO.png"), (64, 64));
+
+    // Replacing: the cover the device had moves to the backup folder.
+    let plan = import(true);
+    assert!(
+        plan.transactions
+            .iter()
+            .any(|t| t.notices.iter().any(|n| n.code == "artReplaced")),
+        "{plan:#?}"
+    );
+
+    // Not a set at all.
+    let err = call(
+        &s.api,
+        json!({"type": "ImportArt", "root": s.device, "sources": [sets.join("folder/notes.txt").to_string_lossy()]}),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::BadRequest);
+}

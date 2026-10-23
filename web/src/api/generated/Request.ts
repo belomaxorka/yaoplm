@@ -85,7 +85,19 @@ kinds?: Array<ArtType>,
  * The id of an import plan: look for the covers of the games it
  * adds, `missing` scope (ART-8).
  */
-import?: string, } | { "type": "FindArt", root: string, startup: string, kind: ArtType, profile?: LoaderProfile, sources?: Array<ArtSourceSetting>, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
+import?: string, } | { "type": "FindArt", root: string, startup: string, kind: ArtType, profile?: LoaderProfile, sources?: Array<ArtSourceSetting>, } | { "type": "ImportArt", root: string, 
+/**
+ * Folders, archives or picture files.
+ */
+sources: Array<string>, profile?: LoaderProfile, 
+/**
+ * Every type when absent.
+ */
+kinds?: Array<ArtType>, 
+/**
+ * Replace pictures the device has; they move to the backup folder.
+ */
+overwrite?: boolean, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
 /**
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.

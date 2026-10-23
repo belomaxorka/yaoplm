@@ -296,6 +296,25 @@ enum ArtCommand {
         #[command(flatten)]
         apply: Apply,
     },
+    /// Take the pictures of the games on a device from picture sets you
+    /// have: OPL Manager's art backups (zip or 7z), folders, art.tar. The
+    /// rest of a set is left out; a plan shows what is written.
+    Import {
+        root: PathBuf,
+        /// Folders, .zip, .7z or .tar files, or single pictures.
+        #[arg(required = true)]
+        sets: Vec<PathBuf>,
+        /// Only these types (COV, COV2, LAB, ICO, LGO, SCR, SCR2, BG).
+        /// Repeatable; every type by default.
+        #[arg(long = "kind", value_name = "TYPE")]
+        kinds: Vec<String>,
+        /// Replace pictures the device has (copies stay in
+        /// .yaoplm/backup/).
+        #[arg(long)]
+        replace: bool,
+        #[command(flatten)]
+        apply: Apply,
+    },
     /// Show the art cache, or empty it with --clear.
     Cache {
         #[arg(long)]
@@ -894,6 +913,40 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                 kind,
             };
             plan_and_apply(api, request, &apply)
+        }
+        ArtCommand::Import {
+            root,
+            sets,
+            kinds,
+            replace,
+            apply,
+        } => {
+            let kinds = kinds
+                .iter()
+                .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let request = Request::ImportArt {
+                root: text(&root),
+                sources: sets.iter().map(|s| absolute(s)).collect(),
+                profile: Some(apply.profile.into()),
+                kinds: (!kinds.is_empty()).then_some(kinds),
+                overwrite: Some(replace),
+            };
+            let job = match api.dispatch(request) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, apply.json),
+            };
+            let info = wait_job(api, job, io::stderr().is_terminal() && !apply.json);
+            match (info.status, info.result) {
+                (JobStatus::Finished, Some(JobResult::Plan(plan))) => apply_plan(api, plan, &apply),
+                (_, _) => {
+                    let error = info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("the import failed"));
+                    fail(&error, apply.json)
+                }
+            }
         }
         ArtCommand::Cache { clear, json } => {
             if clear && let Err(error) = api.dispatch(Request::ClearArtCache) {

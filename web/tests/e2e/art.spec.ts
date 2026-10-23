@@ -161,6 +161,40 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
   await expect(job.getByTestId("job-log")).toContainText("Logo");
 });
 
+test("picture sets fill the games on the device", async ({ page, request }) => {
+  await openLibrary(page, request);
+  await page.goto("/library");
+  await page.getByTestId("import-pictures").click();
+  const dialog = page.getByTestId("art-import-dialog");
+  await expect(dialog.getByTestId("art-import-start")).toBeDisabled();
+  await dialog.getByTestId("art-import-browse").click();
+  const browser = page.getByTestId("folder-browser");
+  await browser.getByRole("button", { name: "mirror" }).click();
+  await browser.getByRole("button", { name: "sets", exact: true }).click();
+  await browser.getByRole("checkbox", { name: "Select OPLM art backup.zip" }).check();
+  await browser.getByRole("checkbox", { name: "Select art.tar" }).check();
+  await browser.getByRole("button", { name: "Use 2 sets" }).click();
+  await expect(dialog.getByTestId("art-import-sets").getByRole("listitem")).toHaveCount(2);
+  await dialog.getByTestId("art-import-start").click();
+
+  // Numbered screenshots become SCR; a cover the device has stays; the
+  // picture of a game that is not there is left out.
+  const plan = page.getByTestId("plan-dialog");
+  await expect(plan).toContainText("ART/SLUS_200.62_ICO.png");
+  await expect(plan).toContainText("ART/SLUS_200.62_SCR.png");
+  await expect(plan).toContainText("ART/SLUS_212.18_COV2.png");
+  await expect(plan).not.toContainText("SLUS_212.18_COV.png");
+  await expect(plan).toContainText("Already on the device and left alone: 1");
+  await expect(plan).toContainText("Left out, for games not on this device: 1");
+  await plan.getByTestId("plan-confirm").click();
+  await expect(plan).toBeHidden();
+
+  await page.getByRole("listitem", { name: /Retail Game/ }).click();
+  await expect(page.getByTestId("art-slot-ICO")).toHaveAttribute("data-has-art", "true");
+  await expect(page.getByTestId("art-slot-SCR")).toHaveAttribute("data-has-art", "true");
+  await expect(page.getByTestId("art-slot-SCR2")).toHaveAttribute("data-has-art", "false");
+});
+
 test("the About screen credits the data and cover sources", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/settings");

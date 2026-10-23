@@ -16,6 +16,7 @@
 //! `cargo test -p yaoplm-api --features ts-export`.
 
 pub mod art;
+mod art_pack;
 pub mod devices;
 pub mod dir;
 mod error;
@@ -677,6 +678,42 @@ impl Api {
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| art::fetch_job(ctx, &net, &plans, params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::ImportArt {
+                root,
+                sources,
+                profile,
+                kinds,
+                overwrite,
+            } => {
+                let (path, _fs) = self.root(&root)?;
+                // Sets are read from the host: the same allow-list applies.
+                let sources = sources
+                    .iter()
+                    .map(|s| self.paths.resolve(s))
+                    .collect::<Result<Vec<_>, _>>()?;
+                art_pack::check_sources(&sources)?;
+                let kinds: Vec<ArtKind> = match kinds {
+                    Some(kinds) if !kinds.is_empty() => kinds.into_iter().map(Into::into).collect(),
+                    _ => ArtKind::ALL.to_vec(),
+                };
+                let params = art_pack::PackParams {
+                    root: path.clone(),
+                    profile: profile.unwrap_or_default(),
+                    sources,
+                    kinds,
+                    overwrite: overwrite.unwrap_or(false),
+                };
+                let net = Arc::clone(&self.net);
+                let plans = self.plans.clone();
+                let job = self.jobs.spawn(
+                    JobKind::ImportArt,
+                    &Said::title("importArt"),
+                    Some(display_path(&path)),
+                    Queue::Read,
+                    move |ctx| art_pack::import_job(ctx, &net, &plans, params),
                 );
                 Ok(Response::Job { job })
             }

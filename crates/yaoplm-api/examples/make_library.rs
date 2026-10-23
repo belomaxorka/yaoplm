@@ -9,7 +9,8 @@
 //! few things to warn about; `<folder>/sources` holds images to import;
 //! `<folder>/mirror` holds local mirrors of the two cover sources with a
 //! cover each (ART-1), so the art screens work without the network, and a
-//! Redump DAT that verifies some of the games and not others (GAME-5). Pass
+//! Redump DAT that verifies some of the games and not others (GAME-5), and
+//! `sets/` with two picture sets to import (ART-5). Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -26,6 +27,7 @@ use yaoplm_api::{Api, Layout, Request, Response};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
 use yaoplm_test_support::dat::DatBuilder;
+use yaoplm_test_support::packed;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -216,6 +218,36 @@ fn main() -> ExitCode {
     write(
         &mirror.join("custom-cover.jpg"),
         &cover(350, 500, 20, image::ImageFormat::Jpeg),
+    );
+    // Picture sets (ART-5): an OPL Manager art backup (`PS2/<ID>/` with
+    // numbered screenshots) and an `art.tar`. One picture is for a game
+    // that already has a cover and one for a game not on the device.
+    let jpg = |w, h, hue| cover(w, h, hue, image::ImageFormat::Jpeg);
+    let (icon, screen, front, other) = (
+        jpg(64, 64, 90),
+        jpg(320, 240, 120),
+        jpg(140, 200, 60),
+        jpg(140, 200, 150),
+    );
+    write(
+        &mirror.join("sets/OPLM art backup.zip"),
+        &packed::zip(
+            &[
+                ("PS2/SLUS_200.62/SLUS_200.62_ICO.jpg", &icon),
+                ("PS2/SLUS_200.62/SLUS_200.62_SCR_00.jpg", &screen),
+                ("PS2/SLUS_212.18/SLUS_212.18_COV.jpg", &front),
+                ("PS2/SLES_888.88/SLES_888.88_COV.jpg", &other),
+            ],
+            false,
+        )
+        .unwrap(),
+    );
+    write(
+        &mirror.join("sets/art.tar"),
+        &packed::tar(&[(
+            "SLUS_212.18_COV2.png",
+            &cover(140, 200, 30, image::ImageFormat::Png),
+        )]),
     );
     for n in 0..extra {
         let id = format!("SLUS_{:03}.{:02}", 300 + n / 100, n % 100);

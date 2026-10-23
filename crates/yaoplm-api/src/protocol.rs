@@ -322,6 +322,26 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         sources: Option<Vec<ArtSourceSetting>>,
     },
+    /// Pictures from picture sets the user has (ART-5): OPL Manager's art
+    /// backups (zip or 7z), folders of pictures, `art.tar`. A job that ends
+    /// with a plan writing the pictures of the games on the device; the
+    /// rest of a set is left out.
+    ImportArt {
+        root: String,
+        /// Folders, archives or picture files.
+        sources: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Every type when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kinds: Option<Vec<ArtType>>,
+        /// Replace pictures the device has; they move to the backup folder.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        overwrite: Option<bool>,
+    },
     /// Plans writing a cover the user supplied (ART-3): a file on the host
     /// or image bytes, transcoded like a downloaded one.
     SetArt {
