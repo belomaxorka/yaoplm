@@ -16,6 +16,12 @@ export type GameVerification = { title: string, startup: string,
  */
 path: string, ulIndex: number | null, media: Media, format: GameFormat, status: VerifyStatus, reason: UnknownReason | null, hashes: HashValues | null, 
 /**
+ * The raw data track of the CD dump the game was added from (BIN/CUE,
+ * CHD), hashed while it was written: the verdict compares this track
+ * with Redump, which lists CDs by their tracks.
+ */
+track?: HashValues, 
+/**
  * The matching dump (verified).
  */
 redump: RedumpEntry | null, 

@@ -287,3 +287,134 @@ fn junk_dat_is_refused() {
         Value::Null
     );
 }
+
+/// Games added with `verify` (GAME-5): hashed while written, judged at
+/// once, and the hashes cached under the new files, so later checks and
+/// scans read nothing. A CD from its raw BIN is judged by the track.
+#[test]
+fn checks_while_adding_games() {
+    use yaoplm_test_support::bincue::{RawMode, to_bin};
+
+    let dir = tempfile::tempdir().unwrap();
+    let device = dir.path().join("stick");
+    let sources = dir.path().join("sources");
+    fs::create_dir_all(&device).unwrap();
+    fs::create_dir_all(&sources).unwrap();
+    let dvd = Variant::Dvd9.build().to_vec();
+    fs::write(sources.join("Dvd Game.iso"), &dvd).unwrap();
+    let cd = Variant::Retail.build().to_vec();
+    let bin = to_bin(&cd, RawMode::Mode2_2352, 0);
+    fs::write(sources.join("Cd Game.bin"), &bin).unwrap();
+    fs::write(
+        sources.join("Cd Game.cue"),
+        "FILE \"Cd Game.bin\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
+    )
+    .unwrap();
+    let unknown = fixtures::boot_iso(fixtures::placeholder_elf(), "SLPM_999.99", 0)
+        .build()
+        .to_vec();
+    fs::write(sources.join("Homebrew.iso"), &unknown).unwrap();
+    let dat = DatBuilder::new()
+        .iso("Dvd9 (USA)", Some("SLUS 21218"), &dvd)
+        .bin_cue("Retail (USA)", Some("SLUS-20062"), &bin)
+        .build();
+    let dat_path = dir.path().join("redump.dat");
+    fs::write(&dat_path, dat).unwrap();
+    let api = Api::new().with_data_dir(dir.path().join("data"));
+    run(&api, json!({"type": "UpdateRedump", "file": dat_path}));
+
+    let plan = call(
+        &api,
+        json!({
+            "type": "PlanImport",
+            "root": device,
+            "sources": [sources],
+            "verify": true,
+        }),
+    );
+    assert_eq!(plan["executable"], true, "{plan}");
+    let info = run(
+        &api,
+        json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+    );
+    let Some(JobResult::Execution(report)) = info.result.clone() else {
+        panic!("unexpected result {:?}", info.result);
+    };
+    assert!(report.error.is_none(), "{report:?}");
+    assert_eq!(report.checks.len(), 3, "{report:?}");
+    let check = |startup: &str| {
+        report
+            .checks
+            .iter()
+            .find(|g| g.startup == startup)
+            .unwrap_or_else(|| panic!("{startup} not checked"))
+    };
+    assert_eq!(check("SLUS_212.18").status, VerifyStatus::Verified);
+    assert!(check("SLUS_212.18").track.is_none());
+    let cd_check = check("SLUS_200.62");
+    assert_eq!(cd_check.status, VerifyStatus::Verified, "{cd_check:?}");
+    assert_eq!(
+        cd_check.redump.as_ref().unwrap().rom,
+        "Retail (USA).bin",
+        "matched through the data track"
+    );
+    assert_eq!(cd_check.track.as_ref().unwrap().size, bin.len() as u64);
+    assert_eq!(cd_check.hashes.as_ref().unwrap().size, cd.len() as u64);
+    assert_eq!(check("SLPM_999.99").reason, Some(UnknownReason::NotListed));
+    // One log line per game, after its transaction.
+    let verdicts = info
+        .log
+        .iter()
+        .filter(|e| matches!(e, JobLogEntry::Verify { cached: false, .. }))
+        .count();
+    assert_eq!(verdicts, 3);
+
+    // The cache already has every image under its new file.
+    let (verified, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
+    assert_eq!(verified.games.len(), 3);
+    assert!(verified.games.iter().all(|g| g.cached), "{verified:?}");
+    let cd_game = game(&verified, "SLUS_200.62");
+    assert_eq!(cd_game.status, VerifyStatus::Verified);
+    assert!(cd_game.track.is_some());
+
+    // Read again: the ISO hashes lead back to the track by their content.
+    let (fresh, _) = verify(
+        &api,
+        json!({"type": "VerifyGames", "root": device, "fresh": true}),
+    );
+    let cd_game = game(&fresh, "SLUS_200.62");
+    assert!(!cd_game.cached);
+    assert_eq!(cd_game.status, VerifyStatus::Verified);
+
+    let scan = run(&api, json!({"type": "ScanLibrary", "root": device}));
+    let Some(JobResult::Library(library)) = scan.result else {
+        panic!("unexpected result {:?}", scan.result);
+    };
+    let dump = |startup: &str| {
+        library
+            .games
+            .iter()
+            .find(|g| g.startup == startup)
+            .and_then(|g| g.dump.clone())
+            .unwrap()
+    };
+    assert_eq!(dump("SLUS_200.62").status, VerifyStatus::Verified);
+    assert!(dump("SLUS_200.62").by_track);
+    assert!(!dump("SLUS_212.18").by_track);
+
+    // Without `verify` nothing is hashed.
+    let device2 = dir.path().join("stick2");
+    fs::create_dir_all(&device2).unwrap();
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": device2, "sources": [sources]}),
+    );
+    let info = run(
+        &api,
+        json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+    );
+    let Some(JobResult::Execution(report)) = info.result else {
+        panic!("unexpected result");
+    };
+    assert!(report.checks.is_empty());
+}

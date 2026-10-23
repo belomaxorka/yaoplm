@@ -24,7 +24,9 @@ use crate::events::EventBus;
 use crate::library::Library;
 use crate::phrase::Phrase;
 use crate::plans::{PlanView, StepOp};
-use crate::verify::{RedumpResult, UnknownReason, VerificationReport, VerifyStatus};
+use crate::verify::{
+    GameVerification, RedumpResult, UnknownReason, VerificationReport, VerifyStatus,
+};
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
 
 /// Finished jobs kept for `GetJob` / `ListJobs`.
@@ -91,6 +93,10 @@ pub struct ExecutionReport {
     pub error_phrase: Option<Phrase>,
     /// A journal left on the device: run `PlanRecovery`.
     pub journal: Option<String>,
+    /// Verdicts for the games the plan hashed while writing them (GAME-5,
+    /// `PlanImport` with `verify`).
+    #[serde(default)]
+    pub checks: Vec<GameVerification>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -623,6 +629,7 @@ mod tests {
 
     fn execution(cancelled: bool) -> JobResult {
         JobResult::Execution(ExecutionReport {
+            checks: Vec::new(),
             outcomes: Vec::new(),
             cancelled,
             error: None,

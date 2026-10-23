@@ -183,6 +183,12 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         compress: Option<bool>,
+        /// Hash the images while they are written and check them against
+        /// the stored Redump DAT (GAME-5); the verdicts land in the job log
+        /// and the hash cache. Off when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        verify: Option<bool>,
     },
     /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
     /// form is deleted after the new one is complete, so executing needs

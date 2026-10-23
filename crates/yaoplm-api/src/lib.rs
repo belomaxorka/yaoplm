@@ -331,6 +331,7 @@ impl Api {
                 layout,
                 overrides,
                 compress,
+                verify,
             } => {
                 let (path, fs) = self.root(&root)?;
                 // Sources are read, and deleted in move mode: the same
@@ -363,6 +364,7 @@ impl Api {
                     },
                     overrides,
                     compress: compress.unwrap_or(false),
+                    check: verify.unwrap_or(false),
                 };
                 let sources = ArchiveSources::new(&HostSources);
                 let plan =
@@ -472,6 +474,7 @@ impl Api {
                     .clone()
                     .unwrap_or_else(|| Said::title("plan").with("title", &stored.plan.title));
                 let root = display_path(&stored.root);
+                let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
                     JobKind::ExecutePlan,
                     &title,
@@ -481,6 +484,8 @@ impl Api {
                         let fs = HostFs::new(&stored.root).map_err(io_error)?;
                         let sources = ArchiveSources::new(&HostSources);
                         let plan = &stored.plan;
+                        let mut recorder = verify::Recorder::new(&net, &fs, plan);
+                        let mut checks = Vec::new();
                         let report = exec::execute_with_events(
                             plan,
                             &Context {
@@ -541,6 +546,16 @@ impl Api {
                                         error_phrase: error.as_ref().map(Phrase::from),
                                     });
                                 }
+                                Event::Checked {
+                                    transaction,
+                                    checked,
+                                    ..
+                                } => {
+                                    if let Some(entry) = recorder.record(transaction, checked) {
+                                        ctx.log(verify::log_entry(&entry));
+                                        checks.push(entry);
+                                    }
+                                }
                             },
                         );
                         Ok(JobResult::Execution(ExecutionReport {
@@ -558,6 +573,7 @@ impl Api {
                             error: report.error.as_ref().map(ToString::to_string),
                             error_phrase: report.error.as_ref().map(|e| Phrase::from(&e.phrase())),
                             journal: report.journal,
+                            checks,
                         }))
                     },
                 );

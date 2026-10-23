@@ -169,6 +169,7 @@ pub fn plan_set_art(
                 modified: meta.modified,
             }],
             on_device: false,
+            check: None,
         });
         let source = plan.sources.len() - 1;
         let mut tx = Transaction::titled(

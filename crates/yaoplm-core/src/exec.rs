@@ -20,9 +20,10 @@ use yaoplm_device::{CancelToken, CopyError, RelPath, SourceFs, copy_exact};
 use yaoplm_formats::zso::{self, ZsoError};
 use yaoplm_i18n::Phrase;
 
+use crate::checks::{Checked, Taps};
 use crate::journal::{self, Journal, TxProgress, TxState};
 use crate::plan::{Expect, Notice, Plan, PlanKind, Removal, Step};
-use crate::source::{device_path, open_stream};
+use crate::source::{device_path, open_tapped_stream};
 
 /// What a front end needs to draw progress.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +72,13 @@ pub enum Event<'a> {
         index: usize,
         step: &'a Step,
         state: StepEvent,
+    },
+    /// A transaction that wrote a source marked for a dump check is done,
+    /// and these are the hashes of what it wrote (GAME-5).
+    Checked {
+        transaction: usize,
+        source: usize,
+        checked: &'a Checked,
     },
 }
 
@@ -160,6 +168,8 @@ pub struct Report {
     pub error: Option<ExecError>,
     /// The journal left on the device when something is half done.
     pub journal: Option<String>,
+    /// Hashes taken while writing, by transaction (GAME-5).
+    pub checked: Vec<(usize, Checked)>,
 }
 
 impl Report {
@@ -304,6 +314,10 @@ struct Runner<'a, 'b> {
     /// on from it; opening the source again would mean, for an archive
     /// member, decoding the image from the start once more.
     stream: Option<(usize, u64, Box<dyn io::Read + Send>)>,
+    /// Hashers of the source being written, when the plan checks it.
+    taps: Option<Taps>,
+    /// Hashes of the source the current transaction wrote whole.
+    checked: Option<(usize, Checked)>,
 }
 
 impl Runner<'_, '_> {
@@ -499,8 +513,21 @@ impl Runner<'_, '_> {
             .ok_or_else(|| ExecError::Precondition(Phrase::error("unknownSource")))?;
         let mut reader = match self.stream.take() {
             Some((at_source, at, reader)) if at_source == index && at == offset => reader,
-            _ => open_stream(self.ctx.sources, fs, source, offset)
-                .map_err(ExecError::io(doing("cannotRead", &source.path.display())))?,
+            _ => {
+                // Hashes must cover the whole source in one pass: only a
+                // fresh write from its first byte is checked.
+                self.taps = source
+                    .check
+                    .filter(|_| self.mode == Mode::Fresh && offset == 0)
+                    .map(|check| Taps::new(index, check, &source.kind));
+                let raw = self.taps.as_ref().and_then(Taps::track);
+                let stream = open_tapped_stream(self.ctx.sources, fs, source, offset, raw)
+                    .map_err(ExecError::io(doing("cannotRead", &source.path.display())))?;
+                match &self.taps {
+                    Some(taps) => Box::new(taps.reader(stream)),
+                    None => stream,
+                }
+            }
         };
         remove_if_exists(fs, &part)?;
         let mut file = fs
@@ -545,7 +572,20 @@ impl Runner<'_, '_> {
             .map_err(ExecError::io(doing("cannotSync", &path)))?;
         self.done = start + len;
         self.stream = Some((index, offset + len, reader));
+        if offset + len == source.len {
+            self.finish_check(index);
+        }
         Ok(())
+    }
+
+    /// Takes the hashes of source `index` if it was checked while written.
+    fn finish_check(&mut self, index: usize) {
+        let Some(taps) = self.taps.take_if(|t| t.source == index) else {
+            return;
+        };
+        if let Some(checked) = self.plan.sources.get(index).and_then(|s| taps.finish(s)) {
+            self.checked = Some((index, checked));
+        }
     }
 
     /// Compresses the ISO sectors of `source` into a new ZSO at `path`
@@ -554,6 +594,7 @@ impl Runner<'_, '_> {
     fn write_zso(&mut self, path: &RelPath, source: usize, max_len: u64) -> Result<(), ExecError> {
         let fs = self.ctx.fs;
         let part = part_path(path)?;
+        let index = source;
         let source = self
             .plan
             .sources
@@ -573,10 +614,20 @@ impl Runner<'_, '_> {
                 Phrase::error("alreadyExists").with("path", path.to_string()),
             ));
         }
-        let reader = open_stream(self.ctx.sources, fs, source, 0)
+        self.taps = source
+            .check
+            .filter(|_| self.mode == Mode::Fresh)
+            .map(|check| Taps::new(index, check, &source.kind));
+        let raw = self.taps.as_ref().and_then(Taps::track);
+        let reader = open_tapped_stream(self.ctx.sources, fs, source, 0, raw)
             .map_err(ExecError::io(doing("cannotRead", &source.path.display())))?;
-        // The compressor reads 2 KiB and writes a block at a time.
-        let mut reader = BufReader::with_capacity(BLOCK_SIZE, reader);
+        // The compressor reads 2 KiB and writes a block at a time. The hasher
+        // sits above the buffer, which may read past the image's end.
+        let reader = BufReader::with_capacity(BLOCK_SIZE, reader);
+        let mut reader: Box<dyn io::Read + Send> = match &self.taps {
+            Some(taps) => Box::new(taps.reader(reader)),
+            None => Box::new(reader),
+        };
         remove_if_exists(fs, &part)?;
         let mut file = fs
             .create(&part)
@@ -631,6 +682,7 @@ impl Runner<'_, '_> {
         fs.sync_dir(&path.parent().unwrap_or_default())
             .map_err(ExecError::io(doing("cannotSync", &path)))?;
         self.done = start + max_len;
+        self.finish_check(index);
         Ok(())
     }
 
@@ -773,6 +825,7 @@ pub fn execute_with_events(
         cancelled: false,
         error: None,
         journal: None,
+        checked: Vec::new(),
     };
     if let Err(err) = preflight(ctx, plan) {
         report.error = Some(err);
@@ -807,6 +860,8 @@ pub fn execute_with_events(
             total: plan.write_bytes(),
         },
         stream: None,
+        taps: None,
+        checked: None,
     };
     runner.current.total = runner.total;
 
@@ -822,6 +877,7 @@ pub fn execute_with_events(
             break;
         }
         runner.current.transaction = index;
+        runner.checked = None;
         runner.current.title = tx.title.clone();
         runner.current.title_phrase = tx.title_phrase.clone();
         runner.report();
@@ -879,6 +935,14 @@ pub fn execute_with_events(
                 journal.progress[index].state = TxState::Done;
                 report.outcomes[index] = Outcome::Done;
                 runner.tx_event(TxEvent::Done);
+                if let Some((source, checked)) = runner.checked.take() {
+                    (runner.events)(Event::Checked {
+                        transaction: index,
+                        source,
+                        checked: &checked,
+                    });
+                    report.checked.push((index, checked));
+                }
                 if let Err(err) = journal::save(ctx.fs, &journal) {
                     report.error = Some(ExecError::io(Phrase::error("cannotWriteJournal"))(err));
                     report.journal = Some(journal.id.clone());

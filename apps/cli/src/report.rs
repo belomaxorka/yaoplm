@@ -10,7 +10,9 @@ use yaoplm_api::library::{
     GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice, Platform,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
-use yaoplm_api::verify::{RedumpInfo, UnknownReason, VerificationReport, VerifyStatus};
+use yaoplm_api::verify::{
+    GameVerification, RedumpInfo, UnknownReason, VerificationReport, VerifyStatus,
+};
 
 pub fn profile_name(profile: LoaderProfile) -> &'static str {
     match profile {
@@ -448,6 +450,13 @@ pub fn execution(plan: &PlanView, report: &ExecutionReport) -> String {
             "An operation is half done (journal {journal}). Run `yaoplm recover <root>` to undo it, or add --resume to finish it."
         );
     }
+    if !report.checks.is_empty() {
+        let _ = writeln!(out, "Dump checks, from the bytes as they were written:");
+        for game in &report.checks {
+            verification_game(&mut out, game);
+        }
+        verification_counts(&mut out, &report.checks);
+    }
     out
 }
 
@@ -628,57 +637,73 @@ pub fn verification(report: &VerificationReport) -> String {
         }
     }
     for game in &report.games {
+        verification_game(&mut out, game);
+    }
+    verification_counts(&mut out, &report.games);
+    out
+}
+
+fn verification_game(out: &mut String, game: &GameVerification) {
+    let _ = writeln!(
+        out,
+        "{:<12} {:<9} {}",
+        game.startup,
+        verify_status(game.status, game.reason),
+        game.title
+    );
+    if let Some(entry) = &game.redump {
         let _ = writeln!(
             out,
-            "{:<12} {:<9} {}",
-            game.startup,
-            verify_status(game.status, game.reason),
-            game.title
+            "    Redump: {}{}",
+            entry.name,
+            entry
+                .url
+                .as_deref()
+                .map(|u| format!(" ({u})"))
+                .unwrap_or_default()
         );
-        if let Some(entry) = &game.redump {
+    }
+    if game.status == VerifyStatus::BadDump {
+        for candidate in &game.candidates {
             let _ = writeln!(
                 out,
-                "    Redump: {}{}",
-                entry.name,
-                entry
-                    .url
-                    .as_deref()
-                    .map(|u| format!(" ({u})"))
-                    .unwrap_or_default()
+                "    differs from {} ({}{})",
+                candidate.name,
+                size(candidate.size),
+                if candidate.same_size {
+                    ", same size"
+                } else {
+                    ""
+                }
             );
-        }
-        if game.status == VerifyStatus::BadDump {
-            for candidate in &game.candidates {
-                let _ = writeln!(
-                    out,
-                    "    differs from {} ({}{})",
-                    candidate.name,
-                    size(candidate.size),
-                    if candidate.same_size {
-                        ", same size"
-                    } else {
-                        ""
-                    }
-                );
-            }
-        }
-        if game.reason == Some(UnknownReason::CdImage) {
-            let _ = writeln!(
-                out,
-                "    Redump lists this CD as BIN/CUE; an ISO cannot match its hashes"
-            );
-        }
-        if let Some(hashes) = &game.hashes {
-            let _ = writeln!(out, "    CRC-32 {}  SHA-1 {}", hashes.crc32, hashes.sha1);
-            if let Some(md5) = &hashes.md5 {
-                let _ = writeln!(out, "    MD5 {md5}");
-            }
-        }
-        if let Some(error) = &game.error {
-            let _ = writeln!(out, "    {error}");
         }
     }
-    let count = |status| report.games.iter().filter(|g| g.status == status).count();
+    if game.reason == Some(UnknownReason::CdImage) && game.track.is_none() {
+        let _ = writeln!(
+            out,
+            "    Redump lists this CD as BIN/CUE; an ISO cannot match its hashes"
+        );
+    }
+    if let Some(hashes) = &game.hashes {
+        let _ = writeln!(out, "    CRC-32 {}  SHA-1 {}", hashes.crc32, hashes.sha1);
+        if let Some(md5) = &hashes.md5 {
+            let _ = writeln!(out, "    MD5 {md5}");
+        }
+    }
+    if let Some(track) = &game.track {
+        let _ = writeln!(
+            out,
+            "    data track of the BIN it was added from: CRC-32 {}  SHA-1 {}",
+            track.crc32, track.sha1
+        );
+    }
+    if let Some(error) = &game.error {
+        let _ = writeln!(out, "    {error}");
+    }
+}
+
+fn verification_counts(out: &mut String, games: &[GameVerification]) {
+    let count = |status| games.iter().filter(|g| g.status == status).count();
     let _ = writeln!(
         out,
         "{} verified, {} bad, {} unknown, {} failed",
@@ -687,7 +712,6 @@ pub fn verification(report: &VerificationReport) -> String {
         count(VerifyStatus::Unknown),
         count(VerifyStatus::Failed)
     );
-    out
 }
 
 #[cfg(test)]

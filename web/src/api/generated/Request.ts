@@ -37,7 +37,13 @@ verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfi
 /**
  * Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
  */
-compress?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+compress?: boolean, 
+/**
+ * Hash the images while they are written and check them against
+ * the stored Redump DAT (GAME-5); the verdicts land in the job log
+ * and the hash cache. Off when absent.
+ */
+verify?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
 /**
  * How images made from `ul` chunks are named.
  */

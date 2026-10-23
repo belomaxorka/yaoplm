@@ -105,6 +105,7 @@ fn device_source(kind: SourceKind, files: Vec<(RelPath, u64)>, len: u64) -> Sour
             })
             .collect(),
         on_device: true,
+        check: None,
     }
 }
 

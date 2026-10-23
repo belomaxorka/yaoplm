@@ -220,6 +220,16 @@ CREATE TABLE IF NOT EXISTS hashes (
     md5       TEXT,
     hashed_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tracks (
+    image_sha1 TEXT NOT NULL,
+    image_size INTEGER NOT NULL,
+    size       INTEGER NOT NULL,
+    crc32      TEXT NOT NULL,
+    sha1       TEXT NOT NULL,
+    md5        TEXT,
+    hashed_at  INTEGER NOT NULL,
+    PRIMARY KEY (image_sha1, image_size)
+);
 ";
 
 /// One file an image was read from, as it was when hashed.
@@ -519,6 +529,71 @@ impl Cache {
         Ok(())
     }
 
+    /// Remembers that the ISO with hashes `image` was made from a raw CD
+    /// track with hashes `track` (GAME-5): an ISO keeps 2048 of the 2352
+    /// bytes of every sector and cannot be hashed like Redump's BIN again,
+    /// so a CD added from its BIN/CUE or CHD keeps its verdict this way.
+    /// Keyed by the content, not the file: it holds after the file moves, is
+    /// renamed or is read again.
+    pub fn put_track(&self, image: &Hashes, track: &Hashes) -> Result<(), NetError> {
+        self.db().execute(
+            "INSERT INTO tracks (image_sha1, image_size, size, crc32, sha1, md5, hashed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(image_sha1, image_size) DO UPDATE SET size = excluded.size,
+               crc32 = excluded.crc32, sha1 = excluded.sha1, md5 = excluded.md5,
+               hashed_at = excluded.hashed_at",
+            params![
+                hex(&image.sha1),
+                i64::try_from(image.size).unwrap_or(i64::MAX),
+                i64::try_from(track.size).unwrap_or(i64::MAX),
+                track.crc32_hex(),
+                hex(&track.sha1),
+                track.md5_hex(),
+                i64::try_from(now_secs()).unwrap_or(i64::MAX),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The raw track the ISO with hashes `image` was made from, if one was
+    /// hashed when it was added. A cache made before this table existed,
+    /// opened read-only, has none.
+    pub fn track(&self, image: &Hashes) -> Result<Option<Hashes>, NetError> {
+        let row = self.db().query_row(
+            "SELECT size, crc32, sha1, md5 FROM tracks WHERE image_sha1 = ?1 AND image_size = ?2",
+            params![
+                hex(&image.sha1),
+                i64::try_from(image.size).unwrap_or(i64::MAX)
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        );
+        let (size, crc32, sha1, md5) = match row {
+            Ok(row) => row,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(rusqlite::Error::SqliteFailure(_, Some(message)))
+                if message.starts_with("no such table") =>
+            {
+                return Ok(None);
+            }
+            Err(err) => return Err(err.into()),
+        };
+        Ok(parse_hex::<4>(&crc32)
+            .zip(parse_hex::<20>(&sha1))
+            .map(|(crc32, sha1)| Hashes {
+                size: size.max(0) as u64,
+                crc32: u32::from_be_bytes(crc32),
+                sha1,
+                md5: md5.as_deref().and_then(parse_hex::<16>),
+            }))
+    }
+
     /// Deletes every cached cover and its manifest row. Hashes stay: they
     /// are not downloads, and reading the images again takes long.
     pub fn clear(&self) -> Result<(), NetError> {
@@ -715,6 +790,46 @@ mod tests {
         // Clearing the covers keeps the hashes.
         cache.clear().unwrap();
         assert!(cache.hashes(&[file], true).unwrap().is_some());
+    }
+
+    #[test]
+    fn tracks_follow_the_image_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = Hashes {
+            size: 4096,
+            crc32: 1,
+            sha1: [3; 20],
+            md5: None,
+        };
+        let track = Hashes {
+            size: 4704,
+            crc32: 2,
+            sha1: [4; 20],
+            md5: None,
+        };
+        // A cache from before the table: read-only, nothing found, no error.
+        {
+            let db = Connection::open(dir.path().join(MANIFEST)).unwrap();
+            db.execute_batch("CREATE TABLE hashes (files TEXT PRIMARY KEY);")
+                .unwrap();
+        }
+        let old = Cache::open_existing(dir.path()).unwrap().unwrap();
+        assert_eq!(old.track(&image).unwrap(), None);
+        drop(old);
+
+        let cache = Cache::open(dir.path()).unwrap();
+        assert_eq!(cache.track(&image).unwrap(), None);
+        cache.put_track(&image, &track).unwrap();
+        assert_eq!(cache.track(&image).unwrap(), Some(track));
+        // Same bytes, other size: another image.
+        let other = Hashes {
+            size: 6144,
+            ..image
+        };
+        assert_eq!(cache.track(&other).unwrap(), None);
+        // Clearing the covers keeps it.
+        cache.clear().unwrap();
+        assert_eq!(cache.track(&image).unwrap(), Some(track));
     }
 
     #[test]

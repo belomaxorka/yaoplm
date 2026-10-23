@@ -69,6 +69,20 @@ pub struct Source {
     /// device and never removed through `RemoveSource`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_device: bool,
+    /// Hash the image while it is written (GAME-5, dump check on add).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<Check>,
+}
+
+/// What a write hashes while it reads a source for a dump check (GAME-5).
+/// A raw CD track (BIN, CHD) is hashed as well when the source has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Check {
+    /// The bytes read are the ISO sectors.
+    Image,
+    /// The bytes read are a ZSO copied as it is: the ISO inside is hashed.
+    Zso,
 }
 
 /// Small file contents, stored as hex in the journal.

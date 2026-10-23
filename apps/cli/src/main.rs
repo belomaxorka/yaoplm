@@ -105,6 +105,10 @@ enum Command {
         /// Store images as ZSO (OPL 1.2.0 beta; not with ul chunks).
         #[arg(long, conflicts_with = "ul")]
         zso: bool,
+        /// Skip the dump check: by default every image is hashed while it
+        /// is written and compared with the stored Redump DAT.
+        #[arg(long)]
+        no_verify: bool,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -447,6 +451,7 @@ fn main() -> anyhow::Result<ExitCode> {
             move_sources,
             ul,
             zso,
+            no_verify,
             title,
             media,
             name_style,
@@ -477,6 +482,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 layout: Some(if ul { Layout::Ul } else { Layout::Auto }),
                 overrides: (!overrides.is_empty()).then_some(overrides),
                 compress: Some(zso),
+                verify: Some(!no_verify),
             };
             plan_and_apply(&api, request, &apply)
         }

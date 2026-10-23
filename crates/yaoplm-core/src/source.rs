@@ -33,6 +33,7 @@ use yaoplm_formats::system_cnf;
 use yaoplm_formats::zso::ZsoError;
 use yaoplm_i18n::Phrase;
 
+use crate::checks::{self, SharedTap};
 use crate::multipart::Joined;
 use crate::plan::{Notice, Source, SourceFile, SourceKind};
 use crate::reasons;
@@ -170,6 +171,7 @@ impl Probed {
             len: self.iso_len,
             files: self.files.clone(),
             on_device: false,
+            check: None,
         }
     }
 
@@ -181,6 +183,7 @@ impl Probed {
             len: self.data_len,
             files: self.files.clone(),
             on_device: false,
+            check: None,
         }
     }
 }
@@ -510,6 +513,8 @@ struct SectorReader<S> {
     sector: Box<Sector>,
     /// Unread bytes at the end of `sector`.
     pending: usize,
+    /// Gets the whole CD sector behind each one read (GAME-5).
+    raw: Option<SharedTap>,
 }
 
 impl<S: SectorSource> Read for SectorReader<S> {
@@ -521,6 +526,9 @@ impl<S: SectorSource> Read for SectorReader<S> {
                     break;
                 }
                 self.src.read_sector(self.lba, &mut self.sector)?;
+                if let (Some(tap), Some(raw)) = (&self.raw, self.src.raw_sector()) {
+                    checks::feed(tap, raw);
+                }
                 self.lba += 1;
                 self.pending = SECTOR_SIZE;
             }
@@ -538,6 +546,14 @@ pub(crate) fn sector_stream<S: SectorSource + Send + 'static>(
     src: S,
     offset: u64,
 ) -> io::Result<Box<dyn Read + Send>> {
+    tapped_sector_stream(src, offset, None)
+}
+
+fn tapped_sector_stream<S: SectorSource + Send + 'static>(
+    src: S,
+    offset: u64,
+    raw: Option<SharedTap>,
+) -> io::Result<Box<dyn Read + Send>> {
     if !offset.is_multiple_of(SECTOR_SIZE as u64) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -549,6 +565,7 @@ pub(crate) fn sector_stream<S: SectorSource + Send + 'static>(
         lba: offset / SECTOR_SIZE as u64,
         sector: Box::new([0; SECTOR_SIZE]),
         pending: 0,
+        raw,
     }))
 }
 
@@ -565,6 +582,18 @@ pub fn open_stream(
     fs: &dyn DeviceFs,
     source: &Source,
     offset: u64,
+) -> io::Result<Box<dyn Read + Send>> {
+    open_tapped_stream(sources, fs, source, offset, None)
+}
+
+/// [`open_stream`] that also hands every raw CD sector it decodes to
+/// `raw` (a BIN or CHD track stored with 2352-byte sectors).
+pub(crate) fn open_tapped_stream(
+    sources: &dyn SourceFs,
+    fs: &dyn DeviceFs,
+    source: &Source,
+    offset: u64,
+    raw: Option<SharedTap>,
 ) -> io::Result<Box<dyn Read + Send>> {
     let open = |path: &Path| -> io::Result<Box<dyn ReadSeek>> {
         if source.on_device {
@@ -611,14 +640,14 @@ pub fn open_stream(
                 *first_sector,
                 *sectors,
             );
-            sector_stream(image, offset)
+            tapped_sector_stream(image, offset, raw)
         }
         SourceKind::Chd => {
             let (image, _, _) = open_chd(reader, &source.path).map_err(|e| match e {
                 ProbeError::Io { source, .. } => source,
                 other => io::Error::new(io::ErrorKind::InvalidData, other.to_string()),
             })?;
-            sector_stream(image, offset)
+            tapped_sector_stream(image, offset, raw)
         }
         SourceKind::Joined => Err(io::Error::other("joined sources are opened above")),
     }

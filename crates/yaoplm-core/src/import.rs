@@ -30,7 +30,9 @@ use yaoplm_formats::{LoaderProfile, Media, zso};
 use yaoplm_i18n::Phrase;
 
 use crate::device::{DeviceState, join, on_disk};
-use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
+use crate::plan::{
+    Bytes, Check, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction,
+};
 use crate::reasons;
 use crate::scan::CD_MAX_BYTES;
 use crate::source::{ProbeError, Probed, probe, sheet_files};
@@ -70,6 +72,8 @@ pub struct ImportOptions {
     pub overrides: Vec<ImportOverride>,
     /// Store images as ZSO (GAME-4): OPL 1.2.0 beta only, never for `ul`.
     pub compress: bool,
+    /// Hash every image while it is written, for a dump check (GAME-5).
+    pub check: bool,
 }
 
 /// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
@@ -435,11 +439,14 @@ impl Planner<'_> {
                 Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
             )
         })?;
-        let source = if keep_zso {
+        let mut source = if keep_zso {
             probed.raw_source()
         } else {
             probed.iso_source()
         };
+        if self.options.check {
+            source.check = Some(if keep_zso { Check::Zso } else { Check::Image });
+        }
         let len = source.len;
         self.plan.sources.push(source);
         let mut tx = Transaction::titled(
@@ -542,7 +549,11 @@ impl Planner<'_> {
             ));
         }
 
-        self.plan.sources.push(probed.iso_source());
+        let mut iso = probed.iso_source();
+        if self.options.check {
+            iso.check = Some(Check::Image);
+        }
+        self.plan.sources.push(iso);
         let source = self.plan.sources.len() - 1;
         let mut tx = Transaction::titled(
             Phrase::title("splitGame")

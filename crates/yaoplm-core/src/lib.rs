@@ -13,6 +13,7 @@
 
 pub mod archives;
 pub mod art;
+pub mod checks;
 pub mod convert;
 pub mod device;
 pub mod exec;
