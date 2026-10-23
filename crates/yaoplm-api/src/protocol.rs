@@ -43,6 +43,16 @@ pub enum Layout {
     Ul,
 }
 
+/// What `ConvertGames` turns games into (GAME-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ConvertTarget {
+    Iso,
+    Zso,
+    Ul,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -168,6 +178,25 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ImportOverride>>,
+        /// Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        compress: Option<bool>,
+    },
+    /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
+    /// form is deleted after the new one is complete, so executing needs
+    /// `confirmDelete`.
+    ConvertGames {
+        root: String,
+        games: Vec<GameRef>,
+        target: ConvertTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// How images made from `ul` chunks are named.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        name_style: Option<NameStyle>,
     },
     /// Plans a rename (GAME-1). A new `startup` also moves CFG, art and
     /// cheats.

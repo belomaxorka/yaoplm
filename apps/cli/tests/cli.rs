@@ -562,3 +562,61 @@ fn redump_import_and_verify() {
         Some(32)
     );
 }
+
+#[test]
+fn add_compressed_then_convert() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--zso".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        stdout(&add).contains("+ compress to CD/SLUS_200.62.Retail.zso"),
+        "{}",
+        stdout(&add)
+    );
+    assert!(s.root.join("CD/SLUS_200.62.Retail.zso").is_file());
+
+    let dry = run(&[
+        "convert".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--to".as_ref(),
+        "iso".as_ref(),
+    ]);
+    let text = stdout(&dry);
+    assert!(dry.status.success(), "{text}");
+    assert!(text.contains("Plan: Convert 1 game to ISO"), "{text}");
+    assert!(
+        text.contains("- DELETE CD/SLUS_200.62.Retail.zso"),
+        "{text}"
+    );
+    assert!(
+        s.root.join("CD/SLUS_200.62.Retail.zso").is_file(),
+        "dry run"
+    );
+
+    let done = run(&[
+        "convert".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--to".as_ref(),
+        "iso".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        done.status.success(),
+        "{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
+    assert!(!s.root.join("CD/SLUS_200.62.Retail.zso").exists());
+}

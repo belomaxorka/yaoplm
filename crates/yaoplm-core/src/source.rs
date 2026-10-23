@@ -22,6 +22,8 @@ use std::fmt;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use yaoplm_device::RelPath;
+use yaoplm_device::fs::DeviceFs;
 use yaoplm_device::source::{ReadSeek, SourceFs};
 use yaoplm_formats::Media;
 use yaoplm_formats::cue::{BinImage, CueSheet, TrackMode, probe_raw};
@@ -30,6 +32,7 @@ use yaoplm_formats::iso9660::{self, Layers, PVD_LBA, Pvd, SECTOR_SIZE, Sector, S
 use yaoplm_formats::system_cnf;
 use yaoplm_formats::zso::ZsoError;
 
+use crate::multipart::Joined;
 use crate::plan::{Notice, Source, SourceFile, SourceKind};
 use crate::scan::CD_MAX_BYTES;
 
@@ -154,6 +157,7 @@ impl Probed {
             kind,
             len: self.iso_len,
             files: self.files.clone(),
+            on_device: false,
         }
     }
 
@@ -164,6 +168,7 @@ impl Probed {
             kind: SourceKind::Raw,
             len: self.data_len,
             files: self.files.clone(),
+            on_device: false,
         }
     }
 }
@@ -442,13 +447,38 @@ pub(crate) fn sector_stream<S: SectorSource + Send + 'static>(
     }))
 }
 
-/// The bytes of `source` from `offset`, as a plan step writes them.
+/// The device path a source on the device keeps in a `PathBuf`.
+pub(crate) fn device_path(path: &Path) -> io::Result<RelPath> {
+    RelPath::new(&path.to_string_lossy())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+}
+
+/// The bytes of `source` from `offset`, as a plan step writes them. A
+/// source on the device (a conversion) is read through `fs`.
 pub fn open_stream(
     sources: &dyn SourceFs,
+    fs: &dyn DeviceFs,
     source: &Source,
     offset: u64,
 ) -> io::Result<Box<dyn Read + Send>> {
-    let mut reader: Box<dyn ReadSeek> = sources.open(&source.path)?;
+    let open = |path: &Path| -> io::Result<Box<dyn ReadSeek>> {
+        if source.on_device {
+            fs.open(&device_path(path)?)
+        } else {
+            sources.open(path)
+        }
+    };
+    if source.kind == SourceKind::Joined {
+        let parts = source
+            .files
+            .iter()
+            .map(|file| Ok((open(&file.path)?, file.len)))
+            .collect::<io::Result<Vec<_>>>()?;
+        let mut joined = Joined::new(parts);
+        joined.seek(SeekFrom::Start(offset))?;
+        return Ok(Box::new(joined));
+    }
+    let mut reader: Box<dyn ReadSeek> = open(&source.path)?;
     match &source.kind {
         SourceKind::Raw => {
             reader.seek(SeekFrom::Start(offset))?;
@@ -480,5 +510,6 @@ pub fn open_stream(
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
             sector_stream(image, offset)
         }
+        SourceKind::Joined => Err(io::Error::other("joined sources are opened above")),
     }
 }

@@ -53,6 +53,54 @@ impl Read for MultiPartFile {
     }
 }
 
+/// Readers already open, read one after the other: `ul` chunks opened
+/// through a [`yaoplm_device::DeviceFs`] for a conversion (GAME-4).
+pub struct Joined {
+    parts: Vec<(Box<dyn yaoplm_device::ReadSeek>, u64)>,
+    len: u64,
+    pos: u64,
+}
+
+impl Joined {
+    pub fn new(parts: Vec<(Box<dyn yaoplm_device::ReadSeek>, u64)>) -> Self {
+        let len = parts.iter().map(|(_, len)| len).sum();
+        Self { parts, len, pos: 0 }
+    }
+}
+
+impl Read for Joined {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut start = 0;
+        for (reader, len) in &mut self.parts {
+            if self.pos < start + *len {
+                let offset = self.pos - start;
+                reader.seek(SeekFrom::Start(offset))?;
+                let want = usize::try_from(*len - offset)
+                    .unwrap_or(usize::MAX)
+                    .min(buf.len());
+                let n = reader.read(&mut buf[..want])?;
+                self.pos += n as u64;
+                return Ok(n);
+            }
+            start += *len;
+        }
+        Ok(0)
+    }
+}
+
+impl Seek for Joined {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let target = match pos {
+            SeekFrom::Start(n) => Some(n),
+            SeekFrom::End(d) => self.len.checked_add_signed(d),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        };
+        self.pos = target
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))?;
+        Ok(self.pos)
+    }
+}
+
 impl Seek for MultiPartFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let target = match pos {

@@ -289,11 +289,13 @@
       "rename": "Переименовать {{path}} в {{to}}",
       "remove": "Удалить {{path}}",
       "removeSource": "Удалить источник {{path}}",
-      "dropJournal": "Закрыть журнал {{path}}"
+      "dropJournal": "Закрыть журнал {{path}}",
+      "writeZso": "Сжать в {{path}}"
     },
     "confirmDelete": "Я понимаю, что файлы будут удалены",
     "confirm": "Подтвердить и выполнить",
-    "confirmAndDelete": "Подтвердить и удалить"
+    "confirmAndDelete": "Подтвердить и удалить",
+    "atMost": "не больше {{size}}"
   },
   "recovery": {
     "title_one": "Операция не завершена",

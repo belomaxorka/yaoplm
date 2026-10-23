@@ -26,7 +26,7 @@ use yaoplm_formats::iso_name::{
 use yaoplm_formats::serial;
 use yaoplm_formats::ul_cfg::{self, UlRecord, split_plan};
 use yaoplm_formats::usba_crc32::usba_crc32;
-use yaoplm_formats::{LoaderProfile, Media};
+use yaoplm_formats::{LoaderProfile, Media, zso};
 
 use crate::device::{DeviceState, join, on_disk};
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
@@ -66,6 +66,8 @@ pub struct ImportOptions {
     pub transfer: Transfer,
     pub layout: Layout,
     pub overrides: Vec<ImportOverride>,
+    /// Store images as ZSO (GAME-4): OPL 1.2.0 beta only, never for `ul`.
+    pub compress: bool,
 }
 
 /// Extensions OPL users have that YAOPLM does not import yet (IMP-1b/c).
@@ -381,7 +383,15 @@ impl Planner<'_> {
         } else {
             clean
         };
-        let ext = if keep_zso {
+        let compress = !keep_zso && self.options.compress;
+        if compress && !self.options.profile.reads_zso() {
+            notices.push(Notice::info(
+                "zsoNotForProfile",
+                "OPL 1.1.0 cannot read ZSO: the game is stored as ISO",
+            ));
+        }
+        let compress = compress && self.options.profile.reads_zso();
+        let ext = if keep_zso || compress {
             ImageExtension::Zso
         } else {
             ImageExtension::Iso
@@ -415,19 +425,35 @@ impl Planner<'_> {
         };
         let len = source.len;
         self.plan.sources.push(source);
-        let mut tx = Transaction::new(format!("Copy {name} to {folder}"));
+        let mut tx = Transaction::new(if compress {
+            format!("Compress {name} into {folder}")
+        } else {
+            format!("Copy {name} to {folder}")
+        });
         tx.game = Some(GameInfo {
             title: iso_name::classify(&name).map_or(clean.clone(), |n| n.title),
             startup: startup.to_owned(),
             media,
-            format: if keep_zso { "ZSO" } else { "ISO" }.into(),
+            format: if keep_zso || compress { "ZSO" } else { "ISO" }.into(),
         });
-        tx.push(Step::WriteFile {
-            path: target,
-            source: self.plan.sources.len() - 1,
-            offset: 0,
-            len,
-        });
+        if compress {
+            tx.push(Step::WriteZso {
+                path: target,
+                source: self.plan.sources.len() - 1,
+                max_len: zso::max_output(len),
+            });
+            notices.push(Notice::info(
+                "compressedToZso",
+                "stored as ZSO: smaller on the device; OPL 1.2.0 beta reads it",
+            ));
+        } else {
+            tx.push(Step::WriteFile {
+                path: target,
+                source: self.plan.sources.len() - 1,
+                offset: 0,
+                len,
+            });
+        }
         if let Some(cache) = self
             .state
             .drop_cache(media)

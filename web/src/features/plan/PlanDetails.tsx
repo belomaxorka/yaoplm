@@ -2,6 +2,7 @@ import { cn } from "cn";
 import {
   ArrowRightLeft,
   Copy,
+  FileArchive,
   FileInput,
   FilePen,
   FolderMinus,
@@ -25,6 +26,7 @@ const stepIcons: Record<StepOp, LucideIcon> = {
   createDir: FolderPlus,
   removeDir: FolderMinus,
   writeFile: FileInput,
+  writeZso: FileArchive,
   putFile: NotebookPen,
   copyFile: Copy,
   rename: FilePen,
@@ -49,13 +51,15 @@ function StepLine({ step }: { step: PlanStep }) {
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 wrap-anywhere">
         <span>{t(`plan.steps.${step.op}`, { path: step.path, to: step.to ?? "" })}</span>
-        {step.op === "writeFile" && step.source && (
+        {(step.op === "writeFile" || step.op === "writeZso") && step.source && (
           <span className="block text-xs text-muted-foreground">{t("plan.from", { source: step.source })}</span>
         )}
         {step.removal === "cache" && <span className="block text-xs text-muted-foreground">{t("plan.cache")}</span>}
       </span>
       {step.bytes !== null && step.bytes > 0 && (
-        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{formatBytes(step.bytes)}</span>
+        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+          {step.op === "writeZso" ? t("plan.atMost", { size: formatBytes(step.bytes) }) : formatBytes(step.bytes)}
+        </span>
       )}
     </li>
   );

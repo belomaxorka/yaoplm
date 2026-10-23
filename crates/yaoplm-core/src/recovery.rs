@@ -46,6 +46,15 @@ fn remap(step: &Step, base: usize) -> Step {
             offset: *offset,
             len: *len,
         },
+        Step::WriteZso {
+            path,
+            source,
+            max_len,
+        } => Step::WriteZso {
+            path: path.clone(),
+            source: source + base,
+            max_len: *max_len,
+        },
         Step::RemoveSource { source } => Step::RemoveSource {
             source: source + base,
         },

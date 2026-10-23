@@ -193,6 +193,25 @@ impl Write for FatFile {
     }
 }
 
+impl Seek for FatFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let path = self.path.clone();
+        let len = self
+            .image
+            .with(move |fs| fs.root_dir().open_file(&path)?.seek(SeekFrom::End(0)))?;
+        let target = match pos {
+            SeekFrom::Start(n) => Some(n),
+            SeekFrom::End(d) => len.checked_add_signed(d),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        };
+        let target = target
+            .filter(|t| *t <= len)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad seek"))?;
+        self.pos = target;
+        Ok(target)
+    }
+}
+
 impl DeviceFile for FatFile {
     fn preallocate(&mut self, _len: u64) -> io::Result<()> {
         Ok(())

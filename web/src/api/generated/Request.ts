@@ -2,6 +2,7 @@
 import type { ArtInput } from "./ArtInput";
 import type { ArtScope } from "./ArtScope";
 import type { ArtSourceSetting } from "./ArtSourceSetting";
+import type { ConvertTarget } from "./ConvertTarget";
 import type { GameRef } from "./GameRef";
 import type { ImportOverride } from "./ImportOverride";
 import type { JobId } from "./JobId";
@@ -32,7 +33,15 @@ profile?: LoaderProfile,
  * Also read images whose ID OPL takes from the name or
  * `games.bin`, to catch mismatches. Defaults to true.
  */
-verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
+verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
+/**
+ * Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
+ */
+compress?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+/**
+ * How images made from `ul` chunks are named.
+ */
+nameStyle?: NameStyle, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
 /**
  * Defaults to `missing`.
  */

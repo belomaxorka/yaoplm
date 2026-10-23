@@ -52,6 +52,8 @@ pub enum ZsoError {
     Corrupt { block: u64, reason: &'static str },
     #[error("image size must be a positive multiple of 2048 bytes, got {0}")]
     BadImageSize(u64),
+    #[error("stopped")]
+    Stopped,
 }
 
 /// A header field OPL ignores or cannot handle.
@@ -346,23 +348,55 @@ pub fn align_for(total_bytes: u64) -> Result<u8, ZsoError> {
 
 /// Compresses `total_bytes` of ISO data from `input` into `out`.
 /// `progress` receives the number of input bytes processed so far.
-pub fn compress<R: Read, W: Write + Seek>(
+pub fn compress<R: Read + ?Sized, W: Write + Seek + ?Sized>(
     input: &mut R,
     total_bytes: u64,
     out: &mut W,
     progress: &mut dyn FnMut(u64),
 ) -> Result<ZsoStats, ZsoError> {
+    compress_with(input, total_bytes, out, &|| false, progress)
+}
+
+/// [`compress`] that checks `stop` between blocks and gives up with
+/// [`ZsoError::Stopped`] (a cancelled conversion, GAME-4).
+pub fn compress_with<R: Read + ?Sized, W: Write + Seek + ?Sized>(
+    input: &mut R,
+    total_bytes: u64,
+    out: &mut W,
+    stop: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(u64),
+) -> Result<ZsoStats, ZsoError> {
     let align = align_for(total_bytes)?;
-    compress_aligned(input, total_bytes, out, align, progress)
+    compress_aligned_with(input, total_bytes, out, align, stop, progress)
 }
 
 /// [`compress`] with an explicit index shift, at least [`align_for`] and at
 /// most [`MAX_ALIGN`]. Larger shifts waste padding; tests use them.
-pub fn compress_aligned<R: Read, W: Write + Seek>(
+pub fn compress_aligned<R: Read + ?Sized, W: Write + Seek + ?Sized>(
     input: &mut R,
     total_bytes: u64,
     out: &mut W,
     align: u8,
+    progress: &mut dyn FnMut(u64),
+) -> Result<ZsoStats, ZsoError> {
+    compress_aligned_with(input, total_bytes, out, align, &|| false, progress)
+}
+
+/// The worst-case size of the ZSO of `total_bytes`: every block stored
+/// plain, plus the header, the index and the alignment padding. What a
+/// plan reserves before compressing (GAME-4).
+pub fn max_output(total_bytes: u64) -> u64 {
+    let blocks = total_bytes / u64::from(BLOCK_SIZE);
+    let pad = align_for(total_bytes).map_or(0, |align| (1u64 << align) - 1);
+    HEADER_SIZE as u64 + 4 * (blocks + 1) + (blocks + 1) * pad + total_bytes
+}
+
+fn compress_aligned_with<R: Read + ?Sized, W: Write + Seek + ?Sized>(
+    input: &mut R,
+    total_bytes: u64,
+    out: &mut W,
+    align: u8,
+    stop: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(u64),
 ) -> Result<ZsoStats, ZsoError> {
     if total_bytes == 0 || !total_bytes.is_multiple_of(u64::from(BLOCK_SIZE)) {
@@ -399,6 +433,10 @@ pub fn compress_aligned<R: Read, W: Write + Seek>(
     let mut sector = [0u8; SECTOR_SIZE];
     let mut plain_blocks = 0;
     for (n, slot) in index.iter_mut().take(index_len - 1).enumerate() {
+        // Every 2 MiB: often enough to cancel at once, rare enough to be free.
+        if n % 1024 == 0 && stop() {
+            return Err(ZsoError::Stopped);
+        }
         input.read_exact(&mut sector)?;
         pad_to_alignment(out, &mut pos)?;
         let offset = u32::try_from(pos >> align)
@@ -529,6 +567,28 @@ mod tests {
             .unwrap_err();
             assert!(matches!(err, ZsoError::BadImageSize(s) if s == size));
         }
+    }
+
+    #[test]
+    fn stops_and_bounds() {
+        let iso = sample_iso(2048);
+        let mut out = Cursor::new(Vec::new());
+        let err = compress_with(
+            &mut Cursor::new(&iso),
+            iso.len() as u64,
+            &mut out,
+            &|| true,
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(err, ZsoError::Stopped));
+        // The worst case covers incompressible data.
+        let noise: Vec<u8> = (0..4 * SECTOR_SIZE)
+            .map(|i| (i as u32).wrapping_mul(2_654_435_761).to_le_bytes()[3])
+            .collect();
+        let (zso, _) = zso_of(&noise);
+        assert!(zso.len() as u64 <= max_output(noise.len() as u64));
+        assert!(max_output(4_700_372_992) > 4_700_372_992);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::source::ReadSeek;
@@ -167,8 +167,9 @@ pub struct FsInfo {
     pub fingerprint: String,
 }
 
-/// A file being written on the device.
-pub trait DeviceFile: Write + Send {
+/// A file being written on the device. Seeking back is for formats that
+/// write an index after the data (ZSO, GAME-4).
+pub trait DeviceFile: Write + Seek + Send {
     /// Reserves space for `len` bytes. Best effort: errors are for logs.
     fn preallocate(&mut self, len: u64) -> io::Result<()>;
     /// Flushes data and metadata to the device.
@@ -257,6 +258,12 @@ impl Write for HostFile {
 
     fn flush(&mut self) -> io::Result<()> {
         self.0.flush()
+    }
+}
+
+impl Seek for HostFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.0.seek(pos)
     }
 }
 

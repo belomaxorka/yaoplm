@@ -20,7 +20,8 @@ use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
 use yaoplm_api::verify::{RedumpUpdate, VerifyStatus};
 use yaoplm_api::{
-    Api, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request, Response, Transfer,
+    Api, ConvertTarget, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request,
+    Response, Transfer,
 };
 
 #[derive(Debug, Parser)]
@@ -100,6 +101,9 @@ enum Command {
         /// Store as ul chunks even where one image would fit.
         #[arg(long)]
         ul: bool,
+        /// Store images as ZSO (OPL 1.2.0 beta; not with ul chunks).
+        #[arg(long, conflicts_with = "ul")]
+        zso: bool,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -131,6 +135,22 @@ enum Command {
         /// Also delete CFG, art and cheats when no other game uses the ID.
         #[arg(long)]
         with_related: bool,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Convert games between ISO, ZSO and ul chunks. The old form is
+    /// deleted once the new one is complete; the game ID, and with it the
+    /// CFG, art and cheats, stays.
+    Convert {
+        root: PathBuf,
+        /// ID, title, file name, path or ul:<index>.
+        #[arg(required = true)]
+        games: Vec<String>,
+        #[arg(long, value_enum)]
+        to: FormatArg,
+        /// How images made from ul chunks are named.
+        #[arg(long, value_enum)]
+        name_style: Option<StyleArg>,
         #[command(flatten)]
         apply: Apply,
     },
@@ -311,6 +331,23 @@ impl From<MediaArg> for Media {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum FormatArg {
+    Iso,
+    Zso,
+    Ul,
+}
+
+impl From<FormatArg> for ConvertTarget {
+    fn from(format: FormatArg) -> Self {
+        match format {
+            FormatArg::Iso => Self::Iso,
+            FormatArg::Zso => Self::Zso,
+            FormatArg::Ul => Self::Ul,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum StyleArg {
     /// SLUS_200.62.Title.iso (default).
     IdTitle,
@@ -401,6 +438,7 @@ fn main() -> anyhow::Result<ExitCode> {
             sources,
             move_sources,
             ul,
+            zso,
             title,
             media,
             name_style,
@@ -430,6 +468,27 @@ fn main() -> anyhow::Result<ExitCode> {
                 }),
                 layout: Some(if ul { Layout::Ul } else { Layout::Auto }),
                 overrides: (!overrides.is_empty()).then_some(overrides),
+                compress: Some(zso),
+            };
+            plan_and_apply(&api, request, &apply)
+        }
+        Command::Convert {
+            root,
+            games,
+            to,
+            name_style,
+            apply,
+        } => {
+            let mut refs = Vec::new();
+            for game in &games {
+                refs.push(find_game(&api, &root, game, apply.profile)?);
+            }
+            let request = Request::ConvertGames {
+                root: text(&root),
+                games: refs,
+                target: to.into(),
+                profile: Some(apply.profile.into()),
+                name_style: name_style.map(Into::into),
             };
             plan_and_apply(&api, request, &apply)
         }

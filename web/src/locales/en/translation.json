@@ -273,11 +273,13 @@
       "rename": "Rename {{path}} to {{to}}",
       "remove": "Delete {{path}}",
       "removeSource": "Delete source {{path}}",
-      "dropJournal": "Close journal {{path}}"
+      "dropJournal": "Close journal {{path}}",
+      "writeZso": "Compress into {{path}}"
     },
     "confirmDelete": "I understand that files will be deleted",
     "confirm": "Confirm and run",
-    "confirmAndDelete": "Confirm and delete"
+    "confirmAndDelete": "Confirm and delete",
+    "atMost": "at most {{size}}"
   },
   "recovery": {
     "title_one": "An operation did not finish",

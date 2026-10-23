@@ -163,6 +163,7 @@ pub fn plan_set_art(
                 len: meta.len,
                 modified: meta.modified,
             }],
+            on_device: false,
         });
         let source = plan.sources.len() - 1;
         let mut tx = Transaction::new(format!("{} cover for {}", item.kind, item.title));

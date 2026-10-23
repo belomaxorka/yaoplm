@@ -68,6 +68,7 @@ pub enum PlanKind {
     Move,
     Recovery,
     Art,
+    Convert,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +78,9 @@ pub enum StepOp {
     CreateDir,
     RemoveDir,
     WriteFile,
+    /// Writes a ZSO compressed from the source (GAME-4); `bytes` is the
+    /// most it can take.
+    WriteZso,
     /// Replaces a small file atomically (`ul.cfg`, a CFG).
     PutFile,
     CopyFile,
@@ -174,6 +178,7 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Move => PlanKind::Move,
         core::PlanKind::Recovery => PlanKind::Recovery,
         core::PlanKind::Art => PlanKind::Art,
+        core::PlanKind::Convert => PlanKind::Convert,
     }
 }
 
@@ -207,6 +212,15 @@ pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
             bytes: Some(*len),
             source: source(*s),
             ..base(StepOp::WriteFile, path)
+        },
+        Step::WriteZso {
+            path,
+            source: s,
+            max_len,
+        } => PlanStep {
+            bytes: Some(*max_len),
+            source: source(*s),
+            ..base(StepOp::WriteZso, path)
         },
         Step::PutFile { path, content, .. } => PlanStep {
             bytes: Some(content.0.len() as u64),

@@ -8,7 +8,8 @@
 //! `<folder>/library` is a device root with games in every format and a
 //! few things to warn about; `<folder>/sources` holds images to import;
 //! `<folder>/mirror` holds local mirrors of the two cover sources with a
-//! cover each (ART-1), so the art screens work without the network. Pass
+//! cover each (ART-1), so the art screens work without the network, and a
+//! Redump DAT that verifies some of the games and not others (GAME-5). Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -24,6 +25,7 @@ use yaoplm_api::jobs::{JobResult, JobStatus};
 use yaoplm_api::{Api, Layout, Request, Response};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
+use yaoplm_test_support::dat::DatBuilder;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -63,6 +65,7 @@ fn import(root: &Path, sources: &[PathBuf], layout: Layout) {
             transfer: None,
             layout: Some(layout),
             overrides: None,
+            compress: None,
         })
         .unwrap()
     else {
@@ -159,6 +162,33 @@ fn main() -> ExitCode {
     write(
         &mirror.join("libretro/Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
         &cover(256, 362, 110, image::ImageFormat::Png),
+    );
+    // A Redump DAT to import (GAME-5): the retail game and the DVD-9 game
+    // match, the split game's ID is listed with other bytes (a bad dump),
+    // the uppercase one is not listed at all.
+    let mut lf_damaged = Variant::LfOnly.build().to_vec();
+    let last = lf_damaged.len() - 1;
+    lf_damaged[last] ^= 0xFF;
+    write(
+        &mirror.join("redump/Sony - PlayStation 2 - Datfile (3) (2026-10-23 01-56-22).dat"),
+        DatBuilder::new()
+            .iso(
+                "Retail Game (USA)",
+                Some("SLUS-20062, SLUS-20062GH"),
+                &Variant::Retail.build().to_vec(),
+            )
+            .iso(
+                "Dual Layer Quest (USA)",
+                Some("SLUS 21218"),
+                &Variant::Dvd9.build().to_vec(),
+            )
+            .iso(
+                "Dead or Alive 2 (Europe) (En,Fr,De,Es,It)",
+                Some("SCES-50003"),
+                &lf_damaged,
+            )
+            .build()
+            .as_bytes(),
     );
     // A loose image to pick as a manual replacement (ART-3).
     write(

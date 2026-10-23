@@ -355,6 +355,18 @@ fn step_line(step: &PlanStep) -> String {
                 .unwrap_or_default();
             format!("+ write {}{bytes}{from}", step.path)
         }
+        StepOp::WriteZso => {
+            let from = step
+                .source
+                .as_deref()
+                .map(|s| format!("  <- {s}"))
+                .unwrap_or_default();
+            let at_most = step
+                .bytes
+                .map(|b| format!("  at most {}", size(b)))
+                .unwrap_or_default();
+            format!("+ compress to {}{at_most}{from}", step.path)
+        }
         StepOp::PutFile => format!("~ update {}{bytes}", step.path),
         StepOp::CopyFile => format!("+ copy {} to {to}", step.path),
         StepOp::Rename => format!("~ rename {} to {to}", step.path),

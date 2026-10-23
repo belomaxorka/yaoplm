@@ -64,14 +64,14 @@ fn invalid(message: impl Into<String>) -> OpError {
 }
 
 /// A game as the planners need it.
-struct Found {
-    media: Media,
-    kind: FoundKind,
+pub(crate) struct Found {
+    pub(crate) media: Media,
+    pub(crate) kind: FoundKind,
     /// The ID OPL uses for CFG, ART and CHT, when it could be read.
-    startup: Option<String>,
+    pub(crate) startup: Option<String>,
 }
 
-enum FoundKind {
+pub(crate) enum FoundKind {
     Image {
         path: RelPath,
         name: IsoFileName,
@@ -97,7 +97,11 @@ fn media_of_folder(state: &DeviceState, folder: &str) -> Option<Media> {
     })
 }
 
-fn find_game(fs: &dyn DeviceFs, state: &DeviceState, game: &GameRef) -> Result<Found, OpError> {
+pub(crate) fn find_game(
+    fs: &dyn DeviceFs,
+    state: &DeviceState,
+    game: &GameRef,
+) -> Result<Found, OpError> {
     match game {
         GameRef::Image { path } => {
             let folder = path
@@ -280,7 +284,12 @@ fn ul_cfg_with(state: &DeviceState, index: usize, record: Option<&UlRecord>) -> 
     })
 }
 
-fn game_info(title: &str, startup: Option<&str>, media: Media, format: &str) -> GameInfo {
+pub(crate) fn game_info(
+    title: &str,
+    startup: Option<&str>,
+    media: Media,
+    format: &str,
+) -> GameInfo {
     GameInfo {
         title: title.to_owned(),
         startup: startup.unwrap_or("").to_owned(),
@@ -289,7 +298,7 @@ fn game_info(title: &str, startup: Option<&str>, media: Media, format: &str) -> 
     }
 }
 
-fn new_plan(kind: PlanKind, title: String, state: &DeviceState) -> Plan {
+pub(crate) fn new_plan(kind: PlanKind, title: String, state: &DeviceState) -> Plan {
     let mut plan = Plan::new(
         kind,
         title,
