@@ -998,7 +998,7 @@ impl Locked {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0)).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
             Self {
                 works: works(path),
                 path: path.to_path_buf(),
