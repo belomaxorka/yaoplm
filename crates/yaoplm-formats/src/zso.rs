@@ -582,11 +582,21 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ZsoError::Stopped));
-        // The worst case covers incompressible data.
-        let noise: Vec<u8> = (0..4 * SECTOR_SIZE)
-            .map(|i| (i as u32).wrapping_mul(2_654_435_761).to_le_bytes()[3])
+        // The worst case covers incompressible data: every block stored.
+        let mut seed = 0x9E37_79B9u32;
+        let noise: Vec<u8> = (0..64 * SECTOR_SIZE)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
             .collect();
-        let (zso, _) = zso_of(&noise);
+        let (zso, stats) = zso_of(&noise);
+        assert_eq!(
+            stats.plain_blocks, stats.blocks,
+            "the noise must not compress"
+        );
         assert!(zso.len() as u64 <= max_output(noise.len() as u64));
         assert!(max_output(4_700_372_992) > 4_700_372_992);
     }

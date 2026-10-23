@@ -72,24 +72,42 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
     };
     for (tx, progress) in journal.plan.transactions.iter().zip(&journal.progress) {
         let done = progress.done.min(tx.steps.len());
-        let (steps, verb): (Vec<Step>, &str) = match (progress.state, action) {
+        // Steps before the commit point stay undoable in the recovery: a
+        // step that fails every time (a ZSO too big for FAT32) is rolled
+        // back, and the next recovery skips it, instead of leaving a
+        // journal that is retried for ever.
+        let (steps, commit, verb): (Vec<Step>, usize, &str) = match (progress.state, action) {
             (TxState::Done | TxState::RolledBack, _) => continue,
             (TxState::Pending, RecoveryAction::Rollback) => continue,
-            (TxState::Pending, RecoveryAction::Resume) => (tx.steps.clone(), "Run"),
-            (TxState::Committed, _) | (TxState::Running, RecoveryAction::Resume) => {
-                (tx.steps[done..].to_vec(), "Finish")
+            (TxState::Pending, RecoveryAction::Resume) => (tx.steps.clone(), tx.commit, "Run"),
+            // From the start: steps already done are skipped in resume
+            // mode, and a rollback then undoes them too.
+            (TxState::Running, RecoveryAction::Resume) if done < tx.commit => {
+                (tx.steps.clone(), tx.commit, "Finish")
             }
-            (TxState::Running, RecoveryAction::Rollback) => {
+            (TxState::Committed | TxState::Running, _) if done >= tx.commit => {
+                (tx.steps[done..].to_vec(), 0, "Finish")
+            }
+            (TxState::Committed, _) => (tx.steps[done..].to_vec(), 0, "Finish"),
+            (TxState::Running, _) => {
                 // The step at `done` may have started; undoing it is safe.
                 let end = (done + 1).min(tx.steps.len());
-                let undone = tx.steps[..end].iter().rev().flat_map(undo).collect();
-                (undone, "Undo")
+                let undone = tx.steps[..end]
+                    .iter()
+                    .rev()
+                    .flat_map(|step| undo(step, &journal.plan))
+                    .collect();
+                (undone, 0, "Undo")
             }
         };
         let mut recovery = Transaction::new(format!("{verb}: {}", tx.title));
         recovery.game = tx.game.clone();
-        for step in &steps {
-            recovery.then(remap(step, base));
+        for (i, step) in steps.iter().enumerate() {
+            if i < commit {
+                recovery.push(remap(step, base));
+            } else {
+                recovery.then(remap(step, base));
+            }
         }
         if progress.state == TxState::Committed && action == RecoveryAction::Rollback {
             recovery.notices.push(Notice::info(

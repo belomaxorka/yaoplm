@@ -8,15 +8,16 @@ mod common;
 
 use std::io::Cursor;
 
-use common::{files, run};
+use common::{big_iso, files, run, run_with};
 use yaoplm_core::convert::{ConvertOptions, Target, plan_convert};
 use yaoplm_core::exec::Outcome;
 use yaoplm_core::ops::GameRef;
 use yaoplm_core::plan::{PlanKind, Removal, Step};
 use yaoplm_core::recovery::{RecoveryAction, plan_recovery};
-use yaoplm_device::{FsKind, RelPath};
+use yaoplm_device::{CancelToken, FsKind, RelPath};
 use yaoplm_formats::LoaderProfile;
 use yaoplm_formats::image::DiscImage;
+use yaoplm_formats::iso_name::NameStyle;
 use yaoplm_formats::iso9660::{SECTOR_SIZE, SectorSource};
 use yaoplm_formats::ul_cfg::{UlCfg, UlRecord};
 use yaoplm_formats::{Media, zso};
@@ -298,21 +299,221 @@ fn what_cannot_be_converted_is_skipped_with_a_reason() {
 
 #[test]
 fn bulk_conversion_counts_freed_space() {
-    // Two 2-sector-ish images on a nearly full stick: converting both at
-    // once fits because each ISO is gone before the next ZSO is written.
+    // Two incompressible 6 MiB images on a stick with room for one ZSO:
+    // converting both at once fits, because each ISO is gone before the
+    // next ZSO is written.
+    let a = big_iso("SLUS_200.62", 6 << 20).to_vec();
+    let b = big_iso("SCES_500.03", 6 << 20).to_vec();
+    // MemFs counts the images against its free space.
+    let isos = (a.len() + b.len()) as u64;
+    let stick_with = |free: u64| {
+        let fs = MemFs::new(FsKind::ExFat).with_free_bytes(isos + free);
+        fs.insert_file("CD/SLUS_200.62.A.iso", &a);
+        fs.insert_file("CD/SCES_500.03.B.iso", &b);
+        fs
+    };
+    let games = [image("CD/SLUS_200.62.A.iso"), image("CD/SCES_500.03.B.iso")];
+    let roomy = plan_convert(&stick_with(1 << 40), &games, Target::Zso, &options()).unwrap();
+    let total = roomy.write_bytes();
+    let peak = roomy.peak_write_bytes();
+    let free = peak + (4 << 20);
+    assert!(
+        free < total,
+        "the stick must be too small for both ZSOs at once"
+    );
+
+    let fs = stick_with(free);
+    let plan = plan_convert(&fs, &games, Target::Zso, &options()).unwrap();
+    assert!(plan.is_executable(), "{:?}", plan.notices);
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    assert_eq!(iso_bytes(&fs, "CD/SCES_500.03.B.zso"), b);
+
+    let tight = plan_convert(&stick_with(peak / 2), &games, Target::Zso, &options()).unwrap();
+    assert!(tight.notices.iter().any(|n| n.code == "noSpace"));
+}
+
+#[test]
+fn a_cancelled_compression_leaves_the_iso() {
     let fs = MemFs::new(FsKind::ExFat);
-    let a = Variant::Retail.build().to_vec();
-    let b = Variant::LfOnly.build().to_vec();
-    fs.insert_file("CD/SLUS_200.62.A.iso", &a);
-    fs.insert_file("CD/SCES_500.03.B.iso", &b);
+    let iso = big_iso("SLUS_200.62", 12 << 20).to_vec();
+    fs.insert_file("DVD/SLUS_200.62.Noise.iso", &iso);
     let plan = plan_convert(
         &fs,
-        &[image("CD/SLUS_200.62.A.iso"), image("CD/SCES_500.03.B.iso")],
+        &[image("DVD/SLUS_200.62.Noise.iso")],
         Target::Zso,
         &options(),
     )
     .unwrap();
-    let total = plan.write_bytes();
-    let peak = plan.peak_write_bytes();
-    assert!(peak < total, "{peak} < {total}");
+    let cancel = CancelToken::new();
+    let report = run_with(&plan, &fs, &VirtualSources::new(), &cancel, &mut |p| {
+        if p.done > 0 {
+            cancel.cancel();
+        }
+    });
+    assert!(report.cancelled);
+    assert_eq!(report.outcomes, [Outcome::RolledBack]);
+    assert_eq!(fs.bytes("DVD/SLUS_200.62.Noise.iso").unwrap(), iso);
+    assert!(
+        !paths(&fs).iter().any(|p| p.contains(".zso")),
+        "{:?}",
+        paths(&fs)
+    );
+}
+
+#[test]
+fn every_record_of_a_ul_game_goes_and_odd_chunks_are_refused() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    let iso = Variant::Retail.build().to_vec();
+    let cd = UlRecord::new("Game", "SLUS_200.62", 1, Media::Cd).unwrap();
+    let dvd = UlRecord::new("Game", "SLUS_200.62", 1, Media::Dvd).unwrap();
+    fs.insert_file(&cd.chunk_name(0), &iso);
+    // The same game listed three times: all name the one chunk.
+    let mut table = cd.as_bytes().to_vec();
+    table.extend_from_slice(cd.as_bytes());
+    table.extend_from_slice(dvd.as_bytes());
+    fs.insert_file("ul.cfg", &table);
+    let plan = plan_convert(
+        &fs,
+        &[ul(0, "SLUS_200.62", "Game")],
+        Target::Iso,
+        &options(),
+    )
+    .unwrap();
+    assert!(
+        plan.is_executable(),
+        "{:?} {:?}",
+        plan.notices,
+        plan.skipped
+    );
+    assert!(
+        plan.transactions[0]
+            .notices
+            .iter()
+            .any(|n| n.code == "ulDuplicateRecords")
+    );
+    assert!(run(&plan, &fs, &sources).succeeded());
+    assert_eq!(fs.bytes("ul.cfg").unwrap(), Vec::<u8>::new());
+    assert_eq!(fs.bytes("CD/SLUS_200.62.Game.iso").unwrap(), iso);
+
+    // A first chunk shorter than 1 GiB: OPL reads part 1 at 1 GiB.
+    let two = UlRecord::new("Two", "SCES_500.03", 2, Media::Dvd).unwrap();
+    fs.insert_file(&two.chunk_name(0), &iso);
+    fs.insert_file(&two.chunk_name(1), &iso);
+    fs.insert_file("ul.cfg", two.as_bytes());
+    let plan = plan_convert(&fs, &[ul(0, "SCES_500.03", "Two")], Target::Iso, &options()).unwrap();
+    assert_eq!(plan.skipped[0].reason.code, "ulPartSize");
+}
+
+#[test]
+fn an_id_fixed_in_ul_cfg_stays_in_the_name() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    // SYSTEM.CNF says SLUS_200.62.
+    let iso = Variant::Retail.build().to_vec();
+    let fixed = UlRecord::new("Fixed", "SLUS_999.99", 1, Media::Cd).unwrap();
+    let plain = UlRecord::new("Plain", "SLUS_200.62", 1, Media::Cd).unwrap();
+    fs.insert_file(&fixed.chunk_name(0), &iso);
+    fs.insert_file(&plain.chunk_name(0), &iso);
+    let mut table = fixed.as_bytes().to_vec();
+    table.extend_from_slice(plain.as_bytes());
+    fs.insert_file("ul.cfg", &table);
+    let title_only = ConvertOptions {
+        name_style: Some(NameStyle::TitleOnly),
+        ..options()
+    };
+    let plan = plan_convert(
+        &fs,
+        &[ul(0, "SLUS_999.99", "Fixed"), ul(1, "SLUS_200.62", "Plain")],
+        Target::Iso,
+        &title_only,
+    )
+    .unwrap();
+    assert!(
+        plan.is_executable(),
+        "{:?} {:?}",
+        plan.notices,
+        plan.skipped
+    );
+    let kept = |i: usize| {
+        plan.transactions[i]
+            .notices
+            .iter()
+            .any(|n| n.code == "idKeptInName")
+    };
+    assert!(kept(0));
+    assert!(!kept(1));
+    assert!(run(&plan, &fs, &sources).succeeded());
+    assert!(fs.exists("CD/SLUS_999.99.Fixed.iso"), "{:?}", paths(&fs));
+    assert!(fs.exists("CD/Plain.iso"), "{:?}", paths(&fs));
+}
+
+/// A ZSO conversion the stick vanished in the middle of, and a file of
+/// the user's that took the ZSO's name meanwhile.
+fn interrupted_compression() -> (MemFs, Vec<u8>) {
+    let fs = MemFs::new(FsKind::ExFat);
+    let iso = big_iso("SLUS_200.62", 6 << 20).to_vec();
+    fs.insert_file("DVD/SLUS_200.62.Noise.iso", &iso);
+    let plan = plan_convert(
+        &fs,
+        &[image("DVD/SLUS_200.62.Noise.iso")],
+        Target::Zso,
+        &options(),
+    )
+    .unwrap();
+    fs.unplug_after(1 << 20);
+    let report = run(&plan, &fs, &VirtualSources::new());
+    assert_eq!(report.outcomes, [Outcome::Interrupted]);
+    fs.replug();
+    fs.insert_file("DVD/SLUS_200.62.Noise.zso", b"the user's own file");
+    (fs, iso)
+}
+
+fn nothing_to_recover(fs: &MemFs) -> bool {
+    plan_recovery(fs, RecoveryAction::Rollback)
+        .unwrap()
+        .notices
+        .iter()
+        .any(|n| n.code == "nothingToRecover")
+}
+
+#[test]
+fn undoing_a_compression_leaves_what_it_did_not_write() {
+    let (fs, iso) = interrupted_compression();
+    let sources = VirtualSources::new();
+    let undo = plan_recovery(&fs, RecoveryAction::Rollback).unwrap();
+    let report = run(&undo, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert_eq!(
+        fs.bytes("DVD/SLUS_200.62.Noise.zso").unwrap(),
+        b"the user's own file"
+    );
+    assert_eq!(fs.bytes("DVD/SLUS_200.62.Noise.iso").unwrap(), iso);
+    assert!(
+        !paths(&fs).iter().any(|p| p.ends_with("yaoplm-part")),
+        "{:?}",
+        paths(&fs)
+    );
+    assert!(nothing_to_recover(&fs));
+}
+
+#[test]
+fn a_resume_that_cannot_finish_is_rolled_back_not_retried_for_ever() {
+    let (fs, iso) = interrupted_compression();
+    let sources = VirtualSources::new();
+    // The user's file is no ZSO of this game: resuming must not take it for
+    // one (the ISO would go next), and stops.
+    let resume = plan_recovery(&fs, RecoveryAction::Resume).unwrap();
+    assert!(!run(&resume, &fs, &sources).succeeded());
+    assert_eq!(fs.bytes("DVD/SLUS_200.62.Noise.iso").unwrap(), iso);
+    // That game was rolled back; the next recovery only closes journals.
+    let again = plan_recovery(&fs, RecoveryAction::Resume).unwrap();
+    let report = run(&again, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert!(nothing_to_recover(&fs));
+    assert_eq!(fs.bytes("DVD/SLUS_200.62.Noise.iso").unwrap(), iso);
+    assert_eq!(
+        fs.bytes("DVD/SLUS_200.62.Noise.zso").unwrap(),
+        b"the user's own file"
+    );
 }

@@ -239,7 +239,7 @@ pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
             removal: Some(match what {
                 Removal::UserData => RemovalKind::UserData,
                 Removal::Cache => RemovalKind::Cache,
-                Removal::Ours => RemovalKind::Ours,
+                Removal::Ours | Removal::OursZso { .. } => RemovalKind::Ours,
             }),
             ..base(StepOp::Remove, path)
         },

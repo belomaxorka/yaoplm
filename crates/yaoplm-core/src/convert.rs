@@ -33,6 +33,7 @@ use yaoplm_formats::{LoaderProfile, Media, zso};
 
 use crate::device::{DeviceState, join, on_disk, rel};
 use crate::import::{image_name, ul_title};
+use crate::multipart::Joined;
 use crate::ops::{Found, FoundKind, GameRef, OpError, find_game, game_info, new_plan};
 use crate::plan::{
     Bytes, Expect, Notice, Plan, PlanKind, Removal, Skipped, Source, SourceFile, SourceKind, Step,
@@ -122,22 +123,35 @@ impl Planner<'_> {
         self.ul_step(current, next)
     }
 
-    /// `ul.cfg` without `record`, found by its bytes: earlier transactions
-    /// may have moved it.
-    fn ul_without(&mut self, record: &UlRecord) -> Result<Step, OpError> {
+    /// `ul.cfg` without the records of `record`'s game: chunk names depend
+    /// only on the name's CRC and the ID (`sbCreatePath_name()`), so every
+    /// record with both names the same files, which go with it. OPL's own
+    /// `sbDelete()` drops just one record (`sbRebuildULCfg(.., excludeID)`,
+    /// src/supportbase.c @b3a21997) and leaves a duplicate listing deleted
+    /// chunks. Found by their bytes, as earlier transactions may have moved
+    /// them. Returns how many records went.
+    fn ul_without(&mut self, record: &UlRecord) -> Result<(Step, usize), OpError> {
         let current = self.ul_current();
-        let at = current
-            .as_chunks::<{ ul_cfg::RECORD_SIZE }>()
-            .0
+        let (records, tail) = current.as_chunks::<{ ul_cfg::RECORD_SIZE }>();
+        let same = |r: &[u8; ul_cfg::RECORD_SIZE]| {
+            let r = UlRecord::from_bytes(*r);
+            r.name_crc() == record.name_crc() && r.startup_bytes() == record.startup_bytes()
+        };
+        let removed = records.iter().filter(|r| same(r)).count();
+        if removed == 0 {
+            return Err(OpError::NotFound(format!(
+                "ul.cfg no longer lists {}",
+                record.name()
+            )));
+        }
+        let mut next: Vec<u8> = records
             .iter()
-            .position(|r| r == record.as_bytes())
-            .ok_or_else(|| {
-                OpError::NotFound(format!("ul.cfg no longer lists {}", record.name()))
-            })?;
-        let mut next = current.clone();
-        let start = at * ul_cfg::RECORD_SIZE;
-        next.drain(start..start + ul_cfg::RECORD_SIZE);
-        Ok(self.ul_step(current, next)?)
+            .filter(|r| !same(r))
+            .flatten()
+            .copied()
+            .collect();
+        next.extend_from_slice(tail);
+        Ok((self.ul_step(current, next)?, removed))
     }
 
     fn ul_step(&mut self, current: Vec<u8>, next: Vec<u8>) -> io::Result<Step> {
@@ -166,6 +180,26 @@ impl Planner<'_> {
             tx.then(step);
         }
         Ok(())
+    }
+
+    /// The game ID OPL would read from SYSTEM.CNF in `ul` chunks.
+    fn chunks_startup(&self, parts: &[(RelPath, u64)]) -> Option<String> {
+        let mut readers = Vec::with_capacity(parts.len());
+        for (path, len) in parts {
+            readers.push((self.fs.open(path).ok()?, *len));
+        }
+        let mut image = DiscImage::open(Joined::new(readers)).ok()?;
+        yaoplm_formats::image::opl_startup(&mut image).ok()
+    }
+
+    /// FAT32 holds files up to 4 GiB - 1; a ZSO of `iso_len` bytes may come
+    /// out bigger than that only if its worst case does.
+    fn zso_may_not_fit(&self, iso_len: u64) -> bool {
+        self.state
+            .info
+            .kind
+            .max_file_size()
+            .is_some_and(|m| zso::max_output(iso_len) > m)
     }
 
     /// The ISO bytes a ZSO on the device yields.
@@ -206,15 +240,24 @@ impl Planner<'_> {
                         format!("the game is already a {}", target.label()),
                     ));
                 }
-                let is_zso = self
+                let mut magic = [0u8; 4];
+                let is_zso = match self
                     .fs
                     .open(&path)
-                    .ok()
-                    .and_then(|mut r| {
-                        let mut magic = [0u8; 4];
-                        r.read_exact(&mut magic).ok().map(|()| magic == zso::MAGIC)
-                    })
-                    .unwrap_or(false);
+                    .and_then(|mut r| r.read_exact(&mut magic))
+                {
+                    Ok(()) => magic == zso::MAGIC,
+                    // Shorter than a ZSO header: no image at all, refused below.
+                    Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => false,
+                    // Guessing would copy ZSO bytes into an .iso: refuse.
+                    Err(err) => {
+                        return Err(skip(
+                            &what,
+                            "unreadable",
+                            format!("cannot read the image: {err}"),
+                        ));
+                    }
+                };
                 let (source, iso_len) = if is_zso {
                     let iso_len = self.zso_iso_len(&path).map_err(|e| {
                         skip(&what, "unreadable", format!("cannot read the ZSO: {e}"))
@@ -304,13 +347,7 @@ impl Planner<'_> {
                     source: index,
                     max_len: zso::max_output(iso_len),
                 });
-                if self
-                    .state
-                    .info
-                    .kind
-                    .max_file_size()
-                    .is_some_and(|m| iso_len > m)
-                {
+                if self.zso_may_not_fit(iso_len) {
                     tx.notices.push(Notice::warning(
                         "zsoMayNotFit",
                         "FAT32 holds files up to 4 GiB: if the ZSO comes out larger, the conversion is undone",
@@ -437,10 +474,33 @@ impl Planner<'_> {
             let entry = find_entry(&self.state.top, &chunk)
                 .filter(|e| !e.is_dir)
                 .ok_or_else(|| skip(what, "ulPartMissing", format!("chunk {chunk} is missing")))?;
+            // OPL reads part n at n GiB (`DeviceReadSectors()`, steps of
+            // 0x80000 sectors, modules/iopcore/cdvdman/device-smb.c): joined,
+            // other sizes would give an image unlike the one OPL plays.
+            let last = part + 1 == record.parts();
+            if (!last && entry.len != ul_cfg::CHUNK_SIZE)
+                || (last && (entry.len == 0 || entry.len > ul_cfg::CHUNK_SIZE))
+            {
+                return Err(skip(
+                    what,
+                    "ulPartSize",
+                    format!(
+                        "chunk {chunk} is {} bytes; every chunk but the last must be exactly 1 GiB",
+                        entry.len
+                    ),
+                ));
+            }
             let path = rel(&entry.name).map_err(|e| skip(what, "badName", e.to_string()))?;
             parts.push((path, entry.len));
         }
         let iso_len: u64 = parts.iter().map(|(_, len)| len).sum();
+        if !iso_len.is_multiple_of(SECTOR_SIZE as u64) {
+            return Err(skip(
+                what,
+                "partialSector",
+                format!("{iso_len} bytes is not a whole number of 2048-byte sectors"),
+            ));
+        }
         if target == Target::Iso
             && self
                 .state
@@ -468,7 +528,19 @@ impl Planner<'_> {
             ImageExtension::Iso
         };
         let mut notices = Vec::new();
-        let style = self.options.name_style.unwrap_or(NameStyle::WithStartup);
+        let mut style = self.options.name_style.unwrap_or(NameStyle::WithStartup);
+        // Without the ID in its name, an image is known by SYSTEM.CNF: an
+        // ID fixed in ul.cfg would be lost.
+        if style == NameStyle::TitleOnly && self.chunks_startup(&parts).as_deref() != Some(startup)
+        {
+            notices.push(Notice::info(
+                "idKeptInName",
+                format!(
+                    "the image does not say {startup}, ul.cfg does: the ID stays in the file name, where OPL reads it first"
+                ),
+            ));
+            style = NameStyle::WithStartup;
+        }
         let name = image_name(startup, &title, ext, style, &mut notices)
             .map_err(|e| skip(what, "badName", e.to_string()))?;
         let folder = self
@@ -505,6 +577,12 @@ impl Planner<'_> {
             .sources
             .push(device_source(SourceKind::Joined, parts.clone(), iso_len));
         let index = self.plan.sources.len() - 1;
+        if target == Target::Zso && self.zso_may_not_fit(iso_len) {
+            tx.notices.push(Notice::warning(
+                "zsoMayNotFit",
+                "FAT32 holds files up to 4 GiB: if the ZSO comes out larger, the conversion is undone",
+            ));
+        }
         match target {
             Target::Zso => tx.push(Step::WriteZso {
                 path: target_path,
@@ -518,10 +596,18 @@ impl Planner<'_> {
                 len: iso_len,
             }),
         }
-        let step = self
+        let (step, records) = self
             .ul_without(record)
             .map_err(|e| skip(what, "notFound", e.to_string()))?;
         tx.push(step);
+        if records > 1 {
+            tx.notices.push(Notice::info(
+                "ulDuplicateRecords",
+                format!(
+                    "ul.cfg lists this game {records} times: every record goes with the chunks"
+                ),
+            ));
+        }
         for (path, len) in parts {
             tx.then(Step::Remove {
                 path,
@@ -586,8 +672,21 @@ pub fn plan_convert(
         plan.notices
             .push(Notice::error("nothingToConvert", "no game to convert"));
     }
+    // The most the device holds at once: the new form is written before the
+    // old one goes. Every file takes whole clusters, as in imports.
     let cluster = state.info.cluster_size;
-    let needed = on_disk(plan.peak_write_bytes(), cluster) + RESERVE;
+    let mut running = 0u64;
+    let mut peak = 0u64;
+    for tx in &plan.transactions {
+        running += tx
+            .steps
+            .iter()
+            .map(|s| on_disk(s.write_bytes(), cluster))
+            .sum::<u64>();
+        peak = peak.max(running);
+        running = running.saturating_sub(tx.steps.iter().map(Step::freed_bytes).sum());
+    }
+    let needed = peak + RESERVE;
     if count > 0 && needed > state.info.free_bytes {
         plan.notices.push(Notice::error(
             "noSpace",

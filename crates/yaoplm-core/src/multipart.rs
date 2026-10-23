@@ -53,6 +53,19 @@ impl Read for MultiPartFile {
     }
 }
 
+impl Seek for MultiPartFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let target = match pos {
+            SeekFrom::Start(n) => Some(n),
+            SeekFrom::End(d) => self.len.checked_add_signed(d),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        };
+        self.pos = target
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))?;
+        Ok(self.pos)
+    }
+}
+
 /// Readers already open, read one after the other: `ul` chunks opened
 /// through a [`yaoplm_device::DeviceFs`] for a conversion (GAME-4).
 pub struct Joined {
@@ -89,19 +102,6 @@ impl Read for Joined {
 }
 
 impl Seek for Joined {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let target = match pos {
-            SeekFrom::Start(n) => Some(n),
-            SeekFrom::End(d) => self.len.checked_add_signed(d),
-            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
-        };
-        self.pos = target
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))?;
-        Ok(self.pos)
-    }
-}
-
-impl Seek for MultiPartFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let target = match pos {
             SeekFrom::Start(n) => Some(n),

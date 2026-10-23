@@ -123,6 +123,11 @@ pub enum Removal {
     Cache,
     /// A file YAOPLM created itself in this operation (rollback).
     Ours,
+    /// A ZSO this operation compressed (rollback of `WriteZso`, whose size
+    /// is not known up front): removed only when its header says it holds
+    /// `iso_len` bytes, so a file someone else put there stays.
+    #[serde(rename_all = "camelCase")]
+    OursZso { iso_len: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

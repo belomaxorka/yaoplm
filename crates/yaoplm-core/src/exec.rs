@@ -180,8 +180,8 @@ fn ensure_parent(fs: &dyn DeviceFs, path: &RelPath) -> Result<(), ExecError> {
     Ok(())
 }
 
-/// The steps that undo `step`, for rollback and recovery.
-pub fn undo(step: &Step) -> Vec<Step> {
+/// The steps that undo `step` of `plan`, for rollback and recovery.
+pub fn undo(step: &Step, plan: &Plan) -> Vec<Step> {
     let ours = |path: &RelPath, len: u64| Step::Remove {
         path: path.clone(),
         len,
@@ -218,14 +218,23 @@ pub fn undo(step: &Step) -> Vec<Step> {
             }
             steps
         }
-        Step::WriteZso { path, .. } => {
+        Step::WriteZso { path, source, .. } => {
             let mut steps = Vec::new();
             if let Ok(part) = path.with_suffix(PART_SUFFIX) {
                 steps.push(ours(&part, 0));
             }
-            // The size is unknown up front; the step refuses an existing
-            // target, so what is there is ours.
-            steps.push(ours(path, 0));
+            // The size is unknown up front: the header tells our ZSO from
+            // a file that was there before (the step refuses to replace
+            // one, but recovery undoes a step that may not have started).
+            if let Some(source) = plan.sources.get(*source) {
+                steps.push(Step::Remove {
+                    path: path.clone(),
+                    len: 0,
+                    what: Removal::OursZso {
+                        iso_len: source.len,
+                    },
+                });
+            }
             steps
         }
         Step::CopyFile { to, .. } => vec![ours(to, 0)],
@@ -375,7 +384,12 @@ impl Runner<'_, '_> {
                 let Some(meta) = exists(fs, path)? else {
                     return Ok(());
                 };
-                if *what == Removal::Ours && *len > 0 && meta.len != *len {
+                let ours = match what {
+                    Removal::Ours => *len == 0 || meta.len == *len,
+                    Removal::OursZso { iso_len } => holds_zso(fs, path, *iso_len),
+                    Removal::UserData | Removal::Cache => true,
+                };
+                if !ours {
                     // Not the file this operation created: leave it.
                     return Ok(());
                 }
@@ -480,17 +494,22 @@ impl Runner<'_, '_> {
     fn write_zso(&mut self, path: &RelPath, source: usize, max_len: u64) -> Result<(), ExecError> {
         let fs = self.ctx.fs;
         let part = part_path(path)?;
+        let source =
+            self.plan.sources.get(source).ok_or_else(|| {
+                ExecError::Precondition("the plan names an unknown source".into())
+            })?;
         if exists(fs, path)?.is_some() {
-            if self.mode == Mode::Resume && exists(fs, &part)?.is_none() {
+            // Done before an interruption only if it is our ZSO: something
+            // else there must not pass for it (the old image goes next).
+            if self.mode == Mode::Resume
+                && exists(fs, &part)?.is_none()
+                && holds_zso(fs, path, source.len)
+            {
                 self.done += max_len;
                 return Ok(());
             }
             return Err(ExecError::Precondition(format!("{path} already exists")));
         }
-        let source =
-            self.plan.sources.get(source).ok_or_else(|| {
-                ExecError::Precondition("the plan names an unknown source".into())
-            })?;
         let reader = open_stream(self.ctx.sources, fs, source, 0).map_err(ExecError::io(
             format!("cannot read {}", source.path.display()),
         ))?;
@@ -557,7 +576,7 @@ impl Runner<'_, '_> {
         let mut first_error = None;
         for (index, step) in steps.iter().enumerate().rev() {
             let mut failed = None;
-            for undo_step in undo(step) {
+            for undo_step in undo(step, self.plan) {
                 if let Err(err) = self.run(&undo_step) {
                     failed.get_or_insert(err.to_string());
                     first_error.get_or_insert(err);
@@ -572,6 +591,14 @@ impl Runner<'_, '_> {
         self.mode = saved;
         first_error.map_or(Ok(()), Err)
     }
+}
+
+/// A ZSO whose header says it holds `iso_len` bytes of ISO.
+fn holds_zso(fs: &dyn DeviceFs, path: &RelPath, iso_len: u64) -> bool {
+    let mut header = [0u8; zso::HEADER_SIZE];
+    fs.open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .is_ok_and(|()| zso::ZsoHeader::parse(&header).is_some_and(|h| h.total_bytes == iso_len))
 }
 
 /// Sources read by the plan must be exactly as planned. Sources that are
@@ -810,7 +837,12 @@ pub fn execute_with_events(
                         return report;
                     }
                 }
-                break;
+                // A recovery goes on: its transactions stand alone, and the
+                // journals it closes last are settled once one of them is
+                // rolled back (a next recovery would only fail the same way).
+                if plan.kind != PlanKind::Recovery || report.cancelled {
+                    break;
+                }
             }
             Some((_, err, _)) => {
                 report.outcomes[index] = Outcome::Interrupted;
