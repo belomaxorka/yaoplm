@@ -189,6 +189,11 @@ impl RedumpIndex {
         }
     }
 
+    /// The data track of a disc Redump lists as BIN/CUE: its first BIN.
+    fn is_data_track(&self, game: usize, rom: usize) -> bool {
+        self.games[game].roms.iter().position(is_bin) == Some(rom)
+    }
+
     /// The verdict for an image with `hashes`, whose game ID is `id` when
     /// it has one.
     pub fn verify(&self, hashes: &Hashes, id: Option<&str>, data: Data) -> Verdict {
@@ -197,6 +202,12 @@ impl RedumpIndex {
         let mut best: Option<(usize, usize, bool)> = None;
         for &(g, r) in hits {
             if self.games[g].roms[r].size != hashes.size {
+                continue;
+            }
+            // Audio tracks are the same on several discs (a game and its
+            // demo, or its other regions): a raw track proves a dump only
+            // through the data track.
+            if data == Data::Raw && !self.is_data_track(g, r) {
                 continue;
             }
             let serial_matches = key.as_ref().is_some_and(|k| self.keys[g].contains(k));
@@ -284,12 +295,23 @@ mod tests {
   <rom name="Disc (Japan) (Taikenban).bin" size="4704" crc="00000000" sha1="{e}"/></game>
 <game name="Shared image (Europe)" id="77"><serial>SLES 50000</serial>
   <rom name="Shared image (Europe).iso" size="2048" crc="00000000" sha1="{c}"/></game>
+<game name="Music (USA)" id="80"><serial>SLUS 20500</serial>
+  <rom name="Music (USA).cue" size="200" crc="00000000" sha1="{d}"/>
+  <rom name="Music (USA) (Track 1).bin" size="7056" crc="00000000" sha1="{f}"/>
+  <rom name="Music (USA) (Track 2).bin" size="2352" crc="00000000" sha1="{g}"/></game>
+<game name="Music (Europe)" id="81"><serial>SLES 50500</serial>
+  <rom name="Music (Europe).cue" size="200" crc="00000000" sha1="{d}"/>
+  <rom name="Music (Europe) (Track 1).bin" size="7056" crc="00000000" sha1="{h}"/>
+  <rom name="Music (Europe) (Track 2).bin" size="2352" crc="00000000" sha1="{g}"/></game>
 </datafile>"#,
             a = sha(0xaa),
             b = sha(0xbb),
             c = sha(0xcc),
             d = sha(0xdd),
             e = sha(0xee),
+            f = sha(0xf1),
+            g = sha(0xf2),
+            h = sha(0xf3),
         );
         RedumpIndex::new(parse(xml.as_bytes()).unwrap())
     }
@@ -319,7 +341,7 @@ mod tests {
     #[test]
     fn verified_by_sha1_and_size() {
         let index = index();
-        assert_eq!(index.len(), 5);
+        assert_eq!(index.len(), 7);
         assert!(index.has_serials());
         let Verdict::Verified {
             game,
@@ -398,5 +420,26 @@ mod tests {
             Verdict::BadDump(_)
         ));
         assert_eq!(index.games_for("SLUS-20062").len(), 2);
+    }
+
+    #[test]
+    fn raw_tracks_match_data_tracks_only() {
+        let index = index();
+        let Verdict::Verified { game, .. } =
+            index.verify(&hashes(7056, 0xf3), Some("SLES_505.00"), Data::Raw)
+        else {
+            panic!("expected a match");
+        };
+        assert_eq!(game.rom, "Music (Europe) (Track 1).bin");
+        // The audio track both discs share proves nothing.
+        assert!(!matches!(
+            index.verify(&hashes(2352, 0xf2), Some("SLUS_205.00"), Data::Raw),
+            Verdict::Verified { .. }
+        ));
+        // Nor does a sheet that happens to have the same bytes.
+        assert!(!matches!(
+            index.verify(&hashes(93, 0xdd), Some("SLPM_601.01"), Data::Raw),
+            Verdict::Verified { .. }
+        ));
     }
 }

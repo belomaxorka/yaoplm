@@ -25,7 +25,7 @@ use chd::Chd;
 use chd::metadata::{KnownMetadata, Metadata};
 use chd::read::ChdReader;
 
-use crate::cue::{TrackMode, user_data};
+use crate::cue::{RAW_SECTOR_SIZE, TrackMode, user_data};
 use crate::iso9660::{SECTOR_SIZE, Sector, SectorSource};
 
 /// Sector data plus subcode in a CD CHD frame.
@@ -249,6 +249,15 @@ impl<R: Read + Seek> SectorSource for ChdImage<R> {
                 self.reader.read_exact(data)?;
                 user_data(mode, data, lba, buf)
             }
+        }
+    }
+
+    fn raw_sector(&self) -> Option<&[u8]> {
+        match &self.layout {
+            Layout::Cd { mode, .. } if mode.sector_size() == RAW_SECTOR_SIZE => {
+                Some(&self.frame[..RAW_SECTOR_SIZE as usize])
+            }
+            _ => None,
         }
     }
 }

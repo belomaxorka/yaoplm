@@ -25,6 +25,8 @@ use crate::iso9660::{SECTOR_SIZE, Sector, SectorSource};
 
 /// 74:59:74 at 75 frames per second; anything above is nonsense.
 const MAX_FRAMES: u32 = 100 * 60 * 75;
+/// A whole CD sector: sync, header, user data, EDC/ECC.
+pub const RAW_SECTOR_SIZE: u32 = 2352;
 const SYNC: [u8; 12] = [
     0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
 ];
@@ -485,6 +487,10 @@ impl<R: Read + Seek> SectorSource for BinImage<R> {
         user_data(self.mode, &self.raw, lba, buf)?;
         Ok(())
     }
+
+    fn raw_sector(&self) -> Option<&[u8]> {
+        (self.mode.sector_size() == RAW_SECTOR_SIZE).then_some(&self.raw[..])
+    }
 }
 
 #[cfg(test)]
@@ -641,10 +647,20 @@ mod tests {
             assert_eq!(probe_raw(&head), Some(mode));
 
             // Starting at INDEX 01 skips the pregap sectors.
-            let mut image = BinImage::new(Cursor::new(bin), mode, 2, len).unwrap();
+            let mut image = BinImage::new(Cursor::new(bin.clone()), mode, 2, len).unwrap();
             assert_eq!(image.sector_count(), 18);
             image.read_sector(0, &mut buf).unwrap();
             assert_eq!(buf, [2u8; 2048]);
+
+            // The whole sector is there for Redump's hashes, in raw modes only.
+            let size = mode.sector_size() as usize;
+            match image.raw_sector() {
+                Some(raw) => {
+                    assert_eq!(mode.sector_size(), RAW_SECTOR_SIZE, "{mode}");
+                    assert_eq!(raw, &bin[2 * size..3 * size]);
+                }
+                None => assert_ne!(mode.sector_size(), RAW_SECTOR_SIZE, "{mode}"),
+            }
         }
         assert_eq!(probe_raw(&[0u8; 50_000]), None);
     }

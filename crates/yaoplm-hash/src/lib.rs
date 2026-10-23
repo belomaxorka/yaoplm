@@ -15,5 +15,5 @@ pub mod dat;
 pub mod digest;
 pub mod redump;
 
-pub use digest::{Algorithms, HashError, Hashes, hash_reader};
+pub use digest::{Algorithms, HashError, Hashes, StreamHasher, hash_reader};
 pub use redump::{RedumpIndex, Verdict};
