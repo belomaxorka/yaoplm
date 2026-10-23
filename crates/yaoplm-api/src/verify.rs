@@ -207,11 +207,13 @@ pub struct GameVerification {
     pub reason: Option<UnknownReason>,
     pub hashes: Option<HashValues>,
     /// The raw data track of the CD dump the game was added from (BIN/CUE,
-    /// CHD), hashed while it was written: the verdict compares this track
-    /// with Redump, which lists CDs by their tracks.
+    /// CHD), hashed while it was written: Redump lists CDs by their tracks.
     #[cfg_attr(feature = "ts-export", ts(optional))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<HashValues>,
+    /// The verdict compares `track` rather than the image.
+    #[serde(default)]
+    pub by_track: bool,
     /// The matching dump (verified).
     pub redump: Option<RedumpEntry>,
     /// The game ID is one of the matching entry's serials.
@@ -243,11 +245,14 @@ pub(crate) struct Outcome {
     pub redump: Option<RedumpEntry>,
     pub serial_matches: Option<bool>,
     pub candidates: Vec<RedumpEntry>,
+    /// The verdict compares the raw CD track, not the ISO.
+    pub by_track: bool,
 }
 
 /// The verdict for an image with `hashes`. A CD added from its raw dump is
 /// judged by the `track` hashed then: the ISO keeps 2048 of every 2352
-/// bytes and can never hash like Redump's BIN (ADR-0026).
+/// bytes and can never hash like Redump's BIN (ADR-0026). A match of
+/// either proves the image; without one, the track says more about a CD.
 pub(crate) fn outcome(
     index: Option<&RedumpIndex>,
     hashes: &Hashes,
@@ -261,12 +266,24 @@ pub(crate) fn outcome(
             redump: None,
             serial_matches: None,
             candidates: Vec::new(),
+            by_track: false,
         };
     };
-    let verdict = match track {
-        Some(track) => index.verify(track, Some(startup), Data::Raw),
-        None => index.verify(hashes, Some(startup), Data::Iso),
+    let by_image = || index.verify(hashes, Some(startup), Data::Iso);
+    let (verdict, by_track) = match track.map(|t| index.verify(t, Some(startup), Data::Raw)) {
+        Some(raw @ Verdict::Verified { .. }) => (raw, true),
+        Some(raw) => match by_image() {
+            iso @ Verdict::Verified { .. } => (iso, false),
+            _ => (raw, true),
+        },
+        None => (by_image(), false),
     };
+    let mut o = verdict_outcome(verdict);
+    o.by_track = by_track;
+    o
+}
+
+fn verdict_outcome(verdict: Verdict) -> Outcome {
     match verdict {
         Verdict::Verified {
             game,
@@ -277,6 +294,7 @@ pub(crate) fn outcome(
             redump: Some((&game).into()),
             serial_matches: Some(serial_matches),
             candidates: Vec::new(),
+            by_track: false,
         },
         Verdict::BadDump(candidates) => Outcome {
             status: VerifyStatus::BadDump,
@@ -284,6 +302,7 @@ pub(crate) fn outcome(
             redump: None,
             serial_matches: None,
             candidates: candidates.iter().map(Into::into).collect(),
+            by_track: false,
         },
         Verdict::Unknown(Unknown::NotListed) => Outcome {
             status: VerifyStatus::Unknown,
@@ -291,6 +310,7 @@ pub(crate) fn outcome(
             redump: None,
             serial_matches: None,
             candidates: Vec::new(),
+            by_track: false,
         },
         Verdict::Unknown(Unknown::CdImage(candidates)) => Outcome {
             status: VerifyStatus::Unknown,
@@ -298,6 +318,7 @@ pub(crate) fn outcome(
             redump: None,
             serial_matches: None,
             candidates: candidates.iter().map(Into::into).collect(),
+            by_track: false,
         },
     }
 }
@@ -579,6 +600,7 @@ pub(crate) fn verify_job(
                     reason: o.reason,
                     hashes: Some((&hashes).into()),
                     track: track.as_ref().map(Into::into),
+                    by_track: o.by_track,
                     redump: o.redump,
                     serial_matches: o.serial_matches,
                     candidates: o.candidates,
@@ -600,6 +622,7 @@ pub(crate) fn verify_job(
                     reason: None,
                     hashes: None,
                     track: None,
+                    by_track: false,
                     redump: None,
                     serial_matches: None,
                     candidates: Vec::new(),
@@ -650,7 +673,7 @@ pub(crate) fn attach_checks(
             status: o.status,
             reason: o.reason,
             redump: o.redump.map(|r| r.name),
-            by_track: track.is_some(),
+            by_track: o.by_track,
         });
     }
 }
@@ -804,6 +827,7 @@ impl<'a> Recorder<'a> {
             reason: o.reason,
             hashes: Some((&checked.image).into()),
             track: checked.track.as_ref().map(Into::into),
+            by_track: o.by_track,
             redump: o.redump,
             serial_matches: o.serial_matches,
             candidates: o.candidates,
@@ -811,5 +835,75 @@ impl<'a> Recorder<'a> {
             error: None,
             error_phrase: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hashes(size: u64, sha1: u8) -> Hashes {
+        Hashes {
+            size,
+            crc32: 0,
+            sha1: [sha1; 20],
+            md5: None,
+        }
+    }
+
+    fn index() -> RedumpIndex {
+        let sha = |b: u8| format!("{b:02x}").repeat(20);
+        let xml = format!(
+            r#"<datafile>
+<game name="Cd (USA)" id="1"><serial>SLUS-20001</serial>
+  <rom name="Cd (USA).cue" size="90" crc="00000000" sha1="{c}"/>
+  <rom name="Cd (USA).bin" size="4704" crc="00000000" sha1="{b}"/></game>
+<game name="Dvd (USA)" id="2"><serial>SLUS-20002</serial>
+  <rom name="Dvd (USA).iso" size="4096" crc="00000000" sha1="{i}"/></game>
+</datafile>"#,
+            c = sha(0xcc),
+            b = sha(0xbb),
+            i = sha(0x11),
+        );
+        RedumpIndex::new(yaoplm_hash::dat::parse(xml.as_bytes()).unwrap())
+    }
+
+    #[test]
+    fn a_match_of_either_proves_the_image() {
+        let index = index();
+        // The CD's raw track matches.
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x01),
+            Some(&hashes(4704, 0xbb)),
+            "SLUS_200.01",
+        );
+        assert_eq!(o.status, VerifyStatus::Verified);
+        assert!(o.by_track);
+        // A raw dump made from a disc Redump lists as an ISO: the ISO matches.
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x11),
+            Some(&hashes(4704, 0x99)),
+            "SLUS_200.02",
+        );
+        assert_eq!(o.status, VerifyStatus::Verified);
+        assert!(!o.by_track);
+        // Neither: the track's verdict, a bad dump rather than "CD image".
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x02),
+            Some(&hashes(4704, 0x98)),
+            "SLUS_200.01",
+        );
+        assert_eq!(o.status, VerifyStatus::BadDump);
+        assert!(o.by_track);
+        let o = outcome(Some(&index), &hashes(4096, 0x02), None, "SLUS_200.01");
+        assert_eq!(o.reason, Some(UnknownReason::CdImage));
+        assert!(!o.by_track);
+        // No DAT: nothing compared at all.
+        let o = outcome(None, &hashes(4096, 0x02), Some(&hashes(4704, 0xbb)), "X");
+        assert_eq!(o.reason, Some(UnknownReason::NoDat));
+        assert!(!o.by_track);
     }
 }

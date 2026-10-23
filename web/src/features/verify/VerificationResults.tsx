@@ -11,13 +11,20 @@ import { formatBytes } from "@/lib/format";
 import { phraseText } from "@/lib/phrase";
 
 /** The outcome per game, problems first. */
-export function VerificationResults({ report }: { report: VerificationReport }) {
+export function VerificationResults({
+  report,
+  summary = true,
+}: {
+  report: VerificationReport;
+  /** The counts per verdict, unless the caller shows them already. */
+  summary?: boolean;
+}) {
   const { t } = useTranslation();
   const order = { failed: 0, badDump: 1, unknown: 2, verified: 3 } as const;
   const sorted = [...report.games].sort((a, b) => order[a.status] - order[b.status] || a.title.localeCompare(b.title));
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="verify-results">
-      <ul className="flex flex-wrap gap-1.5" aria-label={t("dump.summary")}>
+      <ul className="flex flex-wrap gap-1.5" aria-label={t("dump.summary")} hidden={!summary}>
         {statusCounts(report.games).map(([status, count]) => (
           <li key={status}>
             <Badge variant="outline" className={statusColours[status]} data-testid={`verify-count-${status}`}>
@@ -84,7 +91,7 @@ function ResultRow({ game }: { game: GameVerification }) {
             ))}
           </span>
         )}
-        {game.track && <span>{t("dump.byTrack")}</span>}
+        {game.byTrack && <span>{t("dump.byTrack")}</span>}
         {game.cached && <span>{t("dump.fromCache")}</span>}
         {game.error && <span className="text-destructive">{phraseText(game.errorPhrase, game.error)}</span>}
       </div>

@@ -11,6 +11,7 @@ export type DumpCheck = { status: VerifyStatus, reason: UnknownReason | null,
  */
 redump: string | null, 
 /**
- * The verdict compares the raw CD track the game was added from.
+ * The verdict compares the raw CD track the game was added from, not
+ * the image.
  */
 byTrack: boolean, };
