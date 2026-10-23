@@ -151,6 +151,8 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/settings");
       await expect(page.getByTestId("redump-state")).toBeVisible();
       await page.getByTestId("redump-panel").scrollIntoViewIfNeeded();
+      await expect(page.getByTestId("redump-update")).toBeEnabled();
+      await page.waitForTimeout(400);
       await shot("settings-redump");
     });
   }

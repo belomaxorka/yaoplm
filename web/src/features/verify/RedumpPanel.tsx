@@ -90,7 +90,9 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          variant={dat === null ? "default" : "outline"}
+          // Primary only once the status says there is no DAT: switching
+          // after the load would flash a dark button.
+          variant={status.isSuccess && dat === null ? "default" : "outline"}
           disabled={busy || status.isPending || tooSoon}
           onClick={() => void run()}
           data-testid="redump-update"
