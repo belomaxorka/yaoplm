@@ -454,10 +454,14 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
 }
 
 fn audio_dropped(count: usize) -> Notice {
+    let tracks = match count {
+        1 => "1 audio track is".to_owned(),
+        n => format!("{n} audio tracks are"),
+    };
     Notice::warning(
         "audioTracksDropped",
         format!(
-            "{count} audio tracks are left out: OPL plays a one-track disc, so music played from CD audio is missing"
+            "{tracks} left out: OPL plays a one-track disc, so music played from CD audio is missing"
         ),
     )
 }
