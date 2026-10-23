@@ -117,3 +117,37 @@ for (const language of ["en", "ru"] as const) {
     }
   }
 }
+
+// The same screens in simple mode, the app's default (UI-4).
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    for (const width of [1280, 800]) {
+      test(`simple mode screenshots ${language} ${theme} ${width}`, async ({ page, request }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await openLibrary(page, request, { language, theme, simple: true });
+        const shot = (name: string) =>
+          page.screenshot({ path: `test-results/screenshots/simple-${name}-${language}-${theme}-${width}.png` });
+
+        await page.goto("/devices");
+        await expect(page.getByTestId("device-card").first()).toBeVisible();
+        await shot("devices");
+
+        await page.goto("/library");
+        await expect(page.locator('[data-testid="game-cover"][data-has-cover="true"] img').first()).toBeVisible();
+        await shot("library");
+
+        await page.getByRole("listitem", { name: /Retail Game/ }).click();
+        await expect(page.getByTestId("game-title")).toBeVisible();
+        await shot("game");
+
+        await page.goto("/library/add");
+        await expect(page.getByTestId("drop-zone")).toBeVisible();
+        await shot("add");
+
+        await page.goto("/settings");
+        await expect(page.getByTestId("simple-mode")).toBeChecked();
+        await shot("settings");
+      });
+    }
+  }
+}
