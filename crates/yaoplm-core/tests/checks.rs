@@ -7,19 +7,22 @@
 
 mod common;
 
-use std::io::Cursor;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
-use common::{run, src};
+use common::{assert_same_as, big_iso, run, run_with, src};
 use yaoplm_core::checks::Checked;
-use yaoplm_core::exec::{Context, Event, execute_with_events};
+use yaoplm_core::exec::{Context, Event, Outcome, execute_with_events};
 use yaoplm_core::import::{ImportOptions, Layout, plan_import};
-use yaoplm_core::plan::{Check, Plan};
-use yaoplm_device::{CancelToken, FsKind};
+use yaoplm_core::plan::{Check, Plan, Step};
+use yaoplm_core::recovery::{RecoveryAction, plan_recovery};
+use yaoplm_device::{CancelToken, FsKind, ReadSeek, SourceFs, SourceMeta};
+use yaoplm_formats::iso9660::SectorSource;
 use yaoplm_formats::zso;
 use yaoplm_hash::{Algorithms, Hashes, hash_reader};
 use yaoplm_test_support::bincue::{RawMode, to_bin};
 use yaoplm_test_support::packed::{chd_cd, chd_dvd};
-use yaoplm_test_support::{Content, MemFs, Variant, VirtualSources};
+use yaoplm_test_support::{Content, MemFs, Variant, VirtualIso, VirtualSources};
 
 fn checking() -> ImportOptions {
     ImportOptions {
@@ -317,21 +320,262 @@ fn journals_without_checks_still_load() {
     assert_eq!(back.sources[0].check, None);
 }
 
-#[test]
-fn a_zso_the_stream_cannot_follow_is_copied_unhashed() {
-    // Blocks 0 and 1 swapped: OPL reads it, the stream decoder cannot.
+/// Copies `packed` as it is and checks that it yields no hashes.
+fn copied_unhashed(packed: &[u8]) {
     let fs = MemFs::new(FsKind::ExFat);
     let sources = VirtualSources::new();
-    let iso = Variant::Dvd9.build().to_vec();
-    let mut packed = zso_of(&iso, 0);
-    let (a, b) = (24..28, 28..32);
-    let first: Vec<u8> = packed[a.clone()].to_vec();
-    packed.copy_within(b.clone(), a.start);
-    packed[b].copy_from_slice(&first);
-    sources.add_file(src("Game.zso"), Content::Bytes(packed.clone()));
+    sources.add_file(src("Game.zso"), Content::Bytes(packed.to_vec()));
     let plan = plan_import(&fs, &sources, &[src("Game.zso")], &checking()).unwrap();
+    assert_eq!(plan.sources[0].check, Some(Check::Zso));
     let report = run(&plan, &fs, &sources);
     assert!(report.succeeded(), "{:?}", report.error);
     assert!(report.checked.is_empty(), "checked later by reading it");
     assert_eq!(fs.bytes("DVD/SLUS_212.18.Game.zso").unwrap(), packed);
+}
+
+#[test]
+fn a_zso_with_a_broken_block_is_copied_unhashed() {
+    // Index entries 0 and 1 swapped: block 0 ends before it starts, so
+    // neither OPL nor the stream decoder reads it. The copy stays exact.
+    let mut packed = zso_of(&Variant::Dvd9.build().to_vec(), 0);
+    let (a, b) = (24..28, 28..32);
+    let first: Vec<u8> = packed[a.clone()].to_vec();
+    packed.copy_within(b.clone(), a.start);
+    packed[b].copy_from_slice(&first);
+    copied_unhashed(&packed);
+}
+
+#[test]
+fn a_zso_the_stream_cannot_follow_is_copied_unhashed() {
+    // Block 0 stored plain over the index, at byte 24: OPL seeks back for
+    // it, the stream decoder is already past it.
+    const PLAIN: u32 = 0x8000_0000;
+    let packed = zso_of(&Variant::Dvd9.build().to_vec(), 0);
+    let blocks = zso::ZsoHeader::parse(packed[..24].try_into().unwrap())
+        .unwrap()
+        .block_count() as usize;
+    let index: Vec<u32> = packed[24..24 + (blocks + 1) * 4]
+        .chunks(4)
+        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    let old_start = index[1] & !PLAIN;
+    let new_start = (24 + 2048).max(24 + index.len() * 4) as u32;
+    let mut moved = packed[..24].to_vec();
+    moved.extend_from_slice(&(24 | PLAIN).to_le_bytes());
+    for entry in &index[1..] {
+        let shifted = (entry & !PLAIN) - old_start + new_start;
+        moved.extend_from_slice(&(shifted | (entry & PLAIN)).to_le_bytes());
+    }
+    moved.resize(new_start as usize, 0);
+    moved.extend_from_slice(&packed[old_start as usize..]);
+
+    let mut reader = zso::ZsoReader::new(Cursor::new(moved.clone())).unwrap();
+    let mut sector = [0u8; 2048];
+    reader.read_sector(0, &mut sector).unwrap();
+    assert_eq!(sector[..], moved[24..24 + 2048], "OPL reads it");
+    copied_unhashed(&moved);
+}
+
+/// What happens once a source has been read up to a point.
+#[derive(Clone)]
+enum Trap {
+    /// The user presses Cancel.
+    Cancel(CancelToken),
+    /// The disk holding it goes away.
+    Fail,
+}
+
+/// `inner`, where reading `path` trips `trap` from byte `at` on.
+struct Trapped<'a> {
+    inner: &'a VirtualSources,
+    path: PathBuf,
+    at: u64,
+    trap: Trap,
+}
+
+impl SourceFs for Trapped<'_> {
+    fn metadata(&self, path: &Path) -> io::Result<SourceMeta> {
+        self.inner.metadata(path)
+    }
+
+    fn list(&self, dir: &Path) -> io::Result<Vec<PathBuf>> {
+        self.inner.list(dir)
+    }
+
+    fn open(&self, path: &Path) -> io::Result<Box<dyn ReadSeek>> {
+        let inner = self.inner.open(path)?;
+        if path != self.path {
+            return Ok(inner);
+        }
+        Ok(Box::new(TrapReader {
+            inner,
+            pos: 0,
+            at: self.at,
+            trap: self.trap.clone(),
+        }))
+    }
+
+    fn remove(&self, path: &Path) -> io::Result<()> {
+        self.inner.remove(path)
+    }
+}
+
+struct TrapReader {
+    inner: Box<dyn ReadSeek>,
+    pos: u64,
+    at: u64,
+    trap: Trap,
+}
+
+impl Read for TrapReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.pos >= self.at {
+            match &self.trap {
+                Trap::Cancel(token) => token.cancel(),
+                Trap::Fail => return Err(io::Error::other("cable pulled")),
+            }
+        }
+        let n = self.inner.read(buf)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl Seek for TrapReader {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.pos = self.inner.seek(to)?;
+        Ok(self.pos)
+    }
+}
+
+/// A game of several copy blocks, so its copy can stop half way.
+fn several_blocks() -> VirtualIso {
+    big_iso("SLUS_212.18", 32 << 20)
+}
+
+/// `A.iso`, then `B.iso` whose read trips `trap` well before its end.
+fn import_two_with_a_trap(trap: Trap, cancel: &CancelToken) -> (Plan, yaoplm_core::exec::Report) {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    sources.add_file(
+        src("A.iso"),
+        Content::Bytes(Variant::Retail.build().to_vec()),
+    );
+    sources.add_iso(src("B.iso"), several_blocks());
+    let plan = plan_import(&fs, &sources, &[src("A.iso"), src("B.iso")], &checking()).unwrap();
+    let trapped = Trapped {
+        inner: &sources,
+        path: src("B.iso"),
+        at: 8 << 20,
+        trap,
+    };
+    let report = run_with(&plan, &fs, &trapped, cancel, &mut |_| {});
+    assert!(
+        !common::files(&fs).iter().any(|(p, _)| p.contains(".B.")),
+        "{:?}",
+        fs.files()
+    );
+    (plan, report)
+}
+
+/// The transaction that copies the game from `name`.
+fn game_of(plan: &Plan, name: &str) -> usize {
+    plan.transactions
+        .iter()
+        .position(|t| t.game.is_some() && t.title.contains(name))
+        .unwrap()
+}
+
+#[test]
+fn a_cancelled_copy_yields_no_hashes() {
+    let cancel = CancelToken::new();
+    let (plan, report) = import_two_with_a_trap(Trap::Cancel(cancel.clone()), &cancel);
+    assert!(report.cancelled, "{:?}", report.error);
+    assert_eq!(report.outcomes[game_of(&plan, ".B.")], Outcome::RolledBack);
+    // Only the game that went through whole.
+    let checked: Vec<usize> = report.checked.iter().map(|(t, _)| *t).collect();
+    assert_eq!(checked, [game_of(&plan, ".A.")]);
+}
+
+#[test]
+fn a_failed_source_read_yields_no_hashes() {
+    let (plan, report) = import_two_with_a_trap(Trap::Fail, &CancelToken::new());
+    let err = report.error.as_ref().expect("the read failed");
+    assert!(format!("{err:?}").contains("cable pulled"), "{err:?}");
+    assert_eq!(report.outcomes[game_of(&plan, ".B.")], Outcome::RolledBack);
+    let checked: Vec<usize> = report.checked.iter().map(|(t, _)| *t).collect();
+    assert_eq!(checked, [game_of(&plan, ".A.")]);
+}
+
+/// Where the plan's first `WriteFile` puts its file.
+fn written(plan: &Plan) -> String {
+    plan.transactions
+        .iter()
+        .flat_map(|t| &t.steps)
+        .find_map(|s| match s {
+            Step::WriteFile { path, .. } => Some(path.to_string()),
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_resumed_copy_yields_no_hashes() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    let iso = several_blocks();
+    sources.add_iso(src("Game.iso"), iso.clone());
+    let plan = plan_import(&fs, &sources, &[src("Game.iso")], &checking()).unwrap();
+    fs.unplug_after(16 << 20);
+    let report = run(&plan, &fs, &sources);
+    assert!(!report.succeeded());
+    assert!(report.checked.is_empty());
+    fs.replug();
+
+    let recovery = plan_recovery(&fs, RecoveryAction::Resume).unwrap();
+    assert!(
+        recovery
+            .sources
+            .iter()
+            .any(|s| s.check == Some(Check::Image)),
+        "the journal keeps the check"
+    );
+    let report = run(&recovery, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert!(report.checked.is_empty(), "checked later by reading it");
+    assert_same_as(&fs, &written(&plan), &iso, 0);
+}
+
+#[test]
+fn a_ul_source_reopened_past_its_start_yields_no_hashes() {
+    // The chunks written last first: the stream opens at 1 GiB, and the
+    // pass from byte 0 stops where the first chunk ends.
+    let fs = MemFs::new(FsKind::Fat32);
+    let sources = VirtualSources::new();
+    sources.add_iso(
+        src("Big.iso"),
+        big_iso("SLUS_212.18", common::GIB + (8 << 20)),
+    );
+    let options = ImportOptions {
+        layout: Layout::Ul,
+        ..checking()
+    };
+    let mut plan = plan_import(&fs, &sources, &[src("Big.iso")], &options).unwrap();
+    let tx = plan
+        .transactions
+        .iter_mut()
+        .find(|t| t.game.is_some())
+        .unwrap();
+    let chunks: Vec<usize> = tx
+        .steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s, Step::WriteFile { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(chunks.len(), 2);
+    tx.steps.swap(chunks[0], chunks[1]);
+    let report = run(&plan, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert!(report.checked.is_empty(), "{:?}", report.checked);
 }

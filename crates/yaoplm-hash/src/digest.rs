@@ -104,19 +104,22 @@ struct Worker<D> {
 }
 
 impl<D: Digest + Send + 'static> Worker<D> {
-    fn spawn() -> Self {
+    /// Fails when the system has no thread to spare.
+    fn spawn(name: &str) -> io::Result<Self> {
         let (tx, rx): (SyncSender<Block>, Receiver<Block>) = sync_channel(IN_FLIGHT);
-        let handle = thread::spawn(move || {
-            let mut digest = D::new();
-            for block in rx {
-                digest.update(&block[..]);
-            }
-            digest
-        });
-        Self {
+        let handle = thread::Builder::new()
+            .name(format!("hash-{name}"))
+            .spawn(move || {
+                let mut digest = D::new();
+                for block in rx {
+                    digest.update(&block[..]);
+                }
+                digest
+            })?;
+        Ok(Self {
             queue: Some(tx),
             handle: Some(handle),
-        }
+        })
     }
 
     fn send(&self, block: Block) {
@@ -165,14 +168,15 @@ impl std::fmt::Debug for StreamHasher {
 }
 
 impl StreamHasher {
-    pub fn new(algorithms: Algorithms) -> Self {
-        Self {
+    /// Fails when a hashing thread cannot be started.
+    pub fn new(algorithms: Algorithms) -> io::Result<Self> {
+        Ok(Self {
             crc: crc32fast::Hasher::new(),
             size: 0,
             pending: Vec::new(),
-            sha1: Worker::spawn(),
-            md5: algorithms.md5.then(Worker::spawn),
-        }
+            sha1: Worker::spawn("sha1")?,
+            md5: algorithms.md5.then(|| Worker::spawn("md5")).transpose()?,
+        })
     }
 
     /// Bytes hashed so far.
@@ -249,7 +253,7 @@ pub fn hash_reader(
     stop: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(u64),
 ) -> Result<Hashes, HashError> {
-    let mut hasher = StreamHasher::new(algorithms);
+    let mut hasher = StreamHasher::new(algorithms)?;
     loop {
         if stop() {
             return Err(HashError::Cancelled);
@@ -425,7 +429,7 @@ mod tests {
         )
         .unwrap();
         // Pieces of odd sizes, some crossing block boundaries.
-        let mut hasher = StreamHasher::new(Algorithms { md5: true });
+        let mut hasher = StreamHasher::new(Algorithms { md5: true }).unwrap();
         let mut at = 0;
         for size in [1, 2351, 2352, BLOCK_SIZE - 3, 2048, BLOCK_SIZE + 5]
             .iter()
@@ -441,12 +445,15 @@ mod tests {
         assert_eq!(hasher.size(), data.len() as u64);
         assert_eq!(hasher.finish().unwrap(), whole);
 
-        let empty = StreamHasher::new(Algorithms::default()).finish().unwrap();
+        let empty = StreamHasher::new(Algorithms::default())
+            .unwrap()
+            .finish()
+            .unwrap();
         assert_eq!(empty.sha1_hex(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
         assert_eq!(empty.md5, None);
 
         // Abandoned half way: the threads end, nothing hangs.
-        let mut hasher = StreamHasher::new(Algorithms { md5: true });
+        let mut hasher = StreamHasher::new(Algorithms { md5: true }).unwrap();
         hasher.update(&data[..BLOCK_SIZE + 1]);
         drop(hasher);
     }

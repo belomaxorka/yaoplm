@@ -912,12 +912,13 @@ mod tests {
     }
 
     #[test]
-    fn stream_decoder_refuses_what_it_cannot_follow() {
+    fn stream_decoder_fails_where_the_reader_fails() {
         assert!(matches!(
             stream_decode(&[0u8; 64], &[64]),
             Err(ZsoError::NotZso)
         ));
-        // Blocks 0 and 1 swapped in the index: block 0 lies behind block 1.
+        let mut sector = [0u8; SECTOR_SIZE];
+        // Index entries 0 and 1 swapped: block 0 ends before it starts.
         let (zso, _) = zso_of(&sample_iso(2));
         let mut swapped = zso.clone();
         let (a, b) = (24..28, 28..32);
@@ -926,13 +927,49 @@ mod tests {
         swapped[b].copy_from_slice(&first);
         assert!(matches!(
             stream_decode(&swapped, &[4096]),
-            Err(ZsoError::Corrupt { .. })
+            Err(ZsoError::Corrupt {
+                block: 0,
+                reason: "index offsets go backwards"
+            })
         ));
+        let mut reader = ZsoReader::new(Cursor::new(swapped)).unwrap();
+        assert!(reader.read_sector(0, &mut sector).is_err());
         // A damaged block is an error, as for the reader.
         let mut damaged = zso;
         let start = u32::from_le_bytes(damaged[24..28].try_into().unwrap()) as usize;
         damaged[start] = 0xFF;
         assert!(stream_decode(&damaged, &[4096]).is_err());
+        let mut reader = ZsoReader::new(Cursor::new(damaged)).unwrap();
+        assert!(reader.read_sector(0, &mut sector).is_err());
+    }
+
+    #[test]
+    fn stream_decoder_cannot_go_back_for_a_block() {
+        // Block 0 is stored plain over its own index, at byte 24: the reader
+        // seeks back for it, as OPL would, but the stream is already past.
+        let header = ZsoHeader {
+            header_size: HEADER_SIZE as u32,
+            total_bytes: SECTOR_SIZE as u64,
+            block_size: BLOCK_SIZE,
+            version: 1,
+            align: 0,
+            reserved: [0; 2],
+        };
+        let mut zso = header.to_bytes().to_vec();
+        zso.extend_from_slice(&(HEADER_SIZE as u32 | PLAIN).to_le_bytes());
+        zso.extend_from_slice(&((HEADER_SIZE + SECTOR_SIZE) as u32).to_le_bytes());
+        zso.resize(HEADER_SIZE + SECTOR_SIZE, 0x5A);
+        let mut reader = ZsoReader::new(Cursor::new(zso.clone())).unwrap();
+        let mut sector = [0u8; SECTOR_SIZE];
+        reader.read_sector(0, &mut sector).unwrap();
+        assert_eq!(sector[..], zso[HEADER_SIZE..]);
+        assert!(matches!(
+            stream_decode(&zso, &[100]),
+            Err(ZsoError::Corrupt {
+                block: 0,
+                reason: "blocks are not stored in index order"
+            })
+        ));
     }
 
     #[test]

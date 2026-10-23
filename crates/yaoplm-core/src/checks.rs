@@ -5,11 +5,14 @@
 //!   inside a ZSO copied as it is ([`StreamDecoder`]).
 //! - A raw CD dump (a BIN or CHD track of 2352-byte sectors) also has its
 //!   data track hashed, sector by sector as it is decoded: Redump hashes
-//!   CDs that way, so only this hash can match its DAT (ADR-0026).
+//!   CDs that way, so only this hash can match its DAT (ADR-0030).
 //!
 //! Hashes come out only when a source went through whole, from its first
 //! byte, in one pass; a resumed or failed write yields none, and the game
-//! is checked later by reading it.
+//! is checked later by reading it. So does a write whose hashing threads
+//! could not be started: the check is lost, not the write. The copy needs
+//! a thread of its own as well; without it the write fails like any I/O
+//! error ([`yaoplm_device::copy_exact`]).
 
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -43,7 +46,7 @@ pub(crate) type SharedTap = Arc<Mutex<Tap>>;
 impl Tap {
     fn shared(zso: bool) -> SharedTap {
         Arc::new(Mutex::new(Self {
-            hasher: Some(StreamHasher::new(Algorithms::default())),
+            hasher: StreamHasher::new(Algorithms::default()).ok(),
             zso: zso.then(StreamDecoder::new),
         }))
     }

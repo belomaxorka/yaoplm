@@ -59,8 +59,23 @@ fn read_full(reader: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
 
 /// Copies exactly `len` bytes from `reader` to `out`. `progress` gets the
 /// bytes written so far after every block. Reads stop at `len`, so the same
-/// reader can feed several calls (one per `ul` chunk).
+/// reader can feed several calls (one per `ul` chunk). When the system has
+/// no thread to spare for reading, the copy fails with
+/// [`CopyError::Io`] before it writes anything.
 pub fn copy_exact<R: Read + Send>(
+    reader: &mut R,
+    out: &mut dyn Write,
+    len: u64,
+    cancel: &CancelToken,
+    progress: &mut dyn FnMut(u64),
+) -> Result<(), CopyError> {
+    let reader_thread = thread::Builder::new().name("copy-reader".into());
+    copy_with(reader_thread, reader, out, len, cancel, progress)
+}
+
+/// [`copy_exact`] with its reading thread made by `reader_thread`.
+fn copy_with<R: Read + Send>(
+    reader_thread: thread::Builder,
     reader: &mut R,
     out: &mut dyn Write,
     len: u64,
@@ -81,7 +96,8 @@ pub fn copy_exact<R: Read + Send>(
         // reader: an early return (error, cancel) unblocks it.
         let full_rx = full_rx;
         let empty_tx = empty_tx;
-        scope.spawn(move || {
+        // Not `Scope::spawn`: it panics when no thread can be made.
+        reader_thread.spawn_scoped(scope, move || {
             let mut left = len;
             while left > 0 {
                 let Ok(mut buf) = empty_rx.recv() else {
@@ -101,7 +117,7 @@ pub fn copy_exact<R: Read + Send>(
                     return;
                 }
             }
-        });
+        })?;
 
         let mut done = 0u64;
         while done < len {
@@ -207,5 +223,23 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("disk gone"));
+    }
+
+    #[test]
+    fn no_thread_for_the_reader_is_an_error() {
+        // A stack no system can reserve: the thread cannot be made.
+        let reader_thread = thread::Builder::new().stack_size(1 << (usize::BITS - 2));
+        let mut out = Vec::new();
+        let err = copy_with(
+            reader_thread,
+            &mut Counting(0),
+            &mut out,
+            10,
+            &CancelToken::new(),
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(err, CopyError::Io(_)), "{err}");
+        assert!(out.is_empty());
     }
 }

@@ -15,7 +15,7 @@
 //! import planner adds the same transactions after each game it copies
 //! (ART-8, SPEC §5.4.1).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 
@@ -73,23 +73,30 @@ fn art_folder(state: &DeviceState) -> io::Result<RelPath> {
     rel(name)
 }
 
-/// Files of `startup` and `kind` in the art folder, any extension: OPL
-/// 1.1.0 also reads `.jpg` and `.bmp`.
+/// The lower-case key and suffix of a picture in the art folder, in any
+/// format OPL reads: 1.1.0 also takes `.jpg` and `.bmp`.
+fn art_key(entry: &DirEntry) -> Option<(String, String)> {
+    if entry.is_dir {
+        return None;
+    }
+    let art = parse_art_file_name(&entry.name)?;
+    matches!(
+        art.extension.to_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "bmp"
+    )
+    .then(|| (art.key.to_lowercase(), art.suffix.to_lowercase()))
+}
+
+fn wanted(startup: &str, kind: ArtKind) -> (String, String) {
+    (startup.to_lowercase(), kind.suffix().to_lowercase())
+}
+
+/// Files of `startup` and `kind` in the art folder, any extension.
 fn existing_art(entries: &[DirEntry], startup: &str, kind: ArtKind) -> Vec<DirEntry> {
-    let (id, suffix) = (startup.to_lowercase(), kind.suffix().to_lowercase());
+    let wanted = wanted(startup, kind);
     entries
         .iter()
-        .filter(|e| !e.is_dir)
-        .filter(|e| {
-            parse_art_file_name(&e.name).is_some_and(|a| {
-                a.key.to_lowercase() == id
-                    && a.suffix.to_lowercase() == suffix
-                    && matches!(
-                        a.extension.to_lowercase().as_str(),
-                        "png" | "jpg" | "jpeg" | "bmp"
-                    )
-            })
-        })
+        .filter(|e| art_key(e).as_ref() == Some(&wanted))
         .cloned()
         .collect()
 }
@@ -97,7 +104,9 @@ fn existing_art(entries: &[DirEntry], startup: &str, kind: ArtKind) -> Vec<DirEn
 /// The art folder of a device, read once per plan.
 pub(crate) struct ArtFolder {
     pub folder: RelPath,
-    entries: Vec<DirEntry>,
+    /// Its pictures by [`art_key`], in listing order: a picture set writes
+    /// up to eight kinds for every game, so names are parsed once.
+    existing: HashMap<(String, String), Vec<DirEntry>>,
     /// `.yaoplm/backup/<id>/ART`, for the files a write replaces.
     pub backup: RelPath,
 }
@@ -105,7 +114,12 @@ pub(crate) struct ArtFolder {
 impl ArtFolder {
     pub(crate) fn read(fs: &dyn DeviceFs, state: &DeviceState) -> io::Result<Self> {
         let folder = art_folder(state)?;
-        let entries = list_or_empty(fs, &folder)?;
+        let mut existing: HashMap<_, Vec<DirEntry>> = HashMap::new();
+        for entry in list_or_empty(fs, &folder)? {
+            if let Some(key) = art_key(&entry) {
+                existing.entry(key).or_default().push(entry);
+            }
+        }
         let backup = rel(&format!(
             "{BACKUP_DIR}/{}/{}",
             journal::new_id(),
@@ -113,7 +127,7 @@ impl ArtFolder {
         ))?;
         Ok(Self {
             folder,
-            entries,
+            existing,
             backup,
         })
     }
@@ -149,7 +163,10 @@ impl ArtFolder {
                 }));
             }
         };
-        let existing = existing_art(&self.entries, &item.startup, item.kind);
+        let existing = self
+            .existing
+            .get(&wanted(&item.startup, item.kind))
+            .map_or(&[][..], Vec::as_slice);
         if !existing.is_empty() && !overwrite {
             return Ok(Err(Skipped {
                 path: item.file.clone(),
@@ -184,7 +201,7 @@ impl ArtFolder {
             media: item.media,
             format: item.format.clone(),
         });
-        for old in &existing {
+        for old in existing {
             tx.push(Step::Rename {
                 from: join(&self.folder, &old.name)?,
                 to: join(&self.backup, &old.name)?,
@@ -216,16 +233,9 @@ pub fn present_art(fs: &dyn DeviceFs, kind: ArtKind) -> io::Result<HashSet<Strin
     let suffix = kind.suffix().to_lowercase();
     Ok(entries
         .iter()
-        .filter(|e| !e.is_dir)
-        .filter_map(|e| parse_art_file_name(&e.name))
-        .filter(|a| {
-            a.suffix.to_lowercase() == suffix
-                && matches!(
-                    a.extension.to_lowercase().as_str(),
-                    "png" | "jpg" | "jpeg" | "bmp"
-                )
-        })
-        .map(|a| a.key.to_lowercase())
+        .filter_map(art_key)
+        .filter(|(_, s)| *s == suffix)
+        .map(|(key, _)| key)
         .collect())
 }
 

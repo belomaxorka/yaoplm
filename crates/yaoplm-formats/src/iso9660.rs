@@ -40,7 +40,7 @@ pub trait SectorSource {
 
     /// The whole 2352-byte CD sector behind the last `read_sector`, for
     /// sources that store one (a raw BIN track, a raw CHD track): Redump
-    /// hashes CDs that way (ADR-0026).
+    /// hashes CDs that way (ADR-0030).
     fn raw_sector(&self) -> Option<&[u8]> {
         None
     }

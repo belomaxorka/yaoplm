@@ -124,10 +124,12 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
     source.seek(SeekFrom::Start(0))?;
     let mut entries: Vec<Entry> = match kind {
         Kind::Zip => {
-            let mut archive = zip::ZipArchive::new(&mut *source)?;
+            let archive = zip::ZipArchive::new(&mut *source)?;
             let mut out = Vec::with_capacity(archive.len());
             for index in 0..archive.len() {
-                let entry = archive.by_index_raw(index)?;
+                // The central directory alone: one damaged local header must
+                // not hide the whole archive.
+                let entry = archive.by_index_data(index)?;
                 let Some(name) = safe_name(&entry.name()?) else {
                     continue;
                 };
@@ -183,7 +185,17 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
 /// reader of its bytes; what `visit` leaves unread is skipped. One pass
 /// over the archive: a picture set (ART-5) holds thousands of small files,
 /// and opening them one by one would decode a solid 7z block again for
-/// each. Encrypted zip entries are left out.
+/// each.
+///
+/// A zip entry that cannot be read is handed over too, with a reader whose
+/// every read fails: [`io::ErrorKind::Unsupported`] when it is encrypted or
+/// packed with a method there is no decoder for here (bzip2, zstd,
+/// PPMd...), [`io::ErrorKind::InvalidData`] when its local header is
+/// damaged; the message says which. A `visit` that never reads it (a
+/// readme among pictures) is not affected, and one that does decides
+/// whether the error ends the walk: one such file must not cost a whole
+/// set, nor vanish without a word. The walk itself fails on a broken
+/// central directory and on I/O errors of `source`.
 pub fn for_each_file(
     kind: Kind,
     source: &mut dyn Source,
@@ -194,31 +206,38 @@ pub fn for_each_file(
         Kind::Zip => {
             let mut archive = zip::ZipArchive::new(&mut *source)?;
             for index in 0..archive.len() {
-                let (name, size, skip) = {
-                    let raw = archive.by_index_raw(index)?;
-                    (
-                        raw.name()?.to_string(),
-                        raw.size(),
-                        raw.is_dir() || raw.encrypted(),
-                    )
+                // From the central directory alone: a damaged local header
+                // must not hide the entry.
+                let (entry, encrypted) = {
+                    let meta = archive.by_index_data(index)?;
+                    if meta.is_dir() {
+                        continue;
+                    }
+                    let Some(name) = safe_name(&meta.name()?) else {
+                        continue;
+                    };
+                    let entry = Entry {
+                        name,
+                        size: meta.size(),
+                        is_dir: false,
+                    };
+                    (entry, meta.encrypted())
                 };
-                let Some(name) = safe_name(&name).filter(|_| !skip) else {
+                if encrypted {
+                    visit(&entry, &mut Unreadable::encrypted())?;
                     continue;
-                };
-                let mut file = archive.by_index(index)?;
-                let entry = Entry {
-                    name,
-                    size,
-                    is_dir: false,
-                };
-                visit(&entry, &mut file)?;
+                }
+                match archive.by_index(index) {
+                    Ok(mut file) => visit(&entry, &mut file)?,
+                    Err(err) => visit(&entry, &mut Unreadable::from_zip(err)?)?,
+                }
             }
         }
         Kind::SevenZip => {
             let mut reader =
                 sevenz_rust2::ArchiveReader::new(&mut *source, sevenz_rust2::Password::empty())?;
             reader.for_each_entries(|file, data| {
-                if file.is_directory {
+                if file.is_directory || file.is_anti_item {
                     return Ok(true);
                 }
                 if let Some(name) = safe_name(&file.name) {
@@ -236,6 +255,55 @@ pub fn for_each_file(
         }
     }
     Ok(())
+}
+
+/// The reader of an entry that is in the archive but cannot be read: every
+/// read fails, saying why.
+struct Unreadable {
+    kind: io::ErrorKind,
+    why: String,
+}
+
+impl Unreadable {
+    fn encrypted() -> Self {
+        Self {
+            kind: io::ErrorKind::Unsupported,
+            why: "the entry is encrypted".to_owned(),
+        }
+    }
+
+    /// Why zip cannot open one entry, or the error of the whole walk when
+    /// it is not about that entry (an I/O error of the archive file).
+    fn from_zip(err: zip::result::ZipError) -> Result<Self, ArchiveError> {
+        use zip::result::ZipError;
+        let (kind, why) = match err {
+            ZipError::CompressionMethodNotSupported(id) => {
+                let why = match zip::CompressionMethod::name_from_u16(id) {
+                    "Unknown" => format!("unsupported compression method {id}"),
+                    name => format!("unsupported compression method {id} ({name})"),
+                };
+                (io::ErrorKind::Unsupported, why)
+            }
+            ZipError::InvalidPassword => return Ok(Self::encrypted()),
+            ZipError::UnsupportedArchive(why) => (
+                io::ErrorKind::Unsupported,
+                format!("the entry cannot be read: {why}"),
+            ),
+            // A local header that is missing, cut short or out of range.
+            ZipError::InvalidArchive(why) => (
+                io::ErrorKind::InvalidData,
+                format!("the entry is damaged: {why}"),
+            ),
+            other => return Err(other.into()),
+        };
+        Ok(Self { kind, why })
+    }
+}
+
+impl Read for Unreadable {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(self.kind, self.why.clone()))
+    }
 }
 
 /// One entry, readable and seekable.
@@ -316,7 +384,7 @@ pub fn open_entry(
                 let index = (0..archive.len())
                     .find(|&i| {
                         archive
-                            .by_index_raw(i)
+                            .by_index_data(i)
                             .ok()
                             .and_then(|e| {
                                 e.name()
@@ -812,6 +880,193 @@ mod tests {
         });
         assert_eq!(seen.len(), 40);
         assert_eq!(seen[39].1, files[39].1);
+    }
+
+    type Outcome = Result<Vec<u8>, (io::ErrorKind, String)>;
+
+    /// What reading every file in one pass gives: its bytes, or the kind
+    /// and message of the error.
+    fn read_each(kind: Kind, archive: &[u8]) -> Vec<(String, Outcome)> {
+        let mut out = Vec::new();
+        for_each_file(
+            kind,
+            &mut Cursor::new(archive.to_vec()),
+            &mut |entry, data| {
+                let mut bytes = Vec::new();
+                let read = match data.read_to_end(&mut bytes) {
+                    Ok(_) => Ok(bytes),
+                    Err(err) => Err((err.kind(), err.to_string())),
+                };
+                out.push((entry.name.clone(), read));
+                Ok(())
+            },
+        )
+        .unwrap();
+        out
+    }
+
+    /// A stored zip of a readme and a cover, and where the central
+    /// directory header of the readme starts.
+    fn readme_and_cover() -> (Vec<u8>, usize) {
+        let archive = zip_of(
+            &[
+                ("readme.txt", b"read me"),
+                ("SLUS_200.62_COV.png", b"cover"),
+            ],
+            zip::CompressionMethod::Stored,
+        );
+        assert_eq!(&archive[..4], b"PK\x03\x04");
+        let central = archive.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+        (archive, central)
+    }
+
+    /// The readme fails with `kind` and a message that holds `why`, the
+    /// cover next to it reads.
+    fn check_unreadable_readme(archive: &[u8], kind: io::ErrorKind, why: &str) {
+        let seen = read_each(Kind::Zip, archive);
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        assert_eq!(seen[0].0, "readme.txt");
+        let Err((got, message)) = &seen[0].1 else {
+            panic!("the readme read: {:?}", seen[0].1);
+        };
+        assert_eq!(*got, kind, "{message}");
+        assert!(message.contains(why), "{message}");
+        assert_eq!(
+            seen[1],
+            ("SLUS_200.62_COV.png".to_owned(), Ok(b"cover".to_vec()))
+        );
+
+        // A visit that does not read it is not affected.
+        let seen = walk(Kind::Zip, archive, |name| name.ends_with(".png"));
+        assert_eq!(
+            seen,
+            [
+                ("readme.txt".to_owned(), Vec::new()),
+                ("SLUS_200.62_COV.png".to_owned(), b"cover".to_vec())
+            ]
+        );
+        // One that passes the error on ends the walk with it.
+        let err = for_each_file(
+            Kind::Zip,
+            &mut Cursor::new(archive.to_vec()),
+            &mut |_, data| data.read_to_end(&mut Vec::new()).map(drop),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ArchiveError::Io(e) if e.kind() == kind),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn entries_without_a_decoder_are_handed_over_unreadable() {
+        // Method 0xBEEF, which no zip tool assigns, in the local header and
+        // the central directory alike.
+        let (mut archive, central) = readme_and_cover();
+        archive[8..10].copy_from_slice(&0xBEEFu16.to_le_bytes());
+        archive[central + 10..central + 12].copy_from_slice(&0xBEEFu16.to_le_bytes());
+        check_unreadable_readme(&archive, io::ErrorKind::Unsupported, "48879");
+        // Still listed: it is there, only not readable.
+        let entries = list(Kind::Zip, &mut Cursor::new(archive)).unwrap();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn encrypted_entries_are_handed_over_unreadable() {
+        // Bit 0 of the flags in both headers.
+        let (mut archive, central) = readme_and_cover();
+        archive[6] |= 1;
+        archive[central + 8] |= 1;
+        check_unreadable_readme(&archive, io::ErrorKind::Unsupported, "encrypted");
+    }
+
+    #[test]
+    fn a_damaged_local_header_costs_only_its_entry() {
+        // The central directory is whole, the readme's local header is not.
+        let (mut archive, _) = readme_and_cover();
+        archive[..4].copy_from_slice(b"XXXX");
+        check_unreadable_readme(&archive, io::ErrorKind::InvalidData, "damaged");
+        // Listing the archive needs no local header at all.
+        let names: Vec<String> = list(Kind::Zip, &mut Cursor::new(archive.clone()))
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        // Its header out of the archive's range altogether.
+        let (mut archive, central) = readme_and_cover();
+        archive[central + 42..central + 46].copy_from_slice(&0x7FFF_0000u32.to_le_bytes());
+        check_unreadable_readme(&archive, io::ErrorKind::InvalidData, "damaged");
+    }
+
+    /// Reads fail below `from`: the disk goes away under the local headers.
+    struct FailsBelow {
+        inner: Cursor<Vec<u8>>,
+        from: u64,
+    }
+
+    impl Read for FailsBelow {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.inner.position() < self.from {
+                return Err(io::Error::other("disk gone"));
+            }
+            self.inner.read(buf)
+        }
+    }
+
+    impl Seek for FailsBelow {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    #[test]
+    fn io_errors_of_the_archive_end_the_walk() {
+        let (archive, central) = readme_and_cover();
+        let mut source = FailsBelow {
+            inner: Cursor::new(archive),
+            from: central as u64,
+        };
+        let mut visited = 0;
+        let err = for_each_file(Kind::Zip, &mut source, &mut |_, _| {
+            visited += 1;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(
+            matches!(&err, ArchiveError::Io(e) if e.to_string().contains("disk gone")),
+            "{err}"
+        );
+        assert_eq!(visited, 0);
+    }
+
+    #[test]
+    fn seven_zip_anti_items_are_not_files() {
+        // An anti item marks a file deleted in an update archive.
+        let mut out = Cursor::new(Vec::new());
+        {
+            let mut writer = sevenz_rust2::ArchiveWriter::new(&mut out).unwrap();
+            writer
+                .push_archive_entry(
+                    sevenz_rust2::ArchiveEntry::new_file("SLUS_200.62_COV.jpg"),
+                    Some(Cursor::new(b"cover".to_vec())),
+                )
+                .unwrap();
+            let mut anti = sevenz_rust2::ArchiveEntry::new_file("SLUS_200.63_COV.jpg");
+            anti.is_anti_item = true;
+            writer
+                .push_archive_entry(anti, None::<Cursor<Vec<u8>>>)
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        let archive = out.into_inner();
+        let seen = walk(Kind::SevenZip, &archive, |_| true);
+        assert_eq!(
+            seen,
+            [("SLUS_200.62_COV.jpg".to_owned(), b"cover".to_vec())]
+        );
+        let entries = list(Kind::SevenZip, &mut Cursor::new(archive)).unwrap();
+        assert_eq!(entries.len(), 1);
     }
 
     #[test]

@@ -13,7 +13,7 @@
 //! Nothing is written here. Conflicts with what is already on the device
 //! skip that source with a reason; a lack of space blocks the whole plan.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -272,7 +272,10 @@ struct Planner<'a> {
     sources: &'a dyn SourceFs,
     options: &'a ImportOptions,
     plan: Plan,
-    art: ArtFolder,
+    /// Read only when the options carry pictures.
+    art: Option<ArtFolder>,
+    /// The pictures of the options by [`serial::lookup_key`], in order.
+    covers: HashMap<String, Vec<&'a ArtItem>>,
     /// Pictures already planned, as lower-case ID and kind.
     covered: HashSet<(String, ArtKind)>,
     /// Names claimed by this plan, lower-case, as `CD/x.iso` or `ul.x`.
@@ -407,14 +410,13 @@ impl Planner<'_> {
 
     /// The pictures of `game` that the options carry, right after it.
     fn plan_covers(&mut self, game: &GameInfo) {
-        let key = serial::lookup_key(&game.startup);
-        let items: Vec<&ArtItem> = self
-            .options
-            .covers
-            .iter()
-            .filter(|item| serial::lookup_key(&item.startup) == key)
-            .collect();
-        for item in items {
+        let (Some(art), Some(items)) = (
+            &self.art,
+            self.covers.get(&serial::lookup_key(&game.startup)),
+        ) else {
+            return;
+        };
+        for &item in items {
             if !self
                 .covered
                 .insert((game.startup.to_lowercase(), item.kind))
@@ -429,7 +431,7 @@ impl Planner<'_> {
                 format: game.format.clone(),
                 ..item.clone()
             };
-            match self.art.write(&mut self.plan, self.sources, &item, false) {
+            match art.write(&mut self.plan, self.sources, &item, false) {
                 Ok(Ok((tx, _))) => self.plan.transactions.push(tx),
                 Ok(Err(skipped)) => self.plan.skipped.push(skipped),
                 Err(err) => self.plan.skipped.push(skip(
@@ -691,7 +693,18 @@ pub fn plan_import(
     let folders = state.missing_folders()?;
     let (candidates, skipped) = expand_inputs(sources, inputs);
     plan.skipped = skipped;
-    let art = ArtFolder::read(fs, &state)?;
+    let art = if options.covers.is_empty() {
+        None
+    } else {
+        Some(ArtFolder::read(fs, &state)?)
+    };
+    let mut covers: HashMap<String, Vec<&ArtItem>> = HashMap::new();
+    for item in &options.covers {
+        covers
+            .entry(serial::lookup_key(&item.startup))
+            .or_default()
+            .push(item);
+    }
 
     let mut planner = Planner {
         state,
@@ -699,6 +712,7 @@ pub fn plan_import(
         options,
         plan,
         art,
+        covers,
         covered: HashSet::new(),
         claimed: HashSet::new(),
         startups,

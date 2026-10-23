@@ -61,20 +61,20 @@ fn number(field: &[u8]) -> Option<u64> {
     u64::from_str_radix(&digits, 8).ok()
 }
 
+/// The header's checksum as the sum of its bytes, unsigned or, as old tars
+/// wrote it, signed (GNU tar and Python's `tarfile` accept both): the two
+/// differ once a name has bytes over 0x7F, a Cyrillic folder for one.
 fn checksum_ok(header: &[u8; BLOCK]) -> bool {
-    let stored = number(&header[148..156]);
-    let sum: u64 = header
-        .iter()
-        .enumerate()
-        .map(|(i, &b)| {
-            if (148..156).contains(&i) {
-                32
-            } else {
-                u64::from(b)
-            }
-        })
-        .sum();
-    stored == Some(sum)
+    let Some(stored) = number(&header[148..156]) else {
+        return false;
+    };
+    let (mut unsigned, mut signed) = (0u64, 0i64);
+    for (i, &b) in header.iter().enumerate() {
+        let b = if (148..156).contains(&i) { b' ' } else { b };
+        unsigned += u64::from(b);
+        signed += i64::from(b.cast_signed());
+    }
+    stored == unsigned || i64::try_from(stored).is_ok_and(|s| s == signed)
 }
 
 /// Reads exactly `buf.len()` bytes, or none at the end of the stream.
@@ -113,8 +113,17 @@ fn pax_path(data: &[u8]) -> Option<String> {
     None
 }
 
+fn ends_inside(what: &str) -> TarError {
+    TarError::Io(io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        format!("the archive ends inside {what}"),
+    ))
+}
+
 /// Hands every regular file of the archive to `visit`, in order, with a
-/// reader of its bytes; what `visit` leaves unread is skipped.
+/// reader of its bytes; what `visit` leaves unread is skipped. An archive
+/// that ends inside the data of an entry, a file or one that is skipped,
+/// is an [`io::ErrorKind::UnexpectedEof`] error.
 pub fn for_each_file<R: Read>(
     mut reader: R,
     visit: &mut dyn FnMut(&TarEntry, &mut dyn Read) -> io::Result<()>,
@@ -134,8 +143,10 @@ pub fn for_each_file<R: Read>(
         if !checksum_ok(&header) {
             return Err(TarError::BadHeader { offset: at });
         }
-        let size = number(&header[124..136]).ok_or(TarError::BadHeader { offset: at })?;
-        let padded = size.div_ceil(BLOCK as u64) * BLOCK as u64;
+        // A base-256 size near 2^64 has no padded length.
+        let (size, padded) = number(&header[124..136])
+            .and_then(|size| Some((size, size.checked_next_multiple_of(BLOCK as u64)?)))
+            .ok_or(TarError::BadHeader { offset: at })?;
         let kind = header[156];
         match kind {
             b'L' | b'x' if size <= MAX_LONG_NAME => {
@@ -152,8 +163,14 @@ pub fn for_each_file<R: Read>(
             }
             b'0' | 0 => {}
             _ => {
-                io::copy(&mut (&mut reader).take(padded), &mut io::sink())?;
-                offset += padded;
+                // Copied, not seeked: the header may claim more than the
+                // archive holds. A cut in the padding is let go, as after
+                // a file.
+                let skipped = io::copy(&mut (&mut reader).take(padded), &mut io::sink())?;
+                if skipped < size {
+                    return Err(ends_inside("an entry"));
+                }
+                offset += skipped;
                 long_name = None;
                 continue;
             }
@@ -175,10 +192,7 @@ pub fn for_each_file<R: Read>(
         visit(&entry, &mut data)?;
         io::copy(&mut data, &mut io::sink())?;
         if data.limit() > 0 {
-            return Err(TarError::Io(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "the archive ends inside a file",
-            )));
+            return Err(ends_inside("a file"));
         }
         io::copy(&mut (&mut reader).take(padded - size), &mut io::sink())?;
         offset += padded;
@@ -203,10 +217,15 @@ mod tests {
         h[257..263].copy_from_slice(b"ustar\0");
         h[263..265].copy_from_slice(b"00");
         h[345..345 + prefix.len()].copy_from_slice(prefix.as_bytes());
+        seal(&mut h);
+        h
+    }
+
+    /// Writes the unsigned checksum of `h`.
+    fn seal(h: &mut [u8]) {
         h[148..156].copy_from_slice(b"        ");
         let sum: u32 = h.iter().map(|&b| u32::from(b)).sum();
         h[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
-        h
     }
 
     fn file(name: &str, data: &[u8]) -> Vec<u8> {
@@ -293,5 +312,84 @@ mod tests {
             Some("ART/SLUS_200.62_COV.png".into())
         );
         assert_eq!(pax_path(b"20 mtime=1234567890\n"), None);
+    }
+
+    #[test]
+    fn a_size_near_the_u64_limit_is_a_bad_header() {
+        // A file, then a folder.
+        for &kind in b"05" {
+            let mut h = header("a.png", 0, kind);
+            // Base-256: u64::MAX - 100, which rounds up past 2^64.
+            h[124..136].copy_from_slice(&[
+                0x80, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x9B,
+            ]);
+            seal(&mut h);
+            assert_eq!(number(&h[124..136]), Some(u64::MAX - 100));
+            assert!(
+                matches!(read_all(&h), Err(TarError::BadHeader { offset: 0 })),
+                "kind {kind}"
+            );
+        }
+        // A skipped entry of 2^64 - 512 bytes, a whole number of blocks,
+        // has a padded length; the archive holds far less.
+        let mut h = header("dir", 0, b'5');
+        h[124..136].copy_from_slice(&[0x80, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0]);
+        seal(&mut h);
+        h.extend(vec![0u8; BLOCK]);
+        assert!(is_cut(read_all(&h)));
+    }
+
+    fn is_cut(result: Result<Vec<(String, Vec<u8>)>, TarError>) -> bool {
+        matches!(result, Err(TarError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof)
+    }
+
+    #[test]
+    fn a_skipped_entry_cut_short_is_an_error() {
+        // A folder that claims 1024 bytes of data, then 100 of them.
+        let mut tar = header("ART", 1024, b'5');
+        tar.extend(vec![7u8; 100]);
+        assert!(is_cut(read_all(&tar)));
+        // Whole, it is passed over.
+        tar.resize(BLOCK + 1024, 7);
+        tar.extend(file("SLUS_200.62_COV.png", b"cover"));
+        assert_eq!(
+            read_all(&tar).unwrap(),
+            [("SLUS_200.62_COV.png".to_owned(), b"cover".to_vec())]
+        );
+        // So is one cut in its padding, as a file is.
+        let mut tar = header("ART", 1000, b'5');
+        tar.extend(vec![7u8; 1000]);
+        assert_eq!(read_all(&tar).unwrap(), []);
+        let mut tar = file("a.png", &[1u8; 1000]);
+        tar.truncate(BLOCK + 1000);
+        assert_eq!(read_all(&tar).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn signed_checksums_are_accepted() {
+        let name = "ART/Обложки/SLUS_200.62_COV.png";
+        let mut tar = file(name, b"cover");
+        let signed: i64 = tar[..BLOCK]
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| {
+                if (148..156).contains(&i) {
+                    32
+                } else {
+                    i64::from(b.cast_signed())
+                }
+            })
+            .sum();
+        assert!(signed > 0, "fits the octal field");
+        tar[148..156].copy_from_slice(format!("{signed:06o}\0 ").as_bytes());
+        let files = read_all(&tar).unwrap();
+        assert_eq!(files, [(name.to_owned(), b"cover".to_vec())]);
+
+        // Neither sum: still not a header.
+        tar[148..156].copy_from_slice(format!("{:06o}\0 ", signed + 1).as_bytes());
+        assert!(matches!(
+            read_all(&tar),
+            Err(TarError::BadHeader { offset: 0 })
+        ));
     }
 }
