@@ -1,4 +1,5 @@
-export const GRID_MIN_COLUMN = 168;
+/** About OPL's own 140 px cover plus the card's padding. */
+export const GRID_MIN_COLUMN = 150;
 export const GRID_GAP = 16;
 /** The card around the cover: `p-2` on each side and `gap-2` under the cover, in rem. */
 const CARD_PADDING_REM = 0.5;

@@ -12,9 +12,8 @@
     "settings": "Settings"
   },
   "connection": {
-    "connecting": "Connecting…",
-    "open": "Connected",
-    "closed": "Disconnected"
+    "lost": "No connection to YAOPLM at {{address}}. Actions are unavailable until it is back.",
+    "retrying": "Reconnecting…"
   },
   "theme": {
     "switchToDark": "Switch to dark theme",

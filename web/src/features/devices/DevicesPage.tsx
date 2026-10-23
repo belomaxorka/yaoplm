@@ -122,7 +122,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
         <HardDrive className="mt-1 size-6 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-semibold">{device.root}</span>
+            <span className="font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
             {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
             <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
             {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
@@ -131,9 +131,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
             {current && <Badge>{t("devices.current")}</Badge>}
           </div>
-          <div className="mt-2 flex items-center gap-3 text-sm">
-            <Progress value={used} className="h-1.5 max-w-xs" aria-label={t("devices.used", { percent: used })} />
-            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <Progress value={used} className="h-1.5 w-full max-w-xs" aria-label={t("devices.used", { percent: used })} />
+            <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
               {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
             </span>
           </div>
@@ -168,13 +168,14 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             </dl>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        {/* Beside the details when there is room, under them when there is not. */}
+        <div className="ml-auto flex flex-col items-end gap-2">
           <span
             className={cn(
               "flex items-center gap-1.5 text-sm font-medium",
               verdict === "error" && "text-destructive",
-              verdict === "warning" && "text-amber-600 dark:text-amber-400",
-              (verdict === null || verdict === "info") && "text-emerald-600 dark:text-emerald-400",
+              verdict === "warning" && "text-amber-700 dark:text-amber-400",
+              (verdict === null || verdict === "info") && "text-emerald-700 dark:text-emerald-400",
             )}
           >
             {verdict === null || verdict === "info" ? (

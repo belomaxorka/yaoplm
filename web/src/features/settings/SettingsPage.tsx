@@ -362,9 +362,10 @@ function SettingRow({
   htmlFor?: string;
   children: ReactNode;
 }) {
+  // The control keeps its place on the right; a long hint wraps beside it.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <span className="flex flex-col">
+    <div className="flex items-center justify-between gap-x-6 gap-y-3 max-sm:flex-wrap">
+      <span className="flex min-w-0 flex-col">
         {htmlFor ? (
           <Label htmlFor={htmlFor}>{label}</Label>
         ) : (
@@ -372,7 +373,7 @@ function SettingRow({
         )}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </span>
-      {children}
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }

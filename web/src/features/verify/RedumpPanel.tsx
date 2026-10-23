@@ -82,7 +82,7 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
                   : t("dump.importedOn", { date: formatDate(dat.storedAt), file: dat.fileName ?? dat.source })}
                 {tooSoon && dat.nextCheck !== null && ` · ${t("dump.nextCheck", { date: formatDate(dat.nextCheck) })}`}
               </div>
-              {!dat.serials && <div className="text-xs text-amber-600 dark:text-amber-400">{t("dump.noSerials")}</div>}
+              {!dat.serials && <div className="text-xs text-amber-700 dark:text-amber-400">{t("dump.noSerials")}</div>}
             </>
           )}
         </div>

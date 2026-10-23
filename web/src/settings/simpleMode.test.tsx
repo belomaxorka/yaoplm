@@ -105,7 +105,7 @@ describe("simple mode (UI-4)", () => {
       expect(screen.getByTestId("download-covers")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Add games" })).toBeInTheDocument();
       const advanced = [
-        screen.queryByRole("button", { name: "Only games with warnings" }),
+        screen.queryByRole("button", { name: /with warnings/ }),
         screen.queryByTestId("filter-no-cover"),
         screen.queryByRole("combobox", { name: "Sort by" }),
         screen.queryByRole("radiogroup", { name: "View" }),

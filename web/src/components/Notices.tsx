@@ -15,7 +15,7 @@ const icons = {
 
 const colours = {
   info: "text-muted-foreground",
-  warning: "text-amber-600 dark:text-amber-400",
+  warning: "text-amber-700 dark:text-amber-400",
   error: "text-destructive",
 } as const;
 

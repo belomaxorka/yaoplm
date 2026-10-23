@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
 import { openLibrary } from "./helpers";
@@ -97,6 +98,33 @@ async function layoutProblems(page: Page): Promise<string[]> {
         problems.push(`${describe(el)} scrolls sideways by ${el.scrollWidth - el.clientWidth} px`);
       }
     }
+    // Text wider than its box draws over its neighbours (a long path, a word
+    // that cannot break). Clipped text (an ellipsis) and scrolling boxes are fine.
+    const roots = [document.getElementById("main"), ...document.querySelectorAll('[role="dialog"]')];
+    for (const root of roots) {
+      if (!root) continue;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const text = range.getBoundingClientRect();
+        if (text.width === 0) continue;
+        // Every box up to the first one that clips must hold the text.
+        for (let el: HTMLElement | null = node.parentElement; el && el !== root.parentElement; el = el.parentElement) {
+          const style = getComputedStyle(el);
+          if (style.overflowX !== "visible") break;
+          // A box that is not drawn (display: contents) has no edges.
+          if (style.display === "contents") continue;
+          const outer = el.getBoundingClientRect();
+          const over = Math.max(text.right - outer.right, outer.left - text.left);
+          if (over > 1) {
+            problems.push(`${describe(el)} text spills ${Math.round(over)} px out of its box`);
+            break;
+          }
+        }
+      }
+    }
     const selector =
       'a[href], button, input, select, textarea, [role="button"], [role="radio"], [role="checkbox"], [role="switch"], [role="tab"], [role="combobox"], [role="menuitem"]';
     const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => {
@@ -194,6 +222,53 @@ for (const simple of [true, false]) {
 
       expect.soft(problems).toEqual([]);
       expect(errors).toEqual([]);
+    });
+  }
+}
+
+/** WCAG 2.2 A and AA rules axe can check, by screen (UI-3). */
+async function axeViolations(page: Page, screen: string): Promise<string[]> {
+  // Colour transitions (a button turning primary once its data loads) settle
+  // first: half-way colours are not what the user reads.
+  await page.waitForTimeout(400);
+  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  return result.violations.flatMap((violation) =>
+    violation.nodes.map((node) => `${screen}: ${violation.id} (${violation.impact ?? "?"}) at ${node.target.join(" ")}`),
+  );
+}
+
+for (const simple of [true, false]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`no WCAG 2.2 AA violations axe can find, ${simple ? "simple" : "advanced"} mode, ${theme}`, async ({ page, request }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await openLibrary(page, request, { language: theme === "light" ? "en" : "ru", theme, simple });
+      const found: string[] = [];
+
+      await page.goto("/devices");
+      await expect(page.getByTestId("device-card").first()).toBeVisible();
+      found.push(...(await axeViolations(page, "devices")));
+
+      await page.goto("/library");
+      await expect(page.getByTestId("game-grid").getByRole("listitem").first()).toBeVisible();
+      found.push(...(await axeViolations(page, "library")));
+
+      await page.getByTestId("game-grid").getByRole("listitem").first().click();
+      await expect(page.getByTestId("game-title")).toBeVisible();
+      found.push(...(await axeViolations(page, "game card")));
+
+      await page.goto("/library/add");
+      await expect(page.getByTestId("drop-zone")).toBeVisible();
+      found.push(...(await axeViolations(page, "add games")));
+
+      await page.goto("/settings");
+      await expect(page.getByTestId("about")).toBeVisible();
+      found.push(...(await axeViolations(page, "settings")));
+
+      if (!simple) {
+        await page.goto("/jobs");
+        found.push(...(await axeViolations(page, "jobs")));
+      }
+      expect(found).toEqual([]);
     });
   }
 }

@@ -102,8 +102,9 @@ describe("grid layout", () => {
   });
 
   it("follows the root font size", () => {
-    // 500 px: two 242 px columns. At 20 px per rem the padding is 10 px and the text 70 px.
-    expect(gridLayout(500, 20).rowHeight).toBe(Math.ceil(10 + ((242 - 20) * 10) / 7 + 10 + 70 + 10) + GRID_GAP);
+    // 500 px: three 156 px columns. At 20 px per rem the padding is 10 px and the text 70 px.
+    expect(gridLayout(500, 20).columns).toBe(3);
+    expect(gridLayout(500, 20).rowHeight).toBe(Math.ceil(10 + ((156 - 20) * 10) / 7 + 10 + 70 + 10) + GRID_GAP);
   });
 });
 

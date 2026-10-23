@@ -75,7 +75,7 @@ function ResultRow({ game }: { game: GameVerification }) {
           <span>
             {t("dump.matches")}{" "}
             <RedumpLink name={game.redump.name} url={game.redump.url} />
-            {game.serialMatches === false && <span className="text-amber-600 dark:text-amber-400"> · {t("dump.serialMismatch")}</span>}
+            {game.serialMatches === false && <span className="text-amber-700 dark:text-amber-400"> · {t("dump.serialMismatch")}</span>}
           </span>
         )}
         {game.reason && <span>{t(`dump.reasonLong.${game.reason}`)}</span>}

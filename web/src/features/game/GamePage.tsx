@@ -100,6 +100,9 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
     onExecuted: () => void navigate("/library"),
   });
   const otherMedia: Media = game.media === "CD" ? "DVD" : "CD";
+  const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
+  // Simple mode has no technical details: only what the user can act on.
+  const showDetails = !simple || knownTitle !== null || game.dump !== null;
   const compat = game.cfg?.compatibility ?? null;
 
   return (
@@ -121,12 +124,18 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 {game.title}
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <Badge variant="secondary" className="font-mono">
+                <Badge variant="secondary" className="font-mono" title={t("game.id")} data-testid="game-id">
                   {game.startup}
                 </Badge>
-                <Badge variant="outline">{game.media}</Badge>
-                <Badge variant="outline">{game.format}</Badge>
-                <Badge variant="outline">{formatBytes(game.size)}</Badge>
+                <Badge variant="outline" title={t("game.media")}>
+                  {game.media}
+                </Badge>
+                <Badge variant="outline" title={t("game.format")}>
+                  {game.format}
+                </Badge>
+                <Badge variant="outline" title={t("game.size")}>
+                  {formatBytes(game.size)}
+                </Badge>
                 {game.layer1Start !== null && <Badge variant="outline">DVD-9</Badge>}
               </div>
             </div>
@@ -168,62 +177,64 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">{t("game.details")}</h3>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-            <Fact label={t("game.id")} mono>
-              {game.startup}
-            </Fact>
-            {!simple && game.imageStartup !== null && game.imageStartup !== game.startup && (
-              <Fact label={t("game.imageId")} mono>
-                {game.imageStartup}
-              </Fact>
-            )}
-            {game.knownTitle !== null && game.knownTitle !== game.title && (
-              <Fact label={t("game.knownTitle")}>
-                <span data-testid="known-title">{game.knownTitle}</span>
-                <button
-                  type="button"
-                  className="ml-2 text-xs text-primary underline-offset-2 hover:underline"
-                  onClick={() => {
-                    setPresetTitle(game.knownTitle);
-                    setRenameOpen(true);
-                  }}
-                >
-                  {t("game.useKnownTitle")}
-                </button>
-              </Fact>
-            )}
-            <Fact label={t("game.media")}>{game.media}</Fact>
-            <Fact label={t("game.format")}>{game.format}</Fact>
-            <Fact label={t("game.dump")}>
-              {game.dump ? (
-                <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
-                  {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
-                </span>
-              ) : (
-                <span className="text-muted-foreground" data-testid="game-dump">
-                  {t("game.dumpUnchecked")}
-                </span>
-              )}
-            </Fact>
-            <Fact label={t("game.size")}>{formatBytes(game.size)}</Fact>
-            {!simple && (
-              <>
-                <Fact label={t("game.path")} mono>
-                  {game.path}
+        {/* ID, media, format and size are the badges above; these are the rest. */}
+        {showDetails && (
+          <section className="rounded-lg border bg-card p-4">
+            <h3 className="mb-3 text-sm font-medium">{t("game.details")}</h3>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+              {!simple && game.imageStartup !== null && game.imageStartup !== game.startup && (
+                <Fact label={t("game.imageId")} mono>
+                  {game.imageStartup}
                 </Fact>
-                {game.nameFormat !== null && (
-                  <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
-                )}
-                {game.layer1Start !== null && (
-                  <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
-                )}
-              </>
-            )}
-          </dl>
-        </section>
+              )}
+              {knownTitle && (
+                <Fact label={t("game.knownTitle")}>
+                  <span className="flex flex-wrap items-baseline gap-x-3">
+                    <span data-testid="known-title">{knownTitle}</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
+                      onClick={() => {
+                        setPresetTitle(knownTitle);
+                        setRenameOpen(true);
+                      }}
+                    >
+                      {t("game.useKnownTitle")}
+                    </Button>
+                  </span>
+                </Fact>
+              )}
+              {(!simple || game.dump) && (
+                <Fact label={t("game.dump")}>
+                  {game.dump ? (
+                    <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
+                      <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
+                      {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground" data-testid="game-dump">
+                      {t("game.dumpUnchecked")}
+                    </span>
+                  )}
+                </Fact>
+              )}
+              {!simple && (
+                <>
+                  <Fact label={t("game.path")} mono>
+                    {game.path}
+                  </Fact>
+                  {game.nameFormat !== null && (
+                    <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
+                  )}
+                  {game.layer1Start !== null && (
+                    <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
+                  )}
+                </>
+              )}
+            </dl>
+          </section>
+        )}
 
         {!simple && game.parts.length > 0 && (
           <section className="rounded-lg border bg-card p-4" data-testid="game-parts">

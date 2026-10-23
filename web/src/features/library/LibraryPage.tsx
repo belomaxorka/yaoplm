@@ -387,7 +387,7 @@ function AdvancedFilters({
         size="sm"
         pressed={filters.warnings}
         onPressedChange={(warnings) => setFilters({ warnings })}
-        aria-label={t("library.onlyWarnings")}
+        title={t("library.onlyWarnings")}
       >
         <AlertTriangle aria-hidden />
         {t("library.warnings", { count: withWarnings })}
@@ -397,7 +397,7 @@ function AdvancedFilters({
         size="sm"
         pressed={filters.noCover}
         onPressedChange={(noCover) => setFilters({ noCover })}
-        aria-label={t("library.onlyNoCover")}
+        title={t("library.onlyNoCover")}
         data-testid="filter-no-cover"
       >
         <ImageOff aria-hidden />
@@ -460,7 +460,7 @@ function ScanProgress({ root }: { root: string }) {
           </span>
         )}
       </div>
-      <Progress value={value ?? 0} className={cn(value === null && "animate-pulse")} />
+      <Progress value={value ?? 0} className={cn(value === null && "animate-pulse")} aria-label={t("library.scanning")} />
     </div>
   );
 }
@@ -628,7 +628,7 @@ function GameCard({ game, index }: { game: Game; index: number }) {
           </span>
         </div>
         {game.warnings.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 truncate text-xs text-amber-600 dark:text-amber-400">
+          <div className="mt-1 flex items-center gap-1 truncate text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="size-3 shrink-0" aria-hidden />
             {t("library.warningCount", { count: game.warnings.length })}
           </div>
@@ -684,7 +684,7 @@ function GameTable({ games }: { games: Game[] }) {
                   {game.title}
                 </span>
                 {game.warnings.length > 0 && (
-                  <Badge variant="outline" className="shrink-0 gap-1 text-amber-600 dark:text-amber-400">
+                  <Badge variant="outline" className="shrink-0 gap-1 text-amber-700 dark:text-amber-400">
                     <AlertTriangle aria-hidden />
                     {game.warnings.length}
                   </Badge>

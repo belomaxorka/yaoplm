@@ -247,9 +247,12 @@ export function AddGamesPage() {
             <ArrowLeft aria-hidden />
             {t("library.title")}
           </Button>
-          <span className="truncate font-mono text-xs text-muted-foreground" title={root}>
-            {root}
-          </span>
+          {/* The header names the device; the path is a detail, as in the library. */}
+          {!settings.simpleMode && (
+            <span className="truncate font-mono text-xs text-muted-foreground" title={root}>
+              {root}
+            </span>
+          )}
         </div>
 
         <section
