@@ -99,9 +99,11 @@ pub enum ArtLogState {
 pub struct CoverSearch {
     /// Pass to `PlanImport` as `covers`.
     pub id: String,
+    /// Pictures found, of every type asked for.
     pub found: u32,
+    /// Pictures no source had.
     pub missing: u32,
-    /// Games whose cover is on the device already.
+    /// Pictures the device has already.
     pub present: u32,
 }
 
@@ -472,13 +474,14 @@ pub(crate) struct FetchParams {
     pub import: Option<(Vec<Target>, usize)>,
 }
 
-/// The games an import plan adds, once per ID, without those whose `kind`
-/// is on the device already (ART-8, scope `missing`).
+/// The games an import plan adds, once per ID, each with the `kinds` the
+/// device has for it already (ART-8, scope `missing`), and how many
+/// pictures that is. Games with every kind present are left out.
 pub(crate) fn import_targets(
     plans: &PlanStore,
     plan_id: &str,
     root: &Path,
-    kind: ArtKind,
+    kinds: &[ArtKind],
 ) -> Result<(Vec<Target>, usize), ApiError> {
     let (plan, plan_root) = plans.peek(plan_id).ok_or_else(|| {
         ApiError::phrased(
@@ -493,7 +496,11 @@ pub(crate) fn import_targets(
         ));
     }
     let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
-    let present = yaoplm_core::art::present_art(&fs, kind).map_err(ApiError::internal_error)?;
+    let present = kinds
+        .iter()
+        .map(|&kind| Ok((kind, yaoplm_core::art::present_art(&fs, kind)?)))
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(ApiError::internal_error)?;
     let mut seen = std::collections::HashSet::new();
     let mut already = 0;
     let mut targets = Vec::new();
@@ -501,8 +508,14 @@ pub(crate) fn import_targets(
         if !seen.insert(serial::lookup_key(&game.startup)) {
             continue;
         }
-        if present.contains(&game.startup.to_lowercase()) {
-            already += 1;
+        let key = game.startup.to_lowercase();
+        let have: Vec<ArtKind> = present
+            .iter()
+            .filter(|(_, ids)| ids.contains(&key))
+            .map(|(kind, _)| *kind)
+            .collect();
+        already += have.len();
+        if have.len() == kinds.len() {
             continue;
         }
         targets.push(Target {
@@ -510,7 +523,7 @@ pub(crate) fn import_targets(
             title: game.title.clone(),
             media: game.media,
             format: game.format.clone(),
-            present: Vec::new(),
+            present: have,
         });
     }
     Ok((targets, already))
@@ -586,7 +599,14 @@ pub(crate) fn fetch_job(
         Some((targets, already)) => (
             targets
                 .into_iter()
-                .map(|t| (t, ArtKind::Cov))
+                .flat_map(|t| {
+                    params
+                        .kinds
+                        .iter()
+                        .filter(|kind| !t.present.contains(kind))
+                        .map(|&kind| (t.clone(), kind))
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>(),
             already,
         ),
@@ -628,6 +648,7 @@ pub(crate) fn fetch_job(
     let mut items = Vec::new();
     let mut skipped = Vec::new();
     let mut missing = Vec::new();
+    let mut not_found = 0usize;
     for (index, (target, kind)) in pairs.iter().enumerate() {
         if ctx.is_cancelled() {
             return Err(ApiError::cancelled());
@@ -706,7 +727,12 @@ pub(crate) fn fetch_job(
                         (_, None) => Notice::info(Said::notice("noArtSource")),
                     },
                 };
-                missing.push((target.startup.clone(), skip.clone()));
+                not_found += 1;
+                // An import plan lists the games left without a cover; the
+                // other types are optional extras, counted in the result.
+                if *kind == ArtKind::Cov {
+                    missing.push((target.startup.clone(), skip.clone()));
+                }
                 skipped.push(skip);
             }
         }
@@ -715,12 +741,11 @@ pub(crate) fn fetch_job(
 
     if for_import {
         let found = u32::try_from(items.len()).unwrap_or(u32::MAX);
-        let not_found = u32::try_from(missing.len()).unwrap_or(u32::MAX);
         let id = plans.insert_covers(params.root, items, missing);
         return Ok(JobResult::Covers(CoverSearch {
             id,
             found,
-            missing: not_found,
+            missing: u32::try_from(not_found).unwrap_or(u32::MAX),
             present: u32::try_from(already).unwrap_or(u32::MAX),
         }));
     }

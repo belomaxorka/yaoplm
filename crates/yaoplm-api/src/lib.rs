@@ -656,13 +656,10 @@ impl Api {
                 wanted.retain(|kind| seen.insert(*kind));
                 let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
                 // The plan may be replaced while the search runs: its games
-                // are read now. Games being added get their front cover.
+                // are read now, with the pictures they have already.
                 let import = import
-                    .map(|id| art::import_targets(&self.plans, &id, &path, ArtKind::Cov))
+                    .map(|id| art::import_targets(&self.plans, &id, &path, &wanted))
                     .transpose()?;
-                if import.is_some() {
-                    wanted = vec![ArtKind::Cov];
-                }
                 let params = art::FetchParams {
                     root: path.clone(),
                     profile: profile.unwrap_or_default(),

@@ -22,6 +22,7 @@ import { listenForDrops, pickFiles, pickFolder } from "@/features/add/desktop";
 import { CoverSearchPanel } from "@/features/add/CoverSearchPanel";
 import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
 import { useCoverSearch } from "@/features/add/useCoverSearch";
+import { artTypes, useFetchableTypes } from "@/features/art/kinds";
 import { enabledSources } from "@/features/art/sources";
 import { PlanDetails } from "@/features/plan/PlanDetails";
 import { usePlan } from "@/features/plan/usePlan";
@@ -89,7 +90,10 @@ export function AddGamesPage() {
   const zsoReadable = settings.profile !== "Opl110";
   const coverSources = enabledSources(settings).length > 0;
   const coversWanted = settings.coversOnAdd && coverSources;
-  const covers = useCoverSearch(root, flow.plan, coversWanted);
+  // Every type the sources have; front covers alone until they are known.
+  const fetchable = useFetchableTypes();
+  const artKinds = artTypes.filter((kind) => fetchable.types.has(kind));
+  const covers = useCoverSearch(root, flow.plan, coversWanted, artKinds.length > 0 ? artKinds : ["COV"]);
   const coverSet = coversWanted && covers.state?.status === "done" ? (covers.state.result?.id ?? null) : null;
   // A plan that needs covers comes with its search already running: no frame
   // offers to confirm it first.
