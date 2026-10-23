@@ -159,7 +159,7 @@ test("games are added with their covers and checked as they are written", async 
   // The library has the cover, and the verdict comes from the cache.
   await page.goto("/library");
   await page.getByRole("listitem", { name: /New Game/ }).click();
-  await expect(page.getByTestId("cover-actions").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
+  await expect(page.getByTestId("art-slot-COV")).toHaveAttribute("data-has-art", "true");
   await expect(page.getByTestId("game-dump").getByTestId("dump-badge")).toHaveAttribute("data-status", "verified");
 });
 

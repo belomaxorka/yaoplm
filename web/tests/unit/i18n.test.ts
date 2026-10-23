@@ -285,6 +285,7 @@ describe("locales", () => {
       ["TxLogState", ["jobs.txState"]],
       ["StepLogState", ["jobs.stepState"]],
       ["ArtLogState", ["jobs.artState"]],
+      ["ArtType", ["art.kinds"]],
       ["VerifyStatus", ["dump.status", "dump.count", "jobs.verifyState"]],
       ["UnknownReason", ["dump.reason", "dump.reasonLong"]],
       ["RedumpUpdate", ["dump.update"]],

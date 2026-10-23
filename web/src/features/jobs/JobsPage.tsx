@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
+import type { ArtType } from "@/api/generated/ArtType";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { JobLogEntry } from "@/api/generated/JobLogEntry";
 import type { TxOutcome } from "@/api/generated/TxOutcome";
@@ -30,6 +31,7 @@ import { Progress } from "@/components/ui/progress";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { jobTitle } from "@/features/jobs/jobTitle";
 import { usePlan } from "@/features/plan/usePlan";
+import { artTypes } from "@/features/art/kinds";
 import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
 import { DumpIcon } from "@/features/verify/DumpBadge";
 import { VerificationResults } from "@/features/verify/VerificationResults";
@@ -373,6 +375,12 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
                 title: entry.title,
                 source: entry.source ?? "",
               })}
+            {/* Front covers are the usual case; any other type is named. */}
+            {entry.kind === "art" && entry.art.toUpperCase() !== "COV" && (
+              <span className="ml-1.5 rounded border px-1 text-[0.65rem] text-muted-foreground">
+                {isArtType(entry.art) ? t(`art.kinds.${entry.art}`) : entry.art}
+              </span>
+            )}
             {entry.kind === "verify" &&
               t(`jobs.verifyState.${entry.status}`, {
                 startup: entry.startup,
@@ -399,4 +407,8 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
       ))}
     </ol>
   );
+}
+
+function isArtType(value: string): value is ArtType {
+  return (artTypes as readonly string[]).includes(value);
 }

@@ -19,6 +19,8 @@ export default defineConfig({
     proxy: {
       "/api": { target: server, ws: true },
       "/health": server,
+      // Covers and other pictures, served by yaoplm-server from the roots.
+      "/media": server,
     },
   },
   test: {

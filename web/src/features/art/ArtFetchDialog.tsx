@@ -5,12 +5,14 @@ import { Link } from "react-router";
 
 import { useApi } from "@/api/context";
 import type { ArtScope } from "@/api/generated/ArtScope";
+import type { ArtType } from "@/api/generated/ArtType";
 import type { Game } from "@/api/generated/Game";
 import type { JobId } from "@/api/generated/JobId";
 import type { PlanView } from "@/api/generated/PlanView";
-import { hasCover } from "@/api/media";
+import { artOf, hasCover } from "@/api/media";
 import { fetchArt, waitForJob } from "@/api/rpc";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { artTypes, useFetchableTypes } from "@/features/art/kinds";
 import { artSourceInfo, enabledSources, requestSources } from "@/features/art/sources";
 import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { PlanDialog } from "@/features/plan/PlanDialog";
@@ -104,12 +107,18 @@ function FetchBody({
   const { jobs, cancel } = useJobs();
   const ids = useId();
   const [scope, setScope] = useState<ArtScope>(only && hasCover(only) ? "all" : "missing");
+  const fetchable = useFetchableTypes();
+  const [kinds, setKinds] = useState<ArtType[]>(["COV"]);
+  const chosen = kinds.filter((kind) => fetchable.has(kind));
+  const coversOnly = chosen.length === 1 && chosen[0] === "COV";
   const [jobId, setJobId] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   const inScope = only ? [only] : games;
-  const missing = inScope.filter((g) => !hasCover(g)).length;
+  const missing = coversOnly
+    ? inScope.filter((g) => !hasCover(g)).length
+    : inScope.reduce((sum, g) => sum + chosen.filter((kind) => !artOf(g, kind)).length, 0);
   const sources = enabledSources(settings);
   const job = jobId === null ? undefined : jobs.find((j) => j.id === jobId);
   const active = job !== undefined && (job.status === "queued" || job.status === "running");
@@ -123,6 +132,7 @@ function FetchBody({
         root,
         profile: settings.profile,
         scope,
+        kinds: chosen,
         ...(only ? { games: [only.startup] } : {}),
         sources: requestSources(settings),
       });
@@ -147,6 +157,29 @@ function FetchBody({
     <>
       {showForm && (
         <div className="flex flex-col gap-4">
+          <fieldset data-testid="art-kinds">
+            <legend className="mb-2 text-sm font-medium">{t("art.kindsLegend")}</legend>
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+              {artTypes
+                .filter((kind) => fetchable.has(kind))
+                .map((kind) => (
+                  <li key={kind}>
+                    <Label htmlFor={`${ids}-kind-${kind}`} className="font-normal">
+                      <Checkbox
+                        id={`${ids}-kind-${kind}`}
+                        checked={kinds.includes(kind)}
+                        onCheckedChange={(on) =>
+                          setKinds((current) => (on === true ? [...current, kind] : current.filter((k) => k !== kind)))
+                        }
+                        data-testid={`art-kind-${kind}`}
+                      />
+                      {t(`art.kinds.${kind}`)}
+                    </Label>
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t("art.kindsHint")}</p>
+          </fieldset>
           {/* One game: the dialog title names it, there is nothing to choose. */}
           <fieldset hidden={only !== undefined}>
             <legend className="mb-2 text-sm font-medium">{t("art.scope")}</legend>
@@ -154,7 +187,7 @@ function FetchBody({
               <Label htmlFor={`${ids}-missing`} className="items-start font-normal">
                 <RadioGroupItem id={`${ids}-missing`} value="missing" className="mt-0.5" data-testid="art-scope-missing" />
                 <span>
-                  {t("art.scopeMissing", { count: missing })}
+                  {coversOnly ? t("art.scopeMissing", { count: missing }) : t("art.scopeMissingArt", { count: missing })}
                   <span className="block text-xs text-muted-foreground">{t("art.scopeMissingHint")}</span>
                 </span>
               </Label>
@@ -220,7 +253,7 @@ function FetchBody({
             </Button>
             <Button
               onClick={() => void start()}
-              disabled={starting || sources.length === 0 || (scope === "missing" && missing === 0)}
+              disabled={starting || sources.length === 0 || chosen.length === 0 || (scope === "missing" && missing === 0)}
               data-testid="art-fetch-start"
             >
               {starting ? <Loader2 className="animate-spin" aria-hidden /> : <ImageDown aria-hidden />}

@@ -33,21 +33,27 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
-  await page.getByTestId("cover-download").click();
-  const dialog = page.getByTestId("art-fetch-dialog");
-  await expect(dialog).toContainText("xlenore/ps2-covers");
-  await dialog.getByTestId("art-fetch-start").click();
-  // The job ends with a plan; the plan dialog takes over.
+  // Icons have no open source: their slot cannot download.
+  await expect(page.getByTestId("art-download-ICO")).toBeDisabled();
+  await page.getByTestId("art-download-COV").click();
+  // The sources' pictures to pick from, the first one chosen.
+  const variants = page.getByTestId("art-variants-dialog");
+  await expect(variants.getByTestId("art-variant")).toHaveCount(1);
+  await expect(variants.getByTestId("art-variant")).toHaveAttribute("aria-checked", "true");
+  await expect(variants).toContainText("xlenore");
+  await variants.getByTestId("art-variant-use").click();
   const plan = page.getByTestId("plan-dialog");
   await expect(plan).toContainText("Write 1 cover");
   await expect(plan).toContainText("ART/SLUS_200.62_COV.png");
+  await expect(plan).toContainText("Retail Game: cover");
   await plan.getByTestId("plan-confirm").click();
   await expect(plan).toBeHidden();
-  const cover = page.getByTestId("cover-actions").getByTestId("game-cover");
-  await expect(cover).toHaveAttribute("data-has-cover", "true");
-  await expect(page.getByTestId("cover-actions")).toContainText("140×200");
+  const slot = page.getByTestId("art-slot-COV");
+  await expect(slot).toHaveAttribute("data-has-art", "true");
+  await expect(slot).toContainText("140×200");
+  await expect(page.getByTestId("game-hero").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
   // The image really loads from /media/art.
-  const src = await cover.locator("img").getAttribute("src");
+  const src = await slot.locator("img").getAttribute("src");
   expect(src).toContain("/media/art?path=");
   const image = await request.get(src!);
   expect(image.ok()).toBe(true);
@@ -88,8 +94,8 @@ test("a cover is replaced from a server file and deleted with confirmation", asy
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Uppercase Ext/ }).click();
-  await page.getByTestId("cover-replace").click();
-  await page.getByTestId("cover-from-file").click();
+  await page.getByTestId("art-replace-COV").click();
+  await page.getByTestId("art-from-file-COV").click();
   const browser = page.getByTestId("folder-browser");
   await browser.getByRole("button", { name: "mirror" }).click();
   await browser.getByRole("checkbox", { name: "Select custom-cover.jpg" }).check();
@@ -99,15 +105,60 @@ test("a cover is replaced from a server file and deleted with confirmation", asy
   await expect(plan).toContainText(joinPath(mirror, "custom-cover.jpg"));
   await plan.getByTestId("plan-confirm").click();
   await expect(plan).toBeHidden();
-  await expect(page.getByTestId("cover-actions").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
+  await expect(page.getByTestId("art-slot-COV")).toHaveAttribute("data-has-art", "true");
 
-  await page.getByTestId("cover-delete").click();
+  await page.getByTestId("art-delete-COV").click();
   await expect(plan).toContainText("Delete ART/SLPM_123.45_COV.png");
   await expect(plan.getByTestId("plan-confirm")).toBeDisabled();
   await plan.getByLabel("I understand that files will be deleted").check();
   await plan.getByTestId("plan-confirm").click();
   await expect(plan).toBeHidden();
-  await expect(page.getByTestId("cover-actions").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "false");
+  await expect(page.getByTestId("art-slot-COV")).toHaveAttribute("data-has-art", "false");
+
+  // Any other type the same way: a background from the same file.
+  await page.getByTestId("art-replace-BG").click();
+  await page.getByTestId("art-from-file-BG").click();
+  await browser.getByRole("button", { name: "mirror" }).click();
+  await browser.getByRole("checkbox", { name: "Select custom-cover.jpg" }).check();
+  await browser.getByRole("button", { name: "Use this image" }).click();
+  await expect(plan).toContainText("Write 1 picture");
+  await expect(plan).toContainText("ART/SLPM_123.45_BG.png");
+  await expect(plan).toContainText("Uppercase Ext: background");
+  await plan.getByTestId("plan-confirm").click();
+  await expect(plan).toBeHidden();
+  const bg = page.getByTestId("art-slot-BG");
+  await expect(bg).toHaveAttribute("data-has-art", "true");
+  await expect(bg).toContainText("640×480");
+  // Deleting it asks again, even right after the cover's deletion.
+  await page.getByTestId("art-delete-BG").click();
+  await expect(plan).toContainText("Delete from SLPM_123.45: background");
+  await expect(plan.getByTestId("plan-confirm")).toBeDisabled();
+  await plan.getByLabel("I understand that files will be deleted").check();
+  await plan.getByTestId("plan-confirm").click();
+  await expect(bg).toHaveAttribute("data-has-art", "false");
+});
+
+test("the bulk run takes the picture types it is given", async ({ page, request }) => {
+  await openLibrary(page, request);
+  await page.goto("/library");
+  await page.getByTestId("download-covers").click();
+  const dialog = page.getByTestId("art-fetch-dialog");
+  // Only the types a source has are offered; the front cover is preselected.
+  await expect(dialog.getByTestId("art-kinds").getByRole("checkbox")).toHaveCount(4);
+  await expect(dialog.getByTestId("art-kind-COV")).toBeChecked();
+  await dialog.getByTestId("art-kind-COV").click();
+  await dialog.getByTestId("art-kind-LGO").click();
+  await expect(dialog).toContainText("Only the missing pictures (5)");
+  await dialog.getByTestId("art-fetch-start").click();
+  // The fixture's mirrors have no logos: nothing to write, every game listed.
+  const plan = page.getByTestId("plan-dialog");
+  await expect(plan).toContainText("No picture to write");
+  await expect(plan.getByTestId("plan-skipped")).toContainText("SLUS_200.62 Retail Game (LGO)");
+  await page.keyboard.press("Escape");
+  await page.goto("/jobs");
+  const job = page.getByTestId("job-card").filter({ hasText: "Cover search" }).first();
+  await job.getByRole("button", { name: /^Log/ }).click();
+  await expect(job.getByTestId("job-log")).toContainText("Logo");
 });
 
 test("the About screen credits the data and cover sources", async ({ page, request }) => {

@@ -65,8 +65,20 @@ export async function allowArt(root: string): Promise<void> {
   }
 }
 
-/** Calls `onDrop` with the paths dropped onto the window; returns an unlisten function. */
-export function listenForDrops(onDrop: (paths: string[]) => void, onHover?: (hovering: boolean) => void): () => void {
+/** Where a drop landed, in CSS pixels of the page. */
+export interface DropPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Calls `onDrop` with the paths dropped onto the window and where they
+ * landed; returns an unlisten function.
+ */
+export function listenForDrops(
+  onDrop: (paths: string[], at: DropPoint) => void,
+  onHover?: (hovering: boolean) => void,
+): () => void {
   if (!isTauri()) return () => undefined;
   let unlisten: (() => void) | null = null;
   let cancelled = false;
@@ -76,7 +88,9 @@ export function listenForDrops(onDrop: (paths: string[]) => void, onHover?: (hov
       else if (event.payload.type === "leave") onHover?.(false);
       else if (event.payload.type === "drop") {
         onHover?.(false);
-        onDrop(event.payload.paths);
+        // The webview reports physical pixels.
+        const scale = window.devicePixelRatio || 1;
+        onDrop(event.payload.paths, { x: event.payload.position.x / scale, y: event.payload.position.y / scale });
       }
     });
     if (cancelled) stop();

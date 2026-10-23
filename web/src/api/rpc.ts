@@ -66,6 +66,11 @@ export function fetchArt(transport: Transport, request: Extract<Request, { type:
   return call(transport, request, "Job").then((r) => r.job);
 }
 
+/** Starts looking for every picture of one type for one game, to pick from (ART-2). */
+export function findArt(transport: Transport, request: Extract<Request, { type: "FindArt" }>): Promise<JobId> {
+  return call(transport, request, "Job").then((r) => r.job);
+}
+
 /** Starts hashing games and comparing them with the Redump DAT (GAME-5). */
 export function verifyGames(transport: Transport, request: Extract<Request, { type: "VerifyGames" }>): Promise<JobId> {
   return call(transport, request, "Job").then((r) => r.job);
