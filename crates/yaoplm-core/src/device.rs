@@ -7,6 +7,7 @@ use yaoplm_device::{FsInfo, RelPath};
 use yaoplm_formats::Media;
 use yaoplm_formats::games_bin;
 use yaoplm_formats::ul_cfg::UlCfg;
+use yaoplm_i18n::Phrase;
 
 use crate::journal;
 use crate::plan::{Notice, Removal, Step};
@@ -113,14 +114,9 @@ impl DeviceState {
 
     /// A blocker when a journal says an earlier operation is unfinished.
     pub fn unfinished_notice(&self) -> Option<Notice> {
-        self.unfinished.first().map(|id| {
-            Notice::error(
-                "unfinishedOperation",
-                format!(
-                    "an earlier operation on this device did not finish (journal {id}); recover it first"
-                ),
-            )
-        })
+        self.unfinished
+            .first()
+            .map(|id| Notice::error(Phrase::notice("unfinishedOperation").with("id", id)))
     }
 }
 

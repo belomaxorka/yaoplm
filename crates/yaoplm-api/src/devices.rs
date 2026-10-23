@@ -7,6 +7,7 @@ use yaoplm_device::advice::{self, Advice, DiagnoseOptions};
 use yaoplm_device::{Bus, FsKind, PartitionStyle, Volume, VolumeKind};
 
 use crate::paths::display_path;
+use crate::phrase::Phrase;
 use crate::plans::{NoticeLevel, PlanNotice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +117,7 @@ fn notice(advice: &Advice) -> PlanNotice {
         },
         code: advice.code().to_owned(),
         message: advice.to_string(),
+        phrase: Some(Phrase::from(&advice.phrase())),
     }
 }
 

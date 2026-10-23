@@ -319,7 +319,7 @@ fn deleting_keeps_settings_unless_asked() {
         plan.transactions[0]
             .notices
             .iter()
-            .any(|n| n.code == "relatedKept")
+            .any(|n| n.code == "relatedShared")
     );
     assert!(run(&plan, &fs, &src).succeeded());
     assert!(paths(&fs).contains(&"CFG/SLUS_200.62.cfg".to_owned()));

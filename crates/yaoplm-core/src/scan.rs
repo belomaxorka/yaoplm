@@ -21,6 +21,7 @@ use yaoplm_formats::iso9660::{self, Layers, PVD_LBA};
 use yaoplm_formats::ul_cfg::{self, UlCfg};
 use yaoplm_formats::zso::{ZsoError, ZsoProblem};
 use yaoplm_formats::{LoaderProfile, Media, apps, games_bin, vmc};
+use yaoplm_i18n::Phrase;
 
 use crate::fsutil::{Entry, Listing, read_prefix};
 use crate::model::{
@@ -28,7 +29,7 @@ use crate::model::{
     Skipped, UlPart, Warning,
 };
 use crate::multipart::MultiPartFile;
-use crate::phrase::Phrase;
+use crate::reasons;
 
 /// Folders `sbCreateFolders()` makes, in the order OPL creates them.
 pub const OPL_FOLDERS: [&str; 9] = [
@@ -102,13 +103,13 @@ fn listing(dir: Option<&Entry>) -> Result<Listing, ScanError> {
 /// What OPL would read from one image.
 struct Probe {
     container: Option<Container>,
-    startup: Result<String, String>,
+    startup: Result<String, Phrase>,
     layers: Option<Layers>,
     zso_problems: Vec<ZsoProblem>,
 }
 
 fn probe_image(path: &Path, media: Media) -> Probe {
-    let failed = |why: String| Probe {
+    let failed = |why: Phrase| Probe {
         container: None,
         startup: Err(why),
         layers: None,
@@ -116,26 +117,30 @@ fn probe_image(path: &Path, media: Media) -> Probe {
     };
     let file = match File::open(path) {
         Ok(file) => file,
-        Err(err) => return failed(err.to_string()),
+        Err(err) => {
+            return failed(Phrase::reason("cannotOpen").with("error", err.to_string()));
+        }
     };
     probe_reader(file, media).unwrap_or_else(failed)
 }
 
-fn probe_reader<R: io::Read + io::Seek>(reader: R, media: Media) -> Result<Probe, String> {
+fn probe_reader<R: io::Read + io::Seek>(reader: R, media: Media) -> Result<Probe, Phrase> {
     let mut image = match DiscImage::open(reader) {
         Ok(image) => image,
         Err(ZsoError::Unsupported(problem)) => {
             return Ok(Probe {
                 container: Some(Container::Zso),
-                startup: Err(format!("OPL cannot read this ZSO: {problem}")),
+                startup: Err(
+                    Phrase::reason("zsoUnreadable").with("reason", reasons::zso_problem(&problem))
+                ),
                 layers: None,
                 zso_problems: vec![problem],
             });
         }
-        Err(err) => return Err(err.to_string()),
+        Err(err) => return Err(reasons::zso(&err)),
     };
     let zso_problems = image.zso_header().map(|h| h.problems()).unwrap_or_default();
-    let startup = image::opl_startup(&mut image).map_err(|e| e.to_string());
+    let startup = image::opl_startup(&mut image).map_err(|e| reasons::startup(&e));
     // OPL only looks for a second layer on DVD media.
     let layers = (media == Media::Dvd)
         .then(|| iso9660::read_pvd(&mut image, PVD_LBA).ok())
@@ -208,7 +213,7 @@ impl Scanner<'_> {
                 }
             };
             if entry.is_dir {
-                self.skip(entry, SkipReason::NoStartup("it is a folder".into()));
+                self.skip(entry, SkipReason::NoStartup(Phrase::reason("isAFolder")));
                 continue;
             }
 
@@ -266,7 +271,7 @@ impl Scanner<'_> {
                 warnings.push(Warning::ZsoUnsupportedByProfile);
             }
             for problem in probe.iter().flat_map(|p| &p.zso_problems) {
-                warnings.push(Warning::ZsoHeader(problem.to_string()));
+                warnings.push(Warning::ZsoHeader(*problem));
             }
             if !name.lowercase_extension() {
                 warnings.push(Warning::UppercaseExtension);
@@ -329,7 +334,11 @@ impl Scanner<'_> {
                         name: name.clone(),
                     }),
                     Some(e) if part + 1 < count && e.len != ul_cfg::CHUNK_SIZE => {
-                        warnings.push(Warning::UlPartSize { part, size: e.len });
+                        warnings.push(Warning::UlPartSize {
+                            part,
+                            name: name.clone(),
+                            size: e.len,
+                        });
                     }
                     Some(_) => {}
                 }
@@ -493,7 +502,7 @@ fn read_cfg(
                     warnings.push(Warning::VmcInvalid {
                         slot,
                         name: name.clone(),
-                        problem: problem.to_string(),
+                        problem,
                     });
                 }
             }
@@ -537,7 +546,7 @@ fn scan_apps(
             Err(err) => {
                 library.skipped.push(Skipped {
                     path: folder.path.clone(),
-                    reason: SkipReason::BadApp(err.to_string()),
+                    reason: SkipReason::BadApp(reasons::app(&err)),
                 });
                 continue;
             }
@@ -626,7 +635,8 @@ pub fn scan_library_with(
     }
     for game in &mut library.games {
         if seen.get(&game.startup).is_some_and(|&n| n > 1) {
-            game.warnings.push(Warning::DuplicateStartup);
+            game.warnings
+                .push(Warning::DuplicateStartup(game.startup.clone()));
         }
         if let Some(cfg) = cfgs.find_file(&format!("{}.cfg", game.startup)) {
             game.cfg = Some(read_cfg(&cfg.path, profile, &vmcs, &mut game.warnings));

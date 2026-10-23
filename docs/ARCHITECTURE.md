@@ -69,6 +69,7 @@ yaoplm/
 │  ├─ yaoplm-core/            # Game, Library, Device, Profile; сканер; JobManager-примитивы; SQLite-кэш; ProgressSink
 │  ├─ yaoplm-formats/         # iso9660 + system_cnf, ul_cfg + usba_crc32, cfg, zso, cue/bin, chd, archives, art naming, vmc, cht, apps
 │  ├─ yaoplm-hash/            # многохешевый конвейер, Logiqx/Redump DAT, сопоставление
+│  ├─ yaoplm-i18n/            # Phrase: ключ каталога + параметры, английский текст из web/src/locales/en (ADR-0029)
 │  ├─ yaoplm-device/          # тома, тип ФС, копирование/нарезка/предвыделение, фрагментация (по ОС)
 │  ├─ yaoplm-net/             # ArtSource/MetadataSource, кэш, лимиты, ресайз
 │  ├─ yaoplm-hdd/             # later: APA/PFS
@@ -95,7 +96,7 @@ yaoplm/
 - Каждая операция — вариант `Request` в `yaoplm-api`. Например: `ListDevices`, `InspectDevice`, `ScanLibrary`, `ListDir`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `SetArt`, `DeleteArt`, `Attribution`, `ReadCfg`, `WriteCfg`, `CancelJob`.
 - `FetchArt` — задание, которое заканчивается планом (`JobResult::Plan`): поиск обложек идёт минутами и ведёт журнал по играм (`JobLogEntry::Art`), а запись на носитель остаётся планом с подтверждением (ADR-0025). Сеть используется только внутри заданий `FetchArt` и `UpdateRedump`: `yaoplm-api` держит tokio-runtime и вызывает `yaoplm-net` из потока задания.
 - `VerifyGames` — задание только на чтение: хеши образов, вердикты по DAT Redump, строка журнала на игру (`JobLogEntry::Verify`), результат `VerificationReport`. `RedumpStatus` и `UpdateRedump` (загрузка не чаще раза в неделю или импорт файла) управляют DAT (ADR-0026). `ConvertGames` возвращает план конвертации ISO ↔ ZSO ↔ ul (ADR-0027); `PlanImport` с `compress` пишет образы сразу в ZSO, а источники в zip и 7z читаются через `ArchiveSources` (ADR-0028).
-- Тексты для пользователя ядро отдаёт фразами (ADR-0029): `Phrase { key, params }` рядом с английским текстом — у заголовков планов, транзакций и заданий (`titlePhrase`, `itemPhrase`) и у ошибок (`ApiError.phrase`, `errorPhrase`). Английский текст рендерится из каталога `en` интерфейса, перевод делает клиент.
+- Тексты для пользователя ядро отдаёт фразами (ADR-0029): `Phrase { key, params }` рядом с английским текстом — у заголовков планов, транзакций и заданий (`titlePhrase`, `itemPhrase`), у уведомлений, предупреждений, советов и причин пропуска (`phrase`), у строк журнала (`detailPhrase`, `errorPhrase`) и у ошибок (`ApiError.phrase`). Английский текст рендерится из каталога `en` интерфейса (`yaoplm-i18n`), перевод делает клиент.
 - `dispatch(Request) -> Result<Response, ApiError>`. Долгие операции сразу возвращают `JobId`, а прогресс приходит потоком `JobEvent`. Планы ещё и ведут журнал шагов (`JobEvent::Log`: транзакция или шаг начат, выполнен, откачен, провален); `GetJob` отдаёт его целиком, поэтому переподключившийся клиент ничего не теряет.
 - `ListDir` показывает папки для выбора источников в браузере: сервер отдаёт только свои корни и то, что внутри них (`PathPolicy`), десктоп — тома; скрытые файлы и симлинки не показываются.
 - Транспорты:

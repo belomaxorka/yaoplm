@@ -17,7 +17,7 @@ use std::sync::{Arc, PoisonError};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
-use yaoplm_core::{Game as CoreGame, GameLocation, Phrase, ScanOptions};
+use yaoplm_core::{Game as CoreGame, GameLocation, Phrase as Said, ScanOptions};
 use yaoplm_hash::redump::{Candidate, Data, RedumpIndex, Unknown, Verdict};
 use yaoplm_hash::{Algorithms, HashError, Hashes};
 use yaoplm_net::cache::{Cache, HashedFile};
@@ -28,6 +28,7 @@ use crate::error::net_error;
 use crate::jobs::{JobContext, JobLogEntry, JobResult, now_ms};
 use crate::library::{GameFormat, LoaderProfile, Media};
 use crate::paths::display_path;
+use crate::phrase::Phrase;
 use crate::{ApiError, ErrorCode, GameRef};
 
 /// The stored Redump DAT.
@@ -210,6 +211,10 @@ pub struct GameVerification {
     /// The hashes came from the cache: the image was not read again.
     pub cached: bool,
     pub error: Option<String>,
+    /// `error` for front ends that translate it.
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_phrase: Option<Phrase>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -438,7 +443,7 @@ pub(crate) fn verify_job(
     {
         return Err(ApiError::phrased(
             ErrorCode::NotFound,
-            &Phrase::error("gameNotInRequest").with("index", missing + 1),
+            &Said::error("gameNotInRequest").with("index", missing + 1),
         ));
     }
     let games: Vec<&CoreGame> = library
@@ -454,7 +459,7 @@ pub(crate) fn verify_job(
     if games.is_empty() {
         return Err(ApiError::phrased(
             ErrorCode::NotFound,
-            &Phrase::error("noGameToVerify"),
+            &Said::error("noGameToVerify"),
         ));
     }
     let (dat, index) = net.redump().unzip();
@@ -555,24 +560,29 @@ pub(crate) fn verify_job(
                     candidates: o.candidates,
                     cached: from_cache,
                     error: None,
+                    error_phrase: None,
                 }
             }
-            Err(error) => GameVerification {
-                title: game.title.clone(),
-                startup: game.startup.clone(),
-                path: location_path,
-                ul_index,
-                media: game.media.into(),
-                format: game.format.into(),
-                status: VerifyStatus::Failed,
-                reason: None,
-                hashes: None,
-                redump: None,
-                serial_matches: None,
-                candidates: Vec::new(),
-                cached: false,
-                error: Some(error),
-            },
+            Err(error) => {
+                let phrase = Said::notice("unreadable").with("error", &error);
+                GameVerification {
+                    title: game.title.clone(),
+                    startup: game.startup.clone(),
+                    path: location_path,
+                    ul_index,
+                    media: game.media.into(),
+                    format: game.format.into(),
+                    status: VerifyStatus::Failed,
+                    reason: None,
+                    hashes: None,
+                    redump: None,
+                    serial_matches: None,
+                    candidates: Vec::new(),
+                    cached: false,
+                    error: Some(phrase.english()),
+                    error_phrase: Some(Phrase::from(&phrase)),
+                }
+            }
         };
         ctx.log(JobLogEntry::Verify {
             at: now_ms(),
@@ -583,6 +593,7 @@ pub(crate) fn verify_job(
             redump: entry.redump.as_ref().map(|r| r.name.clone()),
             cached: entry.cached,
             error: entry.error.clone(),
+            error_phrase: entry.error_phrase.clone(),
         });
         results.push(entry);
     }

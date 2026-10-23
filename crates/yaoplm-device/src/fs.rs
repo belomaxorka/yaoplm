@@ -11,6 +11,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use yaoplm_i18n::Phrase;
+
 use crate::source::ReadSeek;
 use crate::volume::{FsKind, VolumeKind, volume_for_path};
 
@@ -26,6 +28,16 @@ pub enum PathError {
     BadComponent(String),
     #[error("path {0:?} contains a character that is not allowed in a device path")]
     BadCharacter(String),
+}
+
+impl PathError {
+    /// What front ends show (ADR-0029).
+    pub fn phrase(&self) -> Phrase {
+        match self {
+            Self::BadComponent(path) => Phrase::error("badPathPart").with("path", path),
+            Self::BadCharacter(path) => Phrase::error("badPathCharacter").with("path", path),
+        }
+    }
 }
 
 /// A path inside a device root. The empty path is the root itself.

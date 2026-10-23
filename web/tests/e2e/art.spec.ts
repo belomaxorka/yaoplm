@@ -65,7 +65,7 @@ test("the bulk run takes only the games without a cover", async ({ page, request
   // Split Game (SCES_500.03) comes from the libretro mirror by its Redump name.
   await expect(plan).toContainText("Write 1 cover");
   await expect(plan).toContainText("ART/SCES_500.03_COV.png");
-  await expect(plan).toContainText("Games that already have a cover were left alone");
+  await expect(plan).toContainText("2 games already have a cover and were left alone");
   // The two games no mirror knows are listed as not found, not as errors.
   await expect(plan.getByTestId("plan-skipped")).toContainText("SLPM_123.45");
   await expect(plan.getByTestId("plan-skipped")).toContainText("SLES_999.99");

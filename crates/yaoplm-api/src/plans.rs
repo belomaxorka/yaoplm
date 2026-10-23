@@ -34,14 +34,17 @@ pub enum NoticeLevel {
     Error,
 }
 
-/// A notice with a level: `code` is stable for translations, `message`
-/// is English.
+/// A notice with a level: `code` is stable, `message` is English and
+/// `phrase` says it in the front end's language (ADR-0029).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct PlanNotice {
     pub level: NoticeLevel,
     pub code: String,
     pub message: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<Phrase>,
 }
 
 impl From<&core::Notice> for PlanNotice {
@@ -54,6 +57,7 @@ impl From<&core::Notice> for PlanNotice {
             },
             code: notice.code.clone(),
             message: notice.message.clone(),
+            phrase: notice.phrase.as_deref().map(Phrase::from),
         }
     }
 }

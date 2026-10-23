@@ -2,6 +2,7 @@
 import type { GameFormat } from "./GameFormat";
 import type { HashValues } from "./HashValues";
 import type { Media } from "./Media";
+import type { Phrase } from "./Phrase";
 import type { RedumpEntry } from "./RedumpEntry";
 import type { UnknownReason } from "./UnknownReason";
 import type { VerifyStatus } from "./VerifyStatus";
@@ -29,4 +30,8 @@ candidates: Array<RedumpEntry>,
 /**
  * The hashes came from the cache: the image was not read again.
  */
-cached: boolean, error: string | null, };
+cached: boolean, error: string | null, 
+/**
+ * `error` for front ends that translate it.
+ */
+errorPhrase?: Phrase, };

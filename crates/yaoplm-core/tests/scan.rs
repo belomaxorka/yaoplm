@@ -179,7 +179,10 @@ fn scans_like_opl() {
     assert!(
         matches!(&gta.location, GameLocation::Image { file_name, .. } if file_name.starts_with("SLUS_200.62."))
     );
-    assert!(gta.warnings.contains(&Warning::DuplicateStartup));
+    assert!(
+        gta.warnings
+            .contains(&Warning::DuplicateStartup("SLUS_200.62".into()))
+    );
     assert!(gta.warnings.contains(&Warning::CompatibilityBits {
         value: 65,
         allowed: 0x3F
@@ -221,11 +224,14 @@ fn scans_like_opl() {
             .iter()
             .any(|w| matches!(w, Warning::UlPartMissing { part: 1, .. }))
     );
-    assert!(
-        game("Short Part")
-            .warnings
-            .contains(&Warning::UlPartSize { part: 0, size: 1 })
-    );
+    assert!(game("Short Part").warnings.iter().any(|w| matches!(
+        w,
+        Warning::UlPartSize {
+            part: 0,
+            size: 1,
+            ..
+        }
+    )));
     assert!(lib.warnings.contains(&Warning::UlCfgTrailingBytes(4)));
 
     let skipped: Vec<(String, &SkipReason)> = lib

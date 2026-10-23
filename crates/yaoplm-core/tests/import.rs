@@ -323,7 +323,7 @@ fn zso_is_kept_or_decompressed_by_profile() {
         p.transactions[1]
             .notices
             .iter()
-            .any(|n| n.code == "zsoDecompressed")
+            .any(|n| n.code == "zsoDecompressedForOpl110")
     );
     assert!(run(&p, &fs, &sources).succeeded());
     assert_eq!(fs.bytes("CD/SLUS_200.62.Retail.iso").unwrap(), iso);
@@ -345,7 +345,7 @@ fn what_opl_would_not_show_is_skipped() {
     );
     assert_eq!(
         skipped_codes(&p),
-        ["notFound", "noStartup", "ps1Game", "nameTaken"]
+        ["sourceMissing", "noStartup", "ps1Game", "nameTaken"]
     );
     assert!(!p.is_executable());
     assert!(p.notices.iter().any(|n| n.code == "nothingToImport"));
@@ -496,6 +496,16 @@ fn space_smb_and_device_checks() {
             .any(|n| n.code == "noSpace" && n.level == Level::Error)
     );
     assert!(!p.is_executable());
+    // Running it anyway names what is missing, sizes included (ADR-0029).
+    let blocked = run(&p, &small, &sources).error.unwrap();
+    let said = blocked.phrase();
+    assert_eq!(said.key, "errors.planBlocked");
+    assert!(
+        blocked.to_string().starts_with(
+            "The plan cannot run. Not enough free space: 4.1 GiB needed, 1.0 GiB available"
+        ),
+        "{blocked}"
+    );
 
     // Over SMB OPL opens at most 10 ul parts.
     sources.add_iso(src("Eleven.iso"), big_iso("SLUS_212.19", 10 * GIB + 4096));

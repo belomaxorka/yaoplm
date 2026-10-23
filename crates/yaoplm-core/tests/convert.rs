@@ -291,7 +291,8 @@ fn what_cannot_be_converted_is_skipped_with_a_reason() {
         &options(),
     )
     .unwrap();
-    assert_eq!(huge.skipped[0].reason.code, "tooLargeForFat32");
+    // From ZSO the advice is to convert to ul instead.
+    assert_eq!(huge.skipped[0].reason.code, "tooLargeUseUl");
 
     let missing = plan_convert(&fs, &[image("CD/Nope.iso")], Target::Zso, &options()).unwrap();
     assert_eq!(missing.skipped[0].reason.code, "notFound");

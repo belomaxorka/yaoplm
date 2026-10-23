@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use yaoplm_core::art::{ArtItem, plan_delete_art, plan_set_art};
 use yaoplm_core::plan::{Notice, Skipped};
-use yaoplm_core::{LoaderProfile, Phrase, ScanOptions, titles};
+use yaoplm_core::{LoaderProfile, Phrase as Said, ScanOptions, titles};
 use yaoplm_device::{HostFs, HostSources};
 use yaoplm_formats::art::{ArtKind, ArtSubject, recommended_size};
 use yaoplm_formats::serial;
@@ -27,6 +27,7 @@ use yaoplm_net::{ArtService, AttemptResult, CoverRequest};
 use crate::jobs::{JobContext, JobLogEntry, JobResult, now_ms};
 use crate::library::LoaderProfile as WireProfile;
 use crate::paths::{PathPolicy, display_path};
+use crate::phrase::Phrase;
 use crate::plans::PlanStore;
 use crate::{ApiError, ErrorCode};
 
@@ -291,7 +292,7 @@ pub(crate) fn source_configs(
                 if !dir.is_dir() {
                     return Err(ApiError::phrased(
                         ErrorCode::BadRequest,
-                        &Phrase::error("notAFolder").with("path", mirror),
+                        &Said::error("notAFolder").with("path", mirror),
                     ));
                 }
                 // Without the Windows verbatim prefix: the path ends up in
@@ -305,7 +306,7 @@ pub(crate) fn source_configs(
         if SourceId::parse(&setting.id).is_none() {
             return Err(ApiError::phrased(
                 ErrorCode::BadRequest,
-                &Phrase::error("unknownArtSource").with("id", &setting.id),
+                &Said::error("unknownArtSource").with("id", &setting.id),
             ));
         }
     }
@@ -320,7 +321,7 @@ pub(crate) fn art_kind(kind: Option<&str>) -> Result<ArtKind, ApiError> {
             .ok_or_else(|| {
                 ApiError::phrased(
                     ErrorCode::BadRequest,
-                    &Phrase::error("artKindUnsupported").with("kind", k),
+                    &Said::error("artKindUnsupported").with("kind", k),
                 )
             }),
     }
@@ -451,7 +452,7 @@ pub(crate) fn fetch_job(
                     ArtLogState::Found
                 },
                 Some(cover.source.clone()),
-                Some(cover.origin.clone()),
+                None,
             ),
             None => {
                 let errors: Vec<String> = outcome
@@ -463,21 +464,18 @@ pub(crate) fn fetch_job(
                     })
                     .collect();
                 if errors.is_empty() {
-                    let tried: Vec<&str> =
+                    let mut tried: Vec<&str> =
                         outcome.attempts.iter().map(|a| a.source.as_str()).collect();
-                    let mut tried = tried;
                     tried.dedup();
-                    (
-                        ArtLogState::NotFound,
-                        None,
-                        Some(if tried.is_empty() {
-                            "no source to ask".to_owned()
-                        } else {
-                            format!("not in {}", tried.join(", "))
-                        }),
-                    )
+                    let phrase = if tried.is_empty() {
+                        Said::notice("noArtSource")
+                    } else {
+                        Said::notice("coverNotFound").with("sources", tried.join(", "))
+                    };
+                    (ArtLogState::NotFound, None, Some(phrase))
                 } else {
-                    (ArtLogState::Failed, None, Some(errors.join("; ")))
+                    let phrase = Said::notice("coverFailed").with("errors", errors.join("; "));
+                    (ArtLogState::Failed, None, Some(phrase))
                 }
             }
         };
@@ -488,7 +486,13 @@ pub(crate) fn fetch_job(
             art: params.kind.suffix().to_owned(),
             state,
             source: source.clone(),
-            detail: detail.clone(),
+            // Where it came from, or why it is missing.
+            detail: outcome
+                .cover
+                .as_ref()
+                .map(|cover| cover.origin.clone())
+                .or_else(|| detail.as_ref().map(Said::english)),
+            detail_phrase: detail.as_ref().map(Phrase::from),
         });
         match outcome.cover {
             Some(cover) => items.push(ArtItem {
@@ -502,10 +506,10 @@ pub(crate) fn fetch_job(
             }),
             None => skipped.push(Skipped {
                 path: PathBuf::from(format!("{} {}", target.startup, target.title)),
-                reason: if state == ArtLogState::Failed {
-                    Notice::warning("coverFailed", detail.unwrap_or_default())
-                } else {
-                    Notice::info("coverNotFound", detail.unwrap_or_default())
+                reason: match (state, detail) {
+                    (ArtLogState::Failed, Some(phrase)) => Notice::warning(phrase),
+                    (_, Some(phrase)) => Notice::info(phrase),
+                    (_, None) => Notice::info(Said::notice("noArtSource")),
                 },
             }),
         }
@@ -517,21 +521,17 @@ pub(crate) fn fetch_job(
         .map_err(ApiError::internal_error)?;
     plan.skipped.extend(skipped);
     if already > 0 {
-        plan.notices.push(Notice::info(
-            "coversPresent",
-            format!("{already} games already have a cover and were left alone"),
-        ));
+        plan.notices
+            .push(Notice::info(Said::notice("coversPresent").count(already)));
     }
     if targets.is_empty() {
         plan.notices.retain(|n| n.code != "nothingToWrite");
-        plan.notices.push(Notice::error(
-            "nothingToFetch",
-            if already > 0 {
-                "every game already has a cover"
+        plan.notices
+            .push(Notice::error(Said::notice(if already > 0 {
+                "allHaveCovers"
             } else {
-                "no game to fetch a cover for"
-            },
-        ));
+                "nothingToFetch"
+            })));
     }
     Ok(JobResult::Plan(Box::new(plans.insert(params.root, plan))))
 }
@@ -549,13 +549,13 @@ pub(crate) fn input_bytes(
             if !meta.is_file() {
                 return Err(ApiError::phrased(
                     ErrorCode::BadRequest,
-                    &Phrase::error("notAFile").with("path", display_path(&path)),
+                    &Said::error("notAFile").with("path", display_path(&path)),
                 ));
             }
             if meta.len() > MAX_INPUT {
                 return Err(ApiError::phrased(
                     ErrorCode::BadRequest,
-                    &Phrase::error("imageTooLarge").with("path", display_path(&path)),
+                    &Said::error("imageTooLarge").with("path", display_path(&path)),
                 ));
             }
             let bytes = std::fs::read(&path).map_err(|e| path_error(&path, &e))?;
@@ -565,7 +565,7 @@ pub(crate) fn input_bytes(
             if data.len() as u64 > MAX_INPUT * 4 / 3 {
                 return Err(ApiError::phrased(
                     ErrorCode::BadRequest,
-                    &Phrase::error("pastedImageTooLarge"),
+                    &Said::error("pastedImageTooLarge"),
                 ));
             }
             let bytes = base64::engine::general_purpose::STANDARD
@@ -573,7 +573,7 @@ pub(crate) fn input_bytes(
                 .map_err(|e| {
                     ApiError::phrased(
                         ErrorCode::BadRequest,
-                        &Phrase::error("badImageData").with("error", e.to_string()),
+                        &Said::error("badImageData").with("error", e.to_string()),
                     )
                 })?;
             Ok((
@@ -613,7 +613,7 @@ pub(crate) fn set_art(
     let cover = service.import_local(&bytes, size, &label).map_err(|e| {
         ApiError::phrased(
             ErrorCode::BadRequest,
-            &Phrase::error("pathError")
+            &Said::error("pathError")
                 .with("path", &label)
                 .with("error", e.to_string()),
         )
@@ -624,7 +624,7 @@ pub(crate) fn set_art(
         .ok_or_else(|| {
             ApiError::phrased(
                 ErrorCode::NotFound,
-                &Phrase::error("noGameWithId").with("startup", &params.startup),
+                &Said::error("noGameWithId").with("startup", &params.startup),
             )
         })?;
     let item = ArtItem {
@@ -644,7 +644,7 @@ pub(crate) fn set_art(
 fn path_error(path: &Path, err: &std::io::Error) -> ApiError {
     ApiError::phrased(
         ErrorCode::BadRequest,
-        &Phrase::error("pathError")
+        &Said::error("pathError")
             .with("path", display_path(path))
             .with("error", err.to_string()),
     )

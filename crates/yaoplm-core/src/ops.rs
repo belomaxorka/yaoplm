@@ -25,14 +25,15 @@ use yaoplm_device::fs::{DeviceFs, DirEntry, TMP_SUFFIX, find_entry, list_or_empt
 use yaoplm_formats::art::parse_art_file_name;
 use yaoplm_formats::image::{self, DiscImage};
 use yaoplm_formats::iso_name::{self, ImageExtension, IsoFileName, NameFormat, NameStyle};
-use yaoplm_formats::ul_cfg::{self, RECORD_SIZE, UlError, UlRecord};
+use yaoplm_formats::ul_cfg::{RECORD_SIZE, UlRecord};
 use yaoplm_formats::{Media, games_bin};
+use yaoplm_i18n::Phrase;
 
 use crate::device::{DeviceState, join, rel};
 use crate::import::image_name;
 use crate::journal::{self, BACKUP_DIR};
-use crate::phrase::Phrase;
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction};
+use crate::reasons;
 
 /// Which game a request is about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,35 +76,6 @@ impl OpError {
 
 fn invalid(phrase: Phrase) -> OpError {
     OpError::Invalid(phrase)
-}
-
-/// A file name OPL would not take, as the user reads it.
-pub(crate) fn name_error(err: &iso_name::NameError) -> Phrase {
-    match err {
-        iso_name::NameError::EmptyTitle => Phrase::error("titleEmptyAfterCleanup"),
-        iso_name::NameError::TitleTooLong(len) => Phrase::error("titleTooLong")
-            .with("length", *len)
-            .with("max", iso_name::TITLE_MAX),
-        iso_name::NameError::UnsuitableStartup(id) => {
-            Phrase::error("startupNotForOldName").with("id", id)
-        }
-        iso_name::NameError::LooksLikeOldFormat(name) => {
-            Phrase::error("looksLikeOldName").with("name", name)
-        }
-    }
-}
-
-/// A `ul.cfg` title or ID OPL would not take.
-fn ul_error(err: &UlError) -> Phrase {
-    match err {
-        UlError::EmptyName => Phrase::error("emptyTitle"),
-        UlError::NameTooLong(len) => Phrase::error("ulTitleTooLong")
-            .with("length", *len)
-            .with("max", ul_cfg::NAME_MAX),
-        UlError::NameNotAscii => Phrase::error("ulTitleNotAscii"),
-        UlError::BadStartup(id) => Phrase::error("startupNotForChunks").with("id", id),
-        other => Phrase::error("system").with("error", other.to_string()),
-    }
 }
 
 /// A game as the planners need it.
@@ -416,7 +388,7 @@ pub fn plan_rename(
             }
             let ext = name.extension;
             let new_name = image_name(&new_id, &clean, ext, style, &mut notices)
-                .map_err(|e| invalid(name_error(&e)))?;
+                .map_err(|e| invalid(reasons::name(&e)))?;
             let folder = path.parent().unwrap_or_default();
             let target = join(&folder, &new_name)?;
             if target.as_str() == path.as_str() {
@@ -429,10 +401,7 @@ pub fn plan_rename(
                 ));
             }
             if ext == ImageExtension::Zso && name.raw_extension != ".zso" {
-                notices.push(Notice::info(
-                    "extensionLowercased",
-                    "the extension becomes lower case",
-                ));
+                notices.push(Notice::info(Phrase::notice("extensionLowercased")));
             }
             for step in rename_steps(path, &target)? {
                 tx.push(step);
@@ -456,11 +425,13 @@ pub fn plan_rename(
         }
         FoundKind::Ul { index, record } => {
             let title = options.title.clone();
-            let mut renamed = record.renamed(&title).map_err(|e| invalid(ul_error(&e)))?;
+            let mut renamed = record
+                .renamed(&title)
+                .map_err(|e| invalid(reasons::ul(&e)))?;
             if let Some(id) = &options.startup {
                 renamed = renamed
                     .with_startup(id)
-                    .map_err(|e| invalid(ul_error(&e)))?;
+                    .map_err(|e| invalid(reasons::ul(&e)))?;
             }
             if renamed == *record {
                 return Err(invalid(Phrase::error("nameUnchanged")));
@@ -486,10 +457,7 @@ pub fn plan_rename(
             }
             tx.push(ul_cfg_with(&state, *index, Some(&renamed))?);
             if state.info.remote {
-                notices.push(Notice::info(
-                    "restartOpl",
-                    "restart OPL to see the new name: it notices ul.cfg changes by size only",
-                ));
+                notices.push(Notice::info(Phrase::notice("restartOpl")));
             }
             tx.set_title(
                 Phrase::title("renameFile")
@@ -537,12 +505,14 @@ pub fn plan_rename(
         }
         if !related.is_empty() {
             notices.push(Notice::info(
-                if shared { "relatedCopied" } else { "relatedMoved" },
-                format!(
-                    "the game ID changes from {old} to {new}: {} CFG, art and cheat files {} (VMC cards keep their names)",
-                    related.len(),
-                    if shared { "are copied, another game still uses the old ID" } else { "move with it" }
-                ),
+                Phrase::notice(if shared {
+                    "relatedCopied"
+                } else {
+                    "relatedMoved"
+                })
+                .with("old", old)
+                .with("new", new)
+                .with("files", related.len()),
             ));
         }
     }
@@ -626,8 +596,7 @@ pub fn plan_delete(
         if options.related && !related.is_empty() {
             if other_ids(fs, &state, &found)?.contains(startup) {
                 notices.push(Notice::info(
-                    "relatedKept",
-                    format!("CFG, art and cheats stay: another game also uses {startup}"),
+                    Phrase::notice("relatedShared").with("startup", startup),
                 ));
             } else {
                 let backup = new_backup_dir()?;
@@ -647,23 +616,18 @@ pub fn plan_delete(
             }
         } else if !related.is_empty() {
             notices.push(Notice::info(
-                "relatedKept",
-                format!(
-                    "{} CFG, art and cheat files for {startup} stay",
-                    related.len()
-                ),
+                Phrase::notice("relatedKept")
+                    .with("startup", startup)
+                    .with("files", related.len()),
             ));
         }
-        notices.push(Notice::info("vmcKept", "VMC cards are never deleted"));
+        notices.push(Notice::info(Phrase::notice("vmcKept")));
     }
     let archived = ["ART/art.tar", "CHT/cht.tar"]
         .iter()
         .any(|p| rel(p).is_ok_and(|p| fs.metadata(&p).ok().flatten().is_some()));
     if archived {
-        notices.push(Notice::info(
-            "archiveKept",
-            "art and cheats inside art.tar or cht.tar are not touched",
-        ));
+        notices.push(Notice::info(Phrase::notice("archiveKept")));
     }
     let phrase = Phrase::title("deleteGame").with("title", &title);
     tx.set_title(phrase.clone());
@@ -753,10 +717,8 @@ pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
     );
     let steps = state.missing_folders()?;
     if steps.is_empty() {
-        plan.notices.push(Notice::info(
-            "foldersPresent",
-            "all OPL folders already exist",
-        ));
+        plan.notices
+            .push(Notice::info(Phrase::notice("foldersPresent")));
     } else {
         let mut tx = Transaction::titled(Phrase::title("createFolders"));
         for step in steps {

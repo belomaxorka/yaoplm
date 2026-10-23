@@ -99,7 +99,7 @@ describe("formatting", () => {
     expect(formatBytes(1536)).toBe("1.5 KiB");
     expect(formatBytes(4_700_372_992)).toBe("4.4 GiB");
     await i18n.changeLanguage("ru");
-    expect(formatBytes(4_700_372_992)).toBe("4.4 ГиБ");
+    expect(formatBytes(4_700_372_992)).toBe("4,4 ГиБ");
     await i18n.changeLanguage("en");
   });
 

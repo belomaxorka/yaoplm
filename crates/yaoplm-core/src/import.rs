@@ -27,10 +27,11 @@ use yaoplm_formats::serial;
 use yaoplm_formats::ul_cfg::{self, UlRecord, split_plan};
 use yaoplm_formats::usba_crc32::usba_crc32;
 use yaoplm_formats::{LoaderProfile, Media, zso};
+use yaoplm_i18n::Phrase;
 
 use crate::device::{DeviceState, join, on_disk};
-use crate::phrase::Phrase;
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
+use crate::reasons;
 use crate::scan::CD_MAX_BYTES;
 use crate::source::{ProbeError, Probed, probe, sheet_files};
 use crate::titles;
@@ -92,10 +93,10 @@ fn is_hidden(path: &Path) -> bool {
         .is_some_and(|n| n.to_string_lossy().starts_with("._"))
 }
 
-fn skip(path: &Path, code: &str, message: impl Into<String>) -> Skipped {
+fn skip(path: &Path, reason: Phrase) -> Skipped {
     Skipped {
         path: path.to_path_buf(),
-        reason: Notice::warning(code, message),
+        reason: Notice::warning(reason),
     }
 }
 
@@ -106,9 +107,15 @@ fn walk(
     found: &mut Vec<PathBuf>,
     skipped: &mut Vec<Skipped>,
 ) {
-    let Ok(entries) = sources.list(dir) else {
-        skipped.push(skip(dir, "unreadable", "cannot list this folder"));
-        return;
+    let entries = match sources.list(dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            skipped.push(skip(
+                dir,
+                Phrase::notice("unreadable").with("error", err.to_string()),
+            ));
+            return;
+        }
     };
     for path in entries {
         if is_hidden(&path) {
@@ -125,23 +132,17 @@ fn walk(
                 if matches!(ext.as_str(), "iso" | "zso" | "cue" | "bin" | "chd") {
                     found.push(path);
                 } else if ARCHIVES.contains(&ext.as_str()) {
-                    skipped.push(skip(
-                        &path,
-                        "nestedArchive",
-                        "an archive inside an archive is not opened; unpack the outer one",
-                    ));
+                    skipped.push(skip(&path, Phrase::notice("nestedArchive")));
                 } else if LATER.contains(&ext.as_str()) {
                     skipped.push(skip(
                         &path,
-                        "formatNotYetSupported",
-                        format!(".{ext} files are not supported yet"),
+                        Phrase::notice("formatNotYetSupported").with("ext", format!(".{ext}")),
                     ));
                 }
             }
             Err(err) => skipped.push(skip(
                 &path,
-                "unreadable",
-                format!("cannot read this file: {err}"),
+                Phrase::notice("unreadable").with("error", err.to_string()),
             )),
         }
     }
@@ -157,10 +158,13 @@ pub fn expand_inputs(sources: &dyn SourceFs, inputs: &[PathBuf]) -> (Vec<PathBuf
             Ok(meta) if meta.is_dir => walk(sources, input, 0, &mut found, &mut skipped),
             Ok(_) => found.push(input.clone()),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                skipped.push(skip(input, "notFound", "does not exist"));
+                skipped.push(skip(input, Phrase::notice("sourceMissing")));
             }
             // A damaged archive, a folder the user may not read...
-            Err(err) => skipped.push(skip(input, "unreadable", err.to_string())),
+            Err(err) => skipped.push(skip(
+                input,
+                Phrase::notice("unreadable").with("error", err.to_string()),
+            )),
         }
     }
     let mut seen = HashSet::new();
@@ -221,10 +225,7 @@ pub(crate) fn image_name(
     let mut style = style;
     if style == NameStyle::WithStartup && !is_name_safe_startup(startup) {
         notices.push(Notice::info(
-            "idNotInName",
-            format!(
-                "the game ID {startup:?} cannot lead a file name; OPL will read it from the image"
-            ),
+            Phrase::notice("idNotInName").with("startup", startup),
         ));
         style = NameStyle::TitleOnly;
     }
@@ -242,8 +243,7 @@ pub(crate) fn image_name(
         if iso_name::fits_smb(&name) || chars.len() <= 1 {
             if shortened || chars.len() < title.chars().count() {
                 notices.push(Notice::info(
-                    "titleShortened",
-                    format!("the title was shortened to fit OPL's limits: {candidate}"),
+                    Phrase::notice("titleShortened").with("title", &candidate),
                 ));
             }
             return Ok(name);
@@ -274,26 +274,23 @@ impl Planner<'_> {
 
     fn plan_source(&mut self, path: &Path) -> Result<(), Skipped> {
         let probed = probe(self.sources, path).map_err(|err| match err {
-            ProbeError::NotAnImage => skip(path, "notAnImage", "not a PS2 disc image"),
-            ProbeError::Unsupported(why) => skip(path, "unsupportedSource", why),
-            ProbeError::Io { source, .. } => {
-                skip(path, "unreadable", format!("cannot read it: {source}"))
-            }
+            ProbeError::NotAnImage => skip(path, Phrase::notice("notAnImage")),
+            ProbeError::Unsupported(why) => skip(
+                path,
+                Phrase::notice("unsupportedSource").with("reason", why),
+            ),
+            ProbeError::Io { source, .. } => skip(
+                path,
+                Phrase::notice("unreadable").with("error", source.to_string()),
+            ),
         })?;
         if probed.ps1 {
-            return Err(skip(
-                path,
-                "ps1Game",
-                "a PS1 disc: OPL does not run it (POPStarter support is planned)",
-            ));
+            return Err(skip(path, Phrase::notice("ps1Game")));
         }
-        let startup = probed.startup.clone().map_err(|why| {
-            skip(
-                path,
-                "noStartup",
-                format!("OPL would hide this disc: {why}"),
-            )
-        })?;
+        let startup = probed
+            .startup
+            .clone()
+            .map_err(|why| skip(path, Phrase::notice("noStartup").with("reason", why)))?;
         let override_ = self
             .options
             .overrides
@@ -310,8 +307,7 @@ impl Planner<'_> {
         };
         if media == Media::Cd && probed.iso_len > CD_MAX_BYTES {
             notices.push(Notice::warning(
-                "cdTooLarge",
-                "more data than a PS2 CD holds; it is probably a DVD",
+                Phrase::notice("cdTooLarge").with("size", probed.iso_len),
             ));
         }
         let title = match override_.and_then(|o| o.title.clone()) {
@@ -321,8 +317,9 @@ impl Planner<'_> {
                 match known_title_for(&from_name, &startup) {
                     Some(known) => {
                         notices.push(Notice::info(
-                            "titleFromDatabase",
-                            format!("the file name has no title; the bundled database calls {startup} {known:?}"),
+                            Phrase::notice("titleFromDatabase")
+                                .with("startup", &startup)
+                                .with("title", &known),
                         ));
                         known
                     }
@@ -334,10 +331,7 @@ impl Planner<'_> {
         let profile = self.options.profile;
         let mut keep_zso = probed.zso && profile.reads_zso();
         if probed.zso && !profile.reads_zso() {
-            notices.push(Notice::info(
-                "zsoDecompressed",
-                "OPL 1.1.0 cannot read ZSO: the image is stored decompressed",
-            ));
+            notices.push(Notice::info(Phrase::notice("zsoDecompressedForOpl110")));
         }
         let max = self.state.info.kind.max_file_size();
         let whole_len = if keep_zso {
@@ -348,10 +342,7 @@ impl Planner<'_> {
         let ul = self.options.layout == Layout::Ul || max.is_some_and(|m| whole_len > m);
         if ul && keep_zso {
             keep_zso = false;
-            notices.push(Notice::info(
-                "zsoDecompressed",
-                "ul chunks hold plain ISO data: the ZSO is decompressed",
-            ));
+            notices.push(Notice::info(Phrase::notice("zsoDecompressedForUl")));
         }
 
         let mut tx = if ul {
@@ -369,16 +360,12 @@ impl Planner<'_> {
         };
         if !self.startups.insert(startup.clone()) {
             notices.push(Notice::warning(
-                "duplicateStartup",
-                format!("another game with ID {startup} is on the device; they share CFG, art and cheats"),
+                Phrase::notice("duplicateStartup").with("startup", &startup),
             ));
         }
         if self.options.transfer == Transfer::Move {
             if self.sources.in_archive(&probed.data_path) {
-                notices.push(Notice::info(
-                    "sourceArchiveKept",
-                    "the game comes from an archive: the archive is not deleted",
-                ));
+                notices.push(Notice::info(Phrase::notice("sourceArchiveKept")));
             } else {
                 tx.then(Step::RemoveSource {
                     source: self.plan.sources.len() - 1,
@@ -410,10 +397,7 @@ impl Planner<'_> {
         };
         let compress = !keep_zso && self.options.compress;
         if compress && !self.options.profile.reads_zso() {
-            notices.push(Notice::info(
-                "zsoNotForProfile",
-                "OPL 1.1.0 cannot read ZSO: the game is stored as ISO",
-            ));
+            notices.push(Notice::info(Phrase::notice("zsoNotForProfile")));
         }
         let compress = compress && self.options.profile.reads_zso();
         let ext = if keep_zso || compress {
@@ -421,28 +405,36 @@ impl Planner<'_> {
         } else {
             ImageExtension::Iso
         };
-        let name = image_name(startup, &clean, ext, self.options.name_style, notices)
-            .map_err(|e| skip(path, "badName", e.to_string()))?;
+        let name =
+            image_name(startup, &clean, ext, self.options.name_style, notices).map_err(|e| {
+                skip(
+                    path,
+                    Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+                )
+            })?;
         if !name.is_ascii() {
-            notices.push(Notice::warning(
-                "nonAsciiName",
-                "non-ASCII characters in the name: the console may garble it or fail to open the file",
-            ));
+            notices.push(Notice::warning(Phrase::notice("nonAsciiName")));
         }
-        let folder = self
-            .state
-            .folder(media)
-            .map_err(|e| skip(path, "badName", e.to_string()))?;
+        let folder = self.state.folder(media).map_err(|e| {
+            skip(
+                path,
+                Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+            )
+        })?;
         if find_entry(self.state.entries(media), &name).is_some()
             || !self.claim(folder.as_str(), &name)
         {
             return Err(skip(
                 path,
-                "nameTaken",
-                format!("{folder}/{name} already exists on the device"),
+                Phrase::notice("nameTaken").with("path", format!("{folder}/{name}")),
             ));
         }
-        let target = join(&folder, &name).map_err(|e| skip(path, "badName", e.to_string()))?;
+        let target = join(&folder, &name).map_err(|e| {
+            skip(
+                path,
+                Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+            )
+        })?;
         let source = if keep_zso {
             probed.raw_source()
         } else {
@@ -467,10 +459,7 @@ impl Planner<'_> {
                 source: self.plan.sources.len() - 1,
                 max_len: zso::max_output(len),
             });
-            notices.push(Notice::info(
-                "compressedToZso",
-                "stored as ZSO: smaller on the device; OPL 1.2.0 beta and newer read it",
-            ));
+            notices.push(Notice::info(Phrase::notice("compressedToZso")));
         } else {
             tx.push(Step::WriteFile {
                 path: target,
@@ -479,11 +468,12 @@ impl Planner<'_> {
                 len,
             });
         }
-        if let Some(cache) = self
-            .state
-            .drop_cache(media)
-            .map_err(|e| skip(path, "badName", e.to_string()))?
-            && !self.claimed.contains(&format!("drop:{}", media.folder()))
+        if let Some(cache) = self.state.drop_cache(media).map_err(|e| {
+            skip(
+                path,
+                Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+            )
+        })? && !self.claimed.contains(&format!("drop:{}", media.folder()))
         {
             self.claimed.insert(format!("drop:{}", media.folder()));
             tx.then(cache);
@@ -505,22 +495,26 @@ impl Planner<'_> {
             name = ul_title(startup);
         }
         if name != title {
-            notices.push(Notice::info(
-                "ulTitle",
-                format!("ul.cfg holds at most 32 ASCII characters: the title is {name:?}"),
-            ));
+            notices.push(Notice::info(Phrase::notice("ulTitle").with("name", &name)));
         }
-        let chunks =
-            split_plan(probed.iso_len).map_err(|e| skip(path, "cannotSplit", e.to_string()))?;
+        let chunks = split_plan(probed.iso_len).map_err(|e| {
+            skip(
+                path,
+                Phrase::notice("cannotSplit").with("reason", reasons::text(&e)),
+            )
+        })?;
         if self.state.info.remote && !ul_cfg::fits_smb(chunks.len()) {
             return Err(skip(
                 path,
-                "ulTooManyPartsForSmb",
-                format!("{} ul chunks: OPL opens at most 10 over SMB", chunks.len()),
+                Phrase::notice("ulTooManyPartsForSmb").with("parts", chunks.len()),
             ));
         }
-        let record = UlRecord::new(&name, startup, chunks.len(), media)
-            .map_err(|e| skip(path, "cannotSplit", format!("cannot store as ul: {e}")))?;
+        let record = UlRecord::new(&name, startup, chunks.len(), media).map_err(|e| {
+            skip(
+                path,
+                Phrase::notice("badName").with("reason", reasons::ul(&e)),
+            )
+        })?;
         let crc = usba_crc32(name.as_bytes());
         if self
             .state
@@ -531,27 +525,20 @@ impl Planner<'_> {
         {
             return Err(skip(
                 path,
-                "alreadyOnDevice",
-                format!("ul.cfg already lists {name} ({startup})"),
+                Phrase::notice("alreadyOnDevice")
+                    .with("name", &name)
+                    .with("startup", startup),
             ));
         }
         for part in 0..record.parts() {
             let chunk = record.chunk_name(part);
             if find_entry(&self.state.top, &chunk).is_some() || !self.claim("", &chunk) {
-                return Err(skip(
-                    path,
-                    "nameTaken",
-                    format!("{chunk} already exists on the device"),
-                ));
+                return Err(skip(path, Phrase::notice("nameTaken").with("path", &chunk)));
             }
         }
         if self.options.layout == Layout::Auto {
             notices.push(Notice::info(
-                "storedAsUl",
-                format!(
-                    "FAT32 holds files up to 4 GiB: stored as {} ul chunks of 1 GiB",
-                    chunks.len()
-                ),
+                Phrase::notice("storedAsUl").with("parts", chunks.len()),
             ));
         }
 
@@ -574,7 +561,12 @@ impl Planner<'_> {
                     &yaoplm_device::RelPath::root(),
                     &record.chunk_name(chunk.part),
                 )
-                .map_err(|e| skip(path, "badName", e.to_string()))?,
+                .map_err(|e| {
+                    skip(
+                        path,
+                        Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+                    )
+                })?,
                 source,
                 offset: chunk.offset,
                 len: chunk.len,
@@ -586,10 +578,12 @@ impl Planner<'_> {
         let aligned = next.len() - next.len() % ul_cfg::RECORD_SIZE;
         next.splice(aligned..aligned, record.as_bytes().iter().copied());
         tx.push(Step::PutFile {
-            path: self
-                .state
-                .ul_path()
-                .map_err(|e| skip(path, "badName", e.to_string()))?,
+            path: self.state.ul_path().map_err(|e| {
+                skip(
+                    path,
+                    Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
+                )
+            })?,
             content: Bytes(next.clone()),
             expect: match current {
                 Some(bytes) => Expect::Content(Bytes(bytes)),
@@ -669,22 +663,18 @@ pub fn plan_import(
         + RESERVE;
     if games > 0 && needed > state.info.free_bytes {
         plan.notices.push(Notice::error(
-            "noSpace",
-            format!(
-                "not enough free space: {needed} bytes needed, {} available",
-                state.info.free_bytes
-            ),
+            Phrase::notice("noSpace")
+                .with("needed", needed)
+                .with("free", state.info.free_bytes),
         ));
     }
     if options.transfer == Transfer::Move && games > 0 {
-        plan.notices.push(Notice::warning(
-            "sourcesDeleted",
-            "the source files are deleted after each game is copied",
-        ));
+        plan.notices
+            .push(Notice::warning(Phrase::notice("sourcesDeleted")));
     }
     if games == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
-            .push(Notice::error("nothingToImport", "no game to add"));
+            .push(Notice::error(Phrase::notice("nothingToImport")));
     }
     Ok(plan)
 }

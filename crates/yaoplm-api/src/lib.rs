@@ -107,12 +107,7 @@ pub(crate) fn scan_error(err: &yaoplm_core::ScanError) -> ApiError {
 
 /// A path the core refuses as a device path.
 pub(crate) fn path_error(err: &yaoplm_device::PathError) -> ApiError {
-    let (yaoplm_device::PathError::BadComponent(path)
-    | yaoplm_device::PathError::BadCharacter(path)) = err;
-    ApiError::phrased(
-        ErrorCode::BadRequest,
-        &Said::error("badPath").with("path", path),
-    )
+    ApiError::phrased(ErrorCode::BadRequest, &err.phrase())
 }
 
 fn name_style(style: Option<protocol::NameStyle>) -> Option<iso_name::NameStyle> {
@@ -450,13 +445,10 @@ impl Api {
             } => {
                 let stored = self.plans.take(&plan, |stored| {
                     if let Some(blocker) = stored.plan.blockers().next() {
-                        // The notice's message names what is missing.
-                        let mut err = ApiError::phrased(
+                        return Err(ApiError::phrased(
                             ErrorCode::BadRequest,
-                            &Said::error("planBlocked").with("reason", Said::notice(&blocker.code)),
-                        );
-                        err.message.clone_from(&blocker.message);
-                        return Err(err);
+                            &Said::error("planBlocked").with("reason", blocker.said()),
+                        ));
                     }
                     if stored.plan.transactions.is_empty() {
                         return Err(ApiError::phrased(

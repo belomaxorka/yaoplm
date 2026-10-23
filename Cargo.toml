@@ -4,6 +4,7 @@ members = [
     "crates/yaoplm-core",
     "crates/yaoplm-formats",
     "crates/yaoplm-hash",
+    "crates/yaoplm-i18n",
     "crates/yaoplm-device",
     "crates/yaoplm-net",
     "crates/yaoplm-api",
@@ -29,6 +30,7 @@ yaoplm-core = { path = "crates/yaoplm-core" }
 yaoplm-device = { path = "crates/yaoplm-device" }
 yaoplm-formats = { path = "crates/yaoplm-formats" }
 yaoplm-hash = { path = "crates/yaoplm-hash" }
+yaoplm-i18n = { path = "crates/yaoplm-i18n" }
 yaoplm-net = { path = "crates/yaoplm-net" }
 yaoplm-test-support = { path = "crates/yaoplm-test-support" }
 

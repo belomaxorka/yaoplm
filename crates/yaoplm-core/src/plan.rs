@@ -18,8 +18,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use yaoplm_device::RelPath;
 use yaoplm_formats::Media;
-
-use crate::phrase::Phrase;
+use yaoplm_i18n::Phrase;
 
 /// How a source turns into image bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -323,34 +322,51 @@ pub enum Level {
     Error,
 }
 
-/// Something the user should read before confirming. `code` is stable (UI
-/// translations key off it), `message` is English.
+/// Something the user should read before confirming. `code` is stable (the
+/// UI and the planners key off it); `phrase` says it in the user's
+/// language (`notices.<code>`, ADR-0029) and `message` is its English.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notice {
     pub level: Level,
     pub code: String,
     pub message: String,
+    /// Notices in journals written before phrases existed have none.
+    /// Boxed: a notice travels inside every skip result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<Box<Phrase>>,
 }
 
 impl Notice {
-    pub fn new(level: Level, code: &str, message: impl Into<String>) -> Self {
+    /// A notice saying `phrase`, whose key is `notices.<code>`.
+    pub fn new(level: Level, phrase: Phrase) -> Self {
+        let code = phrase.key.rsplit('.').next().unwrap_or_default().to_owned();
         Self {
             level,
-            code: code.to_owned(),
-            message: message.into(),
+            code,
+            message: phrase.english(),
+            phrase: Some(Box::new(phrase)),
         }
     }
 
-    pub fn info(code: &str, message: impl Into<String>) -> Self {
-        Self::new(Level::Info, code, message)
+    /// What the notice says, for a front end or inside another phrase;
+    /// a notice from an old journal passes its English through.
+    pub fn said(&self) -> Phrase {
+        self.phrase
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| Phrase::reason("text").with("text", &self.message))
     }
 
-    pub fn warning(code: &str, message: impl Into<String>) -> Self {
-        Self::new(Level::Warning, code, message)
+    pub fn info(phrase: Phrase) -> Self {
+        Self::new(Level::Info, phrase)
     }
 
-    pub fn error(code: &str, message: impl Into<String>) -> Self {
-        Self::new(Level::Error, code, message)
+    pub fn warning(phrase: Phrase) -> Self {
+        Self::new(Level::Warning, phrase)
+    }
+
+    pub fn error(phrase: Phrase) -> Self {
+        Self::new(Level::Error, phrase)
     }
 }
 
@@ -546,7 +562,11 @@ mod tests {
         assert_eq!(plan.delete_bytes(), 0);
         assert!(plan.is_executable());
         assert!(!plan.deletes_user_data());
-        plan.notices.push(Notice::error("noSpace", "x"));
+        plan.notices.push(Notice::error(
+            Phrase::notice("noSpace")
+                .with("needed", 2u64)
+                .with("free", 1u64),
+        ));
         assert!(!plan.is_executable());
     }
 }

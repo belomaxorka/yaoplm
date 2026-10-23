@@ -29,12 +29,16 @@ describe("phrases from the core", () => {
     });
     expect(phraseText(undo, "")).toBe("Откатить: Удалить Retail Game");
     const space = phrase("errors.noSpace", { needed: 5 * 2 ** 30, free: 2 ** 20 });
-    expect(phraseText(space, "")).toBe("Не хватает места: нужно 5.0 ГиБ, свободно 1.0 МиБ");
+    expect(phraseText(space, "")).toBe("Не хватает места: нужно 5,0 ГиБ, свободно 1,0 МиБ");
   });
 
   it("fall back to the core's English for a key the catalogue lacks", async () => {
     await i18n.changeLanguage("ru");
     expect(phraseText(phrase("titles.fromANewerCore"), "Do something new")).toBe("Do something new");
+    const nested = phrase("errors.planBlocked", { reason: phrase("notices.fromANewerCore") });
+    expect(phraseText(nested, "The plan cannot run. Something new")).toBe(
+      "The plan cannot run. Something new",
+    );
     expect(phraseText(null, "Import 2 games")).toBe("Import 2 games");
   });
 

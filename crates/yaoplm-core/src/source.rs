@@ -31,9 +31,11 @@ use yaoplm_formats::image::{self, DiscImage};
 use yaoplm_formats::iso9660::{self, Layers, PVD_LBA, Pvd, SECTOR_SIZE, Sector, SectorSource};
 use yaoplm_formats::system_cnf;
 use yaoplm_formats::zso::ZsoError;
+use yaoplm_i18n::Phrase;
 
 use crate::multipart::Joined;
 use crate::plan::{Notice, Source, SourceFile, SourceKind};
+use crate::reasons;
 use crate::scan::CD_MAX_BYTES;
 
 /// What the user handed in.
@@ -105,14 +107,8 @@ impl MediaHints {
         } else {
             Media::Cd
         };
-        let conflict = (media == Media::Cd && large).then(|| {
-            Notice::warning(
-                "mediaConflict",
-                format!(
-                    "the image is marked as a CD but holds {volume} sectors, more than a CD; check CD or DVD"
-                ),
-            )
-        });
+        let conflict = (media == Media::Cd && large)
+            .then(|| Notice::warning(Phrase::notice("mediaConflict").with("sectors", volume)));
         (media, conflict)
     }
 }
@@ -145,7 +141,7 @@ pub struct Probed {
     /// Uncompressed image size.
     pub iso_len: u64,
     /// The ID OPL shows, or why OPL hides the disc.
-    pub startup: Result<String, String>,
+    pub startup: Result<String, Phrase>,
     /// `SYSTEM.CNF` has `BOOT` but no `BOOT2`.
     pub ps1: bool,
     pub hints: MediaHints,
@@ -194,7 +190,7 @@ pub enum ProbeError {
     #[error("not a disc image YAOPLM can import")]
     NotAnImage,
     #[error("{0}")]
-    Unsupported(String),
+    Unsupported(Phrase),
     #[error("{}: {source}", path.display())]
     Io { path: PathBuf, source: io::Error },
 }
@@ -288,15 +284,12 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
                 .and_then(|f| f.take(64 * 1024).read_to_end(&mut head))
                 .map_err(io_err(path))?;
             let sheet =
-                CueSheet::parse(&head).map_err(|e| ProbeError::Unsupported(e.to_string()))?;
+                CueSheet::parse(&head).map_err(|e| ProbeError::Unsupported(reasons::cue(&e)))?;
             let track = sheet
                 .data_track()
-                .map_err(|e| ProbeError::Unsupported(e.to_string()))?;
+                .map_err(|e| ProbeError::Unsupported(reasons::cue(&e)))?;
             let bin = resolve_bin(sources, path, &track.file).ok_or_else(|| {
-                ProbeError::Unsupported(format!(
-                    "the BIN named in the sheet ({}) is missing",
-                    track.file
-                ))
+                ProbeError::Unsupported(Phrase::reason("binMissing").with("file", &track.file))
             })?;
             // The files of the other tracks belong to the dump: a move
             // deletes them too. The data file stays last.
@@ -327,14 +320,10 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
                 .open(path)
                 .and_then(|f| f.take(17 * 2352 + 64).read_to_end(&mut head))
                 .map_err(io_err(path))?;
-            let mode = probe_raw(&head).ok_or_else(|| {
-                ProbeError::Unsupported(
-                    "BIN without a CUE sheet, and no ISO9660 volume found in it".into(),
-                )
-            })?;
+            let mode = probe_raw(&head)
+                .ok_or_else(|| ProbeError::Unsupported(Phrase::reason("binNoVolume")))?;
             notices.push(Notice::info(
-                "binLayoutDetected",
-                format!("no CUE sheet: the BIN was read as a single {mode} track"),
+                Phrase::notice("binLayoutDetected").with("mode", mode.to_string()),
             ));
             let file = source_file(sources, path)?;
             (
@@ -355,10 +344,7 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
     if packed && format == InputFormat::Chd {
         // A CHD keeps its hunk map at the end and points back at earlier
         // hunks: inside a compressed archive every jump decodes it again.
-        return Err(ProbeError::Unsupported(
-            "a CHD inside an archive is not read: unpack the CHD first (it is compressed already)"
-                .into(),
-        ));
+        return Err(ProbeError::Unsupported(Phrase::reason("chdInArchive")));
     }
 
     let reader = sources.open(&data_path).map_err(io_err(&data_path))?;
@@ -377,12 +363,11 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
             Ok(image) => {
                 let zso = image.zso_header().is_some();
                 if let Some(header) = image.zso_header() {
-                    notices.extend(
-                        header
-                            .problems()
-                            .iter()
-                            .map(|p| Notice::warning("zsoHeader", format!("ZSO header: {p}"))),
-                    );
+                    notices.extend(header.problems().iter().map(|p| {
+                        Notice::warning(
+                            Phrase::notice("zsoHeader").with("reason", reasons::zso_problem(p)),
+                        )
+                    }));
                 }
                 (Box::new(image), zso)
             }
@@ -393,23 +378,21 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
                 });
             }
             Err(err) => {
-                return Err(ProbeError::Unsupported(format!(
-                    "OPL cannot read this ZSO: {err}"
-                )));
+                return Err(ProbeError::Unsupported(
+                    Phrase::reason("zsoUnreadable").with("reason", reasons::zso(&err)),
+                ));
             }
         },
     };
     if zso && format == InputFormat::Iso {
         notices.push(Notice::warning(
-            "containerMismatch",
-            "the file is a ZSO although it is named .iso",
+            Phrase::notice("containerMismatch")
+                .with("extension", "ISO")
+                .with("content", "ZSO"),
         ));
     }
     if packed {
-        notices.push(Notice::info(
-            "fromArchive",
-            "read straight from the archive; nothing is unpacked to the computer first",
-        ));
+        notices.push(Notice::info(Phrase::notice("fromArchive")));
     }
 
     let iso_len = src.sector_count() * SECTOR_SIZE as u64;
@@ -431,7 +414,7 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
         .and_then(|pvd| image::read_system_cnf(&mut src, pvd).ok().flatten())
         .map(|f| system_cnf::parse_info(&f.bytes))
         .unwrap_or_default();
-    let startup = image::opl_startup(&mut src).map_err(|e| e.to_string());
+    let startup = image::opl_startup(&mut src).map_err(|e| reasons::startup(&e));
     let format = match (format, zso) {
         (InputFormat::Iso, true) => InputFormat::Zso,
         (format, _) => format,
@@ -454,16 +437,7 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
 }
 
 fn audio_dropped(count: usize) -> Notice {
-    let tracks = match count {
-        1 => "1 audio track is".to_owned(),
-        n => format!("{n} audio tracks are"),
-    };
-    Notice::warning(
-        "audioTracksDropped",
-        format!(
-            "{tracks} left out: OPL reads only the data track, so music played from CD audio is missing"
-        ),
-    )
+    Notice::warning(Phrase::notice("audioTracksDropped").count(count))
 }
 
 /// The ISO sectors of a BIN track.
@@ -477,9 +451,7 @@ fn bin_image(
         Some(sectors) => {
             let end = (track.start + sectors) * u64::from(track.mode.sector_size());
             if end > data_len {
-                return Err(ProbeError::Unsupported(
-                    "the BIN ends before its data track does".into(),
-                ));
+                return Err(ProbeError::Unsupported(Phrase::reason("binEndsEarly")));
             }
             Ok(BinImage::with_sectors(
                 reader,
@@ -489,7 +461,7 @@ fn bin_image(
             ))
         }
         None => BinImage::new(reader, track.mode, track.start, data_len)
-            .map_err(|e| ProbeError::Unsupported(e.to_string())),
+            .map_err(|e| ProbeError::Unsupported(reasons::bin(&e))),
     }
 }
 
@@ -500,12 +472,21 @@ fn open_chd(
     path: &Path,
 ) -> Result<(Box<dyn SectorSource + Send>, bool, usize), ProbeError> {
     use yaoplm_formats::chd::{ChdError, ChdImage, Layout};
+    let chd_reason = |err: &ChdError| match err {
+        ChdError::NeedsParent => Phrase::reason("chdNeedsParent"),
+        ChdError::Chd(error) => Phrase::reason("chdUnreadable").with("error", error),
+        ChdError::Metadata(error) => Phrase::reason("chdBadMetadata").with("error", error),
+        ChdError::NotData(kind) => Phrase::reason("chdTrack1").with("kind", kind),
+        ChdError::SecondDataTrack(track) => Phrase::reason("secondDataTrack").with("track", *track),
+        ChdError::UnknownLayout { unit } => Phrase::reason("chdLayout").with("unit", *unit),
+        ChdError::Io(err) => Phrase::reason("text").with("text", err.to_string()),
+    };
     let image = ChdImage::open(reader).map_err(|e| match e {
         ChdError::Io(source) => ProbeError::Io {
             path: path.to_path_buf(),
             source,
         },
-        other => ProbeError::Unsupported(other.to_string()),
+        other => ProbeError::Unsupported(chd_reason(&other)),
     })?;
     let (cd, dropped) = match image.layout() {
         Layout::Cd { dropped, .. } => (true, dropped.len()),
@@ -519,9 +500,7 @@ fn open_chd(
     _reader: Box<dyn ReadSeek>,
     _path: &Path,
 ) -> Result<(Box<dyn SectorSource + Send>, bool, usize), ProbeError> {
-    Err(ProbeError::Unsupported(
-        "this build of YAOPLM reads no CHD images".into(),
-    ))
+    Err(ProbeError::Unsupported(Phrase::reason("noChdSupport")))
 }
 
 /// Reads a [`SectorSource`] as a byte stream from a sector boundary.

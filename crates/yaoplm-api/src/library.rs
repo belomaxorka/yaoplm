@@ -12,6 +12,7 @@ use yaoplm_formats::iso_name::NameFormat as CoreNameFormat;
 use yaoplm_formats::iso9660::Layers;
 
 use crate::paths::display_path;
+use crate::phrase::Phrase;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -94,20 +95,31 @@ impl From<CoreNameFormat> for NameFormat {
     }
 }
 
-/// A warning or skip reason: `code` is stable, `message` is English.
+/// A warning or skip reason: `code` is stable, `message` is English and
+/// `phrase` says it in the front end's language (ADR-0029).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct Notice {
     pub code: String,
     pub message: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<Phrase>,
+}
+
+impl Notice {
+    fn said(code: &str, phrase: &yaoplm_core::Phrase) -> Self {
+        Self {
+            code: code.to_owned(),
+            message: phrase.english(),
+            phrase: Some(Phrase::from(phrase)),
+        }
+    }
 }
 
 impl From<&core::Warning> for Notice {
     fn from(warning: &core::Warning) -> Self {
-        Self {
-            code: warning.code().to_owned(),
-            message: warning.to_string(),
-        }
+        Self::said(warning.code(), &warning.phrase())
     }
 }
 
@@ -339,10 +351,7 @@ impl Library {
                 .iter()
                 .map(|s| SkippedFile {
                     path: display_path(&s.path),
-                    reason: Notice {
-                        code: s.reason.code().to_owned(),
-                        message: s.reason.to_string(),
-                    },
+                    reason: Notice::said(s.reason.code(), &s.reason.phrase()),
                 })
                 .collect(),
             warnings: notices(&library.warnings),

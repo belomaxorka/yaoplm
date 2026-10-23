@@ -17,6 +17,7 @@ use std::fs;
 use std::path::Path;
 
 use yaoplm_formats::LoaderProfile;
+use yaoplm_i18n::Phrase;
 
 use crate::volume::{FsKind, PartitionStyle, Volume, VolumeKind};
 
@@ -123,72 +124,35 @@ fn kib(bytes: u32) -> u32 {
     bytes / 1024
 }
 
+impl Advice {
+    /// What front ends show (ADR-0029); `Display` is its English.
+    pub fn phrase(&self) -> Phrase {
+        let phrase = Phrase::notice(self.code());
+        match self {
+            Self::FsUnreadable(fs) => phrase.with("fs", fs.to_string()),
+            Self::SectorSize(size) => phrase.with("size", *size),
+            Self::ClusterTooLarge(size) | Self::ClusterSmall(size) => {
+                phrase.with("kib", kib(*size))
+            }
+            Self::Misaligned(offset) => phrase.with("offset", *offset),
+            Self::AppleDouble(files) => phrase.with("files", *files),
+            Self::SystemVolume
+            | Self::ReadOnly
+            | Self::ExfatNeedsOpl12
+            | Self::FatNeededToBoot
+            | Self::LargeGamesAsUl
+            | Self::ExfatRecommended
+            | Self::RemoteShare
+            | Self::GptUnsupported
+            | Self::NoPartitionTable
+            | Self::NotExternal => phrase,
+        }
+    }
+}
+
 impl fmt::Display for Advice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SystemVolume => write!(f, "this volume holds the operating system"),
-            Self::ReadOnly => write!(f, "the volume is read-only"),
-            Self::FsUnreadable(fs) => write!(
-                f,
-                "OPL cannot read {fs} from USB or SD; use exFAT (OPL 1.2.0 beta) or FAT32"
-            ),
-            Self::ExfatNeedsOpl12 => {
-                write!(
-                    f,
-                    "OPL 1.1.0 cannot read exFAT; use FAT32 or OPL 1.2.0 beta"
-                )
-            }
-            Self::FatNeededToBoot => write!(
-                f,
-                "FreeMcBoot and old uLaunchELF cannot start OPL from exFAT; this device must be FAT32 on MBR"
-            ),
-            Self::LargeGamesAsUl => write!(
-                f,
-                "FAT32 holds files up to 4 GiB: larger games are split into 1 GiB ul chunks"
-            ),
-            Self::ExfatRecommended => write!(
-                f,
-                "exFAT is recommended for OPL 1.2.0 beta: games over 4 GiB stay one image"
-            ),
-            Self::RemoteShare => write!(
-                f,
-                "network share: OPL speaks SMBv1 only, opens names up to 159 bytes and at most 10 ul parts"
-            ),
-            Self::SectorSize(size) => write!(
-                f,
-                "logical sectors are {size} bytes; OPL reads 512-byte sectors only (often a USB adapter issue)"
-            ),
-            Self::ClusterTooLarge(size) => write!(
-                f,
-                "{} KiB clusters are reported to cause problems; up to 32 KiB on FAT32 and 32-128 KiB on exFAT are safe",
-                kib(*size)
-            ),
-            Self::ClusterSmall(size) => write!(
-                f,
-                "{} KiB FAT32 clusters make OPL read more of the FAT when a game starts; 32 KiB is recommended",
-                kib(*size)
-            ),
-            Self::GptUnsupported => write!(
-                f,
-                "GPT partition table: OPL 1.1.0 and legacy loaders read MBR only"
-            ),
-            Self::NoPartitionTable => write!(
-                f,
-                "no partition table: some OPL 1.2.0 builds cannot mount this; MBR with one partition is safest"
-            ),
-            Self::Misaligned(offset) => write!(
-                f,
-                "the partition starts at byte {offset}, not on a 1 MiB boundary (slower writes)"
-            ),
-            Self::NotExternal => write!(
-                f,
-                "not a USB or SD device: OPL reads games from USB, MX4SIO, iLink, an internal HDD or SMB"
-            ),
-            Self::AppleDouble(count) => write!(
-                f,
-                "{count} macOS ._ files in CD, DVD, LNG or APPS slow down OPL or show up as bogus entries"
-            ),
-        }
+        f.write_str(&self.phrase().english())
     }
 }
 
@@ -425,5 +389,39 @@ mod tests {
             fs::write(path, b"").unwrap();
         }
         assert_eq!(count_apple_double(dir.path()), 3);
+    }
+}
+
+#[cfg(test)]
+mod phrase_tests {
+    use super::*;
+
+    #[test]
+    fn every_advice_renders() {
+        let all = [
+            Advice::SystemVolume,
+            Advice::ReadOnly,
+            Advice::FsUnreadable(FsKind::Ntfs),
+            Advice::ExfatNeedsOpl12,
+            Advice::FatNeededToBoot,
+            Advice::LargeGamesAsUl,
+            Advice::ExfatRecommended,
+            Advice::RemoteShare,
+            Advice::SectorSize(4096),
+            Advice::ClusterTooLarge(256 * 1024),
+            Advice::ClusterSmall(4 * 1024),
+            Advice::GptUnsupported,
+            Advice::NoPartitionTable,
+            Advice::Misaligned(32_256),
+            Advice::NotExternal,
+            Advice::AppleDouble(3),
+        ];
+        for advice in &all {
+            let phrase = advice.phrase();
+            assert_eq!(phrase.key, format!("notices.{}", advice.code()));
+            let text = phrase.english();
+            assert_ne!(text, phrase.key);
+            assert!(!text.contains("{{"), "{text}");
+        }
     }
 }
