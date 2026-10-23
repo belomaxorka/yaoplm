@@ -21,9 +21,11 @@ function isActive(job: JobInfo): boolean {
  */
 export function JobToasts() {
   const { t } = useTranslation();
-  const { jobs } = useJobs();
+  const { jobs, load } = useJobs();
   const { pathname } = useLocation();
   const running = useRef(new Set<JobId>());
+  // Jobs whose final state came without its result (ListJobs after a lost link).
+  const fetching = useRef(new Set<JobId>());
 
   useEffect(() => {
     for (const job of jobs) {
@@ -32,7 +34,17 @@ export function JobToasts() {
         running.current.add(job.id);
         continue;
       }
-      if (!running.current.delete(job.id)) continue;
+      if (!running.current.has(job.id)) continue;
+      // A failed transaction still ends the job as finished, with the error in
+      // its report: no toast before the report is here.
+      if (job.status === "finished" && !job.result) {
+        if (!fetching.current.has(job.id)) {
+          fetching.current.add(job.id);
+          void load(job.id).finally(() => fetching.current.delete(job.id));
+        }
+        continue;
+      }
+      running.current.delete(job.id);
       // The jobs page shows the outcome itself.
       if (pathname === "/jobs") continue;
       const title = jobTitle(job);
@@ -52,7 +64,13 @@ export function JobToasts() {
         toast.success(t("jobs.toast.done", { title }));
       }
     }
-  }, [jobs, pathname, t]);
+  }, [jobs, pathname, t, load]);
 
-  return <Toaster position="bottom-center" />;
+  return (
+    <Toaster
+      position="bottom-center"
+      containerAriaLabel={t("jobs.toast.region")}
+      toastOptions={{ closeButtonAriaLabel: t("common.close") }}
+    />
+  );
 }

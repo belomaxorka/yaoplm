@@ -496,11 +496,8 @@ pub(crate) fn import_targets(
         ));
     }
     let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
-    let present = kinds
-        .iter()
-        .map(|&kind| Ok((kind, yaoplm_core::art::present_art(&fs, kind)?)))
-        .collect::<std::io::Result<Vec<_>>>()
-        .map_err(ApiError::internal_error)?;
+    let present =
+        yaoplm_core::art::present_art_kinds(&fs, kinds).map_err(ApiError::internal_error)?;
     let mut seen = std::collections::HashSet::new();
     let mut already = 0;
     let mut targets = Vec::new();

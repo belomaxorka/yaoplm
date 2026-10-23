@@ -405,7 +405,9 @@ function RenameDialog({
   const isUl = game.format === "UL";
   const maxTitle = isUl ? 32 : 160;
   const idChanged = startup.trim() !== game.startup;
-  const canSubmit = title.trim().length > 0 && (title.trim() !== game.title || idChanged || (!isUl && style !== styleOf(game)));
+  // The style picker is advanced: simple mode keeps the file's own style.
+  const nameStyle = simple ? styleOf(game) : style;
+  const canSubmit = title.trim().length > 0 && (title.trim() !== game.title || idChanged || (!isUl && nameStyle !== styleOf(game)));
 
   return (
     <Dialog
@@ -424,7 +426,7 @@ function RenameDialog({
           className="contents"
           onSubmit={(event) => {
             event.preventDefault();
-            if (canSubmit) onSubmit(title.trim(), idChanged ? startup.trim() : null, style);
+            if (canSubmit) onSubmit(title.trim(), idChanged ? startup.trim() : null, nameStyle);
           }}
         >
           <DialogHeader>

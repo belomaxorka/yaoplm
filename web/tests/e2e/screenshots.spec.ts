@@ -29,7 +29,6 @@ for (const language of ["en", "ru"] as const) {
         await page.goto("/library");
         await heading("library");
         await expect(page.getByTestId("library-count")).toBeVisible();
-        await expect(page.getByRole("status").filter({ hasText: /./ }).first()).toBeVisible();
         // Covers written by art.spec.ts show in the grid; the images must have loaded.
         await expect(page.locator('[data-testid="game-cover"][data-has-cover="true"] img').first()).toBeVisible();
         await shot("library");

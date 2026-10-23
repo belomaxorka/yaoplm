@@ -368,10 +368,19 @@ describe("useFetchableTypes", () => {
     );
 
     storeSettings({
+      simpleMode: false,
       artSources: { xlenore: { enabled: false, mirror: "" }, libretro: { enabled: false, mirror: "" } },
     });
     const off = hook(about);
     expect(off.result.current.blocked).toEqual({ why: "noSources", text: "Every source is switched off." });
+    // Simple mode hides the switches: the text says where they are.
+    storeSettings({
+      simpleMode: true,
+      artSources: { xlenore: { enabled: false, mirror: "" }, libretro: { enabled: false, mirror: "" } },
+    });
+    expect(hook(about).result.current.blocked?.text).toBe(
+      "Every picture source is switched off. They are in the settings, with simple mode off.",
+    );
   });
 
   it("lists the types of the enabled sources", async () => {

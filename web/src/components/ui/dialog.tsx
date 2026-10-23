@@ -78,13 +78,18 @@ function DialogContent({
         onOpenAutoFocus={(event) => {
           const active = document.activeElement
           // Opened by a dialog that is closing (a form, then its plan): go
-          // back to where that one would have.
+          // back to where that one would have. Opened from a menu item, which
+          // goes away with its menu: go back to the menu's button.
           const from = active?.closest('[data-slot="dialog-content"]')
+          const menu = active?.closest('[role="menu"]')
+          const menuButton = menu?.getAttribute("aria-labelledby")
           opener.current = from
             ? (openers.get(from) ?? null)
-            : active instanceof HTMLElement && active !== document.body
-              ? active
-              : null
+            : menuButton
+              ? document.getElementById(menuButton)
+              : active instanceof HTMLElement && active !== document.body
+                ? active
+                : null
           if (event.target instanceof Element && opener.current) {
             openers.set(event.target, opener.current)
           }

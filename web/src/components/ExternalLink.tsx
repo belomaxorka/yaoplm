@@ -21,7 +21,10 @@ export function ExternalLink({ href, children, className }: { href: string; chil
       onClick={(event) => {
         if (!isTauri()) return;
         event.preventDefault();
-        void import("@tauri-apps/plugin-opener").then(({ openUrl }) => openUrl(href));
+        import("@tauri-apps/plugin-opener")
+          .then(({ openUrl }) => openUrl(href))
+          // No browser to open it in: nothing else to try.
+          .catch(() => undefined);
       }}
     >
       {children ?? href.replace(/^https?:\/\//, "")}

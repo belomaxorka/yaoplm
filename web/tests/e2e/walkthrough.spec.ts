@@ -190,6 +190,13 @@ for (const simple of [true, false]) {
         await check("library, More menu");
         await page.keyboard.press("Escape");
         await expect.soft(page.getByTestId("library-more"), "focus returns to the menu button").toBeFocused();
+        // A dialog opened from the menu gives focus back to the menu's button.
+        await page.getByTestId("library-more").click();
+        await page.getByTestId("verify-dumps").click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toBeHidden();
+        await expect.soft(page.getByTestId("library-more"), "focus returns after a dialog from the menu").toBeFocused();
       }
 
       await page.getByTestId("game-grid").getByRole("listitem").first().click();

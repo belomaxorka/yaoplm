@@ -421,6 +421,7 @@
     "scopeAllHint": "Existing pictures are replaced; the old files move to the device’s backup folder.",
     "sources": "Sources, in order",
     "noSources": "Every source is switched off.",
+    "noSourcesSimple": "Every picture source is switched off. They are in the settings, with simple mode off.",
     "mirrorUsed": "local mirror",
     "sourcesHint": "Switch sources on and off, or point one at a local mirror, in",
     "start": "Start",
@@ -492,6 +493,7 @@
     "log_other": "Log ({{count}} lines)",
     "logEmpty": "Nothing logged yet.",
     "cancel": "Cancel",
+    "cancelJob": "Cancel: {{title}}",
     "dismiss": "Hide",
     "txState": {
       "started": "{{title}}: started",
@@ -513,7 +515,8 @@
       "done": "{{title}}: done",
       "failed": "{{title}}: failed",
       "cancelled": "{{title}}: cancelled",
-      "journal": "The operation did not finish. Open the library to undo or finish it."
+      "journal": "The operation did not finish. Open the library to undo or finish it.",
+      "region": "Notifications"
     },
     "artState": {
       "found": "{{startup}} {{title}}: found at {{source}}",

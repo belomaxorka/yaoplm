@@ -372,7 +372,7 @@ export function AddGamesPage() {
             <span>
               {t("add.coversOnAdd")}
               <span className="block text-xs text-muted-foreground">
-                {coverSources ? t("add.coversOnAddHint") : t("art.noSources")}
+                {coverSources ? t("add.coversOnAddHint") : t(settings.simpleMode ? "art.noSourcesSimple" : "art.noSources")}
               </span>
             </span>
           </Label>

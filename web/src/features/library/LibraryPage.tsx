@@ -458,8 +458,8 @@ function AdvancedFilters({
 function GridSkeleton() {
   return (
     <div
-      className="grid min-h-0 flex-1 content-start gap-4 overflow-hidden px-6 py-4"
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))` }}
+      className="grid min-h-0 flex-1 content-start overflow-hidden px-6 py-4"
+      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))`, gap: GRID_GAP }}
       aria-hidden
       data-testid="grid-skeleton"
     >
