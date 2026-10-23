@@ -25,10 +25,10 @@ serials: boolean,
  */
 storedAt: number, 
 /**
- * The last request to Redump.
+ * The last answer from Redump, when it was ever asked.
  */
 checkedAt: number | null, 
 /**
- * Redump is not asked again before this.
+ * Redump is not asked again before this; `None` when it never was.
  */
-nextCheck: number, };
+nextCheck: number | null, };

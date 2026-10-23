@@ -158,8 +158,8 @@ pub enum Request {
     PlanInit {
         root: String,
     },
-    /// Plans copying ISO, ZSO and BIN/CUE files or folders to a device
-    /// (IMP-1 to IMP-11).
+    /// Plans copying ISO, ZSO, BIN/CUE and CHD images, also from zip and 7z
+    /// archives, or folders of them, to a device (IMP-1 to IMP-11, IMP-1b).
     PlanImport {
         root: String,
         sources: Vec<String>,
@@ -320,6 +320,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         md5: Option<bool>,
+        /// Read every image even when its hashes are cached: finds damage
+        /// that left a file's size and time alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        fresh: Option<bool>,
     },
     /// The stored Redump DAT, if any.
     RedumpStatus,
@@ -407,8 +412,9 @@ pub enum JobEvent {
         /// What is being worked on, e.g. the game being copied.
         item: Option<String>,
     },
-    /// A transaction or step started or ended (plans only). `GetJob`
-    /// returns the whole log, so a client that reconnects misses nothing.
+    /// A line of a job's log: a transaction or step of a plan, a game of a
+    /// cover search or dump check. `GetJob` returns the whole log, so a
+    /// client that reconnects misses nothing.
     Log {
         job: JobId,
         entry: JobLogEntry,

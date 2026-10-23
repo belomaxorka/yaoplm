@@ -225,18 +225,23 @@ CREATE TABLE IF NOT EXISTS hashes (
 /// One file an image was read from, as it was when hashed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HashedFile<'a> {
+    /// What tells the volume apart from another one mounted at the same
+    /// place (serial and size): two sticks show up as `E:` in turn, and a
+    /// copy keeps its file's size and time.
+    pub volume: &'a str,
     pub path: &'a Path,
     pub len: u64,
     /// Nanoseconds since 1970; without it nothing is cached.
     pub modified: Option<u128>,
 }
 
-/// The cache key of an image: every file with its size and time.
+/// The cache key of an image: every file with its volume, size and time.
 fn files_key(files: &[HashedFile<'_>]) -> Option<String> {
     let mut parts = Vec::with_capacity(files.len());
     for file in files {
         parts.push(format!(
-            "{}\u{1f}{}\u{1f}{}",
+            "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+            file.volume,
             file.path.display(),
             file.len,
             file.modified?
@@ -246,6 +251,24 @@ fn files_key(files: &[HashedFile<'_>]) -> Option<String> {
 }
 
 impl Cache {
+    /// Opens the cache in `data_dir` for reading hashes only, without
+    /// creating anything: `None` when there is no cache yet. Scans use it,
+    /// so a read-only command never creates the app data folder.
+    pub fn open_existing(data_dir: &Path) -> Result<Option<Self>, NetError> {
+        let path = data_dir.join(MANIFEST);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let db = Connection::open_with_flags(
+            &path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        Ok(Some(Self {
+            root: data_dir.to_path_buf(),
+            db: Mutex::new(db),
+        }))
+    }
+
     /// Opens (or creates) the cache in `data_dir`.
     pub fn open(data_dir: &Path) -> Result<Self, NetError> {
         fs::create_dir_all(data_dir.join(ART_DIR)).map_err(NetError::io(data_dir))?;
@@ -496,7 +519,8 @@ impl Cache {
         Ok(())
     }
 
-    /// Deletes every cached object and manifest row.
+    /// Deletes every cached cover and its manifest row. Hashes stay: they
+    /// are not downloads, and reading the images again takes long.
     pub fn clear(&self) -> Result<(), NetError> {
         self.db().execute("DELETE FROM objects", [])?;
         let dir = self.root.join(ART_DIR);
@@ -641,6 +665,7 @@ mod tests {
         let cache = Cache::open(dir.path()).unwrap();
         let path = Path::new("E:/DVD/SLUS_200.62.Game.iso");
         let file = HashedFile {
+            volume: "7E1CD2C5|31914983424",
             path,
             len: 4096,
             modified: Some(17),
@@ -662,12 +687,24 @@ mod tests {
         };
         cache.put_hashes(&[file], &with_md5).unwrap();
         assert_eq!(cache.hashes(&[file], true).unwrap(), Some(with_md5));
-        // A touched file is a new key.
+        // A touched file is a new key, and so is the same file on another
+        // stick mounted at the same letter.
         let touched = HashedFile {
             modified: Some(18),
             ..file
         };
         assert_eq!(cache.hashes(&[touched], false).unwrap(), None);
+        let other_stick = HashedFile {
+            volume: "0BADF00D|31914983424",
+            ..file
+        };
+        assert_eq!(cache.hashes(&[other_stick], false).unwrap(), None);
+        // Reading needs no write access and creates nothing.
+        let reader = Cache::open_existing(dir.path()).unwrap().unwrap();
+        assert_eq!(reader.hashes(&[file], true).unwrap(), Some(with_md5));
+        let empty = tempfile::tempdir().unwrap();
+        assert!(Cache::open_existing(empty.path()).unwrap().is_none());
+        assert_eq!(fs::read_dir(empty.path()).unwrap().count(), 0);
         // Without a time nothing is cached.
         let timeless = HashedFile {
             modified: None,

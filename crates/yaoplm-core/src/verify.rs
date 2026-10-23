@@ -111,7 +111,7 @@ mod tests {
         (0..6 * 2048).map(|i| (i % 253) as u8).collect()
     }
 
-    fn sha1_of(bytes: &[u8]) -> Hashes {
+    fn hashes_of(bytes: &[u8]) -> Hashes {
         hash_reader(
             &mut Cursor::new(bytes),
             Algorithms::default(),
@@ -125,7 +125,7 @@ mod tests {
     fn iso_zso_and_ul_hash_the_same_bytes() {
         let dir = tempfile::tempdir().unwrap();
         let iso = iso();
-        let expected = sha1_of(&iso);
+        let expected = hashes_of(&iso);
 
         let iso_path = dir.path().join("SLUS_200.62.Game.iso");
         std::fs::write(&iso_path, &iso).unwrap();

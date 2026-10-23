@@ -561,6 +561,30 @@ fn redump_import_and_verify() {
         report["games"][0]["hashes"]["md5"].as_str().map(str::len),
         Some(32)
     );
+
+    // `redump --json` prints the DAT itself, as --import does its result.
+    let shown = cli(&["redump".as_ref(), "--json".as_ref()]);
+    let shown: serde_json::Value = serde_json::from_str(stdout(&shown)).unwrap();
+    assert_eq!(shown["games"], 1);
+
+    // A DAT that lists the ID with other hashes: a bad dump, exit code 1.
+    let other = Variant::LfOnly.build().to_vec();
+    std::fs::write(
+        &dat,
+        DatBuilder::new()
+            .iso("Grand Theft Auto III (USA)", Some("SLUS-20062"), &other)
+            .build(),
+    )
+    .unwrap();
+    let imported = cli(&["redump".as_ref(), "--import".as_ref(), dat.as_os_str()]);
+    assert!(imported.status.success());
+    let bad = cli(&[
+        "verify".as_ref(),
+        lib.path().as_os_str(),
+        "--fresh".as_ref(),
+    ]);
+    assert_eq!(bad.status.code(), Some(1), "{}", stdout(&bad));
+    assert!(stdout(&bad).contains("BAD DUMP"), "{}", stdout(&bad));
 }
 
 #[test]

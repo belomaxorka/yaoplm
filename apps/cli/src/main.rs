@@ -87,7 +87,8 @@ enum Command {
         #[command(flatten)]
         apply: Apply,
     },
-    /// Copy ISO, ZSO or BIN/CUE files (or folders of them) to a device.
+    /// Copy ISO, ZSO, BIN/CUE or CHD images (also from zip and 7z archives,
+    /// or folders of them) to a device.
     ///
     /// On FAT32, games over 4 GiB are split into ul chunks. File names are
     /// ID.Title.iso unless --name-style title is given.
@@ -190,14 +191,21 @@ enum Command {
         /// Also compute MD5.
         #[arg(long)]
         md5: bool,
+        /// Read every image even when its hashes are cached: finds damage
+        /// that left a file's size and time alone.
+        #[arg(long)]
+        fresh: bool,
         #[command(flatten)]
         common: Common,
     },
     /// The Redump DAT used by `verify`: show it, download a newer one (at
     /// most once a week), or import a .dat or Redump .zip you have.
     Redump {
+        /// Ask Redump for a newer DAT (at most once a week, whatever the
+        /// answer).
         #[arg(long)]
         update: bool,
+        /// Store this .dat or Redump .zip instead; no network.
         #[arg(long, value_name = "FILE", conflicts_with = "update")]
         import: Option<PathBuf>,
         /// Print the answer as JSON.
@@ -479,10 +487,7 @@ fn main() -> anyhow::Result<ExitCode> {
             name_style,
             apply,
         } => {
-            let mut refs = Vec::new();
-            for game in &games {
-                refs.push(find_game(&api, &root, game, apply.profile)?);
-            }
+            let refs = find_games(&api, &root, &games, apply.profile)?;
             let request = Request::ConvertGames {
                 root: text(&root),
                 games: refs,
@@ -558,17 +563,20 @@ fn main() -> anyhow::Result<ExitCode> {
             root,
             games,
             md5,
+            fresh,
             common,
         } => {
-            let mut refs = Vec::new();
-            for game in &games {
-                refs.push(find_game(&api, &root, game, common.profile)?);
-            }
+            let refs = if games.is_empty() {
+                Vec::new()
+            } else {
+                find_games(&api, &root, &games, common.profile)?
+            };
             let request = Request::VerifyGames {
                 root: text(&root),
                 games: (!refs.is_empty()).then_some(refs),
                 profile: Some(common.profile.into()),
                 md5: Some(md5),
+                fresh: Some(fresh),
             };
             let job = match api.dispatch(request) {
                 Ok(Response::Job { job }) => job,
@@ -607,11 +615,18 @@ fn main() -> anyhow::Result<ExitCode> {
             json,
         } => {
             if !update && import.is_none() {
-                let response = api.dispatch(Request::RedumpStatus);
-                return show(response, json, |response| match response {
-                    Response::Redump { dat } => print!("{}", report::redump(dat.as_deref())),
-                    other => print_json(other, true),
-                });
+                return match api.dispatch(Request::RedumpStatus) {
+                    Ok(Response::Redump { dat }) => {
+                        if json {
+                            print_json(&dat, true);
+                        } else {
+                            print!("{}", report::redump(dat.as_deref()));
+                        }
+                        Ok(ExitCode::SUCCESS)
+                    }
+                    Ok(other) => bail!("unexpected answer {other:?}"),
+                    Err(error) => fail(&error, json),
+                };
             }
             let job = match api.dispatch(Request::UpdateRedump {
                 file: import.as_deref().map(absolute),
@@ -627,15 +642,18 @@ fn main() -> anyhow::Result<ExitCode> {
                         print_json(&result, true);
                     } else {
                         let what = match result.update {
-                            RedumpUpdate::Downloaded => "Downloaded a new DAT.",
-                            RedumpUpdate::NotModified => "Redump has nothing newer.",
-                            RedumpUpdate::TooSoon => {
-                                "Redump was asked less than a week ago; the stored DAT stays."
-                            }
-                            RedumpUpdate::Imported => "Imported.",
+                            RedumpUpdate::Downloaded => "Downloaded a new DAT.".to_owned(),
+                            RedumpUpdate::NotModified => "Redump has nothing newer.".to_owned(),
+                            RedumpUpdate::TooSoon => format!(
+                                "Redump was asked less than a week ago; next request after {}.",
+                                result
+                                    .next_check
+                                    .map_or_else(|| "a week".to_owned(), report::date)
+                            ),
+                            RedumpUpdate::Imported => "Imported.".to_owned(),
                         };
                         println!("{what}");
-                        print!("{}", report::redump(Some(&result.dat)));
+                        print!("{}", report::redump(result.dat.as_ref()));
                     }
                     Ok(ExitCode::SUCCESS)
                 }
@@ -921,6 +939,21 @@ fn game_ref(game: &Game) -> GameRef {
 /// Finds a game by ID, title, file name, path or `ul:<index>`.
 fn find_game(api: &Api, root: &Path, query: &str, profile: Profile) -> anyhow::Result<GameRef> {
     let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    match_game(&library, query)
+}
+
+/// Several games from one scan.
+fn find_games(
+    api: &Api,
+    root: &Path,
+    queries: &[String],
+    profile: Profile,
+) -> anyhow::Result<Vec<GameRef>> {
+    let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    queries.iter().map(|q| match_game(&library, q)).collect()
+}
+
+fn match_game(library: &Library, query: &str) -> anyhow::Result<GameRef> {
     if let Some(index) = query.strip_prefix("ul:") {
         let index: u32 = index.parse().context("ul:<index> takes a number")?;
         let game = library

@@ -593,7 +593,25 @@ pub fn redump(dat: Option<&RedumpInfo>) -> String {
         dat.source
     );
     let _ = writeln!(out, "  stored at {}", dat.path);
+    if let Some(next) = dat.next_check {
+        let _ = writeln!(out, "  Redump is asked again after {}", date(next));
+    }
     out
+}
+
+/// `2026-10-30` (UTC) from milliseconds since 1970.
+pub fn date(ms: u64) -> String {
+    // Days to a civil date: Howard Hinnant's `civil_from_days`.
+    let days = (ms / 86_400_000) as i64 + 719_468;
+    let era = days.div_euclid(146_097);
+    let doe = days.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 pub fn verification(report: &VerificationReport) -> String {
@@ -682,5 +700,13 @@ mod tests {
         assert_eq!(size(1023), "1023 B");
         assert_eq!(size(1536), "1.5 KiB");
         assert_eq!(size(4_700_372_992), "4.4 GiB");
+    }
+
+    #[test]
+    fn dates() {
+        assert_eq!(date(0), "1970-01-01");
+        assert_eq!(date(951_868_800_000), "2000-03-01");
+        assert_eq!(date(1_709_164_800_000), "2024-02-29");
+        assert_eq!(date(1_798_761_599_999), "2026-12-31");
     }
 }

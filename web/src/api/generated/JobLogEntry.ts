@@ -7,8 +7,9 @@ import type { UnknownReason } from "./UnknownReason";
 import type { VerifyStatus } from "./VerifyStatus";
 
 /**
- * One line of a plan job's live log (the idea comes from OrbitPS2
- * Manager's per-job log, research/10).
+ * One line of a job's live log: plans log transactions and steps, cover
+ * searches and dump checks one line per game (the idea comes from
+ * OrbitPS2 Manager's per-job log, research/10).
  */
 export type JobLogEntry = { "kind": "transaction", 
 /**

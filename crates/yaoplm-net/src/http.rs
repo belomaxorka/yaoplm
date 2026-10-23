@@ -206,21 +206,27 @@ fn disposition_file_name(headers: &HeaderMap) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-async fn read_body(response: reqwest::Response, max_body: u64) -> Result<Fetched, NetError> {
+async fn read_body(mut response: reqwest::Response, max_body: u64) -> Result<Fetched, NetError> {
     let url = response.url().to_string();
     if response.content_length().is_some_and(|len| len > max_body) {
         return Err(NetError::TooLarge(url));
     }
     let headers = response.headers().clone();
-    let bytes = response
-        .bytes()
+    // Chunk by chunk: without a Content-Length the size shows only as the
+    // body arrives, and it must not all be held first.
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|e| NetError::Http(format!("{url}: {e}")))?;
-    if bytes.len() as u64 > max_body {
-        return Err(NetError::TooLarge(url));
+        .map_err(|e| NetError::Http(format!("{url}: {e}")))?
+    {
+        if (bytes.len() + chunk.len()) as u64 > max_body {
+            return Err(NetError::TooLarge(url));
+        }
+        bytes.extend_from_slice(&chunk);
     }
     Ok(Fetched::Ok(Body {
-        bytes: bytes.to_vec(),
+        bytes,
         content_type: header_string(&headers, header::CONTENT_TYPE),
         etag: header_string(&headers, header::ETAG),
         last_modified: header_string(&headers, header::LAST_MODIFIED),

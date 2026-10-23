@@ -179,6 +179,9 @@ pub(crate) struct Net {
     service: OnceLock<Result<Arc<ArtService>, String>>,
     /// The parsed Redump DAT and the SHA-256 it was parsed from.
     pub(crate) redump: Mutex<Option<(String, Arc<RedumpIndex>)>>,
+    /// One DAT download or import at a time: two at once would both pass
+    /// the weekly check and both ask Redump.
+    pub(crate) redump_update: Mutex<()>,
 }
 
 impl std::fmt::Debug for Net {
@@ -207,6 +210,7 @@ impl Net {
             runtime: OnceLock::new(),
             service: OnceLock::new(),
             redump: Mutex::new(None),
+            redump_update: Mutex::new(()),
         }
     }
 

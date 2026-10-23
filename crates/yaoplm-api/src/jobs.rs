@@ -123,8 +123,9 @@ pub enum StepLogState {
     Undone,
 }
 
-/// One line of a plan job's live log (the idea comes from OrbitPS2
-/// Manager's per-job log, research/10).
+/// One line of a job's live log: plans log transactions and steps, cover
+/// searches and dump checks one line per game (the idea comes from
+/// OrbitPS2 Manager's per-job log, research/10).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(
@@ -193,7 +194,7 @@ pub struct JobInfo {
     /// Bytes for plans and verification, items for scans.
     pub done: u64,
     pub total: Option<u64>,
-    /// Bytes per second since the job started (plans only).
+    /// Bytes per second since the job started (plans and dump checks).
     pub rate: Option<u64>,
     /// What is being worked on, e.g. the game being copied.
     pub item: Option<String>,
@@ -202,7 +203,7 @@ pub struct JobInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<JobResult>,
     pub error: Option<ApiError>,
-    /// Transactions and steps so far (plans only); `ListJobs` leaves it out.
+    /// The job's log so far (see [`JobLogEntry`]); `ListJobs` leaves it out.
     #[serde(default)]
     pub log: Vec<JobLogEntry>,
 }

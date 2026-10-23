@@ -159,8 +159,13 @@ fn verdicts_per_game_with_an_imported_dat() {
         serde_json::to_value(result.update).unwrap(),
         json!("imported")
     );
-    assert_eq!(result.dat.games, 4);
-    assert!(result.dat.serials);
+    let dat = result.dat.unwrap();
+    assert_eq!(dat.games, 4);
+    assert!(dat.serials);
+    // Imported, never asked: Redump may be asked right away.
+    assert_eq!(dat.next_check, None);
+    assert_eq!(result.next_check, None);
+    assert!(!dat.source.starts_with(r"\\?\"), "{}", dat.source);
     let status = call(&s.api, json!({"type": "RedumpStatus"}));
     assert_eq!(status["dat"]["games"], 4);
 

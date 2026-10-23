@@ -70,4 +70,9 @@ games?: Array<GameRef>, profile?: LoaderProfile,
 /**
  * Also compute MD5 (CRC-32 and SHA-1 always).
  */
-md5?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };
+md5?: boolean, 
+/**
+ * Read every image even when its hashes are cached: finds damage
+ * that left a file's size and time alone.
+ */
+fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };

@@ -274,7 +274,7 @@ impl Api {
                                 }
                             })?;
                         let mut wire = Library::from_core(&library, profile);
-                        verify::attach_checks(&mut wire, &library.games, &net);
+                        verify::attach_checks(&mut wire, &library, &net);
                         Ok(JobResult::Library(Box::new(wire)))
                     },
                 );
@@ -610,6 +610,7 @@ impl Api {
                 games,
                 profile,
                 md5,
+                fresh,
             } => {
                 let (path, _fs) = self.root(&root)?;
                 let params = verify::VerifyParams {
@@ -617,6 +618,7 @@ impl Api {
                     root: path.clone(),
                     profile: profile.unwrap_or_default(),
                     md5: md5.unwrap_or(false),
+                    fresh: fresh.unwrap_or(false),
                 };
                 let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
@@ -629,7 +631,7 @@ impl Api {
                 Ok(Response::Job { job })
             }
             Request::RedumpStatus => Ok(Response::Redump {
-                dat: self.net.redump_info()?.map(Box::new),
+                dat: self.net.redump_info().map(Box::new),
             }),
             Request::UpdateRedump { file } => {
                 let file = file.map(|f| self.paths.resolve(&f)).transpose()?;

@@ -6,9 +6,13 @@
 //! `UpdateRedump` downloads the DAT (at most once a week) or imports a
 //! file the user has; `RedumpStatus` tells what is stored. Nothing here
 //! writes to a device.
+//!
+//! Neither the DAT nor the cache is needed to hash: without a usable DAT
+//! every verdict is "no DAT", without the cache every image is read. A
+//! scan only reads an existing cache and never creates the app data folder.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
@@ -16,7 +20,7 @@ use ts_rs::TS;
 use yaoplm_core::{Game as CoreGame, GameLocation, ScanOptions};
 use yaoplm_hash::redump::{Candidate, Data, RedumpIndex, Unknown, Verdict};
 use yaoplm_hash::{Algorithms, HashError, Hashes};
-use yaoplm_net::cache::HashedFile;
+use yaoplm_net::cache::{Cache, HashedFile};
 use yaoplm_net::redump::{DatInfo, RedumpStore, Update};
 
 use crate::art::Net;
@@ -43,24 +47,34 @@ pub struct RedumpInfo {
     pub serials: bool,
     /// Milliseconds since the Unix epoch.
     pub stored_at: u64,
-    /// The last request to Redump.
+    /// The last answer from Redump, when it was ever asked.
     pub checked_at: Option<u64>,
-    /// Redump is not asked again before this.
-    pub next_check: u64,
+    /// Redump is not asked again before this; `None` when it never was.
+    pub next_check: Option<u64>,
+}
+
+fn millis(secs: u64) -> u64 {
+    secs.saturating_mul(1000)
 }
 
 fn info(store: &RedumpStore, dat: &DatInfo) -> RedumpInfo {
+    // An imported DAT names the file it came from.
+    let source = if dat.source.starts_with("http") {
+        dat.source.clone()
+    } else {
+        display_path(Path::new(&dat.source))
+    };
     RedumpInfo {
         path: display_path(&store.dat_path()),
-        source: dat.source.clone(),
+        source,
         file_name: dat.file_name.clone(),
         description: dat.description.clone(),
         version: dat.version.clone(),
         games: dat.games,
         serials: dat.serials,
-        stored_at: dat.stored_at * 1000,
-        checked_at: dat.checked_at.map(|s| s * 1000),
-        next_check: dat.next_check() * 1000,
+        stored_at: millis(dat.stored_at),
+        checked_at: store.last_asked().map(millis),
+        next_check: store.next_check().map(millis),
     }
 }
 
@@ -83,7 +97,11 @@ pub enum RedumpUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct RedumpResult {
     pub update: RedumpUpdate,
-    pub dat: RedumpInfo,
+    /// The DAT now stored; none when Redump was asked less than a week ago
+    /// and that request brought none.
+    pub dat: Option<RedumpInfo>,
+    /// When Redump may be asked again (milliseconds since the Unix epoch).
+    pub next_check: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,63 +279,61 @@ impl Net {
         RedumpStore::new(self.data_dir())
     }
 
-    pub(crate) fn redump_info(&self) -> Result<Option<RedumpInfo>, ApiError> {
+    /// The stored DAT and its index, parsed once per version and kept in
+    /// memory; both from one read, so a report never names one DAT while
+    /// its verdicts come from another. `None` before the first download or
+    /// import, and for a DAT that does not parse: it is of no use, and the
+    /// user can download or import it again.
+    pub(crate) fn redump(&self) -> Option<(RedumpInfo, Arc<RedumpIndex>)> {
         let store = self.redump_store();
-        let dat = store
-            .info()
-            .map_err(|e| ApiError::internal(e.to_string()))?;
-        Ok(dat.map(|d| info(&store, &d)))
+        let dat = store.info().ok().flatten()?;
+        let mut cached = self.redump.lock().unwrap_or_else(PoisonError::into_inner);
+        let index = match cached.as_ref() {
+            Some((sha256, index)) if *sha256 == dat.sha256 => Arc::clone(index),
+            _ => {
+                let bytes = std::fs::read(store.dat_path()).ok()?;
+                let parsed = yaoplm_hash::dat::parse(&bytes).ok()?;
+                let index = Arc::new(RedumpIndex::new(parsed));
+                *cached = Some((dat.sha256.clone(), Arc::clone(&index)));
+                index
+            }
+        };
+        Some((info(&store, &dat), index))
     }
 
-    /// The stored DAT, parsed once per version and kept in memory.
-    pub(crate) fn redump_index(&self) -> Result<Option<Arc<RedumpIndex>>, ApiError> {
-        let store = self.redump_store();
-        let Some(dat) = store
-            .info()
-            .map_err(|e| ApiError::internal(e.to_string()))?
-        else {
-            return Ok(None);
-        };
-        let mut cached = self.redump.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((sha256, index)) = cached.as_ref()
-            && *sha256 == dat.sha256
-        {
-            return Ok(Some(Arc::clone(index)));
-        }
-        let path = store.dat_path();
-        let bytes = std::fs::read(&path)
-            .map_err(|e| ApiError::internal(format!("{}: {e}", display_path(&path))))?;
-        let parsed = yaoplm_hash::dat::parse(&bytes)
-            .map_err(|e| ApiError::internal(format!("{}: {e}", display_path(&path))))?;
-        let index = Arc::new(RedumpIndex::new(parsed));
-        *cached = Some((dat.sha256, Arc::clone(&index)));
-        Ok(Some(index))
+    pub(crate) fn redump_info(&self) -> Option<RedumpInfo> {
+        self.redump().map(|(info, _)| info)
     }
 }
 
 /// The body of an `UpdateRedump` job: a download, or an import of `file`.
 pub(crate) fn update_job(net: &Net, file: Option<PathBuf>) -> Result<JobResult, ApiError> {
+    let _one_at_a_time = net
+        .redump_update
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let store = net.redump_store();
     let (update, dat) = match file {
         Some(path) => {
             let dat = store
                 .import(&path)
                 .map_err(|e| ApiError::bad_request(e.to_string()))?;
-            (RedumpUpdate::Imported, dat)
+            (RedumpUpdate::Imported, Some(dat))
         }
         None => {
             let service = net.service()?;
             match net.block_on(store.update(service.http()))? {
-                Ok(Update::Stored(dat)) => (RedumpUpdate::Downloaded, dat),
-                Ok(Update::NotModified(dat)) => (RedumpUpdate::NotModified, dat),
-                Ok(Update::TooSoon(dat)) => (RedumpUpdate::TooSoon, dat),
+                Ok(Update::Stored(dat)) => (RedumpUpdate::Downloaded, Some(dat)),
+                Ok(Update::NotModified(dat)) => (RedumpUpdate::NotModified, Some(dat)),
+                Ok(Update::TooSoon { info, .. }) => (RedumpUpdate::TooSoon, info),
                 Err(err) => return Err(ApiError::internal(err.to_string())),
             }
         }
     };
     Ok(JobResult::Redump(Box::new(RedumpResult {
         update,
-        dat: info(&store, &dat),
+        dat: dat.map(|d| info(&store, &d)),
+        next_check: store.next_check().map(millis),
     })))
 }
 
@@ -328,6 +344,8 @@ pub(crate) struct VerifyParams {
     /// `None` means every game.
     pub games: Option<Vec<Wanted>>,
     pub md5: bool,
+    /// Read every image even when its hashes are cached.
+    pub fresh: bool,
 }
 
 /// A game a request names.
@@ -346,8 +364,8 @@ fn relative(root: &Path, path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn wanted(root: &Path, game: &CoreGame, list: &[Wanted]) -> bool {
-    list.iter().any(|w| match (w, &game.location) {
+fn names(root: &Path, game: &CoreGame, wanted: &Wanted) -> bool {
+    match (wanted, &game.location) {
         (Wanted::Image(rel), GameLocation::Image { path, .. }) => {
             relative(root, path).as_deref() == Some(rel.as_str())
         }
@@ -355,7 +373,22 @@ fn wanted(root: &Path, game: &CoreGame, list: &[Wanted]) -> bool {
             u32::try_from(*i).ok() == Some(*index) && game.startup == *startup
         }
         _ => false,
-    })
+    }
+}
+
+/// What tells the volume at `root` from another one mounted at the same
+/// place, for the hash cache: serial, file system and size.
+fn volume_key(root: &Path) -> String {
+    yaoplm_device::volume_for_path(root)
+        .map(|v| {
+            format!(
+                "{}|{}|{}",
+                v.serial.as_deref().unwrap_or("-"),
+                v.fs_name,
+                v.total_bytes
+            )
+        })
+        .unwrap_or_default()
 }
 
 /// The files of `game` with their times, for the hash cache.
@@ -373,10 +406,11 @@ fn hashed_files(game: &CoreGame) -> Result<Vec<(PathBuf, u64, Option<u128>)>, st
         .collect()
 }
 
-fn keys(files: &[(PathBuf, u64, Option<u128>)]) -> Vec<HashedFile<'_>> {
+fn keys<'a>(volume: &'a str, files: &'a [(PathBuf, u64, Option<u128>)]) -> Vec<HashedFile<'a>> {
     files
         .iter()
         .map(|(path, len, modified)| HashedFile {
+            volume,
             path,
             len: *len,
             modified: *modified,
@@ -396,6 +430,16 @@ pub(crate) fn verify_job(
     };
     let library = yaoplm_core::scan_library(&params.root, &options)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    if let Some(list) = &params.games
+        && let Some(missing) = list
+            .iter()
+            .position(|w| !library.games.iter().any(|g| names(&library.root, g, w)))
+    {
+        return Err(ApiError::not_found(format!(
+            "game {} of the request is not on this device",
+            missing + 1
+        )));
+    }
     let games: Vec<&CoreGame> = library
         .games
         .iter()
@@ -403,16 +447,17 @@ pub(crate) fn verify_job(
             params
                 .games
                 .as_ref()
-                .is_none_or(|list| wanted(&library.root, g, list))
+                .is_none_or(|list| list.iter().any(|w| names(&library.root, g, w)))
         })
         .collect();
     if games.is_empty() {
         return Err(ApiError::not_found("no game to verify"));
     }
-    let index = net.redump_index()?;
-    let dat = net.redump_info()?;
-    let service = net.service()?;
-    let cache = service.cache();
+    let (dat, index) = net.redump().unzip();
+    // The cache only saves time: without it every image is read.
+    let service = net.service().ok();
+    let cache = service.as_ref().map(|s| s.cache());
+    let volume = volume_key(&library.root);
     let algorithms = Algorithms { md5: params.md5 };
 
     // First the cache, so the progress total counts only what is read.
@@ -420,10 +465,13 @@ pub(crate) fn verify_job(
     let mut total = 0u64;
     for game in &games {
         let files = hashed_files(game);
-        let cached = files
-            .as_ref()
-            .ok()
-            .and_then(|f| cache.hashes(&keys(f), params.md5).ok().flatten());
+        let cached = match (&files, cache) {
+            (Ok(files), Some(cache)) if !params.fresh => cache
+                .hashes(&keys(&volume, files), params.md5)
+                .ok()
+                .flatten(),
+            _ => None,
+        };
         if cached.is_none()
             && let Ok(files) = &files
         {
@@ -466,7 +514,9 @@ pub(crate) fn verify_job(
                 match result {
                     Ok(hashes) => {
                         // The cache only saves time; a failure costs a re-read.
-                        let _ = cache.put_hashes(&keys(list), &hashes);
+                        if let Some(cache) = cache {
+                            let _ = cache.put_hashes(&keys(&volume, list), &hashes);
+                        }
                         Ok(hashes)
                     }
                     Err(HashError::Cancelled) => {
@@ -542,16 +592,21 @@ pub(crate) fn verify_job(
 /// Fills `Game::dump` from the hash cache for games whose files did not
 /// change since they were hashed. No image is read; when the cache cannot
 /// be opened the library simply has no verdicts.
-pub(crate) fn attach_checks(wire: &mut crate::library::Library, core: &[CoreGame], net: &Net) {
-    let Ok(service) = net.service() else {
+pub(crate) fn attach_checks(
+    wire: &mut crate::library::Library,
+    core: &yaoplm_core::Library,
+    net: &Net,
+) {
+    let Ok(Some(cache)) = Cache::open_existing(net.data_dir()) else {
         return;
     };
-    let index = net.redump_index().ok().flatten();
-    for (game, core_game) in wire.games.iter_mut().zip(core) {
+    let index = net.redump().map(|(_, index)| index);
+    let volume = volume_key(&core.root);
+    for (game, core_game) in wire.games.iter_mut().zip(&core.games) {
         let Ok(files) = hashed_files(core_game) else {
             continue;
         };
-        let Ok(Some(hashes)) = service.cache().hashes(&keys(&files), false) else {
+        let Ok(Some(hashes)) = cache.hashes(&keys(&volume, &files), false) else {
             continue;
         };
         let o = outcome(index.as_deref(), &hashes, &core_game.startup);
