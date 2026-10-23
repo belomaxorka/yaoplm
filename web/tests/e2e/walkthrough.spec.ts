@@ -64,3 +64,136 @@ test("library grid: cards never overlap and their text stays inside, from 800 to
     expect(scroll, `horizontal scroll at ${width} px`).toEqual({ page: 0, main: 0 });
   }
 });
+
+const sizes = [
+  [800, 600],
+  [1024, 768],
+  [1280, 800],
+  [1366, 768],
+  [1920, 1080],
+  [2560, 1440],
+] as const;
+
+/**
+ * What a screen must not have at any size (UI-5): a sideways scrollbar,
+ * interactive elements on top of each other, or a dialog taller than the
+ * window. Returns one line per problem.
+ */
+async function layoutProblems(page: Page): Promise<string[]> {
+  // Animations (dialogs zooming in) settle first.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
+  return page.evaluate(() => {
+    const problems: string[] = [];
+    const describe = (el: Element) => {
+      const name = el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 40) ?? "";
+      const id = el.getAttribute("data-testid");
+      return `<${el.tagName.toLowerCase()}${id ? ` data-testid=${id}` : ""}> "${name}"`;
+    };
+    const doc = document.documentElement;
+    if (doc.scrollWidth > doc.clientWidth + 1) problems.push(`the page scrolls sideways by ${doc.scrollWidth - doc.clientWidth} px`);
+    for (const el of document.querySelectorAll<HTMLElement>("body *")) {
+      const style = getComputedStyle(el);
+      if ((style.overflowX === "auto" || style.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1) {
+        problems.push(`${describe(el)} scrolls sideways by ${el.scrollWidth - el.clientWidth} px`);
+      }
+    }
+    const selector =
+      'a[href], button, input, select, textarea, [role="button"], [role="radio"], [role="checkbox"], [role="switch"], [role="tab"], [role="combobox"], [role="menuitem"]';
+    const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => {
+      const r = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && !el.closest("[aria-hidden=true], [inert]");
+    });
+    // Behind an open dialog, only the dialog counts.
+    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
+    const shown = dialog ? visible.filter((el) => dialog.contains(el)) : visible;
+    for (let i = 0; i < shown.length; i++) {
+      const a = shown[i]!;
+      const ra = a.getBoundingClientRect();
+      for (let j = i + 1; j < shown.length; j++) {
+        const b = shown[j]!;
+        if (a.contains(b) || b.contains(a)) continue;
+        const rb = b.getBoundingClientRect();
+        const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (x > 1 && y > 1) problems.push(`${describe(a)} overlaps ${describe(b)}`);
+      }
+    }
+    if (dialog) {
+      const r = dialog.getBoundingClientRect();
+      if (r.top < 0 || r.bottom > window.innerHeight + 1 || r.left < 0 || r.right > window.innerWidth + 1) {
+        problems.push(`the dialog ${describe(dialog)} does not fit the window`);
+      }
+    }
+    return problems;
+  });
+}
+
+for (const simple of [true, false]) {
+  const mode = simple ? "simple" : "advanced";
+  for (const [index, [width, height]] of sizes.entries()) {
+    // Alternating language and theme covers both of each across the sizes.
+    const language = index % 2 === 0 ? "en" : "ru";
+    const theme = index % 2 === 0 ? "light" : "dark";
+    test(`every screen fits at ${width}×${height}, ${mode} mode, ${language} ${theme}`, async ({ page, request }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (message) => {
+        if (message.type() === "error") errors.push(message.text());
+      });
+      await page.setViewportSize({ width, height });
+      await openLibrary(page, request, { language, theme, simple });
+      const problems: string[] = [];
+      const check = async (screen: string) => {
+        for (const problem of await layoutProblems(page)) problems.push(`${screen}: ${problem}`);
+      };
+
+      await page.goto("/devices");
+      await expect(page.getByTestId("device-card").first()).toBeVisible();
+      await check("devices");
+
+      await page.goto("/library");
+      await expect(page.getByTestId("library-count")).toBeVisible();
+      await expect(page.getByTestId("game-grid").getByRole("listitem").first()).toBeVisible();
+      await check("library");
+      if (!simple) {
+        await page.getByTestId("library-more").click();
+        await expect(page.getByRole("menu")).toBeVisible();
+        await check("library, More menu");
+        await page.keyboard.press("Escape");
+        await expect.soft(page.getByTestId("library-more"), "focus returns to the menu button").toBeFocused();
+      }
+
+      await page.getByTestId("game-grid").getByRole("listitem").first().click();
+      await expect(page.getByTestId("game-title")).toBeVisible();
+      await check("game card");
+      const rename = page.getByRole("group", { name: language === "en" ? "Actions" : "Действия" }).getByRole("button").first();
+      await rename.click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await check("rename dialog");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toBeHidden();
+      await expect.soft(rename, "focus returns to the button that opened the dialog").toBeFocused();
+
+      await page.goto("/library/add");
+      await expect(page.getByTestId("drop-zone")).toBeVisible();
+      await check("add games");
+      await page.getByTestId("browse-server").click();
+      await expect(page.getByTestId("folder-browser")).toBeVisible();
+      await check("folder browser");
+      await page.keyboard.press("Escape");
+
+      await page.goto("/settings");
+      await expect(page.getByTestId("about")).toBeVisible();
+      await check("settings");
+
+      if (!simple) {
+        await page.goto("/jobs");
+        await check("jobs");
+      }
+
+      expect.soft(problems).toEqual([]);
+      expect(errors).toEqual([]);
+    });
+  }
+}
