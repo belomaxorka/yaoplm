@@ -41,12 +41,14 @@ export function AddGamesPage() {
   const [sources, setSources] = useState<string[]>([]);
   const [move, setMove] = useState(false);
   const [alwaysUl, setAlwaysUl] = useState(false);
+  const [compress, setCompress] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
   const [browserOpen, setBrowserOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
   const ids = useId();
   const flow = usePlan({ onExecuted: () => void navigate("/jobs") });
   const desktop = isTauri();
+  const zsoReadable = settings.profile !== "Opl110";
 
   const addSources = useCallback((paths: string[]) => {
     setSources((current) => [...current, ...paths.filter((p) => !current.includes(p))]);
@@ -67,9 +69,10 @@ export function AddGamesPage() {
       nameStyle: settings.nameStyle,
       transfer: move ? "move" : "copy",
       layout: alwaysUl ? "ul" : "auto",
+      ...(compress && zsoReadable ? { compress: true } : {}),
       ...(list.length > 0 ? { overrides: list } : {}),
     };
-  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl]);
+  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl, compress, zsoReadable]);
 
   // Re-plan a moment after the last edit; the plan is the only truth about names and media.
   const planned = useRef<Request | null>(null);
@@ -104,7 +107,7 @@ export function AddGamesPage() {
   }
 
   const sourceOf = (transaction: PlanTransaction): string | null =>
-    transaction.steps.find((step) => step.op === "writeFile" && step.source)?.source ?? null;
+    transaction.steps.find((step) => (step.op === "writeFile" || step.op === "writeZso") && step.source)?.source ?? null;
 
   const renderOverride = (transaction: PlanTransaction) => {
     const source = sourceOf(transaction);
@@ -229,6 +232,22 @@ export function AddGamesPage() {
             <span>
               {t("add.alwaysUl")}
               <span className="block text-xs text-muted-foreground">{t("add.alwaysUlHint")}</span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-zso`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-zso`}
+              checked={compress && zsoReadable}
+              disabled={!zsoReadable}
+              onCheckedChange={setCompress}
+              className="mt-0.5"
+              data-testid="compress-zso"
+            />
+            <span>
+              {t("add.compress")}
+              <span className="block text-xs text-muted-foreground">
+                {zsoReadable ? t("add.compressHint") : t("add.compressNotForProfile")}
+              </span>
             </span>
           </Label>
           <p className="text-xs text-muted-foreground">

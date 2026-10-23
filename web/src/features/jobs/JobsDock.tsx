@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { JobProgressLine, JobStatusIcon } from "@/features/jobs/JobsPage";
+import { jobTitle } from "@/features/jobs/jobTitle";
 import { useJobs } from "@/jobs/context";
 
 /** Active jobs at a glance from any screen; the Jobs page has the rest. */
@@ -35,7 +36,7 @@ export function JobsDock() {
             <div className="flex items-center gap-2 text-sm">
               <JobStatusIcon job={job} />
               <span className="truncate" title={job.title}>
-                {job.kind === "scanLibrary" ? t("jobs.scanTitle") : job.title}
+                {jobTitle(t, job)}
               </span>
             </div>
             <JobProgressLine job={job} />

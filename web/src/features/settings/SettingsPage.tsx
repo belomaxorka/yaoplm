@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { pickFolder } from "@/features/add/desktop";
 import { artSourceInfo } from "@/features/art/sources";
+import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { formatBytes } from "@/lib/format";
 import { useSettings } from "@/settings/context";
 import { artSourceIds, nameStyles, profiles } from "@/settings/settings";
@@ -164,6 +165,16 @@ export function SettingsPage() {
                 {t("settings.clearArtCache")}
               </Button>
             </SettingRow>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.dumps")}</CardTitle>
+            <CardDescription>{t("settings.dumpsDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RedumpPanel />
           </CardContent>
         </Card>
 

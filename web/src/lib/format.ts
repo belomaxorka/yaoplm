@@ -45,6 +45,10 @@ export function formatTime(epochMs: number): string {
   return new Date(epochMs).toLocaleTimeString(i18n.language, { hour12: false });
 }
 
+export function formatDate(epochMs: number): string {
+  return new Date(epochMs).toLocaleDateString(i18n.language);
+}
+
 /** The last path component, for file names in lists. */
 export function baseName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
