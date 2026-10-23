@@ -24,25 +24,15 @@ export function NoticeIcon({ level, className }: { level: NoticeLevel; className
   return <Icon className={cn("size-4 shrink-0", colours[level], className)} aria-hidden />;
 }
 
-export function NoticeLine({
-  notice,
-  level = "warning",
-  compact = false,
-}: {
-  notice: Notice;
-  level?: NoticeLevel;
-  compact?: boolean;
-}) {
+export function NoticeLine({ notice, level = "warning" }: { notice: Notice; level?: NoticeLevel }) {
   const text = useNoticeText();
   const { t } = useTranslation();
-  const { label, detail } = text(notice);
   return (
     <li className="flex items-start gap-2 text-sm" data-code={notice.code} data-level={level}>
       <NoticeIcon level={level} className="mt-0.5" />
-      <span className="min-w-0">
+      <span className="min-w-0 wrap-anywhere">
         <span className="sr-only">{t(`noticeLevel.${level}`)}: </span>
-        <span>{label}</span>
-        {detail && !compact && <span className="block text-xs text-muted-foreground">{detail}</span>}
+        {text(notice)}
       </span>
     </li>
   );
@@ -52,13 +42,11 @@ export function NoticeList({
   notices,
   level,
   className,
-  compact,
 }: {
   notices: readonly (Notice | PlanNotice)[];
   /** For plain warnings without a level of their own. */
   level?: NoticeLevel;
   className?: string;
-  compact?: boolean;
 }) {
   if (notices.length === 0) return null;
   return (
@@ -68,7 +56,6 @@ export function NoticeList({
           key={`${notice.code}-${index}`}
           notice={notice}
           level={"level" in notice ? notice.level : (level ?? "warning")}
-          compact={compact}
         />
       ))}
     </ul>

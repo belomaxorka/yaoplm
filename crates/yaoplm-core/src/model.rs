@@ -9,6 +9,9 @@ use yaoplm_formats::cht::ChtWarning;
 use yaoplm_formats::iso_name::NameFormat;
 use yaoplm_formats::iso9660::Layers;
 use yaoplm_formats::ul_cfg::RecordAnomaly;
+use yaoplm_formats::vmc::VmcProblem;
+use yaoplm_formats::zso::ZsoProblem;
+use yaoplm_i18n::Phrase;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameFormat {
@@ -122,23 +125,11 @@ pub enum SkipReason {
     /// A disc-image extension OPL does not read, e.g. `.cso`, `.bin`.
     UnsupportedExtension(String),
     TitleTooLong,
-    /// OPL mounts it and finds no usable ID; the text says why.
-    NoStartup(String),
+    /// OPL mounts it and finds no usable ID; the phrase says why.
+    NoStartup(Phrase),
     Unreadable(String),
-    /// `APPS/<folder>` without a usable `title.cfg`.
-    BadApp(String),
-}
-
-impl fmt::Display for SkipReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedExtension(ext) => write!(f, "OPL does not read {ext} files"),
-            Self::TitleTooLong => write!(f, "title is longer than 160 characters"),
-            Self::NoStartup(why) => write!(f, "OPL hides it: {why}"),
-            Self::Unreadable(why) => write!(f, "cannot read it: {why}"),
-            Self::BadApp(why) => write!(f, "OPL skips this app: {why}"),
-        }
-    }
+    /// `APPS/<folder>` without a usable `title.cfg`; the phrase says why.
+    BadApp(Phrase),
 }
 
 impl SkipReason {
@@ -150,6 +141,23 @@ impl SkipReason {
             Self::Unreadable(_) => "unreadable",
             Self::BadApp(_) => "badApp",
         }
+    }
+
+    /// What front ends show (ADR-0029); `Display` is its English.
+    pub fn phrase(&self) -> Phrase {
+        let phrase = Phrase::notice(self.code());
+        match self {
+            Self::UnsupportedExtension(ext) => phrase.with("ext", ext),
+            Self::TitleTooLong => phrase,
+            Self::NoStartup(why) | Self::BadApp(why) => phrase.with("reason", why.clone()),
+            Self::Unreadable(why) => phrase.with("error", why),
+        }
+    }
+}
+
+impl fmt::Display for SkipReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.phrase().english())
     }
 }
 
@@ -179,7 +187,7 @@ pub enum Warning {
         content: GameFormat,
     },
     ZsoUnsupportedByProfile,
-    ZsoHeader(String),
+    ZsoHeader(ZsoProblem),
     /// Bigger than any PS2 CD; probably belongs in `DVD/`.
     CdTooLarge(u64),
     UlRecord(RecordAnomaly),
@@ -207,7 +215,7 @@ pub enum Warning {
     VmcInvalid {
         slot: u8,
         name: String,
-        problem: String,
+        problem: VmcProblem,
     },
     ArtNotLoaded(String),
     ArtTooLarge {
@@ -257,96 +265,64 @@ impl Warning {
     }
 }
 
-impl fmt::Display for Warning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Warning {
+    /// What front ends show (ADR-0029); `Display` is its English.
+    pub fn phrase(&self) -> Phrase {
+        let phrase = Phrase::notice(self.code());
         match self {
-            Self::StaleCache { cached, image } => write!(
-                f,
-                "games.bin still lists this file as {cached}, but the image is {image}; OPL shows {cached} until games.bin is deleted"
-            ),
-            Self::NameIdMismatch { name, image } => {
-                write!(
-                    f,
-                    "file name says {name} but SYSTEM.CNF says {image}; OPL uses {name}"
-                )
+            Self::StaleCache { cached, image } => {
+                phrase.with("cached", cached).with("image", image)
             }
-            Self::UppercaseExtension => {
-                write!(f, "uppercase extension: OPL shows no ISO/ZSO label")
-            }
-            Self::NonAsciiName => write!(
-                f,
-                "non-ASCII characters in the name: the console may garble it or fail to open the file"
-            ),
-            Self::SmbNameTooLong(len) => write!(
-                f,
-                "file name is {len} bytes; over SMB OPL opens at most 159"
-            ),
-            Self::ContainerMismatch { extension, content } => {
-                write!(f, "extension says {extension} but the file is {content}")
-            }
-            Self::ZsoUnsupportedByProfile => write!(f, "OPL 1.1.0 cannot read ZSO"),
-            Self::ZsoHeader(problem) => write!(f, "ZSO header: {problem}"),
-            Self::CdTooLarge(size) => write!(
-                f,
-                "{size} bytes is more than a PS2 CD holds; it probably belongs in DVD/"
-            ),
-            Self::UlRecord(anomaly) => write!(f, "ul.cfg record: {anomaly:?}"),
-            Self::UlPartMissing { part, name } => write!(f, "chunk {part} ({name}) is missing"),
-            Self::UlPartSize { part, size } => {
-                write!(f, "chunk {part} is {size} bytes; it must be exactly 1 GiB")
-            }
-            Self::UlTooManyPartsForSmb(parts) => {
-                write!(f, "{parts} chunks: OPL opens at most 10 over SMB")
-            }
-            Self::CfgLibconfig => write!(
-                f,
-                "CFG is in wOPL's libconfig format; YAOPLM leaves it alone"
-            ),
-            Self::CfgUnreadable(why) => write!(f, "cannot read CFG: {why}"),
-            Self::CompatibilityBits { value, allowed } => {
-                write!(
-                    f,
-                    "$Compatibility={value} sets bits outside {allowed:#x} for this loader"
-                )
-            }
+            Self::NameIdMismatch { name, image } => phrase.with("name", name).with("image", image),
+            Self::UppercaseExtension
+            | Self::NonAsciiName
+            | Self::ZsoUnsupportedByProfile
+            | Self::CfgLibconfig
+            | Self::DuplicateStartup => phrase,
+            Self::SmbNameTooLong(len) => phrase.with("length", *len),
+            Self::ContainerMismatch { extension, content } => phrase
+                .with("extension", extension.to_string())
+                .with("content", content.to_string()),
+            Self::ZsoHeader(problem) => phrase.with("reason", crate::reasons::zso_problem(problem)),
+            Self::CdTooLarge(size) => phrase.with("size", *size),
+            Self::UlRecord(anomaly) => phrase.with("reason", crate::reasons::record(anomaly)),
+            Self::UlPartMissing { part, name } => phrase.with("part", *part).with("name", name),
+            Self::UlPartSize { part, size } => phrase.with("part", *part).with("size", *size),
+            Self::UlTooManyPartsForSmb(parts) => phrase.with("parts", *parts),
+            Self::CfgUnreadable(why) => phrase.with("error", why),
+            Self::CompatibilityBits { value, allowed } => phrase
+                .with("value", value.to_string())
+                .with("allowed", format!("{allowed:#x}")),
             // OPL shows the slots as 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
-            Self::VmcMissing { slot, name } => {
-                write!(f, "VMC slot {}: VMC/{name}.bin does not exist", slot + 1)
-            }
+            Self::VmcMissing { slot, name } => phrase.with("slot", *slot + 1).with("name", name),
             Self::VmcInvalid {
                 slot,
                 name,
                 problem,
-            } => write!(
-                f,
-                "VMC slot {}: VMC/{name}.bin is unusable: {problem}",
-                slot + 1
-            ),
-            Self::ArtNotLoaded(file) => write!(f, "{file}: this loader only reads PNG art"),
+            } => phrase
+                .with("slot", *slot + 1)
+                .with("name", name)
+                .with("reason", crate::reasons::vmc(problem)),
+            Self::ArtNotLoaded(file) => phrase.with("file", file),
             Self::ArtTooLarge {
                 file,
                 width,
                 height,
-            } => {
-                write!(
-                    f,
-                    "{file} is {width}x{height}; OPL rejects art over 1024 px"
-                )
-            }
-            Self::Cheats(w) => write!(f, "cheats: {w:?}"),
-            Self::DuplicateStartup => write!(f, "another entry has the same game ID"),
-            Self::UlCfgTrailingBytes(n) => {
-                write!(
-                    f,
-                    "ul.cfg ends with {n} stray bytes; OPL shows them as a broken game"
-                )
-            }
-            Self::AppBootMissing(boot) => write!(f, "boot file {boot} is not in the app folder"),
-            Self::UnfinishedOperation(id) => write!(
-                f,
-                "an operation did not finish (journal {id}); recover it before changing the library"
-            ),
+            } => phrase
+                .with("file", file)
+                .with("width", *width)
+                .with("height", *height),
+            Self::Cheats(warning) => phrase.with("reason", crate::reasons::cheat(warning)),
+            Self::UlCfgTrailingBytes(extra) => phrase.with("extra", *extra),
+            Self::AppBootMissing(boot) => phrase.with("boot", boot),
+            Self::UnfinishedOperation(id) => phrase.with("id", id),
         }
+    }
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.phrase().english())
     }
 }
 

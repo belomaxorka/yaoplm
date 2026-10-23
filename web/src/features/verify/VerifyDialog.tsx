@@ -29,7 +29,7 @@ import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { useJobs } from "@/jobs/context";
 import { formatBytes } from "@/lib/format";
 import { gameRef } from "@/lib/gameKey";
-import { errorText } from "@/lib/phrase";
+import { errorText, phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 type Scope = "unchecked" | "all";
@@ -304,7 +304,7 @@ function ResultRow({ game }: { game: GameVerification }) {
           </span>
         )}
         {game.cached && <span>{t("dump.fromCache")}</span>}
-        {game.error && <span className="text-destructive">{game.error}</span>}
+        {game.error && <span className="text-destructive">{phraseText(game.errorPhrase, game.error)}</span>}
       </div>
       {open && game.hashes && (
         <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5 rounded-md bg-muted/50 p-2 font-mono text-xs">

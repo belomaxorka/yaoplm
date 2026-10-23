@@ -450,13 +450,10 @@ impl Api {
             } => {
                 let stored = self.plans.take(&plan, |stored| {
                     if let Some(blocker) = stored.plan.blockers().next() {
-                        // The notice's message names what is missing.
-                        let mut err = ApiError::phrased(
+                        return Err(ApiError::phrased(
                             ErrorCode::BadRequest,
-                            &Said::error("planBlocked").with("reason", Said::notice(&blocker.code)),
-                        );
-                        err.message.clone_from(&blocker.message);
-                        return Err(err);
+                            &Said::error("planBlocked").with("reason", blocker.said()),
+                        ));
                     }
                     if stored.plan.transactions.is_empty() {
                         return Err(ApiError::phrased(

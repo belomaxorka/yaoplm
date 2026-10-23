@@ -21,6 +21,7 @@ thiserror.workspace = true
 yaoplm-device.workspace = true
 yaoplm-formats.workspace = true
 yaoplm-hash.workspace = true
+yaoplm-i18n.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

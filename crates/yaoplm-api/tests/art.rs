@@ -253,7 +253,7 @@ fn fetch_missing_covers_then_write_them() {
         panic!("expected a plan");
     };
     assert!(
-        plan.notices.iter().any(|n| n.code == "nothingToFetch"),
+        plan.notices.iter().any(|n| n.code == "allHaveCovers"),
         "{plan:#?}"
     );
 }

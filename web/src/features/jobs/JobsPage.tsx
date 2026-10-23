@@ -338,7 +338,6 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
                 startup: entry.startup,
                 title: entry.title,
                 source: entry.source ?? "",
-                detail: entry.detail ?? "",
               })}
             {entry.kind === "verify" &&
               t(`jobs.verifyState.${entry.status}`, {
@@ -352,11 +351,15 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
             {entry.kind === "verify" && entry.cached && (
               <span className="block text-muted-foreground">{t("dump.fromCache")}</span>
             )}
-            {entry.kind === "verify" && entry.error && <span className="block">{entry.error}</span>}
+            {entry.kind === "verify" && entry.error && (
+              <span className="block">{phraseText(entry.errorPhrase, entry.error)}</span>
+            )}
             {entry.kind === "step" && entry.error && (
               <span className="block">{phraseText(entry.errorPhrase, entry.error)}</span>
             )}
-            {entry.kind === "art" && entry.detail && <span className="block text-muted-foreground">{entry.detail}</span>}
+            {entry.kind === "art" && entry.detail && (
+              <span className="block text-muted-foreground">{phraseText(entry.detailPhrase, entry.detail)}</span>
+            )}
           </span>
         </li>
       ))}

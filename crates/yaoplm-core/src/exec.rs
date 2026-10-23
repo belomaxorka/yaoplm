@@ -18,10 +18,10 @@ use yaoplm_device::copy::BLOCK_SIZE;
 use yaoplm_device::fs::{DeviceFs, PART_SUFFIX, TMP_SUFFIX, write_atomic};
 use yaoplm_device::{CancelToken, CopyError, RelPath, SourceFs, copy_exact};
 use yaoplm_formats::zso::{self, ZsoError};
+use yaoplm_i18n::Phrase;
 
 use crate::journal::{self, Journal, TxProgress, TxState};
-use crate::phrase::Phrase;
-use crate::plan::{Expect, Plan, PlanKind, Removal, Step};
+use crate::plan::{Expect, Notice, Plan, PlanKind, Removal, Step};
 use crate::source::{device_path, open_stream};
 
 /// What a front end needs to draw progress.
@@ -78,11 +78,8 @@ pub enum Event<'a> {
 /// language (ADR-0029); `Display` is its English text.
 #[derive(Debug)]
 pub enum ExecError {
-    /// A plan notice of level error; `code` names it.
-    Blocked {
-        code: String,
-        message: String,
-    },
+    /// A plan notice of level error.
+    Blocked(Box<Notice>),
     DeviceChanged {
         planned: String,
         now: String,
@@ -109,9 +106,7 @@ impl ExecError {
 
     pub fn phrase(&self) -> Phrase {
         match self {
-            Self::Blocked { code, .. } => {
-                Phrase::error("planBlocked").with("reason", Phrase::notice(code))
-            }
+            Self::Blocked(notice) => Phrase::error("planBlocked").with("reason", notice.said()),
             Self::DeviceChanged { .. } => Phrase::error("deviceChanged"),
             Self::SourceChanged(path) => {
                 Phrase::error("sourceChanged").with("path", path.display().to_string())
@@ -131,12 +126,7 @@ impl ExecError {
 
 impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            // The notice's own message names what is missing; its label
-            // alone would not.
-            Self::Blocked { message, .. } => write!(f, "the plan cannot run: {message}"),
-            other => f.write_str(&other.phrase().english()),
-        }
+        f.write_str(&self.phrase().english())
     }
 }
 
@@ -734,10 +724,7 @@ fn check_device(ctx: &Context<'_>, plan: &Plan) -> Result<u64, ExecError> {
 /// Everything that must hold before the first write.
 fn preflight(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
     if let Some(blocker) = plan.blockers().next() {
-        return Err(ExecError::Blocked {
-            code: blocker.code.clone(),
-            message: blocker.message.clone(),
-        });
+        return Err(ExecError::Blocked(Box::new(blocker.clone())));
     }
     let free = check_device(ctx, plan)?;
     journal::clean_temp(ctx.fs).map_err(ExecError::io(Phrase::error("cannotCleanJournals")))?;

@@ -117,37 +117,68 @@ const rust = import.meta.glob<string>(
   { query: "?raw", import: "default", eager: true },
 );
 
-/** Every code a `Notice`, a skip or a `fn code()` match arm names. */
+/** Codes of warnings, skip reasons and advice: their `fn code()` arms (`notices.<code>`). */
 function noticeCodes(): string[] {
   const codes = new Set<string>();
   for (const [path, source] of Object.entries(rust)) {
-    const code = String.raw`"([a-z][A-Za-z0-9]+)"`;
-    const patterns = [
-      new RegExp(String.raw`Notice::(?:info|warning|error)\(\s*${code}`, "g"),
-      new RegExp(String.raw`\bskip\(\s*[^,()]+(?:\([^()]*\))?\s*,\s*${code}`, "g"),
-    ];
-    if (path.endsWith("model.rs") || path.endsWith("advice.rs")) patterns.push(new RegExp(String.raw`=>\s*${code}`, "g"));
-    for (const pattern of patterns) for (const match of source.matchAll(pattern)) if (match[1]) codes.add(match[1]);
+    if (!path.endsWith("model.rs") && !path.endsWith("advice.rs")) continue;
+    for (const [, code] of source.matchAll(/=>\s*"([a-z][A-Za-z0-9]+)"/g)) if (code) codes.add(code);
   }
   return [...codes].sort();
 }
 
-/** Keys of the phrases the core sends (ADR-0029): `titles.*`, `errors.*`, `notices.*`. */
-function phraseKeys(): string[] {
-  const keys = new Set<string>();
-  const section = { title: "titles", error: "errors", notice: "notices" } as const;
-  const named = /\b(?:Phrase|Said)::(title|error|notice)\(\s*"([a-z][A-Za-z0-9]+)"/g;
-  // `Phrase::title(if compress { "compressGame" } else { "copyGame" })`.
-  const either = /\b(?:Phrase|Said)::(title|error)\(\s*if [^{]+\{\s*"(\w+)"\s*\}\s*else\s*\{\s*"(\w+)"/g;
-  for (const source of Object.values(rust)) {
-    for (const [, kind, code] of source.matchAll(named)) keys.add(`${section[kind as keyof typeof section]}.${code}`);
-    for (const [, kind, a, b] of source.matchAll(either)) {
-      for (const code of [a, b]) keys.add(`${section[kind as keyof typeof section]}.${code}`);
+const SECTION = { title: "titles", error: "errors", notice: "notices", reason: "reasons" } as const;
+type Kind = keyof typeof SECTION;
+
+/** Each phrase with a literal key in the core and API, and the parameters its chain sets. */
+function phraseCalls(): { key: string; params: string[]; at: string }[] {
+  const calls: { key: string; params: string[]; at: string }[] = [];
+  // `Phrase::notice("noSpace")`, or `Phrase::title(if a { "x" } else { "y" })`.
+  const start =
+    /\b(?:Phrase|Said)::(title|error|notice|reason)\(\s*(?:"(\w+)"|if [^{]+\{\s*"(\w+)"\s*\}\s*else\s*\{\s*"(\w+)"\s*\})\s*\)/g;
+  for (const [path, source] of Object.entries(rust)) {
+    for (const match of source.matchAll(start)) {
+      const params = new Set<string>();
+      let i = (match.index ?? 0) + match[0].length;
+      // Follow `.with("name", …)` and `.count(…)` chained to it.
+      for (;;) {
+        const link = /^\s*\.(with|count)\(\s*(?:"(\w+)")?/.exec(source.slice(i));
+        if (!link) break;
+        params.add(link[1] === "count" ? "count" : (link[2] ?? ""));
+        let depth = 0;
+        let j = i + source.slice(i).indexOf("(");
+        for (; j < source.length; j += 1) {
+          const c = source[j];
+          if (c === "(") depth += 1;
+          else if (c === ")" && --depth === 0) break;
+          else if (c === '"') while (++j < source.length && source[j] !== '"') if (source[j] === "\\") j += 1;
+        }
+        i = j + 1;
+      }
+      const line = source.slice(0, match.index).split("\n").length;
+      for (const code of [match[2], match[3], match[4]]) {
+        if (code) calls.push({ key: `${SECTION[match[1] as Kind]}.${code}`, params: [...params].sort(), at: `${path}:${line}` });
+      }
     }
-    // The executor's `doing("cannotWrite", path)`.
-    for (const [, code] of source.matchAll(/\bdoing\(\s*"(\w+)"/g)) keys.add(`errors.${code}`);
+    // The executor's `doing("cannotWrite", path)` sets `path`.
+    for (const match of source.matchAll(/\bdoing\(\s*"(\w+)"/g)) {
+      calls.push({ key: `errors.${match[1] ?? ""}`, params: ["path"], at: path });
+    }
   }
-  return [...keys].sort();
+  return calls;
+}
+
+/** Keys of the phrases the core sends (ADR-0029). */
+function phraseKeys(): string[] {
+  return [...new Set(phraseCalls().map((call) => call.key))].sort();
+}
+
+/** The placeholders of a key in `language`, over all its plural forms. */
+function templatePlaceholders(language: Language, key: string): string[] {
+  const texts = Object.entries(flats[language])
+    .filter(([name]) => name === key || name.replace(PLURAL_SUFFIX, "") === key)
+    .map(([, text]) => text);
+  return placeholders(texts.join(" "));
 }
 
 describe("locales", () => {
@@ -205,9 +236,9 @@ describe("locales", () => {
     }
   });
 
-  it("translate every notice code the core reports", () => {
+  it("translate every warning, skip reason and advice code", () => {
     const codes = noticeCodes();
-    expect(codes.length).toBeGreaterThan(50);
+    expect(codes.length).toBeGreaterThan(40);
     for (const language of languages) {
       const missing = codes.filter((code) => !has(flats[language], `notices.${code}`));
       expect(missing, language).toEqual([]);
@@ -216,18 +247,31 @@ describe("locales", () => {
 
   it("translate every phrase the core sends", () => {
     const keys = phraseKeys();
-    expect(keys.length).toBeGreaterThan(80);
+    expect(keys.length).toBeGreaterThan(200);
     for (const language of languages) {
       const missing = keys.filter((key) => !has(flats[language], key));
       expect(missing, language).toEqual([]);
     }
   });
 
-  it("keep no title or error the core never sends", () => {
+  it("give every phrase exactly the parameters its template uses", () => {
+    const calls = phraseCalls();
+    expect(calls.length).toBeGreaterThan(250);
+    const wrong = calls.flatMap((call) =>
+      languages
+        .map((language) => ({ language, used: templatePlaceholders(language, call.key) }))
+        .filter(({ used }) => used.join() !== call.params.join())
+        .map(({ language, used }) => `${call.at} ${call.key} sets [${call.params.join()}], ${language} uses [${used.join()}]`),
+    );
+    expect(wrong).toEqual([]);
+  });
+
+  it("keep no title, error, notice or reason the core never sends", () => {
     const source = Object.values(rust).join("\n");
+    const sections = ["titles.", "errors.", "notices.", "reasons."];
     const codes = new Set(
       Object.keys(flats.en)
-        .filter((key) => key.startsWith("titles.") || key.startsWith("errors."))
+        .filter((key) => sections.some((section) => key.startsWith(section)))
         .map((key) => key.replace(PLURAL_SUFFIX, "").split(".")[1] ?? ""),
     );
     expect([...codes].filter((code) => !source.includes(`"${code}"`))).toEqual([]);

@@ -175,6 +175,10 @@ pub enum JobLogEntry {
         source: Option<String>,
         /// Where it came from, or why it is missing.
         detail: Option<String>,
+        /// Why it is missing, for front ends that translate it.
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail_phrase: Option<Phrase>,
     },
     /// One game of a `VerifyGames` job.
     Verify {
@@ -188,6 +192,9 @@ pub enum JobLogEntry {
         /// The hashes came from the cache.
         cached: bool,
         error: Option<String>,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_phrase: Option<Phrase>,
     },
 }
 

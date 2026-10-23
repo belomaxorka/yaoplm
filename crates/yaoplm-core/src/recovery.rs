@@ -18,11 +18,11 @@ use std::collections::HashSet;
 use std::io;
 
 use yaoplm_device::fs::DeviceFs;
+use yaoplm_i18n::{Param, Phrase};
 
 use crate::device::DeviceState;
 use crate::exec::undo;
 use crate::journal::{self, Journal, TxState};
-use crate::phrase::{Param, Phrase};
 use crate::plan::{Notice, Plan, PlanKind, Step, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -118,10 +118,9 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
             }
         }
         if progress.state == TxState::Committed && action == RecoveryAction::Rollback {
-            recovery.notices.push(Notice::info(
-                "alreadyCommitted",
-                "this change was already visible to OPL, so it is completed instead of undone",
-            ));
+            recovery
+                .notices
+                .push(Notice::info(Phrase::notice("alreadyCommitted")));
         }
         plan.transactions.push(recovery);
     }
@@ -144,11 +143,9 @@ pub fn plan_recovery(fs: &dyn DeviceFs, action: RecoveryAction) -> io::Result<Pl
     );
     for bad in &unreadable {
         plan.notices.push(Notice::error(
-            "journalUnreadable",
-            format!(
-                "journal {} cannot be read ({}); check the device by hand",
-                bad.file, bad.error
-            ),
+            Phrase::notice("journalUnreadable")
+                .with("file", &bad.file)
+                .with("error", bad.error.to_string()),
         ));
     }
     // A recovery that was interrupted already covers its journals.
@@ -171,7 +168,7 @@ pub fn plan_recovery(fs: &dyn DeviceFs, action: RecoveryAction) -> io::Result<Pl
     // DropJournal steps run when it is finished above.
     if journals.is_empty() && unreadable.is_empty() {
         plan.notices
-            .push(Notice::info("nothingToRecover", "no unfinished operation"));
+            .push(Notice::info(Phrase::notice("nothingToRecover")));
     }
     plan.set_title(
         Phrase::title("recoverOperations")

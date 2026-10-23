@@ -22,15 +22,16 @@ use yaoplm_device::fs::{DeviceFs, DirEntry, find_entry, list_or_empty};
 use yaoplm_device::source::SourceFs;
 use yaoplm_formats::Media;
 use yaoplm_formats::art::{ART_FOLDER, ArtKind, art_file_name, parse_art_file_name};
+use yaoplm_i18n::Phrase;
 
 use crate::device::{DeviceState, join, rel};
 use crate::journal::{self, BACKUP_DIR};
 use crate::ops::OpError;
-use crate::phrase::Phrase;
 use crate::plan::{
     GameInfo, Notice, Plan, PlanKind, Removal, Skipped, Source, SourceFile, SourceKind, Step,
     Transaction,
 };
+use crate::reasons;
 
 /// A cover to write.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,7 +130,9 @@ pub fn plan_set_art(
             Err(err) => {
                 plan.skipped.push(Skipped {
                     path: item.file.clone(),
-                    reason: Notice::warning("badName", format!("{name}: {err}")),
+                    reason: Notice::warning(
+                        Phrase::notice("badName").with("reason", reasons::bad_name(&err)),
+                    ),
                 });
                 continue;
             }
@@ -139,7 +142,7 @@ pub fn plan_set_art(
             _ => {
                 plan.skipped.push(Skipped {
                     path: item.file.clone(),
-                    reason: Notice::warning("coverUnreadable", "the cover file cannot be read"),
+                    reason: Notice::warning(Phrase::notice("coverUnreadable")),
                 });
                 continue;
             }
@@ -149,8 +152,9 @@ pub fn plan_set_art(
             plan.skipped.push(Skipped {
                 path: item.file.clone(),
                 reason: Notice::info(
-                    "coverExists",
-                    format!("{} already has a {} cover", item.startup, item.kind),
+                    Phrase::notice("coverExists")
+                        .with("startup", &item.startup)
+                        .with("kind", item.kind.to_string()),
                 ),
             });
             continue;
@@ -193,13 +197,11 @@ pub fn plan_set_art(
         });
         if !existing.is_empty() {
             tx.notices.push(Notice::info(
-                "coverReplaced",
-                format!("the current cover moves to {backup} before the new one is written"),
+                Phrase::notice("coverReplaced").with("folder", backup.to_string()),
             ));
         }
         tx.notices.push(Notice::info(
-            "coverFrom",
-            format!("cover from {}", item.origin),
+            Phrase::notice("coverFrom").with("origin", &item.origin),
         ));
         transactions.push(tx);
     }
@@ -227,16 +229,14 @@ pub fn plan_set_art(
     });
     if count == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
-            .push(Notice::error("nothingToWrite", "no cover to write"));
+            .push(Notice::error(Phrase::notice("nothingToWrite")));
     }
     let needed = plan.write_bytes();
     if count > 0 && needed > state.info.free_bytes {
         plan.notices.push(Notice::error(
-            "noSpace",
-            format!(
-                "not enough free space: {needed} bytes needed, {} available",
-                state.info.free_bytes
-            ),
+            Phrase::notice("noSpace")
+                .with("needed", needed)
+                .with("free", state.info.free_bytes),
         ));
     }
     Ok(plan)
@@ -289,8 +289,7 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
         });
     }
     tx.notices.push(Notice::info(
-        "coverBackedUp",
-        format!("a copy stays in {backup}"),
+        Phrase::notice("coverBackedUp").with("folder", backup.to_string()),
     ));
     plan.transactions.push(tx);
     Ok(plan)

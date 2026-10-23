@@ -321,7 +321,7 @@ fn ul_games_on_request_and_recover_without_journals() {
 
     let recover = run(&["recover".as_ref(), s.root.as_os_str()]);
     assert!(recover.status.success());
-    assert!(stdout(&recover).contains("no unfinished operation"));
+    assert!(stdout(&recover).contains("No unfinished operation"));
 }
 
 #[test]

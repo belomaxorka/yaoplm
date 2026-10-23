@@ -75,7 +75,7 @@ pub fn image_info(path: &Path, profile: LoaderProfile) -> Result<ImageInfo, Info
     };
     let zso = image.zso_header().copied();
     let problems: Vec<ZsoProblem> = zso.map(|h| h.problems()).unwrap_or_default();
-    warnings.extend(problems.iter().map(|p| Warning::ZsoHeader(p.to_string())));
+    warnings.extend(problems.iter().map(|p| Warning::ZsoHeader(*p)));
     if format == GameFormat::Zso && !profile.reads_zso() {
         warnings.push(Warning::ZsoUnsupportedByProfile);
     }

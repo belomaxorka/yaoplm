@@ -3,36 +3,17 @@ import { useTranslation } from "react-i18next";
 import type { Notice } from "@/api/generated/Notice";
 import type { NoticeLevel } from "@/api/generated/NoticeLevel";
 import type { PlanNotice } from "@/api/generated/PlanNotice";
+import { phraseText } from "@/lib/phrase";
 
 /**
- * Warnings, skip reasons and storage advice all come as a stable `code`
- * plus an English `message`. The code picks a translated label; the
- * message keeps the specifics (names, sizes) the core put in it.
+ * Plan notices, game warnings, device advice and skip reasons come as a
+ * phrase with their names and sizes (ADR-0029): the UI shows the phrase in
+ * its language. A notice from an older journal has only the core's English.
  */
 export function useNoticeText() {
-  const { t, i18n } = useTranslation();
-  return (notice: Notice): { label: string; detail: string | null } => {
-    const key = `notices.${notice.code}`;
-    if (!i18n.exists(key)) return { label: notice.message, detail: null };
-    // Codes are open-ended (the core may add one before the catalogue does),
-    // so the key is looked up dynamically.
-    const label: string = t(key as never);
-    // A message without names or sizes in it is the English label: it adds
-    // nothing, in English or in a translation.
-    const english: string = t(key as never, { lng: "en" });
-    const message = plain(notice.message);
-    const same = message === plain(english) || message === plain(label);
-    return { label, detail: same ? null : notice.message };
-  };
-}
-
-/** Text without case, punctuation or runs of spaces, for comparing. */
-function plain(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[.,:;!?’']+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Re-renders the caller when the language changes.
+  useTranslation();
+  return (notice: Notice | PlanNotice): string => phraseText(notice.phrase, notice.message);
 }
 
 /** The worst level among notices, for a verdict badge. */

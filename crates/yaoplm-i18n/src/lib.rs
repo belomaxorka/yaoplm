@@ -1,7 +1,8 @@
 //! User-facing texts as a catalogue key with parameters (docs/I18N.md,
 //! ADR-0029). Front ends translate the key into their own language; the
-//! core renders the English text from the web UI's `en` catalogue, so the
-//! CLI, the logs and the English UI always say the same.
+//! crates render the English text from the web UI's `en` catalogue, so the
+//! CLI, the logs and the English UI always say the same. A crate of its
+//! own so that `yaoplm-device` and `yaoplm-core` can both use it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -9,7 +10,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-/// The web UI's English catalogue; the core reads `titles.*`, `errors.*`
+/// The web UI's English catalogue; the crates read `titles.*`, `errors.*`
 /// and `notices.*` from it.
 static EN: &str = include_str!("../../../web/src/locales/en/translation.json");
 
@@ -44,9 +45,16 @@ impl Phrase {
         Self::keyed(format!("errors.{code}"))
     }
 
-    /// `notices.<code>`: the label of a [`crate::plan::Notice`].
+    /// `notices.<code>`: plan notices, game warnings, device advice and
+    /// the reasons an item is skipped.
     pub fn notice(code: &str) -> Self {
         Self::keyed(format!("notices.{code}"))
+    }
+
+    /// `reasons.<code>`: a cause written to follow a colon inside another
+    /// phrase, such as why OPL hides a disc.
+    pub fn reason(code: &str) -> Self {
+        Self::keyed(format!("reasons.{code}"))
     }
 
     fn keyed(key: String) -> Self {
@@ -97,6 +105,18 @@ impl fmt::Display for Phrase {
 impl From<u64> for Param {
     fn from(value: u64) -> Self {
         Self::Number(value)
+    }
+}
+
+impl From<u8> for Param {
+    fn from(value: u8) -> Self {
+        Self::Number(u64::from(value))
+    }
+}
+
+impl From<u32> for Param {
+    fn from(value: u32) -> Self {
+        Self::Number(u64::from(value))
     }
 }
 
@@ -156,7 +176,7 @@ fn flatten(value: &serde_json::Value, prefix: &str, out: &mut HashMap<String, St
 }
 
 /// i18next's `{{name}}` and `{{name, bytes}}`; a name without a value is
-/// left as it is.
+/// left as it is (and is a bug in a debug build).
 fn interpolate(template: &str, params: &BTreeMap<String, Param>) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
@@ -175,7 +195,10 @@ fn interpolate(template: &str, params: &BTreeMap<String, Param>) -> String {
             (Some(Param::Number(n)), _) => out.push_str(&n.to_string()),
             (Some(Param::Text(text)), _) => out.push_str(text),
             (Some(Param::Phrase(phrase)), _) => out.push_str(&phrase.english()),
-            (None, _) => out.push_str(&rest[start..start + len + 2]),
+            (None, _) => {
+                debug_assert!(false, "no value for {name} in {template}");
+                out.push_str(&rest[start..start + len + 2]);
+            }
         }
         rest = &rest[start + len + 2..];
     }
@@ -235,9 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_unknown_placeholders_and_round_trips() {
-        let params = BTreeMap::new();
-        assert_eq!(interpolate("a {{b}} c", &params), "a {{b}} c");
+    fn round_trips() {
         let phrase = Phrase::title("convertGames")
             .count(2)
             .with("format", "ZSO")

@@ -32,7 +32,11 @@ source: string | null,
 /**
  * Where it came from, or why it is missing.
  */
-detail: string | null, } | { "kind": "verify", at: number, startup: string, title: string, status: VerifyStatus, reason: UnknownReason | null, 
+detail: string | null, 
+/**
+ * Why it is missing, for front ends that translate it.
+ */
+detailPhrase?: Phrase, } | { "kind": "verify", at: number, startup: string, title: string, status: VerifyStatus, reason: UnknownReason | null, 
 /**
  * The Redump name of the matching dump.
  */
@@ -40,4 +44,4 @@ redump: string | null,
 /**
  * The hashes came from the cache.
  */
-cached: boolean, error: string | null, };
+cached: boolean, error: string | null, errorPhrase?: Phrase, };

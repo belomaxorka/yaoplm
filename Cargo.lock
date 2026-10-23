@@ -6404,6 +6404,7 @@ dependencies = [
  "yaoplm-device",
  "yaoplm-formats",
  "yaoplm-hash",
+ "yaoplm-i18n",
  "yaoplm-test-support",
  "zip",
 ]
@@ -6429,6 +6430,7 @@ dependencies = [
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
  "yaoplm-formats",
+ "yaoplm-i18n",
 ]
 
 [[package]]
@@ -6456,6 +6458,14 @@ dependencies = [
  "quick-xml 0.42.0",
  "sha1 0.11.0",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "yaoplm-i18n"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

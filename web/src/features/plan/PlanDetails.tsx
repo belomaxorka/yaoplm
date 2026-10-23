@@ -177,7 +177,7 @@ export function PlanDetails({
                 <div className="truncate font-mono text-xs" title={skipped.path}>
                   {skipped.path}
                 </div>
-                <NoticeList notices={[skipped.reason]} compact />
+                <NoticeList notices={[skipped.reason]} />
               </li>
             ))}
           </ul>

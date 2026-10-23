@@ -29,7 +29,7 @@ describe("phrases from the core", () => {
     });
     expect(phraseText(undo, "")).toBe("Откатить: Удалить Retail Game");
     const space = phrase("errors.noSpace", { needed: 5 * 2 ** 30, free: 2 ** 20 });
-    expect(phraseText(space, "")).toBe("Не хватает места: нужно 5.0 ГиБ, свободно 1.0 МиБ");
+    expect(phraseText(space, "")).toBe("Не хватает места: нужно 5,0 ГиБ, свободно 1,0 МиБ");
   });
 
   it("fall back to the core's English for a key the catalogue lacks", async () => {
