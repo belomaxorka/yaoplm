@@ -348,8 +348,8 @@ export function AddGamesPage() {
               data-testid="titles-from-db"
             />
             <span>
-              {t("settings.titlesFromDb")}
-              <span className="block text-xs text-muted-foreground">{t("settings.titlesFromDbHint")}</span>
+              {t("add.titlesFromDb")}
+              <span className="block text-xs text-muted-foreground">{t("add.titlesFromDbHint")}</span>
             </span>
           </Label>
           <Label htmlFor={`${ids}-covers`} className="items-start font-normal">
@@ -362,9 +362,9 @@ export function AddGamesPage() {
               data-testid="covers-on-add"
             />
             <span>
-              {t("settings.coversOnAdd")}
+              {t("add.coversOnAdd")}
               <span className="block text-xs text-muted-foreground">
-                {coverSources ? t("settings.coversOnAddHint") : t("art.noSources")}
+                {coverSources ? t("add.coversOnAddHint") : t("art.noSources")}
               </span>
             </span>
           </Label>
@@ -377,8 +377,8 @@ export function AddGamesPage() {
               data-testid="check-on-add"
             />
             <span>
-              {t("settings.checkOnAdd")}
-              <span className="block text-xs text-muted-foreground">{t("settings.checkOnAddHint")}</span>
+              {t("add.checkOnAdd")}
+              <span className="block text-xs text-muted-foreground">{t("add.checkOnAddHint")}</span>
             </span>
           </Label>
           <p className="text-xs text-muted-foreground">

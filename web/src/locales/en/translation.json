@@ -364,6 +364,12 @@
     "compress": "Compress to ZSO",
     "compressHint": "Smaller on the device; OPL 1.2.0 beta and newer read ZSO. Compressing takes longer than copying.",
     "compressNotForProfile": "OPL 1.1.0 does not read ZSO. Choose another loader in Settings to compress.",
+    "titlesFromDb": "Titles from the database",
+    "titlesFromDbHint": "Games the bundled database knows get its title; the others keep the title from the file name. A title typed in the plan is never replaced.",
+    "coversOnAdd": "Download covers for the games being added",
+    "coversOnAddHint": "Once the plan is built, covers are looked up by game ID and written together with the games, under one confirmation. A game without a cover is still added.",
+    "checkOnAdd": "Check dumps",
+    "checkOnAddHint": "Each image is hashed while it is written and compared with the Redump DAT, so the device is not read twice. A CD added from BIN/CUE or CHD is checked by its data track, as Redump lists it.",
     "coversTitle": "Covers",
     "coversSearching": "Looking for the covers of the games being added…",
     "coversSkip": "Skip covers",
@@ -579,12 +585,8 @@
     },
     "verify": "Check IDs inside images while scanning",
     "verifyHint": "Opens every image to catch IDs that differ from the file name.",
-    "titlesFromDb": "Titles from the database when adding games",
-    "titlesFromDbHint": "Games the bundled database knows get its title; the others keep the title from the file name. A title typed in the plan is never replaced.",
     "covers": "Pictures",
     "coversDescription": "Where pictures come from, in order, and the local cache. Downloaded only on request, never bundled.",
-    "coversOnAdd": "Download covers for the games being added",
-    "coversOnAddHint": "Once the plan is built, covers are looked up by game ID and written together with the games, under one confirmation. A game without a cover is still added.",
     "artSources": {
       "xlenore": "Front covers by game ID, the set PCSX2 uses. No licence stated: fetched on request only.",
       "libretro": "Covers, screenshots and logos by Redump name, as RetroArch shows them. Covers come from here when xlenore has none."
@@ -640,9 +642,7 @@
     "loading": "Loading…",
     "unavailable": "Unavailable",
     "dumps": "Dump checks (Redump)",
-    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer.",
-    "checkOnAdd": "Check dumps while adding games",
-    "checkOnAddHint": "Each image is hashed while it is written and compared with the Redump DAT, so the device is not read twice. A CD added from BIN/CUE or CHD is checked by its data track, as Redump lists it."
+    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer."
   },
   "languages": {
     "en": "English",
