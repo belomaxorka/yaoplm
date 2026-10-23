@@ -37,7 +37,8 @@ jobs:
           - name: macOS universal (dmg, ad-hoc signed)
             os: macos-latest
             args: "--target universal-apple-darwin --bundles dmg"
-            targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            # rustup takes the targets space-separated.
+            targets: "aarch64-apple-darwin x86_64-apple-darwin"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -63,6 +64,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Enable pnpm via corepack
+        # bash on every OS: the Windows runner defaults to PowerShell, which
+        # does not expand ${COREPACK_VERSION}.
+        shell: bash
         run: |
           npm install -g corepack@${COREPACK_VERSION}
           corepack enable pnpm
