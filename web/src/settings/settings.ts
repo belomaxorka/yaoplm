@@ -27,6 +27,10 @@ export interface Settings {
   view: ViewMode;
   /** Open every image while scanning to catch ID mismatches. */
   verify: boolean;
+  /** Hash images while adding them and check them against Redump (GAME-5). */
+  checkOnAdd: boolean;
+  /** Look for covers of the games being added (ART-8). */
+  coversOnAdd: boolean;
   /** Cover sources in priority order (ART-1). */
   artSources: Record<ArtSourceId, ArtSourceSettings>;
 }
@@ -37,6 +41,8 @@ export const defaultSettings: Settings = {
   root: null,
   view: "grid",
   verify: true,
+  checkOnAdd: true,
+  coversOnAdd: true,
   artSources: {
     xlenore: { enabled: true, mirror: "" },
     libretro: { enabled: true, mirror: "" },
@@ -85,6 +91,8 @@ export function readSettings(): Settings {
       root: typeof p.root === "string" && p.root.length > 0 ? p.root : null,
       view: isViewMode(p.view) ? p.view : defaultSettings.view,
       verify: typeof p.verify === "boolean" ? p.verify : defaultSettings.verify,
+      checkOnAdd: typeof p.checkOnAdd === "boolean" ? p.checkOnAdd : defaultSettings.checkOnAdd,
+      coversOnAdd: typeof p.coversOnAdd === "boolean" ? p.coversOnAdd : defaultSettings.coversOnAdd,
       artSources: readArtSources(p.artSources),
     };
   } catch {

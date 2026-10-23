@@ -37,7 +37,7 @@ interface Override {
 export function AddGamesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const root = settings.root;
   const [sources, setSources] = useState<string[]>([]);
   const [move, setMove] = useState(false);
@@ -72,8 +72,9 @@ export function AddGamesPage() {
       layout: alwaysUl ? "ul" : "auto",
       ...(compress && zsoReadable ? { compress: true } : {}),
       ...(list.length > 0 ? { overrides: list } : {}),
+      verify: settings.checkOnAdd,
     };
-  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl, compress, zsoReadable]);
+  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl, compress, zsoReadable, settings.checkOnAdd]);
 
   // Re-plan a moment after the last edit; the plan is the only truth about names and media.
   const planned = useRef<Request | null>(null);
@@ -249,6 +250,19 @@ export function AddGamesPage() {
               <span className="block text-xs text-muted-foreground">
                 {zsoReadable ? t("add.compressHint") : t("add.compressNotForProfile")}
               </span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-check`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-check`}
+              checked={settings.checkOnAdd}
+              onCheckedChange={(checkOnAdd) => update({ checkOnAdd })}
+              className="mt-0.5"
+              data-testid="check-on-add"
+            />
+            <span>
+              {t("settings.checkOnAdd")}
+              <span className="block text-xs text-muted-foreground">{t("settings.checkOnAddHint")}</span>
             </span>
           </Label>
           <p className="text-xs text-muted-foreground">

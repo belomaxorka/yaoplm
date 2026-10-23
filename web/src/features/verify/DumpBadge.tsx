@@ -24,20 +24,24 @@ export function DumpBadge({
   status,
   reason,
   title,
+  byTrack = false,
 }: {
   status: VerifyStatus;
   reason?: UnknownReason | null;
   /** Extra text for the tooltip, e.g. the Redump name. */
   title?: string | null;
+  /** The verdict compares the raw CD track the game was added from. */
+  byTrack?: boolean;
 }) {
   const { t } = useTranslation();
   const label = t(`dump.status.${status}`);
   const why = reason ? t(`dump.reason.${reason}`) : null;
+  const how = byTrack ? t("dump.byTrack") : null;
   return (
     <Badge
       variant="outline"
       className={cn("gap-1", statusColours[status])}
-      title={[why, title].filter(Boolean).join(" · ") || undefined}
+      title={[why, title, how].filter(Boolean).join(" · ") || undefined}
       data-testid="dump-badge"
       data-status={status}
     >

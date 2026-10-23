@@ -188,7 +188,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             <Fact label={t("game.dump")}>
               {game.dump ? (
                 <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} />
+                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
                   {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
                 </span>
               ) : (

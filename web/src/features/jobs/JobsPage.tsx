@@ -32,6 +32,7 @@ import { jobTitle } from "@/features/jobs/jobTitle";
 import { usePlan } from "@/features/plan/usePlan";
 import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
 import { DumpIcon } from "@/features/verify/DumpBadge";
+import { VerificationResults } from "@/features/verify/VerificationResults";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 import { errorText, phraseText } from "@/lib/phrase";
@@ -140,6 +141,7 @@ function JobCard({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
   const { cancel, dismiss, load, executedPlans } = useJobs();
   const [logOpen, setLogOpen] = useState(false);
+  const [checksOpen, setChecksOpen] = useState(false);
   const active = job.status === "queued" || job.status === "running";
   const report = job.result?.type === "Execution" ? job.result : null;
   const verification = job.result?.type === "Verification" ? job.result : null;
@@ -245,6 +247,29 @@ function JobCard({ job }: { job: JobInfo }) {
                     <Link to="/library">{t("jobs.recover")}</Link>
                   </Button>
                 </p>
+              )}
+              {report.checks.length > 0 && (
+                <div data-testid="job-checks">
+                  <Button variant="ghost" size="sm" aria-expanded={checksOpen} onClick={() => setChecksOpen(!checksOpen)}>
+                    <ChevronDown className={cn("transition-transform", checksOpen && "rotate-180")} aria-hidden />
+                    {t("jobs.checks", { count: report.checks.length })}
+                  </Button>
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {statusCounts(report.checks).map(([status, count]) => (
+                      <li key={status}>
+                        <Badge variant="outline" className={dumpColours[status]}>
+                          <DumpIcon status={status} className="size-3" />
+                          {t(`dump.count.${status}`, { count })}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  {checksOpen && (
+                    <div className="mt-2 flex max-h-96 flex-col">
+                      <VerificationResults report={{ games: report.checks, dat: null }} />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
