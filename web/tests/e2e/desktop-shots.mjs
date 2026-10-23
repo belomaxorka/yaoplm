@@ -54,6 +54,13 @@ console.log("cover loaded through the asset protocol:", loaded, await covered.ge
 if (!loaded) process.exitCode = 1;
 await shot("library");
 
+// Picture sets come from native pickers or a drop on the desktop (ART-5).
+await page.getByTestId("import-pictures").click();
+await page.waitForSelector('[data-testid="art-import-dialog"]');
+await page.waitForTimeout(400);
+await shot("art-import");
+await page.keyboard.press("Escape");
+
 await page.getByRole("listitem", { name: /Retail Game/ }).click();
 await page.waitForSelector('[data-testid="game-title"]');
 await page.waitForSelector('[data-testid="art-slots"]');

@@ -43,10 +43,31 @@ for (const language of ["en", "ru"] as const) {
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("art-fetch-dialog")).toBeHidden();
 
+        // Picture sets with the two fixture sets picked (ART-5).
+        await page.getByTestId("import-pictures").click();
+        const importDialog = page.getByTestId("art-import-dialog");
+        await importDialog.getByTestId("art-import-browse").click();
+        const setBrowser = page.getByTestId("folder-browser");
+        await setBrowser.getByRole("button", { name: "mirror" }).click();
+        await setBrowser.getByRole("button", { name: "sets", exact: true }).click();
+        await setBrowser.getByRole("checkbox", { name: /OPLM art backup\.zip/ }).check();
+        await setBrowser.getByRole("checkbox", { name: /art\.tar/ }).check();
+        await setBrowser.getByTestId("browser-add").click();
+        await expect(importDialog.getByTestId("art-import-sets").getByRole("listitem")).toHaveCount(2);
+        await page.waitForTimeout(400);
+        await shot("art-import");
+        await page.keyboard.press("Escape");
+        await expect(importDialog).toBeHidden();
+
         await page.getByRole("listitem", { name: /Retail Game/ }).click();
         await heading("game");
         await expect(page.getByTestId("game-title")).toBeVisible();
         await shot("game");
+        // Every picture type with its actions (ART-2, ART-3).
+        await page.getByTestId("art-slots").scrollIntoViewIfNeeded();
+        await expect(page.locator('[data-testid="art-slot-COV"] img')).toBeVisible();
+        await shot("art-slots");
+        await page.getByTestId("game-title").scrollIntoViewIfNeeded();
 
         await page.getByRole("button", { name: language === "en" ? "Move to DVD" : "Перенести в DVD" }).click();
         const plan = page.getByTestId("plan-dialog");
