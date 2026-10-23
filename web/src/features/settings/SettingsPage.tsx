@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
-import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import type { NameStyle } from "@/api/generated/NameStyle";
 import type { SourceEntry } from "@/api/generated/SourceEntry";
 import { artCache, attribution, clearArtCache } from "@/api/rpc";
 import { call } from "@/api/transport";
+import { ExternalLink } from "@/components/ExternalLink";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { PageScroll } from "@/components/PageScroll";
 import { Button } from "@/components/ui/button";
@@ -267,7 +268,7 @@ export function SettingsPage() {
               <dd>{about.data?.license ?? "GPL-3.0-or-later"}</dd>
               <dt className="text-muted-foreground">{t("settings.repository")}</dt>
               <dd>
-                <ExternalA href={about.data?.repository ?? "https://github.com/belomaxorka/yaoplm"} />
+                <ExternalLink href={about.data?.repository ?? "https://github.com/belomaxorka/yaoplm"} />
               </dd>
               {about.data && (
                 <>
@@ -302,20 +303,6 @@ export function SettingsPage() {
   );
 }
 
-function ExternalA({ href, children }: { href: string; children?: ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
-    >
-      {children ?? href.replace(/^https?:\/\//, "")}
-      <ExternalLink className="size-3" aria-hidden />
-    </a>
-  );
-}
-
 /** Credits of the bundled data and the cover sources (ADR-0007). */
 function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
   const { t } = useTranslation();
@@ -328,7 +315,7 @@ function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
             <span className="text-xs text-muted-foreground">
               {entry.license ? (
                 entry.licenseUrl ? (
-                  <ExternalA href={entry.licenseUrl}>{entry.license}</ExternalA>
+                  <ExternalLink href={entry.licenseUrl}>{entry.license}</ExternalLink>
                 ) : (
                   entry.license
                 )
@@ -343,7 +330,7 @@ function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
           </div>
           <div className="mt-1 text-xs">{entry.credits}</div>
           <div className="mt-1 text-xs">
-            <ExternalA href={entry.url} />
+            <ExternalLink href={entry.url} />
           </div>
         </li>
       ))}

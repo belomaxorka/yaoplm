@@ -1,10 +1,10 @@
-import { ExternalLink } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { GameVerification } from "@/api/generated/GameVerification";
 import type { HashValues } from "@/api/generated/HashValues";
 import type { VerificationReport } from "@/api/generated/VerificationReport";
+import { ExternalLink } from "@/components/ExternalLink";
 import { Badge } from "@/components/ui/badge";
 import { statusColours, statusCounts } from "@/features/verify/dump";
 import { DumpBadge, DumpIcon } from "@/features/verify/DumpBadge";
@@ -138,10 +138,5 @@ function HashList({ hashes }: { hashes: HashValues }) {
 
 function RedumpLink({ name, url }: { name: string; url: string | null }) {
   if (!url) return <span className="text-foreground">{name}</span>;
-  return (
-    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
-      {name}
-      <ExternalLink className="size-3" aria-hidden />
-    </a>
-  );
+  return <ExternalLink href={url}>{name}</ExternalLink>;
 }
