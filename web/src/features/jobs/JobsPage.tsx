@@ -146,6 +146,7 @@ function JobCard({ job }: { job: JobInfo }) {
   const report = job.result?.type === "Execution" ? job.result : null;
   const verification = job.result?.type === "Verification" ? job.result : null;
   const redump = job.result?.type === "Redump" ? job.result : null;
+  const covers = job.result?.type === "Covers" ? job.result : null;
   const pendingPlan = job.result?.type === "Plan" && !executedPlans.has(job.result.id) ? job.result : null;
   const KindIcon = kindIcons[job.kind];
   // Plans, cover searches and dump checks keep a log; the rest only report progress.
@@ -189,8 +190,11 @@ function JobCard({ job }: { job: JobInfo }) {
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="job-plan">
               <span>
                 {pendingPlan.executable
-                  ? t("jobs.planReady", { title: pendingPlan.title, count: pendingPlan.transactions.length })
-                  : t("jobs.planEmpty", { title: pendingPlan.title })}
+                  ? t("jobs.planReady", {
+                      title: phraseText(pendingPlan.titlePhrase, pendingPlan.title),
+                      count: pendingPlan.transactions.length,
+                    })
+                  : t("jobs.planEmpty", { title: phraseText(pendingPlan.titlePhrase, pendingPlan.title) })}
               </span>
               <Button
                 size="sm"
@@ -217,6 +221,11 @@ function JobCard({ job }: { job: JobInfo }) {
                 </li>
               ))}
             </ul>
+          )}
+          {covers && (
+            <p className="mt-2 text-sm" data-testid="job-covers">
+              {t("add.coversResult", { found: covers.found, missing: covers.missing, present: covers.present })}
+            </p>
           )}
           {redump && (
             <p className="mt-2 text-sm" data-testid="job-redump">
@@ -266,7 +275,7 @@ function JobCard({ job }: { job: JobInfo }) {
                   </ul>
                   {checksOpen && (
                     <div className="mt-2 flex max-h-96 flex-col">
-                      <VerificationResults report={{ games: report.checks, dat: null }} />
+                      <VerificationResults report={{ games: report.checks, dat: null }} summary={false} />
                     </div>
                   )}
                 </div>
