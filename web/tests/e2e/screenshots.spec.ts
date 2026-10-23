@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openLibrary } from "./helpers";
+import { libraryTool, openLibrary } from "./helpers";
 
 // Screenshots for PR review (TESTING.md): both themes, both languages, two widths.
 // Saved to test-results/screenshots/ and uploaded by CI.
@@ -44,7 +44,7 @@ for (const language of ["en", "ru"] as const) {
         await expect(page.getByTestId("art-fetch-dialog")).toBeHidden();
 
         // Picture sets with the two fixture sets picked (ART-5).
-        await page.getByTestId("import-pictures").click();
+        await libraryTool(page, "import-pictures");
         const importDialog = page.getByTestId("art-import-dialog");
         await importDialog.getByTestId("art-import-browse").click();
         const setBrowser = page.getByTestId("folder-browser");

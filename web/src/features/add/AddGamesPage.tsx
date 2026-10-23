@@ -85,7 +85,8 @@ export function AddGamesPage() {
   const [browserOpen, setBrowserOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
   const ids = useId();
-  const flow = usePlan({ onExecuted: () => void navigate("/jobs") });
+  // Simple mode has no jobs page: the library and the dock show the write.
+  const flow = usePlan({ onExecuted: () => void navigate(settings.simpleMode ? "/library" : "/jobs") });
   const desktop = isTauri();
   const zsoReadable = settings.profile !== "Opl110";
   const coverSources = enabledSources(settings).length > 0;

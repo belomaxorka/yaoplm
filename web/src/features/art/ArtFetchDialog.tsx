@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { Ban, Globe, ImageDown, Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
@@ -31,7 +31,7 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useSettings, useSimpleMode } from "@/settings/context";
 
 /** What the user chose in the form. */
 interface FetchForm {
@@ -47,6 +47,9 @@ const freshForm = (): FetchForm => ({ kinds: ["COV"], scope: null });
  * the FetchArt job, watch its per-game log, then confirm the plan it
  * produced. The network is touched only after Start; nothing is written
  * before the plan is confirmed (SPEC §6).
+ *
+ * `quick` skips the form (simple mode, "Download all pictures" on a game):
+ * every type the sources have, missing ones only, started on opening.
  */
 export function ArtFetchDialog({
   root,
@@ -54,6 +57,7 @@ export function ArtFetchDialog({
   open,
   onOpenChange,
   only,
+  quick = false,
 }: {
   root: string;
   games: readonly Game[];
@@ -61,6 +65,7 @@ export function ArtFetchDialog({
   onOpenChange: (open: boolean) => void;
   /** Limit the search to one game (the game card). */
   only?: Game;
+  quick?: boolean;
 }) {
   const { t } = useTranslation();
   // Kept here, not in the body: cancelling the plan brings the form back as it was.
@@ -69,7 +74,8 @@ export function ArtFetchDialog({
     setForm(freshForm());
     onOpenChange(false);
   };
-  const flow = usePlan({ onExecuted: close });
+  // A quick search has no form to come back to: cancelling its plan ends it.
+  const flow = usePlan({ onExecuted: close, ...(quick ? { onDiscarded: close } : {}) });
   const [running, setRunning] = useState(false);
 
   return (
@@ -84,19 +90,30 @@ export function ArtFetchDialog({
         <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-xl" data-testid="art-fetch-dialog">
           <DialogHeader>
             <DialogTitle>{only ? t("art.fetchOneTitle", { title: only.title }) : t("art.fetchTitle")}</DialogTitle>
-            <DialogDescription>{t("art.fetchDescription")}</DialogDescription>
+            <DialogDescription>{quick ? t("art.quickDescription") : t("art.fetchDescription")}</DialogDescription>
           </DialogHeader>
           {/* Mounted only while open; closing resets the form, so every opening starts afresh. */}
-          <FetchBody
-            root={root}
-            games={games}
-            only={only}
-            form={form}
-            onFormChange={setForm}
-            onRunning={setRunning}
-            onPlan={(plan) => flow.adopt(plan)}
-            onClose={close}
-          />
+          {quick ? (
+            <QuickBody
+              root={root}
+              games={games}
+              only={only}
+              onRunning={setRunning}
+              onPlan={(plan) => flow.adopt(plan)}
+              onClose={close}
+            />
+          ) : (
+            <FetchBody
+              root={root}
+              games={games}
+              only={only}
+              form={form}
+              onFormChange={setForm}
+              onRunning={setRunning}
+              onPlan={(plan) => flow.adopt(plan)}
+              onClose={close}
+            />
+          )}
         </DialogContent>
       </Dialog>
       <PlanDialog flow={flow} />
@@ -299,6 +316,139 @@ function FetchBody({
             </Button>
           </>
         ) : active ? (
+          <Button variant="outline" onClick={() => void cancel(job.id)}>
+            <Ban aria-hidden />
+            {t("jobs.cancel")}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={onClose}>
+            {t("common.close")}
+          </Button>
+        )}
+      </DialogFooter>
+    </>
+  );
+}
+
+/**
+ * The quick search: no choices. Starts as soon as the sources' types are
+ * known, unless every type they have is on the device already.
+ */
+function QuickBody({
+  root,
+  games,
+  only,
+  onRunning,
+  onPlan,
+  onClose,
+}: {
+  root: string;
+  games: readonly Game[];
+  only?: Game;
+  onRunning: (running: boolean) => void;
+  onPlan: (plan: PlanView) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { transport } = useApi();
+  const { settings } = useSettings();
+  const simple = useSimpleMode();
+  const { jobs, cancel } = useJobs();
+  const fetchable = useFetchableTypes();
+  const kinds = artTypes.filter((kind) => fetchable.types.has(kind));
+  const inScope = only ? [only] : games;
+  const missing = inScope.reduce((sum, g) => sum + kinds.filter((kind) => !artOf(g, kind)).length, 0);
+  const [jobId, setJobId] = useState<JobId | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
+  const job = jobId === null ? undefined : jobs.find((j) => j.id === jobId);
+  const active = job !== undefined && (job.status === "queued" || job.status === "running");
+  const ready = fetchable.blocked === null && kinds.length > 0 && missing > 0;
+  // One search per opening, also when effects run twice in development.
+  const once = useRef(false);
+
+  useEffect(() => {
+    if (!ready || once.current) return;
+    once.current = true;
+    void (async () => {
+      setStarted(true);
+      onRunning(true);
+      try {
+        const id = await fetchArt(transport, {
+          type: "FetchArt",
+          root,
+          profile: settings.profile,
+          scope: "missing",
+          kinds,
+          ...(only ? { games: [only.startup] } : {}),
+          sources: requestSources(settings),
+        });
+        setJobId(id);
+        const info = await waitForJob(transport, id);
+        if (info.status === "finished" && info.result?.type === "Plan") {
+          const { type: _type, ...plan } = info.result;
+          onPlan(plan);
+        }
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        onRunning(false);
+      }
+    })();
+    // The search starts once, with the types and settings of that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  return (
+    <>
+      {fetchable.blocked && (
+        <p
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            fetchable.blocked.why === "loading" ? "text-muted-foreground" : "text-destructive",
+          )}
+          role={fetchable.blocked.why === "loading" ? "status" : "alert"}
+        >
+          {fetchable.blocked.why === "loading" && <Loader2 className="size-4 animate-spin" aria-hidden />}
+          {fetchable.blocked.text}
+        </p>
+      )}
+      {!fetchable.blocked && !started && missing === 0 && (
+        <p className="text-sm" role="status" data-testid="art-nothing-missing">
+          {t("art.nothingMissing")}
+        </p>
+      )}
+      {error && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+      {(job || (started && !error)) && (
+        <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="art-quick-progress">
+          {job ? (
+            <JobProgressLine job={job} />
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              {t("art.searching")}
+            </p>
+          )}
+          {job?.error && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+              {errorText(job.error)}
+            </p>
+          )}
+          {job?.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("art.cancelled")}</p>}
+          {/* The per-game log is a detail for the advanced mode. */}
+          {job && !simple && (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <JobLog entries={job.log} />
+            </div>
+          )}
+        </div>
+      )}
+      <DialogFooter>
+        {active ? (
           <Button variant="outline" onClick={() => void cancel(job.id)}>
             <Ban aria-hidden />
             {t("jobs.cancel")}

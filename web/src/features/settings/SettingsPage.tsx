@@ -36,6 +36,7 @@ export function SettingsPage() {
   const { transport } = useApi();
   const { theme, setTheme } = useTheme();
   const { settings, update } = useSettings();
+  const simple = settings.simpleMode;
   const ids = useId();
   const version = useQuery({
     queryKey: ["version"],
@@ -61,6 +62,44 @@ export function SettingsPage() {
   return (
     <PageScroll>
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.interface")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <SettingRow label={t("settings.simpleMode")} hint={t("settings.simpleModeHint")} htmlFor={`${ids}-simple`}>
+              <Switch
+                id={`${ids}-simple`}
+                checked={settings.simpleMode}
+                onCheckedChange={(simpleMode) => update({ simpleMode })}
+                data-testid="simple-mode"
+              />
+            </SettingRow>
+            <SettingRow label={t("settings.language")}>
+              <LanguageSwitch showNames />
+            </SettingRow>
+            <SettingRow label={t("settings.theme")}>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                aria-label={t("settings.theme")}
+                value={theme}
+                onValueChange={(value) => {
+                  if (isTheme(value)) setTheme(value);
+                }}
+              >
+                {themes.map((option) => (
+                  <ToggleGroupItem key={option} value={option}>
+                    {t(`settings.themes.${option}`)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </SettingRow>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.library")}</CardTitle>
@@ -101,72 +140,76 @@ export function SettingsPage() {
                 ))}
               </RadioGroup>
             </div>
-            <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
-              <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
-            </SettingRow>
+            {!simple && (
+              <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
+                <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
+              </SettingRow>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.covers")}</CardTitle>
-            <CardDescription>{t("settings.coversDescription")}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {artSourceIds.map((id, index) => {
-              const source = settings.artSources[id];
-              const set = (patch: Partial<typeof source>) =>
-                update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
-              return (
-                <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
-                  <SettingRow
-                    label={`${index + 1}. ${artSourceInfo[id].name}`}
-                    hint={t(`settings.artSources.${id}`)}
-                    htmlFor={`${ids}-src-${id}`}
-                  >
-                    <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
-                  </SettingRow>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
-                      {t("settings.mirror")}
-                    </Label>
-                    <Input
-                      id={`${ids}-mirror-${id}`}
-                      value={source.mirror}
-                      placeholder={t("settings.mirrorPlaceholder")}
-                      onChange={(event) => set({ mirror: event.target.value })}
-                      className="font-mono text-xs"
-                    />
-                    {isTauri() && (
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label={t("settings.pickMirror")}
-                        onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
-                      >
-                        <FolderOpen aria-hidden />
-                      </Button>
-                    )}
+        {!simple && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("settings.covers")}</CardTitle>
+              <CardDescription>{t("settings.coversDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              {artSourceIds.map((id, index) => {
+                const source = settings.artSources[id];
+                const set = (patch: Partial<typeof source>) =>
+                  update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
+                return (
+                  <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
+                    <SettingRow
+                      label={`${index + 1}. ${artSourceInfo[id].name}`}
+                      hint={t(`settings.artSources.${id}`)}
+                      htmlFor={`${ids}-src-${id}`}
+                    >
+                      <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
+                    </SettingRow>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
+                        {t("settings.mirror")}
+                      </Label>
+                      <Input
+                        id={`${ids}-mirror-${id}`}
+                        value={source.mirror}
+                        placeholder={t("settings.mirrorPlaceholder")}
+                        onChange={(event) => set({ mirror: event.target.value })}
+                        className="font-mono text-xs"
+                      />
+                      {isTauri() && (
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t("settings.pickMirror")}
+                          onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
+                        >
+                          <FolderOpen aria-hidden />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
-            <SettingRow
-              label={t("settings.artCache")}
-              hint={
-                cache.data
-                  ? t("settings.artCacheState", { count: Number(cache.data.objects), size: formatBytes(Number(cache.data.bytes)), path: cache.data.path })
-                  : t("settings.loading")
-              }
-            >
-              <Button variant="outline" size="sm" onClick={() => void clearCache()} disabled={clearing || !cache.data} data-testid="clear-art-cache">
-                <Trash2 aria-hidden />
-                {t("settings.clearArtCache")}
-              </Button>
-            </SettingRow>
-          </CardContent>
-        </Card>
+                );
+              })}
+              <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
+              <SettingRow
+                label={t("settings.artCache")}
+                hint={
+                  cache.data
+                    ? t("settings.artCacheState", { count: Number(cache.data.objects), size: formatBytes(Number(cache.data.bytes)), path: cache.data.path })
+                    : t("settings.loading")
+                }
+              >
+                <Button variant="outline" size="sm" onClick={() => void clearCache()} disabled={clearing || !cache.data} data-testid="clear-art-cache">
+                  <Trash2 aria-hidden />
+                  {t("settings.clearArtCache")}
+                </Button>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -174,39 +217,10 @@ export function SettingsPage() {
             <CardDescription>{t("settings.dumpsDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <RedumpPanel />
+            <RedumpPanel compact={simple} />
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.appearance")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <SettingRow label={t("settings.language")}>
-              <LanguageSwitch showNames />
-            </SettingRow>
-            <SettingRow label={t("settings.theme")}>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                spacing={0}
-                aria-label={t("settings.theme")}
-                value={theme}
-                onValueChange={(value) => {
-                  if (isTheme(value)) setTheme(value);
-                }}
-              >
-                {themes.map((option) => (
-                  <ToggleGroupItem key={option} value={option}>
-                    {t(`settings.themes.${option}`)}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </SettingRow>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>

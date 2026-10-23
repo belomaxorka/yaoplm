@@ -84,7 +84,8 @@ class FakeCore {
 describe("library scans", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
-    window.localStorage.setItem("yaoplm.settings", JSON.stringify({ root: ROOT }));
+    // The jobs page is in the advanced mode.
+    window.localStorage.setItem("yaoplm.settings", JSON.stringify({ root: ROOT, simpleMode: false }));
     window.history.pushState({}, "", "/library");
   });
 

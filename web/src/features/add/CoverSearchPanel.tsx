@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { CoverSearchState } from "@/features/add/useCoverSearch";
 import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { useJobs } from "@/jobs/context";
+import { useSimpleMode } from "@/settings/context";
 
 /**
  * The cover search under an import plan (ART-8): progress and the per-game
@@ -22,6 +23,7 @@ export function CoverSearchPanel({
 }) {
   const { t } = useTranslation();
   const { jobs } = useJobs();
+  const simple = useSimpleMode();
   const job = search.job === null ? undefined : jobs.find((j) => j.id === search.job);
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-sm" data-testid="cover-search" data-status={search.status}>
@@ -64,7 +66,7 @@ export function CoverSearchPanel({
           {search.error ? t("add.coversFailed", { error: search.error }) : t("add.coversFailedPlain")}
         </p>
       )}
-      {job && job.log.length > 0 && (
+      {!simple && job && job.log.length > 0 && (
         <div className="max-h-48 overflow-auto">
           <JobLog entries={job.log} />
         </div>

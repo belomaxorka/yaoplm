@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { JobProgressLine, JobStatusIcon } from "@/features/jobs/JobsPage";
 import { jobTitle } from "@/features/jobs/jobTitle";
 import { isUserJob, useJobs } from "@/jobs/context";
+import { useSimpleMode } from "@/settings/context";
 
 /** Active jobs at a glance from any screen; the Jobs page has the rest. */
 export function JobsDock() {
   const { t } = useTranslation();
   const active = useJobs().active.filter(isUserJob);
   const { pathname } = useLocation();
+  const simple = useSimpleMode();
   if (active.length === 0 || pathname === "/jobs") return null;
   const shown = active.slice(0, 3);
   return (
@@ -23,12 +25,14 @@ export function JobsDock() {
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
         <ListChecks className="size-4" aria-hidden />
         {t("jobs.active", { count: active.length })}
-        <Button asChild variant="ghost" size="sm" className="ml-auto">
-          <Link to="/jobs">
-            {t("jobs.all")}
-            <ChevronRight aria-hidden />
-          </Link>
-        </Button>
+        {!simple && (
+          <Button asChild variant="ghost" size="sm" className="ml-auto">
+            <Link to="/jobs">
+              {t("jobs.all")}
+              <ChevronRight aria-hidden />
+            </Link>
+          </Button>
+        )}
       </div>
       <ul className="flex flex-col gap-3">
         {shown.map((job) => (

@@ -37,6 +37,7 @@ import { statusColours as dumpColours, statusCounts } from "@/features/verify/du
 import { DumpIcon } from "@/features/verify/DumpBadge";
 import { VerificationResults } from "@/features/verify/VerificationResults";
 import { isUserJob, useJobs } from "@/jobs/context";
+import { useSimpleMode } from "@/settings/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 import { errorText, phraseText } from "@/lib/phrase";
 
@@ -340,8 +341,11 @@ const artStateColours = {
   failed: "text-destructive",
 } as const;
 
-export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
+export function JobLog({ entries: all }: { entries: readonly JobLogEntry[] }) {
   const { t } = useTranslation();
+  const simple = useSimpleMode();
+  // Each step of a write (started, done) is a detail: simple mode shows what happened to each game.
+  const entries = simple ? all.filter((entry) => entry.kind !== "step") : all;
   if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
   return (
     <ol className="mt-1 max-h-72 overflow-auto rounded-md border bg-background p-2 font-mono text-xs" data-testid="job-log">

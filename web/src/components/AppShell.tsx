@@ -8,15 +8,17 @@ import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { JobsDock } from "@/features/jobs/JobsDock";
+import { JobToasts } from "@/features/jobs/JobToasts";
 import { LibraryKeeper } from "@/features/library/useLibrary";
 import { isUserJob, useJobs } from "@/jobs/context";
 import { useSettings } from "@/settings/context";
 
 const navItems = [
-  { to: "/library", label: "nav.library", icon: Library },
-  { to: "/devices", label: "nav.devices", icon: HardDrive },
-  { to: "/jobs", label: "nav.jobs", icon: ListChecks },
-  { to: "/settings", label: "nav.settings", icon: Settings },
+  { to: "/library", label: "nav.library", icon: Library, advanced: false },
+  { to: "/devices", label: "nav.devices", icon: HardDrive, advanced: false },
+  // Simple mode follows writes in the dock and notifications instead.
+  { to: "/jobs", label: "nav.jobs", icon: ListChecks, advanced: true },
+  { to: "/settings", label: "nav.settings", icon: Settings, advanced: false },
 ] as const;
 
 export function AppShell() {
@@ -24,6 +26,7 @@ export function AppShell() {
   const { pathname } = useLocation();
   const active = useJobs().active.filter(isUserJob);
   const { settings } = useSettings();
+  const simple = settings.simpleMode;
   const current = navItems.find((item) => pathname.startsWith(item.to)) ?? navItems[0];
   const title =
     pathname === "/library/add" ? t("add.heading") : pathname.startsWith("/library/game/") ? t("game.heading") : t(current.label);
@@ -47,28 +50,30 @@ export function AppShell() {
         </div>
 
         <nav aria-label={t("nav.label")} className="flex flex-1 flex-col gap-0.5 px-2 py-2">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
-                  isActive
-                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                )
-              }
-            >
-              <Icon className="size-4" aria-hidden />
-              <span className="flex-1">{t(label)}</span>
-              {to === "/jobs" && active.length > 0 && (
-                <Badge className="h-5 min-w-5 justify-center px-1.5 tabular-nums" aria-label={t("jobs.active", { count: active.length })}>
-                  {active.length}
-                </Badge>
-              )}
-            </NavLink>
-          ))}
+          {navItems
+            .filter((item) => !(simple && item.advanced))
+            .map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+                    isActive
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                  )
+                }
+              >
+                <Icon className="size-4" aria-hidden />
+                <span className="flex-1">{t(label)}</span>
+                {to === "/jobs" && active.length > 0 && (
+                  <Badge className="h-5 min-w-5 justify-center px-1.5 tabular-nums" aria-label={t("jobs.active", { count: active.length })}>
+                    {active.length}
+                  </Badge>
+                )}
+              </NavLink>
+            ))}
         </nav>
 
         <div className="border-t px-4 py-3">
@@ -100,6 +105,7 @@ export function AppShell() {
         </main>
       </div>
       <JobsDock />
+      <JobToasts />
       <LibraryKeeper />
     </div>
   );

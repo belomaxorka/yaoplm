@@ -194,6 +194,7 @@
     "viewList": "List",
     "rescan": "Rescan",
     "addGames": "Add games",
+    "more": "More",
     "count": "{{shown}} of {{total}} games",
     "skipped_one": "{{count}} file OPL ignores",
     "skipped_other": "{{count}} files OPL ignores",
@@ -407,6 +408,10 @@
       "LAB": "Spine"
     },
     "fetchDescription": "Pictures are looked up by game ID at the sources below, resized to the loader’s sizes and stored as PNG. Nothing is written until you confirm the plan.",
+    "quickDescription": "Every missing picture the sources have is looked up by game ID. Nothing is written until you confirm the plan.",
+    "nothingMissing": "Nothing to download: the device has every picture type the sources offer.",
+    "searching": "Looking for pictures…",
+    "downloadAll": "Download all pictures",
     "scope": "Which games",
     "scopeMissing_one": "Only the {{count}} game without a cover",
     "scopeMissing_other": "Only the {{count}} games without a cover",
@@ -504,6 +509,12 @@
     "active_one": "{{count}} active job",
     "active_other": "{{count}} active jobs",
     "all": "All jobs",
+    "toast": {
+      "done": "{{title}}: done",
+      "failed": "{{title}}: failed",
+      "cancelled": "{{title}}: cancelled",
+      "journal": "The operation did not finish. Open the library to undo or finish it."
+    },
     "artState": {
       "found": "{{startup}} {{title}}: found at {{source}}",
       "cached": "{{startup}} {{title}}: from the cache ({{source}})",
@@ -599,7 +610,9 @@
     "artCacheState_one": "{{count}} object, {{size}} in {{path}}",
     "artCacheState_other": "{{count}} objects, {{size}} in {{path}}",
     "clearArtCache": "Clear cache",
-    "appearance": "Appearance",
+    "interface": "Interface",
+    "simpleMode": "Simple mode",
+    "simpleModeHint": "Hides sorting, counters, conversions, picture sets, the jobs page and technical details. Turn it off to see everything.",
     "language": "Language",
     "theme": "Theme",
     "themes": {

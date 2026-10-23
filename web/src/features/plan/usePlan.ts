@@ -28,12 +28,20 @@ function message(error: unknown): string {
  * through this hook: the core builds the plan, the user sees it, and only
  * its id goes back. A plan the user walks away from is discarded.
  */
-export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => void } = {}) {
+export function usePlan(
+  options: {
+    onExecuted?: (job: JobId, plan: PlanView) => void;
+    /** The user walked away from the plan (Cancel, Esc). */
+    onDiscarded?: () => void;
+  } = {},
+) {
   const { transport } = useApi();
   const { markExecuted } = useJobs();
   const [state, setState] = useState<PlanState>(idle);
   const onExecuted = useRef(options.onExecuted);
   onExecuted.current = options.onExecuted;
+  const onDiscarded = useRef(options.onDiscarded);
+  onDiscarded.current = options.onDiscarded;
   const current = useRef<PlanView | null>(null);
   const generation = useRef(0);
 
@@ -89,6 +97,7 @@ export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => 
     generation.current += 1;
     forget();
     setState(idle);
+    onDiscarded.current?.();
   }, [forget]);
 
   /** Takes over a plan another request produced, e.g. the result of a FetchArt job. */

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { joinPath, openLibrary, roots } from "./helpers";
+import { joinPath, libraryTool, openLibrary, roots } from "./helpers";
 
 // Covers end to end against the fixture mirrors (ART-1 to ART-4, META-1):
 // one game downloads its cover from the game card, the bulk run skips the
@@ -165,7 +165,7 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
 test("picture sets fill the games on the device", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
-  await page.getByTestId("import-pictures").click();
+  await libraryTool(page, "import-pictures");
   const dialog = page.getByTestId("art-import-dialog");
   await expect(dialog.getByTestId("art-import-start")).toBeDisabled();
   await dialog.getByTestId("art-import-browse").click();
