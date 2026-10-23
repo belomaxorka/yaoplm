@@ -145,6 +145,9 @@ pub struct Art {
     pub kind: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub size: u64,
+    /// Milliseconds since the Unix epoch, for cache busting.
+    pub modified: Option<u64>,
 }
 
 impl From<&core::ArtFile> for Art {
@@ -154,6 +157,8 @@ impl From<&core::ArtFile> for Art {
             kind: art.suffix.clone(),
             width: art.dimensions.map(|d| d.0),
             height: art.dimensions.map(|d| d.1),
+            size: art.size,
+            modified: art.modified,
         }
     }
 }
@@ -183,6 +188,8 @@ pub struct Game {
     pub art: Vec<Art>,
     pub cheats: Option<u32>,
     pub warnings: Vec<Notice>,
+    /// The title the bundled database gives this ID (META-1).
+    pub known_title: Option<String>,
 }
 
 impl Game {
@@ -235,6 +242,7 @@ impl Game {
                 .as_ref()
                 .map(|c| u32::try_from(c.cheats).unwrap_or(u32::MAX)),
             warnings: notices(&game.warnings),
+            known_title: core::titles::known_title(&game.startup),
         }
     }
 }
@@ -382,6 +390,8 @@ pub struct ImageDetails {
     pub suggested_media: Media,
     pub file_name: Option<FileName>,
     pub warnings: Vec<Notice>,
+    /// The title the bundled database gives the ID (META-1).
+    pub known_title: Option<String>,
 }
 
 impl From<&core::ImageInfo> for ImageDetails {
@@ -423,6 +433,11 @@ impl From<&core::ImageInfo> for ImageDetails {
                 extension: n.raw_extension.clone(),
             }),
             warnings: notices(&info.warnings),
+            known_title: info
+                .startup
+                .as_ref()
+                .ok()
+                .and_then(|id| core::titles::known_title(id)),
         }
     }
 }

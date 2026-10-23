@@ -17,4 +17,8 @@ startup: string | null,
 /**
  * Why OPL hides the image.
  */
-hiddenReason: string | null, platform: Platform, suggestedMedia: Media, fileName: FileName | null, warnings: Array<Notice>, };
+hiddenReason: string | null, platform: Platform, suggestedMedia: Media, fileName: FileName | null, warnings: Array<Notice>, 
+/**
+ * The title the bundled database gives the ID (META-1).
+ */
+knownTitle: string | null, };

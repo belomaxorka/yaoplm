@@ -6,6 +6,7 @@ import type { PlanView } from "@/api/generated/PlanView";
 import type { Request } from "@/api/generated/Request";
 import { discardPlan, executePlan, requestPlan } from "@/api/rpc";
 import { RpcError } from "@/api/transport";
+import { useJobs } from "@/jobs/context";
 
 export interface PlanState {
   plan: PlanView | null;
@@ -30,6 +31,7 @@ function message(error: unknown): string {
  */
 export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => void } = {}) {
   const { transport } = useApi();
+  const { markExecuted } = useJobs();
   const [state, setState] = useState<PlanState>(idle);
   const onExecuted = useRef(options.onExecuted);
   onExecuted.current = options.onExecuted;
@@ -70,6 +72,17 @@ export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => 
     setState(idle);
   }, [forget]);
 
+  /** Takes over a plan another request produced, e.g. the result of a FetchArt job. */
+  const adopt = useCallback(
+    (plan: PlanView) => {
+      forget();
+      generation.current += 1;
+      current.current = plan;
+      setState({ plan, pending: false, executing: false, error: null });
+    },
+    [forget],
+  );
+
   const execute = useCallback(
     async (confirmDelete: boolean) => {
       const plan = current.current;
@@ -78,17 +91,18 @@ export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => 
       try {
         const job = await executePlan(transport, plan.id, confirmDelete);
         current.current = null;
+        markExecuted(plan.id);
         setState(idle);
         onExecuted.current?.(job, plan);
       } catch (error) {
         setState((s) => ({ ...s, executing: false, error: message(error) }));
       }
     },
-    [transport],
+    [transport, markExecuted],
   );
 
   // Leaving the screen discards a plan that was never confirmed.
   useEffect(() => forget, [forget]);
 
-  return { ...state, request, discard, execute };
+  return { ...state, request, adopt, discard, execute };
 }

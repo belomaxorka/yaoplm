@@ -157,6 +157,18 @@ async fn unknown_api_route_is_not_the_spa() {
     assert_eq!(send(state(None), request).await.0, StatusCode::NOT_FOUND);
 }
 
+/// Game pages carry file names in the path (`/library/game/img:...iso`);
+/// a dot must not turn a client route into a 404 (an M3 bug).
+#[tokio::test]
+async fn deep_links_with_dots_get_the_spa() {
+    let request = Request::get("/library/game/img%3AE%3A%5CCD%5CSLUS_200.62.Game.iso")
+        .body(Body::empty())
+        .unwrap();
+    let (status, _) = send(state(None), request).await;
+    // web/dist may be missing on a bare checkout: then the shell is 503, never 404.
+    assert_ne!(status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn missing_static_file_is_404() {
     let request = Request::get("/assets/missing-file.js")

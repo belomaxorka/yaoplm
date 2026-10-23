@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useApi } from "@/api/context";
 import { scanLibrary } from "@/api/rpc";
+import { allowArt } from "@/features/add/desktop";
 import { useSettings } from "@/settings/context";
 
 /** The scanned library of the open root; rescanned after every write queue. */
@@ -24,6 +25,12 @@ export function useLibrary() {
     () => queryClient.invalidateQueries({ queryKey: ["library", root] }),
     [queryClient, root],
   );
+
+  // The desktop WebView may only read the open root's ART folder (ART-2).
+  const scanned = query.data?.root;
+  useEffect(() => {
+    if (scanned) void allowArt(scanned);
+  }, [scanned, query.dataUpdatedAt]);
 
   return { ...query, root, rescan };
 }

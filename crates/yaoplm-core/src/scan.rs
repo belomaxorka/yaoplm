@@ -417,6 +417,8 @@ fn collect_art(
                 path: entry.path.clone(),
                 suffix: parsed.suffix.clone(),
                 dimensions,
+                size: entry.len,
+                modified: entry.modified,
             }
         })
         .collect()

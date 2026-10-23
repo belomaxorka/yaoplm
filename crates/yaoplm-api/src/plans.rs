@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,7 @@ pub enum PlanKind {
     Delete,
     Move,
     Recovery,
+    Art,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +173,7 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Delete => PlanKind::Delete,
         core::PlanKind::Move => PlanKind::Move,
         core::PlanKind::Recovery => PlanKind::Recovery,
+        core::PlanKind::Art => PlanKind::Art,
     }
 }
 
@@ -296,10 +298,11 @@ pub struct StoredPlan {
     created: Instant,
 }
 
-/// Plans waiting for confirmation.
-#[derive(Default)]
+/// Plans waiting for confirmation. Clones share the store, so a job can
+/// add the plan it produced.
+#[derive(Default, Clone)]
 pub struct PlanStore {
-    plans: Mutex<HashMap<String, StoredPlan>>,
+    plans: Arc<Mutex<HashMap<String, StoredPlan>>>,
 }
 
 impl std::fmt::Debug for PlanStore {

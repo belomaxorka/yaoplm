@@ -1,3 +1,5 @@
+import type { ArtCacheInfo } from "@/api/generated/ArtCacheInfo";
+import type { Attribution } from "@/api/generated/Attribution";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import type { DirListing } from "@/api/generated/DirListing";
 import type { JobId } from "@/api/generated/JobId";
@@ -56,6 +58,25 @@ export function listJobs(transport: Transport): Promise<JobInfo[]> {
 
 export async function cancelJob(transport: Transport, job: JobId): Promise<void> {
   await call(transport, { type: "CancelJob", job }, "Ack");
+}
+
+/** Starts a cover search (ART-1, ART-4); the job ends with a plan to confirm. */
+export function fetchArt(transport: Transport, request: Extract<Request, { type: "FetchArt" }>): Promise<JobId> {
+  return call(transport, request, "Job").then((r) => r.job);
+}
+
+export async function attribution(transport: Transport): Promise<Attribution> {
+  const { type: _type, ...about } = await call(transport, { type: "Attribution" }, "Attribution");
+  return about;
+}
+
+export async function artCache(transport: Transport): Promise<ArtCacheInfo> {
+  const { type: _type, ...info } = await call(transport, { type: "ArtCache" }, "ArtCache");
+  return info;
+}
+
+export async function clearArtCache(transport: Transport): Promise<void> {
+  await call(transport, { type: "ClearArtCache" }, "Ack");
 }
 
 const FINAL = new Set(["finished", "failed", "cancelled"]);

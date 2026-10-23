@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, Disc3, File, Folder, HardDrive } from "lucide-react";
+import { ArrowUp, Disc3, File, Folder, HardDrive, Image as ImageIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,23 +16,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { isImageName } from "@/features/art/clipboard";
 import { formatBytes } from "@/lib/format";
 
 /**
  * Picks import sources in server mode, where the browser has no file paths
  * to give: folders are listed by the core, inside its roots only (IMP-1,
- * ADR-0009).
+ * ADR-0009). In `image` mode it picks one image file for a cover (ART-3).
  */
 export function FolderBrowserDialog({
   open,
   onOpenChange,
   onPick,
+  mode = "games",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (paths: string[]) => void;
+  mode?: "games" | "image";
 }) {
   const { t } = useTranslation();
+  const images = mode === "image";
   const { transport } = useApi();
   const [path, setPath] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -44,12 +48,15 @@ export function FolderBrowserDialog({
 
   const toggle = (entry: DirEntry, checked: boolean) => {
     setSelected((current) => {
-      const next = new Set(current);
+      const next = images ? new Set<string>() : new Set(current);
       if (checked) next.add(entry.path);
       else next.delete(entry.path);
       return next;
     });
   };
+
+  const pickable = (entry: DirEntry): boolean =>
+    entry.kind === "dir" ? !images && path !== null : images ? isImageName(entry.name) : entry.importable;
 
   const reset = () => {
     setPath(null);
@@ -66,8 +73,8 @@ export function FolderBrowserDialog({
     >
       <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-xl" data-testid="folder-browser">
         <DialogHeader>
-          <DialogTitle>{t("add.browseTitle")}</DialogTitle>
-          <DialogDescription>{t("add.browseDescription")}</DialogDescription>
+          <DialogTitle>{images ? t("art.browseTitle") : t("add.browseTitle")}</DialogTitle>
+          <DialogDescription>{images ? t("art.browseDescription") : t("add.browseDescription")}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 text-sm">
           <Button
@@ -90,8 +97,9 @@ export function FolderBrowserDialog({
             <li className="p-3 text-sm text-muted-foreground">{t("add.emptyFolder")}</li>
           )}
           {listing.data?.entries.map((entry) => {
-            const Icon = entry.kind === "dir" ? (path === null ? HardDrive : Folder) : entry.importable ? Disc3 : File;
-            const selectable = entry.kind === "dir" ? path !== null : entry.importable;
+            const usable = images ? isImageName(entry.name) : entry.importable;
+            const Icon = entry.kind === "dir" ? (path === null ? HardDrive : Folder) : usable ? (images ? ImageIcon : Disc3) : File;
+            const selectable = pickable(entry);
             return (
               <li key={entry.path} className="flex items-center gap-2 border-b px-2 py-1 text-sm last:border-0">
                 <Checkbox
@@ -112,7 +120,7 @@ export function FolderBrowserDialog({
                 ) : (
                   <span className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">
                     <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <span className={entry.importable ? "truncate" : "truncate text-muted-foreground"}>{entry.name}</span>
+                    <span className={usable ? "truncate" : "truncate text-muted-foreground"}>{entry.name}</span>
                     {entry.size !== null && (
                       <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
                         {formatBytes(entry.size)}
@@ -138,7 +146,7 @@ export function FolderBrowserDialog({
             }}
             data-testid="browser-add"
           >
-            {t("add.addSelected", { count: selected.size })}
+            {images ? t("art.useImage") : t("add.addSelected", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -96,9 +96,10 @@ Update this section if they change.
 - Types: `cargo test -p yaoplm-api --features ts-export` (regenerates `web/src/api/generated/`; CI fails if it is stale)
 - Web: `pnpm install`, then `pnpm -C web lint`, `pnpm -C web typecheck`, `pnpm -C web test`
 - E2E: `pnpm -C web build`, then `pnpm -C web e2e` (`web/tests/e2e/server.mjs` builds a fixture library with `make_library` in a temp folder and starts `yaoplm-server` on 127.0.0.1:7879 with it; once per machine: `pnpm -C web exec playwright install chromium`). Screenshots land in `web/test-results/screenshots/`.
-- Fixture library: `cargo run -p yaoplm-api --example make_library -- <dir> [--games N]` (`<dir>/library` and `<dir>/sources`)
+- Fixture library: `cargo run -p yaoplm-api --example make_library -- <dir> [--games N]` (`<dir>/library`, `<dir>/sources` and `<dir>/mirror` with a cover per art source)
+- Title database (META-1, ADR-0024): `python scripts/build-data.py` rebuilds `data/titles.json.gz` and `data/ATTRIBUTION.md` from PCSX2 GameIndex and the libretro PS2 DAT (needs PyYAML; `--pcsx2 FILE --libretro FILE` for offline builds). Commit the result.
 - Desktop dev: `pnpm tauri dev` (from `apps/desktop`; starts Vite on 5173)
-- Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878` (serves `web/dist`; debug builds read it from disk)
+- Server: `cargo run -p yaoplm-server -- --root <dir> --bind 127.0.0.1:7878` (serves `web/dist`; debug builds read it from disk). `--data-dir <dir>` or `YAOPLM_DATA_DIR` places the art cache; the default is the platform's app data folder (ADR-0025).
 - CLI: `cargo run -p yaoplm-cli -- rpc '{"type":"Ping"}'`; on Windows PowerShell 5.1 pipe the JSON instead: `'{"type":"Ping"}' | cargo run -p yaoplm-cli -- rpc`
 - Previews: `.claude/launch.json` has `yaoplm-server` (7878, no roots), `yaoplm-server-fixture` (7878, fresh fixture library) and `web-dev` (Vite, 5173, proxies `/api` to 7878). Stop the server preview before `cargo test` or a cargo build of the server: Windows locks the running `.exe`.
 - Real-data tests: set `YAOPLM_TESTDATA=D:\yaoplm-testdata`, then `cargo test --workspace -- --ignored` (CFG/CHT corpus: `cargo test -p yaoplm-formats --test corpus -- --ignored --nocapture`)
@@ -107,6 +108,7 @@ Update this section if they change.
 - Library tools: `cargo run -p yaoplm-cli -- scan <root>` and `cargo run -p yaoplm-cli -- info <image>` (`--json`, `--profile opl-1.2|opl-1.1|riptopl`)
 - Devices (read-only): `yaoplm devices [--all]`, `yaoplm device <root>`
 - Writes print a plan and need `--yes` (or "y" on a terminal): `yaoplm init <root>`, `yaoplm add <root> <files or folders> [--move] [--ul] [--title T] [--media cd|dvd]`, `yaoplm rename <root> <game> <title> [--id ID]`, `yaoplm rm <root> <game> [--with-related]`, `yaoplm mv <root> <game> --to cd|dvd`, `yaoplm recover <root> [--resume]`. `<game>` is an ID, title, file name, path or `ul:<index>`. Never point them at a real drive without the owner's confirmation (rule 1).
+- Covers (ART-1..4): `yaoplm art fetch <root> [--all] [--game ID]... [--mirror xlenore=DIR] [--mirror libretro=DIR] [--skip-source S]`, `yaoplm art set <root> <game> <image> [--keep-existing]`, `yaoplm art rm <root> <game>`, `yaoplm art cache [--clear]`, `yaoplm about`. `fetch` goes to the network only without a mirror; tests and CI always use mirrors.
 - Real FAT32/exFAT drivers (Linux, mounted image files; CI job `real-fs`): `YAOPLM_FAT32_DIR=/mnt/fat32 YAOPLM_EXFAT_DIR=/mnt/exfat cargo test -p yaoplm-core --test real_fs -- --ignored`
 - Console test disc: `cargo run -p yaoplm-test-support --example make_boot_iso -- --elf <homebrew.elf> --out <image.iso> [--min-mib 4300]`
 

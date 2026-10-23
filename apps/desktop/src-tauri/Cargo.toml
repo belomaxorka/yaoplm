@@ -12,7 +12,9 @@ publish.workspace = true
 tauri-build.workspace = true
 
 [dependencies]
-tauri.workspace = true
+# protocol-asset: covers on the device are shown through asset: URLs (ART-2).
+tauri = { workspace = true, features = ["protocol-asset"] }
+tauri-plugin-clipboard-manager.workspace = true
 tauri-plugin-dialog.workspace = true
 yaoplm-api.workspace = true
 

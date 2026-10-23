@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ApiError;
+use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, Attribution};
 use crate::devices::DeviceInfo;
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
@@ -222,6 +223,64 @@ pub enum Request {
     CancelJob {
         job: JobId,
     },
+    /// Finds covers for the games on a device (ART-1, ART-4): a job whose
+    /// result is a plan to write them (`JobResult::Plan`). Network access
+    /// happens only here and only for the games in scope.
+    FetchArt {
+        root: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Defaults to `missing`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        scope: Option<ArtScope>,
+        /// Only these game IDs; every game when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        games: Option<Vec<String>>,
+        /// Per-source switches and mirrors.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        sources: Option<Vec<ArtSourceSetting>>,
+        /// `COV` for now.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kind: Option<String>,
+    },
+    /// Plans writing a cover the user supplied (ART-3): a file on the host
+    /// or image bytes, transcoded like a downloaded one.
+    SetArt {
+        root: String,
+        startup: String,
+        input: ArtInput,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kind: Option<String>,
+        /// Replace an existing cover (moved to the backup folder first).
+        /// Defaults to true.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        overwrite: Option<bool>,
+    },
+    /// Plans deleting a cover, with a copy in the backup folder.
+    DeleteArt {
+        root: String,
+        startup: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kind: Option<String>,
+    },
+    /// Credits, licences and versions of the bundled data and the cover
+    /// sources, for the About screen.
+    Attribution,
+    /// Where the art cache is and how big it is.
+    ArtCache,
+    /// Deletes the art cache; nothing on any device changes.
+    ClearArtCache,
 }
 
 /// The successful answer to a [`Request`].
@@ -251,6 +310,8 @@ pub enum Response {
     Jobs {
         jobs: Vec<JobInfo>,
     },
+    Attribution(Box<Attribution>),
+    ArtCache(ArtCacheInfo),
 }
 
 /// Identifies a long-running job for its whole lifetime.

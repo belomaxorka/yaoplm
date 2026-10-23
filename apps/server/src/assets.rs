@@ -20,9 +20,11 @@ pub async fn serve(uri: Uri) -> Response {
         return file_response(path, file);
     }
 
-    // Client-side routes (no file extension) get the SPA shell.
-    let last_segment = path.rsplit('/').next().unwrap_or_default();
-    if last_segment.contains('.') {
+    // Everything else is a client-side route and gets the SPA shell: game
+    // pages carry file names with dots (`/library/game/img:...iso`), so a
+    // dot in the path says nothing. Only the fingerprinted bundle is a
+    // real 404.
+    if path.starts_with("assets/") {
         return StatusCode::NOT_FOUND.into_response();
     }
     match Web::get("index.html") {

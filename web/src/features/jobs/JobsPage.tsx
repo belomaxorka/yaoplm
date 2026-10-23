@@ -7,6 +7,7 @@ import {
   CircleX,
   Clock,
   History,
+  ImageDown,
   ListChecks,
   Loader2,
   ScanSearch,
@@ -24,6 +25,8 @@ import { PageScroll } from "@/components/PageScroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { PlanDialog } from "@/features/plan/PlanDialog";
+import { usePlan } from "@/features/plan/usePlan";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 
@@ -129,12 +132,15 @@ const outcomeVariant: Record<TxOutcome, "default" | "secondary" | "destructive" 
 
 function JobCard({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
-  const { cancel, dismiss, load } = useJobs();
+  const { cancel, dismiss, load, executedPlans } = useJobs();
   const [logOpen, setLogOpen] = useState(false);
   const active = job.status === "queued" || job.status === "running";
   const report = job.result?.type === "Execution" ? job.result : null;
-  const KindIcon = job.kind === "scanLibrary" ? ScanSearch : ListChecks;
-  const plan = job.kind === "executePlan";
+  const pendingPlan = job.result?.type === "Plan" && !executedPlans.has(job.result.id) ? job.result : null;
+  const KindIcon = job.kind === "scanLibrary" ? ScanSearch : job.kind === "fetchArt" ? ImageDown : ListChecks;
+  // Plans and cover searches keep a log; scans only report progress.
+  const plan = job.kind !== "scanLibrary";
+  const flow = usePlan();
 
   // ListJobs leaves results and logs out; a finished plan fetches its own once.
   useEffect(() => {
@@ -168,6 +174,27 @@ function JobCard({ job }: { job: JobInfo }) {
             <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive" role="alert">
               {job.error.message}
             </p>
+          )}
+          {pendingPlan && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="job-plan">
+              <span>
+                {pendingPlan.executable
+                  ? t("jobs.planReady", { title: pendingPlan.title, count: pendingPlan.transactions.length })
+                  : t("jobs.planEmpty", { title: pendingPlan.title })}
+              </span>
+              <Button
+                size="sm"
+                variant={pendingPlan.executable ? "default" : "outline"}
+                onClick={() => {
+                  const { type: _type, ...view } = pendingPlan;
+                  flow.adopt(view);
+                }}
+                data-testid="job-review-plan"
+              >
+                {t("jobs.reviewPlan")}
+              </Button>
+              <PlanDialog flow={flow} />
+            </div>
           )}
           {report && (
             <div className="mt-2 flex flex-col gap-2 text-sm" data-testid="job-outcomes">
@@ -235,6 +262,13 @@ const stepStateColours = {
   undone: "text-amber-600 dark:text-amber-400",
 } as const;
 
+const artStateColours = {
+  found: "text-emerald-600 dark:text-emerald-400",
+  cached: "text-emerald-600 dark:text-emerald-400",
+  notFound: "text-muted-foreground",
+  failed: "text-destructive",
+} as const;
+
 export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
   const { t } = useTranslation();
   if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
@@ -247,18 +281,28 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
             "flex gap-2 py-0.5",
             entry.kind === "transaction" ? "font-semibold" : "pl-3",
             entry.kind === "step" && stepStateColours[entry.state],
+            entry.kind === "art" && artStateColours[entry.state],
             entry.kind === "transaction" && entry.state === "rolledBack" && "text-amber-600 dark:text-amber-400",
             entry.kind === "transaction" && entry.state === "interrupted" && "text-destructive",
           )}
+          data-art-state={entry.kind === "art" ? entry.state : undefined}
         >
           <span className="shrink-0 text-muted-foreground tabular-nums">{formatTime(entry.at)}</span>
           <span className="min-w-0 wrap-anywhere">
-            {entry.kind === "transaction"
-              ? t(`jobs.txState.${entry.state}`, { title: entry.title })
-              : t(`jobs.stepState.${entry.state}`, {
-                  step: t(`plan.steps.${entry.op}`, { path: entry.path, to: entry.to ?? "" }),
-                })}
+            {entry.kind === "transaction" && t(`jobs.txState.${entry.state}`, { title: entry.title })}
+            {entry.kind === "step" &&
+              t(`jobs.stepState.${entry.state}`, {
+                step: t(`plan.steps.${entry.op}`, { path: entry.path, to: entry.to ?? "" }),
+              })}
+            {entry.kind === "art" &&
+              t(`jobs.artState.${entry.state}`, {
+                startup: entry.startup,
+                title: entry.title,
+                source: entry.source ?? "",
+                detail: entry.detail ?? "",
+              })}
             {entry.kind === "step" && entry.error && <span className="block">{entry.error}</span>}
+            {entry.kind === "art" && entry.detail && <span className="block text-muted-foreground">{entry.detail}</span>}
           </span>
         </li>
       ))}

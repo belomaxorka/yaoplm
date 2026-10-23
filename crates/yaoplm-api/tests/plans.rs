@@ -281,6 +281,7 @@ fn job_log_reports_transactions_and_steps() {
             JobLogEntry::Step {
                 op, state, path, ..
             } => format!("{op:?}:{state:?}:{path}"),
+            JobLogEntry::Art { .. } => unreachable!("plans do not fetch art"),
         })
         .collect();
     assert_eq!(states.first().map(String::as_str), Some("tx0:Started"));

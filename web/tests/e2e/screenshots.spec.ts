@@ -30,7 +30,18 @@ for (const language of ["en", "ru"] as const) {
         await heading("library");
         await expect(page.getByTestId("library-count")).toBeVisible();
         await expect(page.getByRole("status").filter({ hasText: /./ }).first()).toBeVisible();
+        // Covers written by art.spec.ts show in the grid; the images must have loaded.
+        await expect(page.locator('[data-testid="game-cover"][data-has-cover="true"] img').first()).toBeVisible();
         await shot("library");
+
+        // The bulk cover dialog with its scope and sources (ART-4).
+        await page.getByTestId("download-covers").click();
+        await expect(page.getByTestId("art-fetch-dialog")).toBeVisible();
+        // Let the dialog's fade-in finish before the shot.
+        await page.waitForTimeout(400);
+        await shot("art-fetch");
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("art-fetch-dialog")).toBeHidden();
 
         await page.getByRole("listitem", { name: /Retail Game/ }).click();
         await heading("game");

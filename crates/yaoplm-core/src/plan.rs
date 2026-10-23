@@ -315,6 +315,8 @@ pub enum PlanKind {
     Delete,
     Move,
     Recovery,
+    /// Cover art written or removed (ART-1, ART-3, ART-4).
+    Art,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

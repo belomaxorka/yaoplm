@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
-use yaoplm_api::jobs::{JobInfo, JobResult, JobStatus};
+use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting};
+use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
 use yaoplm_api::{
@@ -149,6 +150,73 @@ enum Command {
         resume: bool,
         #[command(flatten)]
         apply: Apply,
+    },
+    /// Covers: download them, set one from a file, remove one.
+    Art {
+        #[command(subcommand)]
+        command: ArtCommand,
+    },
+    /// Credits and licences of the bundled data and the cover sources.
+    About {
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ArtCommand {
+    /// Find covers (xlenore/ps2-covers, then libretro-thumbnails) for the
+    /// games on a device, then write them after confirmation.
+    ///
+    /// Only games without a cover by default. Downloads are cached under
+    /// the app data folder; a local mirror of a source (a clone of its
+    /// repository) replaces the network with --mirror.
+    Fetch {
+        root: PathBuf,
+        /// Every game, replacing existing covers (the old files move to
+        /// .yaoplm/backup/).
+        #[arg(long)]
+        all: bool,
+        /// Only these game IDs (SLUS_200.62 or SLUS-20062). Repeatable.
+        #[arg(long = "game", value_name = "ID")]
+        games: Vec<String>,
+        /// Read a source from a folder with its repository layout:
+        /// xlenore=DIR or libretro=DIR. Repeatable.
+        #[arg(long = "mirror", value_name = "SOURCE=DIR")]
+        mirrors: Vec<String>,
+        /// Skip a source: xlenore or libretro. Repeatable.
+        #[arg(long = "skip-source", value_name = "SOURCE")]
+        skipped: Vec<String>,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Use an image file as a game's cover (resized and stored as PNG).
+    Set {
+        root: PathBuf,
+        /// ID, title, file name, path or ul:<index> (see `yaoplm scan`).
+        game: String,
+        image: PathBuf,
+        /// Leave an existing cover alone instead of replacing it.
+        #[arg(long)]
+        keep_existing: bool,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Delete a game's cover (a copy stays in .yaoplm/backup/).
+    Rm {
+        root: PathBuf,
+        game: String,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Show the art cache, or empty it with --clear.
+    Cache {
+        #[arg(long)]
+        clear: bool,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -398,7 +466,149 @@ fn main() -> anyhow::Result<ExitCode> {
             };
             plan_and_apply(&api, request, &apply)
         }
+        Command::Art { command } => art(&api, command),
+        Command::About { json } => {
+            let response = api.dispatch(Request::Attribution);
+            show(response, json, |response| match response {
+                Response::Attribution(about) => print!("{}", report::about(about)),
+                other => print_json(other, true),
+            })
+        }
     }
+}
+
+/// `xlenore=DIR` and `--skip-source` flags as the API wants them.
+fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<ArtSourceSetting>> {
+    let mut settings = Vec::new();
+    for mirror in mirrors {
+        let (id, dir) = mirror
+            .split_once('=')
+            .with_context(|| format!("--mirror takes SOURCE=DIR, got {mirror:?}"))?;
+        settings.push(ArtSourceSetting {
+            id: id.to_owned(),
+            enabled: None,
+            mirror: Some(absolute(Path::new(dir))),
+        });
+    }
+    for id in skipped {
+        settings.push(ArtSourceSetting {
+            id: id.clone(),
+            enabled: Some(false),
+            mirror: None,
+        });
+    }
+    Ok(settings)
+}
+
+fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
+    match command {
+        ArtCommand::Fetch {
+            root,
+            all,
+            games,
+            mirrors,
+            skipped,
+            apply,
+        } => {
+            let sources = art_sources(&mirrors, &skipped)?;
+            let request = Request::FetchArt {
+                root: text(&root),
+                profile: Some(apply.profile.into()),
+                scope: Some(if all {
+                    ArtScope::All
+                } else {
+                    ArtScope::Missing
+                }),
+                games: (!games.is_empty()).then_some(games),
+                sources: (!sources.is_empty()).then_some(sources),
+                kind: None,
+            };
+            let job = match api.dispatch(request) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, apply.json),
+            };
+            let info = wait_job(api, job, io::stderr().is_terminal() && !apply.json);
+            let plan = match (info.status, info.result) {
+                (JobStatus::Finished, Some(JobResult::Plan(plan))) => plan,
+                (_, _) => {
+                    let message = info
+                        .error
+                        .map(|e| e.message)
+                        .unwrap_or_else(|| "the cover search failed".into());
+                    if apply.json {
+                        print_json(&yaoplm_api::ApiError::internal(message), true);
+                    } else {
+                        eprintln!("yaoplm: {message}");
+                    }
+                    return Ok(ExitCode::FAILURE);
+                }
+            };
+            apply_plan(api, plan, &apply)
+        }
+        ArtCommand::Set {
+            root,
+            game,
+            image,
+            keep_existing,
+            apply,
+        } => {
+            let startup = find_startup(api, &root, &game, apply.profile)?;
+            let request = Request::SetArt {
+                root: text(&root),
+                startup,
+                input: ArtInput::File {
+                    path: absolute(&image),
+                },
+                profile: Some(apply.profile.into()),
+                kind: None,
+                overwrite: Some(!keep_existing),
+            };
+            plan_and_apply(api, request, &apply)
+        }
+        ArtCommand::Rm { root, game, apply } => {
+            let startup = find_startup(api, &root, &game, apply.profile)?;
+            let request = Request::DeleteArt {
+                root: text(&root),
+                startup,
+                kind: None,
+            };
+            plan_and_apply(api, request, &apply)
+        }
+        ArtCommand::Cache { clear, json } => {
+            if clear && let Err(error) = api.dispatch(Request::ClearArtCache) {
+                return fail(&error, json);
+            }
+            let response = api.dispatch(Request::ArtCache);
+            show(response, json, |response| match response {
+                Response::ArtCache(cache) => println!(
+                    "{}: {} objects, {}{}",
+                    cache.path,
+                    cache.objects,
+                    report::size(cache.bytes),
+                    if clear { " (cleared)" } else { "" }
+                ),
+                other => print_json(other, true),
+            })
+        }
+    }
+}
+
+/// The game ID behind a `<game>` argument.
+fn find_startup(api: &Api, root: &Path, query: &str, profile: Profile) -> anyhow::Result<String> {
+    Ok(match find_game(api, root, query, profile)? {
+        GameRef::Ul { startup, .. } => startup,
+        GameRef::Image { path } => {
+            let library =
+                scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+            library
+                .games
+                .iter()
+                .find(|g| g.path == path)
+                .map(|g| g.startup.clone())
+                .with_context(|| format!("{path} vanished"))?
+        }
+    })
 }
 
 /// Sources are resolved against the current folder before the API sees them.
@@ -434,16 +644,14 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
     let line = Arc::new(Mutex::new(false));
     let shown = Arc::clone(&line);
     let _subscription = progress.then(|| {
-        api.subscribe(move |event| {
-            if let JobEvent::Progress {
+        api.subscribe(move |event| match event {
+            JobEvent::Progress {
                 job: id,
                 done,
                 total,
                 rate,
                 item,
-            } = event
-                && *id == job
-            {
+            } if *id == job => {
                 let mut stderr = io::stderr().lock();
                 let _ = write!(
                     stderr,
@@ -453,6 +661,15 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
                 let _ = stderr.flush();
                 *shown.lock().unwrap_or_else(|e| e.into_inner()) = true;
             }
+            JobEvent::Log {
+                job: id,
+                entry: entry @ JobLogEntry::Art { .. },
+            } if *id == job => {
+                let mut stderr = io::stderr().lock();
+                let _ = writeln!(stderr, "\r\x1b[2K{}", report::art_line(entry));
+                let _ = stderr.flush();
+            }
+            _ => {}
         })
     });
     let info = api.jobs().wait(job).unwrap_or_else(|| JobInfo {
@@ -589,6 +806,11 @@ fn plan_and_apply(api: &Api, request: Request, apply: &Apply) -> anyhow::Result<
         Ok(other) => bail!("unexpected answer {other:?}"),
         Err(error) => return fail(&error, apply.json),
     };
+    apply_plan(api, plan, apply)
+}
+
+/// Prints a plan, asks, executes, reports.
+fn apply_plan(api: &Api, plan: Box<PlanView>, apply: &Apply) -> anyhow::Result<ExitCode> {
     if apply.json {
         print_json(&plan, true);
     } else {

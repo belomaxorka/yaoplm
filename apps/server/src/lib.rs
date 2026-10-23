@@ -4,11 +4,13 @@
 //! - `GET /health`: liveness, no auth;
 //! - `POST /api/rpc`: one `yaoplm_api::Request` in, one `Response` or `ApiError` out;
 //! - `GET /api/events`: WebSocket stream of `JobEvent`s as JSON text frames;
+//! - `GET /media/art?path=`: a cover from a library root (ART-2);
 //! - everything else: the embedded SPA from `web/dist`.
 
 mod assets;
 mod auth;
 mod events;
+mod media;
 mod rpc;
 
 use std::path::PathBuf;
@@ -69,6 +71,7 @@ pub fn app(state: AppState) -> Router {
     let api = Router::new()
         .route("/api/rpc", post(rpc::handle))
         .route("/api/events", get(events::handle))
+        .route("/media/art", get(media::art))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth::require));
 
     Router::new()

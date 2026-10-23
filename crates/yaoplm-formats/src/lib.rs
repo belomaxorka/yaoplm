@@ -17,6 +17,7 @@ pub mod iso9660;
 pub mod iso_name;
 pub mod media;
 pub mod profile;
+pub mod serial;
 pub mod system_cnf;
 pub mod ul_cfg;
 pub mod usba_crc32;

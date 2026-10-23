@@ -6,6 +6,15 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
+export const artSourceIds = ["xlenore", "libretro"] as const;
+export type ArtSourceId = (typeof artSourceIds)[number];
+
+/** A cover source: on or off, and an optional local mirror folder (ADR-0007). */
+export interface ArtSourceSettings {
+  enabled: boolean;
+  /** A folder with the repository's layout; empty means the network. */
+  mirror: string;
+}
 
 /** Preferences kept in the browser (or the WebView) until a settings file lands. */
 export interface Settings {
@@ -18,6 +27,8 @@ export interface Settings {
   view: ViewMode;
   /** Open every image while scanning to catch ID mismatches. */
   verify: boolean;
+  /** Cover sources in priority order (ART-1). */
+  artSources: Record<ArtSourceId, ArtSourceSettings>;
 }
 
 export const defaultSettings: Settings = {
@@ -26,6 +37,10 @@ export const defaultSettings: Settings = {
   root: null,
   view: "grid",
   verify: true,
+  artSources: {
+    xlenore: { enabled: true, mirror: "" },
+    libretro: { enabled: true, mirror: "" },
+  },
 };
 
 const STORAGE_KEY = "yaoplm.settings";
@@ -42,6 +57,21 @@ function isViewMode(value: unknown): value is ViewMode {
   return viewModes.includes(value as ViewMode);
 }
 
+function readArtSources(value: unknown): Record<ArtSourceId, ArtSourceSettings> {
+  const raw = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const out = { ...defaultSettings.artSources };
+  for (const id of artSourceIds) {
+    const source = raw[id];
+    if (typeof source !== "object" || source === null) continue;
+    const s = source as Record<string, unknown>;
+    out[id] = {
+      enabled: typeof s.enabled === "boolean" ? s.enabled : true,
+      mirror: typeof s.mirror === "string" ? s.mirror : "",
+    };
+  }
+  return out;
+}
+
 export function readSettings(): Settings {
   const raw = readStorage(STORAGE_KEY);
   if (!raw) return defaultSettings;
@@ -55,6 +85,7 @@ export function readSettings(): Settings {
       root: typeof p.root === "string" && p.root.length > 0 ? p.root : null,
       view: isViewMode(p.view) ? p.view : defaultSettings.view,
       verify: typeof p.verify === "boolean" ? p.verify : defaultSettings.verify,
+      artSources: readArtSources(p.artSources),
     };
   } catch {
     return defaultSettings;

@@ -13,6 +13,8 @@ Background research done before development started. Facts were checked against 
 | 07 | [loaders-and-boot.md](07-loaders-and-boot.md) | Loader catalogue (OPL, forks, NHDDL/Neutrino), boot setups (FreeMcBoot, PS2BBL, MX4SIO, MMCE emulators), where ELFs go (SPEC LDR-*) |
 | 08 | [format-verification.md](08-format-verification.md) | M1 implementation notes: forks agree on the core formats, new OPL edge cases (SYSTEM.CNF, isofs, `ul.cfg`, CFG comments, CHT quirks, ZSO limits), `USBA_crc32` vectors checked against OPL's C code, `ziso.py` interop, corpus results. Corrects 02 §6.1 |
 | 09 | [import-prior-art.md](09-import-prior-art.md) | M2 prior art: how other tools write `ul` games and `ul.cfg`, BIN/CUE to ISO (offsets, refusals, lone BIN), CD/DVD detection and what the media byte changes in OPL, rename/delete/move and the files keyed by the game ID, write safety. Corrects 02 §4.4 |
+| 10 | [ui-prior-art.md](10-ui-prior-art.md) | M3 prior art: jobs panel, device picker, import plan, rename/delete dialogs, library grid; what was taken from OrbitPS2 Manager, POUM, OPL PC Tools and what was not repeated from OPLNova |
+| 11 | [art-prior-art.md](11-art-prior-art.md) | M4 prior art: bulk scopes and "skip existing" (Orbit), download hygiene and health repair (Toolbox), mirrors (PyOPLM), resize rules (OPL PC Tools, OPL itself); GitHub-API listings, single unlicensed databases and indexed-only PNGs not repeated |
 | — | [REFERENCES.md](REFERENCES.md) | Index of reference repositories (local clones in `D:\yaoplm-testdata\refs\`) and forum threads (ADR-0015) |
 
 Spot-checked by hand against OPL fork source (NathanNeurotic/Open-PS2-Loader @ 2089b79):

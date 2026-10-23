@@ -348,3 +348,147 @@ fn rpc_waits_for_jobs() {
     assert_eq!(answer["status"], "finished");
     assert_eq!(answer["result"]["type"], "Library");
 }
+
+/// `art fetch` from local mirrors, `art set`, `art rm`, `art cache` and
+/// `about` (ART-1, ART-3, ART-4). The cache goes to the temp folder
+/// through YAOPLM_DATA_DIR, never to the real app data folder.
+#[test]
+fn art_fetch_set_and_remove_from_mirrors() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+    let mirror = s.root.parent().unwrap().join("mirror");
+    let covers = mirror.join("covers/default");
+    std::fs::create_dir_all(&covers).unwrap();
+    let jpeg = {
+        let img = image::ImageBuffer::from_fn(300, 420, |x, y| image::Rgb([x as u8, y as u8, 99]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut out),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        out
+    };
+    std::fs::write(covers.join("SLUS-20062.jpg"), jpeg).unwrap();
+    let data = s.root.parent().unwrap().join("data");
+    let art = |args: &[&std::ffi::OsStr]| {
+        let mut all: Vec<&std::ffi::OsStr> = vec!["art".as_ref()];
+        all.extend_from_slice(args);
+        yaoplm()
+            .args(&all)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let mirror_arg = format!("xlenore={}", mirror.display());
+    let dry = art(&[
+        "fetch".as_ref(),
+        s.root.as_os_str(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "libretro".as_ref(),
+    ]);
+    assert!(
+        dry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    let text = stdout(&dry);
+    assert!(text.contains("Plan: Write 1 cover"), "{text}");
+    assert!(text.contains("+ write ART/SLUS_200.62_COV.png"), "{text}");
+    assert!(
+        text.contains("SLUS_212.18"),
+        "the DVD-9 game is listed as not found: {text}"
+    );
+    assert!(!s.root.join("ART/SLUS_200.62_COV.png").exists(), "dry run");
+
+    let done = art(&[
+        "fetch".as_ref(),
+        s.root.as_os_str(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "libretro".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        done.status.success(),
+        "{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(s.root.join("ART/SLUS_200.62_COV.png").is_file());
+    let scan = run(&["scan".as_ref(), s.root.as_os_str(), "--json".as_ref()]);
+    let library: serde_json::Value = serde_json::from_str(stdout(&scan)).unwrap();
+    let retail = library["games"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["startup"] == "SLUS_200.62")
+        .unwrap();
+    assert_eq!(retail["art"][0]["kind"], "COV");
+    assert_eq!(retail["art"][0]["width"], 140);
+
+    // Everything missing was already tried: nothing to apply, exit 1.
+    let again = art(&[
+        "fetch".as_ref(),
+        s.root.as_os_str(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "libretro".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert_eq!(again.status.code(), Some(1));
+
+    // A manual cover for the DVD-9 game, then its removal.
+    let set = art(&[
+        "set".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        covers.join("SLUS-20062.jpg").as_os_str(),
+        "-y".as_ref(),
+    ]);
+    assert!(
+        set.status.success(),
+        "{}",
+        String::from_utf8_lossy(&set.stderr)
+    );
+    assert!(s.root.join("ART/SLUS_212.18_COV.png").is_file());
+    let rm = art(&[
+        "rm".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        "-y".as_ref(),
+    ]);
+    assert!(
+        rm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rm.stderr)
+    );
+    assert!(!s.root.join("ART/SLUS_212.18_COV.png").exists());
+    assert!(s.root.join(".yaoplm/backup").is_dir());
+
+    let cache = art(&["cache".as_ref()]);
+    assert!(cache.status.success());
+    assert!(stdout(&cache).contains("objects"), "{}", stdout(&cache));
+    let cleared = art(&["cache".as_ref(), "--clear".as_ref()]);
+    assert!(
+        stdout(&cleared).contains("0 objects"),
+        "{}",
+        stdout(&cleared)
+    );
+
+    let about = run(&["about".as_ref()]);
+    assert!(about.status.success());
+    assert!(stdout(&about).contains("PCSX2 GameIndex"));
+    assert!(stdout(&about).contains("xlenore/ps2-covers"));
+}

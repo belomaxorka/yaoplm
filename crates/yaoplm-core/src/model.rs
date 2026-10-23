@@ -87,6 +87,10 @@ pub struct ArtFile {
     pub suffix: String,
     /// From the PNG header; `None` for other formats or unreadable files.
     pub dimensions: Option<(u32, u32)>,
+    pub size: u64,
+    /// Milliseconds since the Unix epoch: front ends use it to tell a
+    /// replaced cover from a cached one.
+    pub modified: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

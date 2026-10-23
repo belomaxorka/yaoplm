@@ -19,9 +19,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use yaoplm_device::CancelToken;
 
+use crate::art::ArtLogState;
 use crate::events::EventBus;
 use crate::library::Library;
-use crate::plans::StepOp;
+use crate::plans::{PlanView, StepOp};
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
 
 /// Finished jobs kept for `GetJob` / `ListJobs`.
@@ -37,6 +38,8 @@ const LOG_LIMIT: usize = 2000;
 pub enum JobKind {
     ScanLibrary,
     ExecutePlan,
+    /// Finds covers and ends with a plan to write them (ART-1, ART-4).
+    FetchArt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +89,8 @@ pub struct ExecutionReport {
 pub enum JobResult {
     Library(Box<Library>),
     Execution(ExecutionReport),
+    /// A plan to confirm with `ExecutePlan` (`FetchArt`).
+    Plan(Box<PlanView>),
 }
 
 /// The state of a transaction in the live log.
@@ -138,6 +143,19 @@ pub enum JobLogEntry {
         to: Option<String>,
         state: StepLogState,
         error: Option<String>,
+    },
+    /// One game of a `FetchArt` job.
+    Art {
+        at: u64,
+        startup: String,
+        title: String,
+        /// `COV`.
+        art: String,
+        state: ArtLogState,
+        /// The source that had it.
+        source: Option<String>,
+        /// Where it came from, or why it is missing.
+        detail: Option<String>,
     },
 }
 

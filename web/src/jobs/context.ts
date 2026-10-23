@@ -15,6 +15,9 @@ export interface JobsContextValue {
   clearFinished: () => void;
   /** Fetches a job with its result and log. */
   load: (job: JobId) => Promise<JobInfo | undefined>;
+  /** Plans (by id) that were sent to `ExecutePlan`; a job's plan result is stale once it ran. */
+  executedPlans: ReadonlySet<string>;
+  markExecuted: (plan: string) => void;
 }
 
 export const JobsContext = createContext<JobsContextValue | null>(null);

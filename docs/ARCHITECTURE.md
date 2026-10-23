@@ -92,7 +92,8 @@ yaoplm/
 
 ## 4. Слой API
 
-- Каждая операция — вариант `Request` в `yaoplm-api`. Например: `ListDevices`, `InspectDevice`, `ScanLibrary`, `ListDir`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `ReadCfg`, `WriteCfg`, `CancelJob`.
+- Каждая операция — вариант `Request` в `yaoplm-api`. Например: `ListDevices`, `InspectDevice`, `ScanLibrary`, `ListDir`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `SetArt`, `DeleteArt`, `Attribution`, `ReadCfg`, `WriteCfg`, `CancelJob`.
+- `FetchArt` — задание, которое заканчивается планом (`JobResult::Plan`): поиск обложек идёт минутами и ведёт журнал по играм (`JobLogEntry::Art`), а запись на носитель остаётся планом с подтверждением (ADR-0025). Сеть используется только внутри этого задания: `yaoplm-api` держит tokio-runtime и вызывает `yaoplm-net` из потока задания.
 - `dispatch(Request) -> Result<Response, ApiError>`. Долгие операции сразу возвращают `JobId`, а прогресс приходит потоком `JobEvent`. Планы ещё и ведут журнал шагов (`JobEvent::Log`: транзакция или шаг начат, выполнен, откачен, провален); `GetJob` отдаёт его целиком, поэтому переподключившийся клиент ничего не теряет.
 - `ListDir` показывает папки для выбора источников в браузере: сервер отдаёт только свои корни и то, что внутри них (`PathPolicy`), десктоп — тома; скрытые файлы и симлинки не показываются.
 - Транспорты:
@@ -116,22 +117,22 @@ yaoplm/
 
 ## 6. Хранение состояния
 
-- Каталог данных приложения (`dirs`): `settings.toml`, `cache.sqlite`, `art-cache/`, `db/` (скачанные DAT).
+- Каталог данных приложения (`dirs`, переопределяется `YAOPLM_DATA_DIR` и `--data-dir` сервера): `cache.sqlite`, `art-cache/<source>/<key>/` (оригинал и производные PNG), позже `settings.toml` и `db/` (скачанные DAT). Десктоп и CLI: `%LOCALAPPDATA%\yaoplm`, `~/.local/share/yaoplm`, `~/Library/Application Support/yaoplm`.
 - В SQLite лежат:
-  - индекс библиотек;
-  - кэш хешей с ключом путь+размер+mtime;
-  - манифест источников: ETag, дата, лицензия, атрибуция;
-  - результаты «не найдено» с TTL.
+  - манифест обложек: источник, URL, ETag, `Last-Modified`, дата, SHA-256, лицензия, атрибуция (с M4);
+  - результаты «не найдено» с TTL 7 дней (с M4);
+  - позже: индекс библиотек и кэш хешей с ключом путь+размер+mtime.
+- Встроенная база названий (META-1) не лежит в каталоге данных, а вшита в бинарник: `data/titles.json.gz` (ADR-0024).
 - Источник истины — файлы на устройстве. Кэш можно удалить без потерь.
 - Настройки интерфейса (профиль загрузчика, стиль имён, открытый корень, вид библиотеки, проверка образов) с M3 хранятся в `localStorage` браузера или WebView (`yaoplm.settings`). `settings.toml` появится, когда настройки понадобятся CLI и серверу.
 
 ## 7. Источники данных
 
-- Трейты `ArtSource`, `MetadataSource`, `DatSource`. У каждого источника: id, лицензия и атрибуция, лимит запросов, кэш, режим офлайн-зеркала (локальный git-клон или zip).
+- `yaoplm-net`: один HTTP-клиент (User-Agent `YAOPLM/<версия> (+repo)`, не чаще одного запроса в секунду на источник, условные запросы, back-off на 429/5xx), кэш с манифестом и источники обложек `SourceId::{Xlenore, Libretro}`; у каждого: лицензионная метка, атрибуция и режим зеркала (папка с раскладкой репозитория, она же мок для тестов). Метаданные берутся из встроенной базы, `DatSource` появится с META-2.
 - Порядок для MVP:
   1. ID из образа;
   2. встроенная база названий;
-  3. обложки xlenore (raw-URL) → libretro-thumbnails;
+  3. обложки xlenore (raw-URL по серийнику) → libretro-thumbnails (`thumbnails.libretro.com`, затем raw GitHub, по имени Redump из встроенной базы); никакого GitHub API;
   4. Redump DAT (v0.2).
 - Запрещено: приватный сервер OPL Manager, скрейпинг сайтов без API, бандл изображений.
 - Загрузчики (LDR-1, LDR-2) — тоже источник данных: каталог сборок с репозиторием, лицензией и шаблоном имени ассета; загрузка только с официальных релизов по действию пользователя, проверка хеша, кэш (ADR-0014).
@@ -148,7 +149,8 @@ yaoplm/
 ## 9. Режим сервера
 
 - По умолчанию слушает `127.0.0.1`. Для LAN нужно явно указать `--bind 0.0.0.0` и задать токен.
-- Доступ только к корням из allow-list (`--root /mnt/ps2`).
+- Доступ только к корням из allow-list (`--root /mnt/ps2`); зеркала источников обложек тоже должны лежать внутри корней.
+- `GET /media/art?path=` отдаёт обложки для `<img>`: только `ART/<ID>_<SUFFIX>.png|jpg|bmp` внутри корней, с `ETag`; токен принимается в `?token=`, как у `/api/events` (ADR-0012).
 - Docker: многоэтапная сборка (web → musl-бинарник → distroless/static), образы для amd64 и arm64 в GHCR.
 
 ## 10. Тестирование, CI, упаковка
@@ -161,6 +163,6 @@ yaoplm/
   - Playwright против `yaoplm-server`;
   - проверки зависимостей ядра;
   - проверка свежести сгенерированных TS-типов.
-- `release-desktop.yml` собирает `tauri-action@v1` под Windows (NSIS/MSI), macOS universal (dmg, ad-hoc подпись) и Linux (AppImage, deb, rpm).
+- `release-desktop.yml` собирает `tauri-action@v1` под Windows (NSIS/MSI), macOS universal (dmg, ad-hoc подпись) и Linux (AppImage, deb, rpm) только по тегу `v*` (минуты приватного репозитория, ADR-0011) и публикует черновик пре-релиза. Updater не подключён: ключа подписи нет (CLAUDE.md, правило 5).
 - `release-cli-server.yml` собирает бинарники и Docker-образ.
 - Подпись: SignPath Foundation для Windows (после первого релиза), Apple Developer ($99 в год) — когда появятся пользователи. Ключ updater хранится в GitHub Secrets и **нигде больше**.

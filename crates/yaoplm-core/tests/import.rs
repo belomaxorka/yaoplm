@@ -394,6 +394,49 @@ fn names_follow_the_chosen_style() {
 }
 
 #[test]
+fn bare_ids_take_the_title_from_the_database() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    // Retail is SLUS_200.62: Grand Theft Auto III in the bundled database.
+    sources.add_iso(src("SLUS_200.62.iso"), Variant::Retail.build());
+    sources.add_iso(src("slus-20062.iso"), Variant::Retail.build());
+    sources.add_iso(src("Keep Me.iso"), Variant::Retail.build());
+    let p = plan_for(
+        &fs,
+        &sources,
+        &["SLUS_200.62.iso", "slus-20062.iso", "Keep Me.iso"],
+        &options(),
+    );
+    let paths: Vec<String> = p
+        .transactions
+        .iter()
+        .flat_map(|t| &t.steps)
+        .filter_map(|s| match s {
+            Step::WriteFile { path, .. } => Some(path.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "CD/SLUS_200.62.Grand Theft Auto III.iso",
+            "CD/SLUS_200.62.Keep Me.iso",
+        ],
+        "{:?}",
+        p.skipped
+    );
+    assert!(
+        p.transactions[1]
+            .notices
+            .iter()
+            .any(|n| n.code == "titleFromDatabase"),
+        "{:?}",
+        p.transactions[1].notices
+    );
+    assert_eq!(skipped_codes(&p), ["nameTaken"]);
+}
+
+#[test]
 fn move_deletes_sources_only_after_the_copy() {
     let fs = MemFs::new(FsKind::ExFat);
     let sources = VirtualSources::new();
