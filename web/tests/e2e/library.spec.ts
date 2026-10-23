@@ -78,6 +78,10 @@ test("the game card shows warnings, CFG and keyboard navigation works", async ({
 test("a game is added from the server folders through the plan", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library/add");
+  // Covers on add have their own test (verify.spec): without them this plan
+  // does not depend on what the cache holds from other tests.
+  await page.getByTestId("covers-on-add").uncheck();
+  await expect(page.getByTestId("covers-on-add")).not.toBeChecked();
   await page.getByTestId("browse-server").click();
   const browser = page.getByTestId("folder-browser");
   await browser.getByRole("button", { name: "sources" }).click();
@@ -92,7 +96,10 @@ test("a game is added from the server folders through the plan", async ({ page, 
   await expect(plan).toBeVisible();
   await expect(plan.getByTestId("plan-transaction")).toHaveCount(1);
   await expect(plan).toContainText("SCES_500.03");
-  await expect(plan).toContainText("CD/SCES_500.03.Lf Game.iso");
+  // The bundled database knows the game: its title replaces the file's.
+  await expect(page.getByTestId("titles-from-db")).toBeChecked();
+  await expect(plan).toContainText("CD/SCES_500.03.Dead or Alive 2 - Hardcore.iso");
+  await expect(plan).toContainText("The bundled database calls SCES_500.03 “Dead or Alive 2 - Hardcore”");
 
   // A title override re-plans; the file name follows.
   await plan.getByLabel("Title").fill("Lf Renamed");

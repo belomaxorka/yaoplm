@@ -60,7 +60,7 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
   };
 
   const importDat = () => {
-    if (isTauri()) void pickDat().then((file) => file && void run(file));
+    if (isTauri()) void pickDat(t("dump.datFilter")).then((file) => file && void run(file));
     else setBrowserOpen(true);
   };
 

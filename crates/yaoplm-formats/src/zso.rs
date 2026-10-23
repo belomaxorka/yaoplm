@@ -267,6 +267,190 @@ impl<R: Read + Seek> SectorSource for ZsoReader<R> {
     }
 }
 
+/// The most blocks [`StreamDecoder`] accepts: 16 GiB of ISO, twice a DVD-9.
+const STREAM_MAX_BLOCKS: u64 = 1 << 23;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    Header,
+    Index,
+    Blocks,
+}
+
+/// Decodes the ISO sectors of a ZSO from its bytes in file order: a copy
+/// of the file hashes the image it holds on the way (GAME-5). Blocks must
+/// follow the index in order, as every writer lays them out (`ziso.py`,
+/// maxcso, ours); a file that jumps back fails with
+/// [`ZsoError::Corrupt`], and is then hashed by reading it whole.
+#[derive(Debug)]
+pub struct StreamDecoder {
+    stage: Stage,
+    /// File bytes consumed.
+    pos: u64,
+    header: Option<ZsoHeader>,
+    /// The header, then the index, as they arrive.
+    head: Vec<u8>,
+    /// Index entries the header announces.
+    entries: usize,
+    index: Vec<u32>,
+    /// The next block to decode.
+    next: u64,
+    block: Vec<u8>,
+    sector: Box<Sector>,
+}
+
+impl Default for StreamDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StreamDecoder {
+    pub fn new() -> Self {
+        Self {
+            stage: Stage::Header,
+            pos: 0,
+            header: None,
+            head: Vec::with_capacity(HEADER_SIZE),
+            entries: 0,
+            index: Vec::new(),
+            next: 0,
+            block: Vec::with_capacity(SECTOR_SIZE),
+            sector: Box::new([0; SECTOR_SIZE]),
+        }
+    }
+
+    /// Sectors in the image, once the header has arrived.
+    pub fn sector_count(&self) -> Option<u64> {
+        self.header.map(|h| h.block_count())
+    }
+
+    /// Every sector was decoded; bytes after the last block are ignored.
+    pub fn is_done(&self) -> bool {
+        self.stage == Stage::Blocks && self.next == self.index.len() as u64 - 1
+    }
+
+    /// File offset and stored length of block `n`, as [`ZsoReader`] reads it.
+    fn span(&self, n: usize) -> Result<(u64, usize, bool), ZsoError> {
+        let corrupt = |reason| ZsoError::Corrupt {
+            block: n as u64,
+            reason,
+        };
+        let align = u32::from(self.header.map_or(0, |h| h.align));
+        let (entry, next) = (self.index[n], self.index[n + 1]);
+        let start = u64::from(entry & OFFSET_MASK) << align;
+        let end = u64::from(next & OFFSET_MASK) << align;
+        let size = end
+            .checked_sub(start)
+            .ok_or_else(|| corrupt("index offsets go backwards"))?;
+        let take = usize::try_from(size.min(SECTOR_SIZE as u64)).unwrap_or(SECTOR_SIZE);
+        Ok((start, take, entry & PLAIN != 0))
+    }
+
+    /// Takes the next `bytes` of the file; `out` gets every sector they
+    /// complete, in order.
+    pub fn push(&mut self, mut bytes: &[u8], out: &mut dyn FnMut(&Sector)) -> Result<(), ZsoError> {
+        while !bytes.is_empty() {
+            match self.stage {
+                Stage::Header | Stage::Index => {
+                    let want = match self.header {
+                        None => HEADER_SIZE,
+                        Some(_) => self.entries * 4,
+                    };
+                    let n = (want - self.head.len()).min(bytes.len());
+                    self.head.extend_from_slice(&bytes[..n]);
+                    self.pos += n as u64;
+                    bytes = &bytes[n..];
+                    if self.head.len() < want {
+                        continue;
+                    }
+                    if self.header.is_none() {
+                        let mut raw = [0u8; HEADER_SIZE];
+                        raw.copy_from_slice(&self.head);
+                        let header = ZsoHeader::parse(&raw).ok_or(ZsoError::NotZso)?;
+                        if let Some(&fatal) = header.problems().iter().find(|p| p.is_fatal()) {
+                            return Err(ZsoError::Unsupported(fatal));
+                        }
+                        if header.block_count() > STREAM_MAX_BLOCKS {
+                            return Err(ZsoError::BadImageSize(header.total_bytes));
+                        }
+                        // The index sits right after the 24 bytes, whatever
+                        // the header says (`ziso_init()`).
+                        let entries = usize::try_from(header.block_count() + 1)
+                            .map_err(|_| ZsoError::BadImageSize(header.total_bytes))?;
+                        self.header = Some(header);
+                        self.entries = entries;
+                        self.head = Vec::with_capacity(entries * 4);
+                        self.stage = Stage::Index;
+                    } else {
+                        self.index = self
+                            .head
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|c| u32::from_le_bytes(*c))
+                            .collect();
+                        self.head = Vec::new();
+                        self.stage = Stage::Blocks;
+                    }
+                }
+                Stage::Blocks => {
+                    let n = usize::try_from(self.next).unwrap_or(usize::MAX);
+                    if n + 1 >= self.index.len() {
+                        // Padding or anything else after the last block.
+                        self.pos += bytes.len() as u64;
+                        return Ok(());
+                    }
+                    let (start, take, plain) = self.span(n)?;
+                    if self.block.is_empty() && self.pos < start {
+                        let skip = usize::try_from(start - self.pos)
+                            .unwrap_or(usize::MAX)
+                            .min(bytes.len());
+                        self.pos += skip as u64;
+                        bytes = &bytes[skip..];
+                        continue;
+                    }
+                    if self.block.is_empty() && self.pos > start {
+                        return Err(ZsoError::Corrupt {
+                            block: self.next,
+                            reason: "blocks are not stored in index order",
+                        });
+                    }
+                    let n = (take - self.block.len()).min(bytes.len());
+                    self.block.extend_from_slice(&bytes[..n]);
+                    self.pos += n as u64;
+                    bytes = &bytes[n..];
+                    if self.block.len() < take {
+                        continue;
+                    }
+                    self.decode(plain)?;
+                    out(&self.sector);
+                    self.block.clear();
+                    self.next += 1;
+                }
+            }
+        }
+        // An image with no blocks is complete once its index is in.
+        Ok(())
+    }
+
+    fn decode(&mut self, plain: bool) -> Result<(), ZsoError> {
+        let block = self.next;
+        if plain {
+            if self.block.len() != SECTOR_SIZE {
+                return Err(ZsoError::Corrupt {
+                    block,
+                    reason: "uncompressed block is shorter than 2048 bytes",
+                });
+            }
+            self.sector.copy_from_slice(&self.block);
+            return Ok(());
+        }
+        decompress_fast(&self.block, &mut self.sector)
+            .map_err(|reason| ZsoError::Corrupt { block, reason })
+    }
+}
+
 /// Raw LZ4 block decoding that stops once `out` is full, like
 /// `LZ4_decompress_fast(src, dst, 2048)`: trailing input is ignored.
 fn decompress_fast(input: &[u8], out: &mut Sector) -> Result<(), &'static str> {
@@ -677,6 +861,115 @@ mod tests {
         zso.extend_from_slice(&compressed);
         zso.resize(end, b'X');
         assert_eq!(decompress_all(zso), sector);
+    }
+
+    /// The ISO a [`StreamDecoder`] gets out of `zso` fed in `pieces`.
+    fn stream_decode(zso: &[u8], pieces: &[usize]) -> Result<(Vec<u8>, bool), ZsoError> {
+        let mut decoder = StreamDecoder::new();
+        let mut iso = Vec::new();
+        let mut at = 0;
+        for size in pieces.iter().cycle() {
+            if at == zso.len() {
+                break;
+            }
+            let end = (at + size).min(zso.len());
+            decoder.push(&zso[at..end], &mut |sector| iso.extend_from_slice(sector))?;
+            at = end;
+        }
+        Ok((iso, decoder.is_done()))
+    }
+
+    #[test]
+    fn stream_decoder_matches_the_reader() {
+        let iso = sample_iso(11);
+        for align in [0, 2, 5] {
+            let mut out = Cursor::new(Vec::new());
+            compress_aligned(
+                &mut Cursor::new(&iso),
+                iso.len() as u64,
+                &mut out,
+                align,
+                &mut |_| {},
+            )
+            .unwrap();
+            let zso = out.into_inner();
+            for pieces in [&[1][..], &[7, 2048, 3], &[24, 48, 2049], &[1 << 20]] {
+                let (decoded, done) = stream_decode(&zso, pieces).unwrap();
+                assert!(done, "align {align}, pieces {pieces:?}");
+                assert_eq!(decoded, iso, "align {align}, pieces {pieces:?}");
+            }
+            // Cut short: not done, and what came out is a prefix.
+            let (part, done) = stream_decode(&zso[..zso.len() - 1], &[999]).unwrap();
+            assert!(!done);
+            assert_eq!(part, iso[..part.len()]);
+        }
+        // Trailing bytes after the last block are ignored.
+        let (mut zso, _) = zso_of(&sample_iso(3));
+        zso.extend_from_slice(b"trailing junk");
+        let (decoded, done) = stream_decode(&zso, &[100]).unwrap();
+        assert!(done);
+        assert_eq!(decoded, sample_iso(3));
+    }
+
+    #[test]
+    fn stream_decoder_fails_where_the_reader_fails() {
+        assert!(matches!(
+            stream_decode(&[0u8; 64], &[64]),
+            Err(ZsoError::NotZso)
+        ));
+        let mut sector = [0u8; SECTOR_SIZE];
+        // Index entries 0 and 1 swapped: block 0 ends before it starts.
+        let (zso, _) = zso_of(&sample_iso(2));
+        let mut swapped = zso.clone();
+        let (a, b) = (24..28, 28..32);
+        let first: Vec<u8> = swapped[a.clone()].to_vec();
+        swapped.copy_within(b.clone(), a.start);
+        swapped[b].copy_from_slice(&first);
+        assert!(matches!(
+            stream_decode(&swapped, &[4096]),
+            Err(ZsoError::Corrupt {
+                block: 0,
+                reason: "index offsets go backwards"
+            })
+        ));
+        let mut reader = ZsoReader::new(Cursor::new(swapped)).unwrap();
+        assert!(reader.read_sector(0, &mut sector).is_err());
+        // A damaged block is an error, as for the reader.
+        let mut damaged = zso;
+        let start = u32::from_le_bytes(damaged[24..28].try_into().unwrap()) as usize;
+        damaged[start] = 0xFF;
+        assert!(stream_decode(&damaged, &[4096]).is_err());
+        let mut reader = ZsoReader::new(Cursor::new(damaged)).unwrap();
+        assert!(reader.read_sector(0, &mut sector).is_err());
+    }
+
+    #[test]
+    fn stream_decoder_cannot_go_back_for_a_block() {
+        // Block 0 is stored plain over its own index, at byte 24: the reader
+        // seeks back for it, as OPL would, but the stream is already past.
+        let header = ZsoHeader {
+            header_size: HEADER_SIZE as u32,
+            total_bytes: SECTOR_SIZE as u64,
+            block_size: BLOCK_SIZE,
+            version: 1,
+            align: 0,
+            reserved: [0; 2],
+        };
+        let mut zso = header.to_bytes().to_vec();
+        zso.extend_from_slice(&(HEADER_SIZE as u32 | PLAIN).to_le_bytes());
+        zso.extend_from_slice(&((HEADER_SIZE + SECTOR_SIZE) as u32).to_le_bytes());
+        zso.resize(HEADER_SIZE + SECTOR_SIZE, 0x5A);
+        let mut reader = ZsoReader::new(Cursor::new(zso.clone())).unwrap();
+        let mut sector = [0u8; SECTOR_SIZE];
+        reader.read_sector(0, &mut sector).unwrap();
+        assert_eq!(sector[..], zso[HEADER_SIZE..]);
+        assert!(matches!(
+            stream_decode(&zso, &[100]),
+            Err(ZsoError::Corrupt {
+                block: 0,
+                reason: "blocks are not stored in index order"
+            })
+        ));
     }
 
     #[test]

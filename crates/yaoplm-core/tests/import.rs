@@ -439,6 +439,71 @@ fn bare_ids_take_the_title_from_the_database() {
 }
 
 #[test]
+fn database_titles_name_every_game_the_database_knows() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    sources.add_iso(src("Gta3 (USA).iso"), Variant::Retail.build());
+    // Not in the database: the file name stays.
+    sources.add_iso(src("My Homebrew.iso"), Variant::LongId.build());
+    sources.add_iso(src("Typed Over.iso"), Variant::Dvd9.build());
+    let options = ImportOptions {
+        database_titles: true,
+        overrides: vec![ImportOverride {
+            path: src("Typed Over.iso"),
+            title: Some("Typed Title".into()),
+            media: None,
+        }],
+        ..options()
+    };
+    let p = plan_for(
+        &fs,
+        &sources,
+        &["Gta3 (USA).iso", "My Homebrew.iso", "Typed Over.iso"],
+        &options,
+    );
+    let paths: Vec<String> = p
+        .transactions
+        .iter()
+        .flat_map(|t| &t.steps)
+        .filter_map(|s| match s {
+            Step::WriteFile { path, .. } => Some(path.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "CD/SLUS_200.62.Grand Theft Auto III.iso",
+            "CD/SLPM_123.45.My Homebrew.iso",
+            "DVD/SLUS_212.18.Typed Title.iso",
+        ],
+        "{:?}",
+        p.skipped
+    );
+    let named: Vec<bool> = p
+        .transactions
+        .iter()
+        .filter(|t| t.game.is_some())
+        .map(|t| t.notices.iter().any(|n| n.code == "titleFromDatabase"))
+        .collect();
+    assert_eq!(named, [true, false, false]);
+
+    // Off: a file name with a title keeps it.
+    let p = plan_for(
+        &fs,
+        &sources,
+        &["Gta3 (USA).iso"],
+        &ImportOptions::default(),
+    );
+    assert!(
+        p.transactions
+            .iter()
+            .flat_map(|t| &t.steps)
+            .any(|s| matches!(s, Step::WriteFile { path, .. } if path.as_str() == "CD/SLUS_200.62.Gta3 (USA).iso"))
+    );
+}
+
+#[test]
 fn move_deletes_sources_only_after_the_copy() {
     let fs = MemFs::new(FsKind::ExFat);
     let sources = VirtualSources::new();

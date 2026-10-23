@@ -104,6 +104,14 @@ export function SettingsPage() {
             <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
               <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
             </SettingRow>
+            <SettingRow label={t("settings.titlesFromDb")} hint={t("settings.titlesFromDbHint")} htmlFor={`${ids}-titles`}>
+              <Switch
+                id={`${ids}-titles`}
+                checked={settings.titlesFromDb}
+                onCheckedChange={(titlesFromDb) => update({ titlesFromDb })}
+                data-testid="settings-titles-from-db"
+              />
+            </SettingRow>
           </CardContent>
         </Card>
 
@@ -113,6 +121,14 @@ export function SettingsPage() {
             <CardDescription>{t("settings.coversDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
+            <SettingRow label={t("settings.coversOnAdd")} hint={t("settings.coversOnAddHint")} htmlFor={`${ids}-covers-on-add`}>
+              <Switch
+                id={`${ids}-covers-on-add`}
+                checked={settings.coversOnAdd}
+                onCheckedChange={(coversOnAdd) => update({ coversOnAdd })}
+                data-testid="settings-covers-on-add"
+              />
+            </SettingRow>
             {artSourceIds.map((id, index) => {
               const source = settings.artSources[id];
               const set = (patch: Partial<typeof source>) =>
@@ -173,7 +189,15 @@ export function SettingsPage() {
             <CardTitle>{t("settings.dumps")}</CardTitle>
             <CardDescription>{t("settings.dumpsDescription")}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-5">
+            <SettingRow label={t("settings.checkOnAdd")} hint={t("settings.checkOnAddHint")} htmlFor={`${ids}-check-on-add`}>
+              <Switch
+                id={`${ids}-check-on-add`}
+                checked={settings.checkOnAdd}
+                onCheckedChange={(checkOnAdd) => update({ checkOnAdd })}
+                data-testid="settings-check-on-add"
+              />
+            </SettingRow>
             <RedumpPanel />
           </CardContent>
         </Card>

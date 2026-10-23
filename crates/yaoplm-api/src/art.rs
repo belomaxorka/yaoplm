@@ -14,7 +14,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
-use yaoplm_core::art::{ArtItem, plan_delete_art, plan_set_art};
+use yaoplm_core::art::{ArtItem, kind_name, plan_delete_art, plan_set_art};
 use yaoplm_core::plan::{Notice, Skipped};
 use yaoplm_core::{LoaderProfile, Phrase as Said, ScanOptions, titles};
 use yaoplm_device::{HostFs, HostSources};
@@ -92,6 +92,19 @@ pub enum ArtLogState {
     Failed,
 }
 
+/// What a cover search for an import plan found (ART-8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CoverSearch {
+    /// Pass to `PlanImport` as `covers`.
+    pub id: String,
+    pub found: u32,
+    pub missing: u32,
+    /// Games whose cover is on the device already.
+    pub present: u32,
+}
+
 /// A data or art source, for the About screen (`data/attribution.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -109,6 +122,9 @@ pub struct SourceEntry {
     pub fields: Option<String>,
     #[serde(rename = "use")]
     pub purpose: String,
+    /// The picture types a cover source has (ART-2); empty for data.
+    #[serde(default)]
+    pub kinds: Vec<ArtType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,7 +169,16 @@ pub fn attribution() -> Result<Attribution, ApiError> {
         license: "GPL-3.0-or-later".to_owned(),
         repository: "https://github.com/belomaxorka/yaoplm".to_owned(),
         data: file.data,
-        art: file.art,
+        art: file
+            .art
+            .into_iter()
+            .map(|mut entry| {
+                entry.kinds = SourceId::parse(&entry.id)
+                    .map(|s| s.kinds().iter().copied().map(ArtType::from).collect())
+                    .unwrap_or_default();
+                entry
+            })
+            .collect(),
         titles: TitlesInfo {
             built: info.built.clone(),
             libretro_version: info.libretro_version.clone(),
@@ -177,7 +202,10 @@ pub struct ArtCacheInfo {
 pub(crate) struct Net {
     data_dir: PathBuf,
     runtime: OnceLock<Result<tokio::runtime::Runtime, String>>,
-    service: OnceLock<Result<Arc<ArtService>, String>>,
+    /// Kept once opened. A cache that could not be opened (another process
+    /// held it too long) is tried again on the next call, not for the life
+    /// of the process.
+    service: Mutex<Option<Arc<ArtService>>>,
     /// The parsed Redump DAT and the SHA-256 it was parsed from.
     pub(crate) redump: Mutex<Option<(String, Arc<RedumpIndex>)>>,
     /// One DAT download or import at a time: two at once would both pass
@@ -209,7 +237,7 @@ impl Net {
         Self {
             data_dir,
             runtime: OnceLock::new(),
-            service: OnceLock::new(),
+            service: Mutex::new(None),
             redump: Mutex::new(None),
             redump_update: Mutex::new(()),
         }
@@ -234,14 +262,18 @@ impl Net {
     }
 
     pub(crate) fn service(&self) -> Result<Arc<ArtService>, ApiError> {
-        self.service
-            .get_or_init(|| {
-                ArtService::open(&self.data_dir)
-                    .map(Arc::new)
-                    .map_err(|e| e.to_string())
-            })
-            .clone()
-            .map_err(|e| ApiError::internal_error(format!("cannot open the art cache: {e}")))
+        let mut service = self
+            .service
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(service) = service.as_ref() {
+            return Ok(Arc::clone(service));
+        }
+        let opened = ArtService::open(&self.data_dir)
+            .map(Arc::new)
+            .map_err(|e| ApiError::internal_error(format!("cannot open the art cache: {e}")))?;
+        *service = Some(Arc::clone(&opened));
+        Ok(opened)
     }
 
     /// Runs a future to completion on the network runtime, from a job
@@ -313,30 +345,84 @@ pub(crate) fn source_configs(
     Ok(configs)
 }
 
+/// A picture type on the wire, as its file suffix (ART-2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ArtType {
+    Cov,
+    Cov2,
+    Lab,
+    Ico,
+    Lgo,
+    Scr,
+    Scr2,
+    Bg,
+}
+
+impl ArtType {
+    /// `cov`, `COV2`...: a suffix in either case.
+    pub fn parse(suffix: &str) -> Option<Self> {
+        ArtKind::from_suffix(&suffix.to_ascii_uppercase()).map(Into::into)
+    }
+}
+
+impl From<ArtType> for ArtKind {
+    fn from(kind: ArtType) -> Self {
+        match kind {
+            ArtType::Cov => Self::Cov,
+            ArtType::Cov2 => Self::Cov2,
+            ArtType::Lab => Self::Lab,
+            ArtType::Ico => Self::Ico,
+            ArtType::Lgo => Self::Lgo,
+            ArtType::Scr => Self::Scr,
+            ArtType::Scr2 => Self::Scr2,
+            ArtType::Bg => Self::Bg,
+        }
+    }
+}
+
+impl From<ArtKind> for ArtType {
+    fn from(kind: ArtKind) -> Self {
+        match kind {
+            ArtKind::Cov => Self::Cov,
+            ArtKind::Cov2 => Self::Cov2,
+            ArtKind::Lab => Self::Lab,
+            ArtKind::Ico => Self::Ico,
+            ArtKind::Lgo => Self::Lgo,
+            ArtKind::Scr => Self::Scr,
+            ArtKind::Scr2 => Self::Scr2,
+            ArtKind::Bg => Self::Bg,
+        }
+    }
+}
+
+/// A picture type named by its suffix, COV when none is given.
 pub(crate) fn art_kind(kind: Option<&str>) -> Result<ArtKind, ApiError> {
     match kind {
         None => Ok(ArtKind::Cov),
-        Some(k) => ArtKind::from_suffix(&k.to_ascii_uppercase())
-            .filter(|k| *k == ArtKind::Cov)
-            .ok_or_else(|| {
-                ApiError::phrased(
-                    ErrorCode::BadRequest,
-                    &Said::error("artKindUnsupported").with("kind", k),
-                )
-            }),
+        Some(k) => ArtKind::from_suffix(&k.to_ascii_uppercase()).ok_or_else(|| {
+            ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("artKindUnsupported").with("kind", k),
+            )
+        }),
     }
 }
 
 /// A game as the fetch job needs it.
-struct Target {
-    startup: String,
-    title: String,
-    media: yaoplm_core::Media,
-    format: String,
-    has_cover: bool,
+#[derive(Clone)]
+pub(crate) struct Target {
+    pub startup: String,
+    pub title: String,
+    pub media: yaoplm_core::Media,
+    pub format: String,
+    /// Picture types the device has for it, in a format the profile loads.
+    pub present: Vec<ArtKind>,
 }
 
-fn targets(root: &Path, profile: LoaderProfile, kind: ArtKind) -> Result<Vec<Target>, ApiError> {
+/// The games on the device, once per ID.
+pub(crate) fn targets(root: &Path, profile: LoaderProfile) -> Result<Vec<Target>, ApiError> {
     let options = ScanOptions {
         profile,
         verify_images: false,
@@ -352,9 +438,11 @@ fn targets(root: &Path, profile: LoaderProfile, kind: ArtKind) -> Result<Vec<Tar
             title: g.title.clone(),
             media: g.media,
             format: g.format.to_string(),
-            has_cover: g.art.iter().any(|a| {
-                a.suffix.eq_ignore_ascii_case(kind.suffix())
-                    && a.path
+            present: g
+                .art
+                .iter()
+                .filter(|a| {
+                    a.path
                         .extension()
                         .and_then(|e| e.to_str())
                         .is_some_and(|e| {
@@ -363,7 +451,9 @@ fn targets(root: &Path, profile: LoaderProfile, kind: ArtKind) -> Result<Vec<Tar
                                 .iter()
                                 .any(|x| x.eq_ignore_ascii_case(e))
                         })
-            }),
+                })
+                .filter_map(|a| ArtKind::from_suffix(&a.suffix.to_ascii_uppercase()))
+                .collect(),
         })
         .collect())
 }
@@ -375,7 +465,110 @@ pub(crate) struct FetchParams {
     /// Only these IDs (either spelling); `None` means every game.
     pub games: Option<Vec<String>>,
     pub sources: Vec<SourceConfig>,
-    pub kind: ArtKind,
+    /// The picture types to look for, at least one.
+    pub kinds: Vec<ArtKind>,
+    /// The games of an import plan, and how many have the picture already
+    /// (ART-8): the job then ends with a cover set, not a plan.
+    pub import: Option<(Vec<Target>, usize)>,
+}
+
+/// The games an import plan adds, once per ID, without those whose `kind`
+/// is on the device already (ART-8, scope `missing`).
+pub(crate) fn import_targets(
+    plans: &PlanStore,
+    plan_id: &str,
+    root: &Path,
+    kind: ArtKind,
+) -> Result<(Vec<Target>, usize), ApiError> {
+    let (plan, plan_root) = plans.peek(plan_id).ok_or_else(|| {
+        ApiError::phrased(
+            ErrorCode::NotFound,
+            &Said::error("planExpired").with("id", plan_id),
+        )
+    })?;
+    if plan_root != root || plan.kind != yaoplm_core::plan::PlanKind::Import {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("notAnImportPlan").with("id", plan_id),
+        ));
+    }
+    let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
+    let present = yaoplm_core::art::present_art(&fs, kind).map_err(ApiError::internal_error)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut already = 0;
+    let mut targets = Vec::new();
+    for game in plan.transactions.iter().filter_map(|t| t.game.as_ref()) {
+        if !seen.insert(serial::lookup_key(&game.startup)) {
+            continue;
+        }
+        if present.contains(&game.startup.to_lowercase()) {
+            already += 1;
+            continue;
+        }
+        targets.push(Target {
+            startup: game.startup.clone(),
+            title: game.title.clone(),
+            media: game.media,
+            format: game.format.clone(),
+            present: Vec::new(),
+        });
+    }
+    Ok((targets, already))
+}
+
+/// The Redump names of `startup`, region first: libretro names its files
+/// after them.
+fn redump_names(startup: &str) -> Vec<String> {
+    titles::database()
+        .lookup(startup)
+        .map(|e| {
+            e.redump_names_by_region()
+                .iter()
+                .map(|n| n.name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Why nothing was found for a picture, for the log and the plan: no
+/// source has the type, every source is off, the game has no Redump name
+/// to look up, nothing at the sources asked, or errors.
+fn why_missing(
+    kind: ArtKind,
+    sources: &[SourceConfig],
+    redump_names: &[String],
+    attempts: &[yaoplm_net::Attempt],
+) -> (ArtLogState, Said) {
+    let errors: Vec<String> = attempts
+        .iter()
+        .filter_map(|a| match &a.result {
+            AttemptResult::Error(e) => Some(format!("{}: {e}", a.source)),
+            _ => None,
+        })
+        .collect();
+    if !errors.is_empty() {
+        return (
+            ArtLogState::Failed,
+            Said::notice("artFailed").with("errors", errors.join("; ")),
+        );
+    }
+    let mut tried: Vec<&str> = attempts.iter().map(|a| a.source.as_str()).collect();
+    tried.dedup();
+    let phrase = if !tried.is_empty() {
+        Said::notice("artNotFound").with("sources", tried.join(", "))
+    } else if !SourceId::ALL.iter().any(|s| s.kinds().contains(&kind)) {
+        Said::notice("noSourceForKind").with("kind", kind_name(kind))
+    } else if sources.is_empty() {
+        Said::notice("noArtSource")
+    } else if redump_names.is_empty() && sources.iter().any(|s| s.id.kinds().contains(&kind)) {
+        // A source that is on has the type but had nowhere to look: it
+        // finds pictures by the Redump name the bundled database gives.
+        Said::notice("notInTitleDatabase")
+    } else {
+        // The sources that are on do not have this type.
+        Said::notice("noSourceForKind").with("kind", kind_name(kind))
+    };
+    (ArtLogState::NotFound, phrase)
 }
 
 /// The body of a `FetchArt` job.
@@ -383,62 +576,76 @@ pub(crate) fn fetch_job(
     ctx: &JobContext,
     net: &Net,
     plans: &PlanStore,
-    params: FetchParams,
+    mut params: FetchParams,
 ) -> Result<JobResult, ApiError> {
     let profile: LoaderProfile = params.profile.into();
     let service = net.service()?;
-    let wanted: Option<Vec<String>> = params
-        .games
-        .as_ref()
-        .map(|ids| ids.iter().map(|id| serial::lookup_key(id)).collect());
-    let all = targets(&params.root, profile, params.kind)?;
-    let mut already = 0usize;
-    let targets: Vec<Target> = all
-        .into_iter()
-        .filter(|t| {
-            wanted
+    let for_import = params.import.is_some();
+    let only_covers = params.kinds == [ArtKind::Cov];
+    let (pairs, already) = match params.import.take() {
+        Some((targets, already)) => (
+            targets
+                .into_iter()
+                .map(|t| (t, ArtKind::Cov))
+                .collect::<Vec<_>>(),
+            already,
+        ),
+        None => {
+            let wanted: Option<Vec<String>> = params
+                .games
                 .as_ref()
-                .is_none_or(|ids| ids.contains(&serial::lookup_key(&t.startup)))
-        })
-        .filter(|t| {
-            if params.scope == ArtScope::Missing && t.has_cover {
-                already += 1;
-                false
-            } else {
-                true
+                .map(|ids| ids.iter().map(|id| serial::lookup_key(id)).collect());
+            let mut already = 0usize;
+            let mut pairs = Vec::new();
+            for target in targets(&params.root, profile)? {
+                if wanted
+                    .as_ref()
+                    .is_some_and(|ids| !ids.contains(&serial::lookup_key(&target.startup)))
+                {
+                    continue;
+                }
+                let kinds: Vec<ArtKind> = params
+                    .kinds
+                    .iter()
+                    .copied()
+                    .filter(|kind| {
+                        let present =
+                            params.scope == ArtScope::Missing && target.present.contains(kind);
+                        already += usize::from(present);
+                        !present
+                    })
+                    .collect();
+                for kind in kinds {
+                    pairs.push((target.clone(), kind));
+                }
             }
-        })
-        .collect();
-    let total = targets.len() as u64;
+            (pairs, already)
+        }
+    };
+    let total = pairs.len() as u64;
     ctx.progress(0, Some(total), None);
 
     let mut items = Vec::new();
     let mut skipped = Vec::new();
-    for (index, target) in targets.iter().enumerate() {
+    let mut missing = Vec::new();
+    for (index, (target, kind)) in pairs.iter().enumerate() {
         if ctx.is_cancelled() {
             return Err(ApiError::cancelled());
         }
         ctx.progress(index as u64, Some(total), Some(&target.title));
         let serial_id = serial::opl_to_serial(&target.startup);
-        let entry = titles::database().lookup(&target.startup);
-        let names: Vec<String> = entry
-            .map(|e| {
-                e.redump_names_by_region()
-                    .iter()
-                    .map(|n| n.name.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let names = redump_names(&target.startup);
         let size = recommended_size(
             profile,
             ArtSubject::Game {
                 startup: &target.startup,
             },
-            params.kind,
+            *kind,
         );
         let request = CoverRequest {
             serial: &serial_id,
             redump_names: &names,
+            kind: *kind,
             size,
             sources: &params.sources,
             revalidate: params.scope == ArtScope::All,
@@ -455,35 +662,16 @@ pub(crate) fn fetch_job(
                 None,
             ),
             None => {
-                let errors: Vec<String> = outcome
-                    .attempts
-                    .iter()
-                    .filter_map(|a| match &a.result {
-                        AttemptResult::Error(e) => Some(format!("{}: {e}", a.source)),
-                        _ => None,
-                    })
-                    .collect();
-                if errors.is_empty() {
-                    let mut tried: Vec<&str> =
-                        outcome.attempts.iter().map(|a| a.source.as_str()).collect();
-                    tried.dedup();
-                    let phrase = if tried.is_empty() {
-                        Said::notice("noArtSource")
-                    } else {
-                        Said::notice("coverNotFound").with("sources", tried.join(", "))
-                    };
-                    (ArtLogState::NotFound, None, Some(phrase))
-                } else {
-                    let phrase = Said::notice("coverFailed").with("errors", errors.join("; "));
-                    (ArtLogState::Failed, None, Some(phrase))
-                }
+                let (state, phrase) =
+                    why_missing(*kind, &params.sources, &names, &outcome.attempts);
+                (state, None, Some(phrase))
             }
         };
         ctx.log(JobLogEntry::Art {
             at: now_ms(),
             startup: target.startup.clone(),
             title: target.title.clone(),
-            art: params.kind.suffix().to_owned(),
+            art: kind.suffix().to_owned(),
             state,
             source: source.clone(),
             // Where it came from, or why it is missing.
@@ -500,40 +688,183 @@ pub(crate) fn fetch_job(
                 title: target.title.clone(),
                 media: target.media,
                 format: target.format.clone(),
-                kind: params.kind,
+                kind: *kind,
                 file: cover.png,
                 origin: format!("{} ({})", cover.source, cover.origin),
             }),
-            None => skipped.push(Skipped {
-                path: PathBuf::from(format!("{} {}", target.startup, target.title)),
-                reason: match (state, detail) {
-                    (ArtLogState::Failed, Some(phrase)) => Notice::warning(phrase),
-                    (_, Some(phrase)) => Notice::info(phrase),
-                    (_, None) => Notice::info(Said::notice("noArtSource")),
-                },
-            }),
+            None => {
+                let label = if *kind == ArtKind::Cov {
+                    format!("{} {}", target.startup, target.title)
+                } else {
+                    format!("{} {} ({kind})", target.startup, target.title)
+                };
+                let skip = Skipped {
+                    path: PathBuf::from(label),
+                    reason: match (state, detail) {
+                        (ArtLogState::Failed, Some(phrase)) => Notice::warning(phrase),
+                        (_, Some(phrase)) => Notice::info(phrase),
+                        (_, None) => Notice::info(Said::notice("noArtSource")),
+                    },
+                };
+                missing.push((target.startup.clone(), skip.clone()));
+                skipped.push(skip);
+            }
         }
     }
     ctx.progress(total, Some(total), None);
+
+    if for_import {
+        let found = u32::try_from(items.len()).unwrap_or(u32::MAX);
+        let not_found = u32::try_from(missing.len()).unwrap_or(u32::MAX);
+        let id = plans.insert_covers(params.root, items, missing);
+        return Ok(JobResult::Covers(CoverSearch {
+            id,
+            found,
+            missing: not_found,
+            present: u32::try_from(already).unwrap_or(u32::MAX),
+        }));
+    }
 
     let fs = HostFs::new(&params.root).map_err(ApiError::internal_error)?;
     let mut plan = plan_set_art(&fs, &HostSources, &items, params.scope == ArtScope::All)
         .map_err(ApiError::internal_error)?;
     plan.skipped.extend(skipped);
     if already > 0 {
-        plan.notices
-            .push(Notice::info(Said::notice("coversPresent").count(already)));
-    }
-    if targets.is_empty() {
-        plan.notices.retain(|n| n.code != "nothingToWrite");
-        plan.notices
-            .push(Notice::error(Said::notice(if already > 0 {
-                "allHaveCovers"
+        plan.notices.push(Notice::info(
+            Said::notice(if only_covers {
+                "coversPresent"
             } else {
-                "nothingToFetch"
-            })));
+                "artPresent"
+            })
+            .count(already),
+        ));
+    }
+    if pairs.is_empty() {
+        plan.notices.retain(|n| n.code != "nothingToWrite");
+        plan.notices.push(Notice::error(Said::notice(match () {
+            () if already == 0 => "nothingToFetch",
+            () if only_covers => "allHaveCovers",
+            () => "allHaveArt",
+        })));
     }
     Ok(JobResult::Plan(Box::new(plans.insert(params.root, plan))))
+}
+
+/// A picture a source has for one game, for the user to pick (SPEC §5.4.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ArtVariant {
+    pub source: String,
+    /// The URL or mirror file it came from.
+    pub origin: String,
+    pub width: u32,
+    pub height: u32,
+    /// The PNG as it would be written, base64: pass it back to `SetArt`.
+    pub png: String,
+}
+
+/// What `FindArt` found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ArtVariants {
+    pub startup: String,
+    pub kind: ArtType,
+    /// In source order: the first is what "Download" would write.
+    pub variants: Vec<ArtVariant>,
+}
+
+pub(crate) struct FindParams {
+    pub root: PathBuf,
+    pub profile: WireProfile,
+    pub startup: String,
+    pub kind: ArtKind,
+    pub sources: Vec<SourceConfig>,
+}
+
+/// The body of a `FindArt` job: every picture of one type the sources
+/// have for one game, resized as it would be written.
+pub(crate) fn find_job(
+    ctx: &JobContext,
+    net: &Net,
+    params: FindParams,
+) -> Result<JobResult, ApiError> {
+    let profile: LoaderProfile = params.profile.into();
+    let service = net.service()?;
+    let game = targets(&params.root, profile)?
+        .into_iter()
+        .find(|t| t.startup.eq_ignore_ascii_case(&params.startup))
+        .ok_or_else(|| {
+            ApiError::phrased(
+                ErrorCode::NotFound,
+                &Said::error("noGameWithId").with("startup", &params.startup),
+            )
+        })?;
+    ctx.progress(0, Some(1), Some(&game.title));
+    let serial_id = serial::opl_to_serial(&game.startup);
+    let names = redump_names(&game.startup);
+    let request = CoverRequest {
+        serial: &serial_id,
+        redump_names: &names,
+        kind: params.kind,
+        size: recommended_size(
+            profile,
+            ArtSubject::Game {
+                startup: &game.startup,
+            },
+            params.kind,
+        ),
+        sources: &params.sources,
+        revalidate: false,
+    };
+    let (covers, attempts) = net.block_on(service.find_variants(&request))?;
+    let mut variants = Vec::new();
+    for cover in &covers {
+        let Ok(bytes) = std::fs::read(&cover.png) else {
+            continue;
+        };
+        ctx.log(JobLogEntry::Art {
+            at: now_ms(),
+            startup: game.startup.clone(),
+            title: game.title.clone(),
+            art: params.kind.suffix().to_owned(),
+            state: if cover.from_cache {
+                ArtLogState::Cached
+            } else {
+                ArtLogState::Found
+            },
+            source: Some(cover.source.clone()),
+            detail: Some(cover.origin.clone()),
+            detail_phrase: None,
+        });
+        variants.push(ArtVariant {
+            source: cover.source.clone(),
+            origin: cover.origin.clone(),
+            width: cover.width,
+            height: cover.height,
+            png: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    if variants.is_empty() {
+        let (state, phrase) = why_missing(params.kind, &params.sources, &names, &attempts);
+        ctx.log(JobLogEntry::Art {
+            at: now_ms(),
+            startup: game.startup.clone(),
+            title: game.title.clone(),
+            art: params.kind.suffix().to_owned(),
+            state,
+            source: None,
+            detail: Some(phrase.english()),
+            detail_phrase: Some(Phrase::from(&phrase)),
+        });
+    }
+    ctx.progress(1, Some(1), None);
+    Ok(JobResult::ArtVariants(Box::new(ArtVariants {
+        startup: game.startup,
+        kind: params.kind.into(),
+        variants,
+    })))
 }
 
 /// Decodes `input` into image bytes and a label for the log.
@@ -610,15 +941,17 @@ pub(crate) fn set_art(
         },
         params.kind,
     );
-    let cover = service.import_local(&bytes, size, &label).map_err(|e| {
-        ApiError::phrased(
-            ErrorCode::BadRequest,
-            &Said::error("pathError")
-                .with("path", &label)
-                .with("error", e.to_string()),
-        )
-    })?;
-    let game = targets(&params.root, profile, params.kind)?
+    let cover = service
+        .import_local(&bytes, params.kind, size, &label)
+        .map_err(|e| {
+            ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("pathError")
+                    .with("path", &label)
+                    .with("error", e.to_string()),
+            )
+        })?;
+    let game = targets(&params.root, profile)?
         .into_iter()
         .find(|t| t.startup.eq_ignore_ascii_case(&params.startup))
         .ok_or_else(|| {

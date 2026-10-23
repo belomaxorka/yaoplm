@@ -23,7 +23,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { CoverActions } from "@/features/art/CoverActions";
+import { ArtSlots } from "@/features/art/ArtSlots";
+import { GameCover } from "@/features/library/GameCover";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
@@ -107,7 +108,9 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           </Button>
         </div>
         <div className="grid gap-6 sm:grid-cols-[12rem_1fr]">
-          <CoverActions game={game} root={root} games={games} />
+          <div data-testid="game-hero">
+            <GameCover game={game} className="w-48" />
+          </div>
           <div className="flex min-w-0 flex-col gap-4">
             <div>
               <h2 className="text-2xl font-semibold wrap-anywhere" data-testid="game-title">
@@ -188,7 +191,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             <Fact label={t("game.dump")}>
               {game.dump ? (
                 <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} />
+                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
                   {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
                 </span>
               ) : (
@@ -272,24 +275,12 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         </section>
 
         <section className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">{t("game.artAndCheats")}</h3>
+          <h3 className="mb-3 text-sm font-medium">{t("art.pictures")}</h3>
+          <ArtSlots game={game} root={root} />
+        </section>
+
+        <section className="rounded-lg border bg-card p-4">
           <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-            <Fact label={t("game.art")}>
-              {game.art.length === 0 ? (
-                <span className="text-muted-foreground">{t("game.noArt")}</span>
-              ) : (
-                <ul className="flex flex-wrap gap-1">
-                  {game.art.map((art) => (
-                    <li key={art.path}>
-                      <Badge variant="outline" title={art.path}>
-                        {art.kind}
-                        {art.width !== null && art.height !== null && ` ${art.width}×${art.height}`}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Fact>
             <Fact label={t("game.cheats")}>
               {game.cheats === null ? (
                 <span className="text-muted-foreground">{t("game.noCheats")}</span>

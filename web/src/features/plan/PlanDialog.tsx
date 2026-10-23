@@ -25,20 +25,19 @@ type PlanFlow = ReturnType<typeof usePlan>;
  */
 export function PlanDialog({ flow, description }: { flow: PlanFlow; description?: string }) {
   const { t } = useTranslation();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // The confirmation belongs to one plan: the next one asks again.
+  const [confirmedFor, setConfirmedFor] = useState<string | null>(null);
   const checkboxId = useId();
   const open = flow.plan !== null || flow.pending || flow.error !== null;
   const plan = flow.plan;
+  const confirmDelete = plan !== null && confirmedFor === plan.id;
   const canRun = plan !== null && plan.executable && (!plan.deletesUserData || confirmDelete) && !flow.executing;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && !flow.executing) {
-          flow.discard();
-          setConfirmDelete(false);
-        }
+        if (!next && !flow.executing) flow.discard();
       }}
     >
       <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl" data-testid="plan-dialog">
@@ -67,8 +66,7 @@ export function PlanDialog({ flow, description }: { flow: PlanFlow; description?
                 <Checkbox
                   id={checkboxId}
                   checked={confirmDelete}
-                  onCheckedChange={(value) => setConfirmDelete(value === true)}
-                  aria-describedby={`${checkboxId}-hint`}
+                  onCheckedChange={(value) => setConfirmedFor(value === true ? plan.id : null)}
                 />
                 {t("plan.confirmDelete")}
               </Label>

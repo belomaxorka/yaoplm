@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ApiError;
-use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, Attribution};
+use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, ArtType, Attribution};
 use crate::devices::DeviceInfo;
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
@@ -183,6 +183,23 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         compress: Option<bool>,
+        /// Hash the images while they are written and check them against
+        /// the stored Redump DAT (GAME-5); the verdicts land in the job log
+        /// and the hash cache. Off when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        verify: Option<bool>,
+        /// Title the games the bundled database knows by its name there;
+        /// the others keep their file name's title. Off when absent: only
+        /// games whose file names give no title are named by the database.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        database_titles: Option<bool>,
+        /// A cover set from `FetchArt` with `import` (ART-8): every game
+        /// gets its cover written right after it, in the same plan.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        covers: Option<String>,
     },
     /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
     /// form is deleted after the new one is complete, so executing needs
@@ -256,7 +273,9 @@ pub enum Request {
     },
     /// Finds covers for the games on a device (ART-1, ART-4): a job whose
     /// result is a plan to write them (`JobResult::Plan`). Network access
-    /// happens only here and only for the games in scope.
+    /// happens only here and only for the games in scope. With `import`,
+    /// the games are those an import plan adds (ART-8) and the result is a
+    /// cover set for `PlanImport.covers` (`JobResult::Covers`).
     FetchArt {
         root: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -274,10 +293,54 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         sources: Option<Vec<ArtSourceSetting>>,
-        /// `COV` for now.
+        /// One picture type by its suffix; `kinds` takes several.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         kind: Option<String>,
+        /// The picture types to look for (ART-2); COV when neither this nor
+        /// `kind` is given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kinds: Option<Vec<ArtType>>,
+        /// The id of an import plan: look for the covers of the games it
+        /// adds, `missing` scope (ART-8).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        import: Option<String>,
+    },
+    /// Every picture of one type the sources have for one game, to pick
+    /// from (ART-2, SPEC §5.4.1): a job whose result is `ArtVariants`.
+    /// The chosen one goes back through `SetArt` as bytes.
+    FindArt {
+        root: String,
+        startup: String,
+        kind: ArtType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        sources: Option<Vec<ArtSourceSetting>>,
+    },
+    /// Pictures from picture sets the user has (ART-5): OPL Manager's art
+    /// backups (zip or 7z), folders of pictures, `art.tar`. A job that ends
+    /// with a plan writing the pictures of the games on the device; the
+    /// rest of a set is left out.
+    ImportArt {
+        root: String,
+        /// Folders, archives or picture files.
+        sources: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Every type when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        kinds: Option<Vec<ArtType>>,
+        /// Replace pictures the device has; they move to the backup folder.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        overwrite: Option<bool>,
     },
     /// Plans writing a cover the user supplied (ART-3): a file on the host
     /// or image bytes, transcoded like a downloaded one.

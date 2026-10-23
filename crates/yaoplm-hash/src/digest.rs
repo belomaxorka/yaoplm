@@ -1,11 +1,14 @@
 //! CRC-32, SHA-1 and MD5 in one pass over a stream (GAME-5).
 //!
-//! The caller's thread reads 4 MiB blocks and updates CRC-32 itself (it runs
-//! at memory speed); SHA-1 and MD5 each get every block on a thread of their
-//! own. Blocks are shared, not copied, and at most a few are in flight, so
+//! CRC-32 runs on the thread that has the bytes (it runs at memory speed);
+//! SHA-1 and MD5 each get every 4 MiB block on a thread of their own.
+//! Blocks are shared, not copied, and at most a few are in flight, so
 //! memory stays bounded whatever the image size. Redump publishes all three
 //! hashes; SHA-1 decides a match, CRC-32 and MD5 are shown for people who
 //! compare by hand (HDL Batch Installer, for example, prints MD5 only).
+//!
+//! [`hash_reader`] reads a stream itself; [`StreamHasher`] takes bytes that
+//! someone else reads.
 
 use std::io::{self, Read};
 use std::sync::Arc;
@@ -94,25 +97,151 @@ fn read_full(reader: &mut dyn Read, buf: &mut [u8]) -> io::Result<usize> {
 
 type Block = Arc<Vec<u8>>;
 
-/// A hasher on its own thread, fed through a bounded queue.
-fn spawn_hasher<'scope, D: Digest + Send + 'scope>(
-    scope: &'scope thread::Scope<'scope, '_>,
-) -> (SyncSender<Block>, thread::ScopedJoinHandle<'scope, D>) {
-    let (tx, rx): (SyncSender<Block>, Receiver<Block>) = sync_channel(IN_FLIGHT);
-    let handle = scope.spawn(move || {
-        let mut digest = D::new();
-        for block in rx {
-            digest.update(&block[..]);
-        }
-        digest
-    });
-    (tx, handle)
+/// A digest on its own thread, fed through a bounded queue.
+struct Worker<D> {
+    queue: Option<SyncSender<Block>>,
+    handle: Option<thread::JoinHandle<D>>,
 }
 
-fn joined<D>(handle: thread::ScopedJoinHandle<'_, D>) -> io::Result<D> {
-    handle
-        .join()
-        .map_err(|_| io::Error::other("a hashing thread panicked"))
+impl<D: Digest + Send + 'static> Worker<D> {
+    /// Fails when the system has no thread to spare.
+    fn spawn(name: &str) -> io::Result<Self> {
+        let (tx, rx): (SyncSender<Block>, Receiver<Block>) = sync_channel(IN_FLIGHT);
+        let handle = thread::Builder::new()
+            .name(format!("hash-{name}"))
+            .spawn(move || {
+                let mut digest = D::new();
+                for block in rx {
+                    digest.update(&block[..]);
+                }
+                digest
+            })?;
+        Ok(Self {
+            queue: Some(tx),
+            handle: Some(handle),
+        })
+    }
+
+    fn send(&self, block: Block) {
+        // A send only fails when the thread is gone; `finish` says why.
+        if let Some(queue) = &self.queue {
+            let _ = queue.send(block);
+        }
+    }
+
+    fn finish(mut self) -> io::Result<D> {
+        // Closing the queue ends the thread.
+        self.queue = None;
+        self.handle
+            .take()
+            .ok_or_else(|| io::Error::other("a hashing thread is gone"))?
+            .join()
+            .map_err(|_| io::Error::other("a hashing thread panicked"))
+    }
+}
+
+impl<D> Drop for Worker<D> {
+    fn drop(&mut self) {
+        // Abandoned: closing the queue lets the thread end on its own.
+        self.queue = None;
+    }
+}
+
+/// Hashes bytes handed in pieces of any size: the copy of an image to a
+/// device feeds what it reads, so the device is not read a second time.
+/// Pieces are gathered into blocks for the SHA-1 and MD5 threads; dropping
+/// the hasher without [`StreamHasher::finish`] stops them.
+pub struct StreamHasher {
+    crc: crc32fast::Hasher,
+    size: u64,
+    pending: Vec<u8>,
+    sha1: Worker<Sha1>,
+    md5: Option<Worker<Md5>>,
+}
+
+impl std::fmt::Debug for StreamHasher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamHasher")
+            .field("size", &self.size)
+            .finish_non_exhaustive()
+    }
+}
+
+impl StreamHasher {
+    /// Fails when a hashing thread cannot be started.
+    pub fn new(algorithms: Algorithms) -> io::Result<Self> {
+        Ok(Self {
+            crc: crc32fast::Hasher::new(),
+            size: 0,
+            pending: Vec::new(),
+            sha1: Worker::spawn("sha1")?,
+            md5: algorithms.md5.then(|| Worker::spawn("md5")).transpose()?,
+        })
+    }
+
+    /// Bytes hashed so far.
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    fn send(&mut self, block: Vec<u8>) {
+        let block = Arc::new(block);
+        if let Some(md5) = &self.md5 {
+            md5.send(Arc::clone(&block));
+        }
+        self.sha1.send(block);
+    }
+
+    pub fn update(&mut self, bytes: &[u8]) {
+        self.crc.update(bytes);
+        self.size += bytes.len() as u64;
+        let mut rest = bytes;
+        while !rest.is_empty() {
+            if self.pending.capacity() == 0 {
+                self.pending.reserve_exact(BLOCK_SIZE);
+            }
+            let n = rest.len().min(BLOCK_SIZE - self.pending.len());
+            self.pending.extend_from_slice(&rest[..n]);
+            rest = &rest[n..];
+            if self.pending.len() == BLOCK_SIZE {
+                let block = std::mem::take(&mut self.pending);
+                self.send(block);
+            }
+        }
+    }
+
+    /// A block the caller owns, passed on without a copy.
+    fn update_block(&mut self, block: Vec<u8>) {
+        if !self.pending.is_empty() {
+            self.update(&block);
+            return;
+        }
+        self.crc.update(&block);
+        self.size += block.len() as u64;
+        self.send(block);
+    }
+
+    pub fn finish(mut self) -> io::Result<Hashes> {
+        let rest = std::mem::take(&mut self.pending);
+        if !rest.is_empty() {
+            self.send(rest);
+        }
+        let Self {
+            crc,
+            size,
+            sha1,
+            md5,
+            ..
+        } = self;
+        let sha1 = sha1.finish()?;
+        let md5 = md5.map(Worker::finish).transpose()?;
+        Ok(Hashes {
+            size,
+            crc32: crc.finalize(),
+            sha1: sha1.finalize().into(),
+            md5: md5.map(|d| d.finalize().into()),
+        })
+    }
 }
 
 /// Hashes everything `reader` yields. `stop` is polled between blocks and
@@ -124,50 +253,21 @@ pub fn hash_reader(
     stop: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(u64),
 ) -> Result<Hashes, HashError> {
-    thread::scope(|scope| {
-        let (sha_tx, sha) = spawn_hasher::<Sha1>(scope);
-        let md5 = algorithms.md5.then(|| spawn_hasher::<Md5>(scope));
-        let mut crc = crc32fast::Hasher::new();
-        let mut size = 0u64;
-        let outcome = loop {
-            if stop() {
-                break Err(HashError::Cancelled);
-            }
-            let mut block = vec![0u8; BLOCK_SIZE];
-            let n = match read_full(reader, &mut block) {
-                Ok(n) => n,
-                Err(err) => break Err(HashError::Io(err)),
-            };
-            if n == 0 {
-                break Ok(());
-            }
-            block.truncate(n);
-            crc.update(&block);
-            size += n as u64;
-            let block = Arc::new(block);
-            // A send only fails when the thread is gone; join reports why.
-            let _ = sha_tx.send(Arc::clone(&block));
-            if let Some((tx, _)) = &md5 {
-                let _ = tx.send(block);
-            }
-            progress(size);
-        };
-        // Closing the queues ends the hasher threads.
-        drop(sha_tx);
-        let md5 = md5.map(|(tx, handle)| {
-            drop(tx);
-            handle
-        });
-        let sha1 = joined(sha)?;
-        let md5 = md5.map(joined).transpose()?;
-        outcome?;
-        Ok(Hashes {
-            size,
-            crc32: crc.finalize(),
-            sha1: sha1.finalize().into(),
-            md5: md5.map(|d| d.finalize().into()),
-        })
-    })
+    let mut hasher = StreamHasher::new(algorithms)?;
+    loop {
+        if stop() {
+            return Err(HashError::Cancelled);
+        }
+        let mut block = vec![0u8; BLOCK_SIZE];
+        let n = read_full(reader, &mut block)?;
+        if n == 0 {
+            break;
+        }
+        block.truncate(n);
+        hasher.update_block(block);
+        progress(hasher.size());
+    }
+    Ok(hasher.finish()?)
 }
 
 #[cfg(test)]
@@ -314,6 +414,48 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("cable pulled"), "{err}");
+    }
+
+    #[test]
+    fn pieces_hash_like_one_stream() {
+        let data: Vec<u8> = (0..BLOCK_SIZE * 2 + 777)
+            .map(|i| (i * 7 % 241) as u8)
+            .collect();
+        let whole = hash_reader(
+            &mut Cursor::new(&data),
+            Algorithms { md5: true },
+            &|| false,
+            &mut |_| {},
+        )
+        .unwrap();
+        // Pieces of odd sizes, some crossing block boundaries.
+        let mut hasher = StreamHasher::new(Algorithms { md5: true }).unwrap();
+        let mut at = 0;
+        for size in [1, 2351, 2352, BLOCK_SIZE - 3, 2048, BLOCK_SIZE + 5]
+            .iter()
+            .cycle()
+        {
+            if at == data.len() {
+                break;
+            }
+            let end = (at + size).min(data.len());
+            hasher.update(&data[at..end]);
+            at = end;
+        }
+        assert_eq!(hasher.size(), data.len() as u64);
+        assert_eq!(hasher.finish().unwrap(), whole);
+
+        let empty = StreamHasher::new(Algorithms::default())
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(empty.sha1_hex(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(empty.md5, None);
+
+        // Abandoned half way: the threads end, nothing hangs.
+        let mut hasher = StreamHasher::new(Algorithms { md5: true }).unwrap();
+        hasher.update(&data[..BLOCK_SIZE + 1]);
+        drop(hasher);
     }
 
     #[test]

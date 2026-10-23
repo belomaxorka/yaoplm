@@ -54,17 +54,24 @@ console.log("cover loaded through the asset protocol:", loaded, await covered.ge
 if (!loaded) process.exitCode = 1;
 await shot("library");
 
+// Picture sets come from native pickers or a drop on the desktop (ART-5).
+await page.getByTestId("import-pictures").click();
+await page.waitForSelector('[data-testid="art-import-dialog"]');
+await page.waitForTimeout(400);
+await shot("art-import");
+await page.keyboard.press("Escape");
+
 await page.getByRole("listitem", { name: /Retail Game/ }).click();
 await page.waitForSelector('[data-testid="game-title"]');
-await page.waitForSelector('[data-testid="cover-actions"]');
+await page.waitForSelector('[data-testid="art-slots"]');
 await shot("game");
 
 if (mirror) {
-  // The cover search against the mirrors, up to the plan dialog.
-  await page.getByTestId("cover-download").click();
-  await page.getByTestId("art-fetch-dialog").waitFor();
-  await shot("art-fetch");
-  await page.getByTestId("art-fetch-start").click();
+  // The cover's variants from the mirrors, up to the plan dialog.
+  await page.getByTestId("art-download-COV").click();
+  await page.getByTestId("art-variant").first().waitFor({ timeout: 30_000 });
+  await shot("art-variants");
+  await page.getByTestId("art-variant-use").click();
   await page.getByTestId("plan-dialog").waitFor({ timeout: 30_000 });
   await shot("art-plan");
   await page.keyboard.press("Escape");

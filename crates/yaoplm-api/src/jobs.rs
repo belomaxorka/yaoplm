@@ -19,12 +19,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use yaoplm_device::CancelToken;
 
-use crate::art::ArtLogState;
+use crate::art::{ArtLogState, ArtVariants, CoverSearch};
 use crate::events::EventBus;
 use crate::library::Library;
 use crate::phrase::Phrase;
 use crate::plans::{PlanView, StepOp};
-use crate::verify::{RedumpResult, UnknownReason, VerificationReport, VerifyStatus};
+use crate::verify::{
+    GameVerification, RedumpResult, UnknownReason, VerificationReport, VerifyStatus,
+};
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
 
 /// Finished jobs kept for `GetJob` / `ListJobs`.
@@ -46,6 +48,8 @@ pub enum JobKind {
     VerifyGames,
     /// Downloads or imports the Redump DAT (META-2).
     UpdateRedump,
+    /// Reads picture sets and ends with a plan to write them (ART-5).
+    ImportArt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +95,10 @@ pub struct ExecutionReport {
     pub error_phrase: Option<Phrase>,
     /// A journal left on the device: run `PlanRecovery`.
     pub journal: Option<String>,
+    /// Verdicts for the games the plan hashed while writing them (GAME-5,
+    /// `PlanImport` with `verify`).
+    #[serde(default)]
+    pub checks: Vec<GameVerification>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +109,10 @@ pub enum JobResult {
     Execution(ExecutionReport),
     /// A plan to confirm with `ExecutePlan` (`FetchArt`).
     Plan(Box<PlanView>),
+    /// Covers for the games of an import plan (`FetchArt` with `import`).
+    Covers(CoverSearch),
+    /// Pictures to pick from for one game (`FindArt`).
+    ArtVariants(Box<ArtVariants>),
     Verification(Box<VerificationReport>),
     Redump(Box<RedumpResult>),
 }
@@ -623,6 +635,7 @@ mod tests {
 
     fn execution(cancelled: bool) -> JobResult {
         JobResult::Execution(ExecutionReport {
+            checks: Vec::new(),
             outcomes: Vec::new(),
             cancelled,
             error: None,

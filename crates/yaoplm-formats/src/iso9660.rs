@@ -37,6 +37,13 @@ pub trait SectorSource {
     /// Whole sectors the image holds.
     fn sector_count(&self) -> u64;
     fn read_sector(&mut self, lba: u64, buf: &mut Sector) -> io::Result<()>;
+
+    /// The whole 2352-byte CD sector behind the last `read_sector`, for
+    /// sources that store one (a raw BIN track, a raw CHD track): Redump
+    /// hashes CDs that way (ADR-0030).
+    fn raw_sector(&self) -> Option<&[u8]> {
+        None
+    }
 }
 
 impl<T: SectorSource + ?Sized> SectorSource for Box<T> {
@@ -46,6 +53,10 @@ impl<T: SectorSource + ?Sized> SectorSource for Box<T> {
 
     fn read_sector(&mut self, lba: u64, buf: &mut Sector) -> io::Result<()> {
         (**self).read_sector(lba, buf)
+    }
+
+    fn raw_sector(&self) -> Option<&[u8]> {
+        (**self).raw_sector()
     }
 }
 

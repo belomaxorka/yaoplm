@@ -9,4 +9,9 @@ export type DumpCheck = { status: VerifyStatus, reason: UnknownReason | null,
 /**
  * The Redump name of the matching dump.
  */
-redump: string | null, };
+redump: string | null, 
+/**
+ * The verdict compares the raw CD track the game was added from, not
+ * the image.
+ */
+byTrack: boolean, };

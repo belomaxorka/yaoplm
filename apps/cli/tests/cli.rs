@@ -1,10 +1,24 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::cell::RefCell;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
+thread_local! {
+    /// The app data folder of the running test (each test has a thread):
+    /// writes check dumps and keep hashes, never in the real folder.
+    static DATA_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
 fn yaoplm() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_yaoplm"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_yaoplm"));
+    DATA_DIR.with(|dir| {
+        if let Some(dir) = &*dir.borrow() {
+            command.env("YAOPLM_DATA_DIR", dir);
+        }
+    });
+    command
 }
 
 fn stdout(output: &Output) -> &str {
@@ -161,6 +175,7 @@ fn stick() -> Stick {
     let games = dir.path().join("games");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&games).unwrap();
+    DATA_DIR.with(|data| *data.borrow_mut() = Some(dir.path().join("data")));
     std::fs::write(games.join("Retail.iso"), Variant::Retail.build().to_vec()).unwrap();
     std::fs::write(games.join("Dvd Nine.iso"), Variant::Dvd9.build().to_vec()).unwrap();
     Stick {
@@ -206,6 +221,21 @@ fn add_prints_the_plan_and_needs_yes() {
     assert!(stdout(&done).contains("done  Copy SLUS_200.62.Retail.iso to CD"));
     assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
     assert!(s.root.join("APPS").is_dir());
+
+    // With --db-titles the bundled database names the games it knows.
+    let other = s.root.parent().unwrap().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let named = run(&[
+        "add".as_ref(),
+        other.as_os_str(),
+        s.games.as_os_str(),
+        "--db-titles".as_ref(),
+    ]);
+    assert!(
+        stdout(&named).contains("+ write CD/SLUS_200.62.Grand Theft Auto III.iso"),
+        "{}",
+        stdout(&named)
+    );
 
     // The same games again: skipped, nothing to apply.
     let again = run(&[
@@ -643,4 +673,293 @@ fn add_compressed_then_convert() {
     );
     assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
     assert!(!s.root.join("CD/SLUS_200.62.Retail.zso").exists());
+}
+
+/// `add --covers` (ART-8): the covers of the games being added are looked
+/// up first and written in the same plan; the dump check runs by default
+/// (GAME-5) and `--no-verify` turns it off.
+#[test]
+fn add_with_covers_and_dump_checks() {
+    let s = stick();
+    let mirror = s.root.parent().unwrap().join("mirror");
+    let covers = mirror.join("covers/default");
+    std::fs::create_dir_all(&covers).unwrap();
+    let jpeg = {
+        let img = image::ImageBuffer::from_fn(300, 420, |x, y| image::Rgb([x as u8, y as u8, 7]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut out),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        out
+    };
+    std::fs::write(covers.join("SLUS-20062.jpg"), jpeg).unwrap();
+    let mirror_arg = format!("xlenore={}", mirror.display());
+    let done = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--covers".as_ref(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "libretro".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    let errors = String::from_utf8_lossy(&done.stderr);
+    assert!(done.status.success(), "{text}\n{errors}");
+    assert!(
+        errors.contains("Covers: 1 found, 1 not found, 0 already on the device"),
+        "{errors}"
+    );
+    assert!(text.contains("+ write ART/SLUS_200.62_COV.png"), "{text}");
+    assert!(s.root.join("ART/SLUS_200.62_COV.png").is_file());
+    // No DAT yet: the images were hashed, nothing to compare with.
+    assert!(text.contains("Dump checks"), "{text}");
+    assert!(
+        text.contains("0 verified, 0 bad, 2 unknown, 0 failed"),
+        "{text}"
+    );
+
+    // --mirror needs --covers.
+    let bad = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+    ]);
+    assert!(!bad.status.success());
+
+    let other = s.root.parent().unwrap().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let quiet = run(&[
+        "add".as_ref(),
+        other.as_os_str(),
+        s.games.as_os_str(),
+        "--no-verify".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(quiet.status.success());
+    assert!(!stdout(&quiet).contains("Dump checks"));
+}
+
+/// A cover search the API refuses stops `add --covers` before anything is
+/// planned, as `art fetch` stops: only a search that fails while it runs
+/// (the network) lets the games go on without covers.
+#[test]
+fn add_with_covers_refuses_bad_sources() {
+    let s = stick();
+    let missing = s.root.parent().unwrap().join("no-such-mirror");
+    let mirror_arg = format!("xlenore={}", missing.display());
+    for (flag, value, said) in [
+        (
+            "--skip-source",
+            "oplmanager",
+            "Unknown art source oplmanager",
+        ),
+        ("--mirror", mirror_arg.as_str(), "no-such-mirror"),
+    ] {
+        let refused = run(&[
+            "add".as_ref(),
+            s.root.as_os_str(),
+            s.games.as_os_str(),
+            "--covers".as_ref(),
+            flag.as_ref(),
+            value.as_ref(),
+            "--yes".as_ref(),
+        ]);
+        let errors = String::from_utf8_lossy(&refused.stderr);
+        assert_eq!(refused.status.code(), Some(1), "{flag}: {errors}");
+        assert!(errors.contains(said), "{flag}: {errors}");
+        assert!(!errors.contains("without covers"), "{flag}: {errors}");
+        assert!(stdout(&refused).is_empty(), "no plan: {}", stdout(&refused));
+        assert!(
+            std::fs::read_dir(&s.root).unwrap().next().is_none(),
+            "{flag}: nothing written"
+        );
+    }
+}
+
+/// `--kind` on `art fetch`, `art set` and `art rm` (ART-2): screenshots
+/// from a libretro mirror, a logo from a file, its removal by type.
+#[test]
+fn art_kinds_from_the_command_line() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--no-verify".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+    let mirror = s.root.parent().unwrap().join("libretro");
+    let snaps = mirror.join("Named_Snaps");
+    std::fs::create_dir_all(&snaps).unwrap();
+    let png = {
+        let img = image::ImageBuffer::from_fn(320, 240, |x, y| image::Rgb([x as u8, y as u8, 3]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    };
+    // SLUS_200.62 by its Redump name in the bundled database.
+    std::fs::write(snaps.join("Grand Theft Auto III (USA, Canada).png"), &png).unwrap();
+    let mirror_arg = format!("libretro={}", mirror.display());
+    // A type named twice, with another one in between, is searched once.
+    let fetched = run(&[
+        "art".as_ref(),
+        "fetch".as_ref(),
+        s.root.as_os_str(),
+        "--kind".as_ref(),
+        "SCR".as_ref(),
+        "--kind".as_ref(),
+        "LGO".as_ref(),
+        "--kind".as_ref(),
+        "scr".as_ref(),
+        "--mirror".as_ref(),
+        mirror_arg.as_ref(),
+        "--skip-source".as_ref(),
+        "xlenore".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&fetched);
+    assert!(
+        fetched.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&fetched.stderr)
+    );
+    assert!(text.contains("Plan: Write 1 picture"), "{text}");
+    // One line, written or skipped, per game and type.
+    assert!(text.contains("Skipped (3):"), "{text}");
+    for line in [
+        "+ write ART/SLUS_200.62_SCR.png",
+        "SLUS_200.62 Retail (LGO):",
+        "SLUS_212.18 Dvd Nine (SCR):",
+        "SLUS_212.18 Dvd Nine (LGO):",
+    ] {
+        assert_eq!(text.matches(line).count(), 1, "{line}\n{text}");
+    }
+    assert!(s.root.join("ART/SLUS_200.62_SCR.png").is_file());
+    assert!(!s.root.join("ART/SLUS_200.62_COV.png").exists());
+
+    let unknown = run(&[
+        "art".as_ref(),
+        "fetch".as_ref(),
+        s.root.as_os_str(),
+        "--kind".as_ref(),
+        "SCR3".as_ref(),
+    ]);
+    assert!(!unknown.status.success());
+
+    let image = s.root.parent().unwrap().join("logo.png");
+    std::fs::write(&image, &png).unwrap();
+    let set = run(&[
+        "art".as_ref(),
+        "set".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        image.as_os_str(),
+        "--kind".as_ref(),
+        "lgo".as_ref(),
+        "-y".as_ref(),
+    ]);
+    assert!(
+        set.status.success(),
+        "{}",
+        String::from_utf8_lossy(&set.stderr)
+    );
+    assert!(s.root.join("ART/SLUS_212.18_LGO.png").is_file());
+    assert!(!s.root.join("ART/SLUS_212.18_COV.png").exists());
+
+    // The cover is not there; the logo is.
+    let rm_cover = run(&[
+        "art".as_ref(),
+        "rm".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        "-y".as_ref(),
+    ]);
+    assert_eq!(rm_cover.status.code(), Some(1));
+    let rm = run(&[
+        "art".as_ref(),
+        "rm".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        "--kind".as_ref(),
+        "LGO".as_ref(),
+        "-y".as_ref(),
+    ]);
+    assert!(
+        rm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rm.stderr)
+    );
+    assert!(!s.root.join("ART/SLUS_212.18_LGO.png").exists());
+    let bad = run(&[
+        "art".as_ref(),
+        "rm".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_212.18".as_ref(),
+        "--kind".as_ref(),
+        "LOGO2".as_ref(),
+        "-y".as_ref(),
+    ]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("Unknown picture type LOGO2"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}
+
+/// `art import`: a folder set fills the icon of a game on the device; the
+/// picture of a game that is not there is left out (ART-5).
+#[test]
+fn art_import_from_a_folder_set() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--no-verify".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+    let set = s.root.parent().unwrap().join("set");
+    std::fs::create_dir_all(&set).unwrap();
+    let png = {
+        let img = image::ImageBuffer::from_fn(32, 32, |x, y| image::Rgb([x as u8, y as u8, 1]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    };
+    std::fs::write(set.join("SLUS_200.62_ICO.png"), &png).unwrap();
+    std::fs::write(set.join("SLES_999.99_ICO.png"), &png).unwrap();
+    let done = run(&[
+        "art".as_ref(),
+        "import".as_ref(),
+        s.root.as_os_str(),
+        set.as_os_str(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    assert!(
+        done.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(text.contains("+ write ART/SLUS_200.62_ICO.png"), "{text}");
+    assert!(
+        text.contains("Skipped pictures of games not on this device: 1"),
+        "{text}"
+    );
+    assert!(s.root.join("ART/SLUS_200.62_ICO.png").is_file());
 }

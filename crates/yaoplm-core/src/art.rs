@@ -1,4 +1,4 @@
-//! Plans that put cover art on the device or take it off (ART-1, ART-3,
+//! Plans that put pictures on the device or take them off (ART-1 to
 //! ART-4; SPEC §6 "every write is a plan").
 //!
 //! The covers themselves are PNG files on the host, ready-made by
@@ -10,10 +10,12 @@
 //! and then removes it, which needs the user's explicit confirmation like
 //! any other deletion (ADR-0021).
 //!
-//! One transaction per game: a failure on one cover leaves the others in
-//! place, and the journal is small because the bytes stay on the host.
+//! One transaction per picture: a failure on one leaves the others in
+//! place, and the journal is small because the bytes stay on the host. The
+//! import planner adds the same transactions after each game it copies
+//! (ART-8, SPEC §5.4.1).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 
@@ -32,6 +34,20 @@ use crate::plan::{
     Transaction,
 };
 use crate::reasons;
+
+/// What a picture type is called (ART-2): "cover", "icon", "spine"...
+pub fn kind_name(kind: ArtKind) -> Phrase {
+    match kind {
+        ArtKind::Cov => Phrase::reason("artCov"),
+        ArtKind::Cov2 => Phrase::reason("artCov2"),
+        ArtKind::Lab => Phrase::reason("artLab"),
+        ArtKind::Ico => Phrase::reason("artIco"),
+        ArtKind::Lgo => Phrase::reason("artLgo"),
+        ArtKind::Scr => Phrase::reason("artScr"),
+        ArtKind::Scr2 => Phrase::reason("artScr2"),
+        ArtKind::Bg => Phrase::reason("artBg"),
+    }
+}
 
 /// A cover to write.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,25 +73,170 @@ fn art_folder(state: &DeviceState) -> io::Result<RelPath> {
     rel(name)
 }
 
-/// Files of `startup` and `kind` in the art folder, any extension: OPL
-/// 1.1.0 also reads `.jpg` and `.bmp`.
+/// The lower-case key and suffix of a picture in the art folder, in any
+/// format OPL reads: 1.1.0 also takes `.jpg` and `.bmp`.
+fn art_key(entry: &DirEntry) -> Option<(String, String)> {
+    if entry.is_dir {
+        return None;
+    }
+    let art = parse_art_file_name(&entry.name)?;
+    matches!(
+        art.extension.to_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "bmp"
+    )
+    .then(|| (art.key.to_lowercase(), art.suffix.to_lowercase()))
+}
+
+fn wanted(startup: &str, kind: ArtKind) -> (String, String) {
+    (startup.to_lowercase(), kind.suffix().to_lowercase())
+}
+
+/// Files of `startup` and `kind` in the art folder, any extension.
 fn existing_art(entries: &[DirEntry], startup: &str, kind: ArtKind) -> Vec<DirEntry> {
-    let (id, suffix) = (startup.to_lowercase(), kind.suffix().to_lowercase());
+    let wanted = wanted(startup, kind);
     entries
         .iter()
-        .filter(|e| !e.is_dir)
-        .filter(|e| {
-            parse_art_file_name(&e.name).is_some_and(|a| {
-                a.key.to_lowercase() == id
-                    && a.suffix.to_lowercase() == suffix
-                    && matches!(
-                        a.extension.to_lowercase().as_str(),
-                        "png" | "jpg" | "jpeg" | "bmp"
-                    )
-            })
-        })
+        .filter(|e| art_key(e).as_ref() == Some(&wanted))
         .cloned()
         .collect()
+}
+
+/// The art folder of a device, read once per plan.
+pub(crate) struct ArtFolder {
+    pub folder: RelPath,
+    /// Its pictures by [`art_key`], in listing order: a picture set writes
+    /// up to eight kinds for every game, so names are parsed once.
+    existing: HashMap<(String, String), Vec<DirEntry>>,
+    /// `.yaoplm/backup/<id>/ART`, for the files a write replaces.
+    pub backup: RelPath,
+}
+
+impl ArtFolder {
+    pub(crate) fn read(fs: &dyn DeviceFs, state: &DeviceState) -> io::Result<Self> {
+        let folder = art_folder(state)?;
+        let mut existing: HashMap<_, Vec<DirEntry>> = HashMap::new();
+        for entry in list_or_empty(fs, &folder)? {
+            if let Some(key) = art_key(&entry) {
+                existing.entry(key).or_default().push(entry);
+            }
+        }
+        let backup = rel(&format!(
+            "{BACKUP_DIR}/{}/{}",
+            journal::new_id(),
+            folder.as_str()
+        ))?;
+        Ok(Self {
+            folder,
+            existing,
+            backup,
+        })
+    }
+
+    /// The transaction writing `item`, and whether it moves an existing
+    /// file to the backup folder first. Without `overwrite` an existing
+    /// file skips the item, like a bad name or an unreadable source.
+    pub(crate) fn write(
+        &self,
+        plan: &mut Plan,
+        sources: &dyn SourceFs,
+        item: &ArtItem,
+        overwrite: bool,
+    ) -> io::Result<Result<(Transaction, bool), Skipped>> {
+        let name = art_file_name(&item.startup, item.kind);
+        let target = match join(&self.folder, &name) {
+            Ok(path) => path,
+            Err(err) => {
+                return Ok(Err(Skipped {
+                    path: item.file.clone(),
+                    reason: Notice::warning(
+                        Phrase::notice("badName").with("reason", reasons::bad_name(&err)),
+                    ),
+                }));
+            }
+        };
+        let meta = match sources.metadata(&item.file) {
+            Ok(meta) if !meta.is_dir => meta,
+            _ => {
+                return Ok(Err(Skipped {
+                    path: item.file.clone(),
+                    reason: Notice::warning(Phrase::notice("artUnreadable")),
+                }));
+            }
+        };
+        let existing = self
+            .existing
+            .get(&wanted(&item.startup, item.kind))
+            .map_or(&[][..], Vec::as_slice);
+        if !existing.is_empty() && !overwrite {
+            return Ok(Err(Skipped {
+                path: item.file.clone(),
+                reason: Notice::info(
+                    Phrase::notice("artExists")
+                        .with("startup", &item.startup)
+                        .with("kind", kind_name(item.kind)),
+                ),
+            }));
+        }
+        plan.sources.push(Source {
+            path: item.file.clone(),
+            kind: SourceKind::Raw,
+            len: meta.len,
+            files: vec![SourceFile {
+                path: item.file.clone(),
+                len: meta.len,
+                modified: meta.modified,
+            }],
+            on_device: false,
+            check: None,
+        });
+        let source = plan.sources.len() - 1;
+        let mut tx = Transaction::titled(
+            Phrase::title("artFor")
+                .with("kind", kind_name(item.kind))
+                .with("title", &item.title),
+        );
+        tx.game = Some(GameInfo {
+            title: item.title.clone(),
+            startup: item.startup.clone(),
+            media: item.media,
+            format: item.format.clone(),
+        });
+        for old in existing {
+            tx.push(Step::Rename {
+                from: join(&self.folder, &old.name)?,
+                to: join(&self.backup, &old.name)?,
+            });
+        }
+        tx.push(Step::WriteFile {
+            path: target,
+            source,
+            offset: 0,
+            len: meta.len,
+        });
+        if !existing.is_empty() {
+            tx.notices.push(Notice::info(
+                Phrase::notice("artReplaced").with("folder", self.backup.to_string()),
+            ));
+        }
+        tx.notices.push(Notice::info(
+            Phrase::notice("artFrom").with("origin", &item.origin),
+        ));
+        Ok(Ok((tx, !existing.is_empty())))
+    }
+}
+
+/// Lower-case keys of the files of `kind` in the art folder, in any of the
+/// formats [`plan_set_art`] would refuse to overwrite.
+pub fn present_art(fs: &dyn DeviceFs, kind: ArtKind) -> io::Result<HashSet<String>> {
+    let state = DeviceState::read(fs)?;
+    let entries = list_or_empty(fs, &art_folder(&state)?)?;
+    let suffix = kind.suffix().to_lowercase();
+    Ok(entries
+        .iter()
+        .filter_map(art_key)
+        .filter(|(_, s)| *s == suffix)
+        .map(|(key, _)| key)
+        .collect())
 }
 
 /// `CreateDir` steps for `.yaoplm/backup/<id>/ART`, outermost first.
@@ -109,13 +270,7 @@ pub fn plan_set_art(
         state.info.free_bytes,
     );
     plan.notices.extend(state.unfinished_notice());
-    let folder = art_folder(&state)?;
-    let entries = list_or_empty(fs, &folder)?;
-    let backup = rel(&format!(
-        "{BACKUP_DIR}/{}/{}",
-        journal::new_id(),
-        folder.as_str()
-    ))?;
+    let art = ArtFolder::read(fs, &state)?;
     let mut need_backup = false;
     let mut seen = HashSet::new();
     let mut transactions = Vec::new();
@@ -124,96 +279,23 @@ pub fn plan_set_art(
         if !seen.insert((item.startup.to_lowercase(), item.kind)) {
             continue;
         }
-        let name = art_file_name(&item.startup, item.kind);
-        let target = match join(&folder, &name) {
-            Ok(path) => path,
-            Err(err) => {
-                plan.skipped.push(Skipped {
-                    path: item.file.clone(),
-                    reason: Notice::warning(
-                        Phrase::notice("badName").with("reason", reasons::bad_name(&err)),
-                    ),
-                });
-                continue;
+        match art.write(&mut plan, sources, item, overwrite)? {
+            Ok((tx, replaced)) => {
+                need_backup |= replaced;
+                transactions.push(tx);
             }
-        };
-        let meta = match sources.metadata(&item.file) {
-            Ok(meta) if !meta.is_dir => meta,
-            _ => {
-                plan.skipped.push(Skipped {
-                    path: item.file.clone(),
-                    reason: Notice::warning(Phrase::notice("coverUnreadable")),
-                });
-                continue;
-            }
-        };
-        let existing = existing_art(&entries, &item.startup, item.kind);
-        if !existing.is_empty() && !overwrite {
-            plan.skipped.push(Skipped {
-                path: item.file.clone(),
-                reason: Notice::info(
-                    Phrase::notice("coverExists")
-                        .with("startup", &item.startup)
-                        .with("kind", item.kind.to_string()),
-                ),
-            });
-            continue;
+            Err(skipped) => plan.skipped.push(skipped),
         }
-        plan.sources.push(Source {
-            path: item.file.clone(),
-            kind: SourceKind::Raw,
-            len: meta.len,
-            files: vec![SourceFile {
-                path: item.file.clone(),
-                len: meta.len,
-                modified: meta.modified,
-            }],
-            on_device: false,
-        });
-        let source = plan.sources.len() - 1;
-        let mut tx = Transaction::titled(
-            Phrase::title("coverFor")
-                .with("kind", item.kind.to_string())
-                .with("title", &item.title),
-        );
-        tx.game = Some(GameInfo {
-            title: item.title.clone(),
-            startup: item.startup.clone(),
-            media: item.media,
-            format: item.format.clone(),
-        });
-        for old in &existing {
-            need_backup = true;
-            tx.push(Step::Rename {
-                from: join(&folder, &old.name)?,
-                to: join(&backup, &old.name)?,
-            });
-        }
-        tx.push(Step::WriteFile {
-            path: target,
-            source,
-            offset: 0,
-            len: meta.len,
-        });
-        if !existing.is_empty() {
-            tx.notices.push(Notice::info(
-                Phrase::notice("coverReplaced").with("folder", backup.to_string()),
-            ));
-        }
-        tx.notices.push(Notice::info(
-            Phrase::notice("coverFrom").with("origin", &item.origin),
-        ));
-        transactions.push(tx);
     }
 
     let mut prepare = Transaction::titled(Phrase::title("prepareFolders"));
-    if !transactions.is_empty() && !state.has_folder(folder.as_str()) {
+    if !transactions.is_empty() && !state.has_folder(art.folder.as_str()) {
         prepare.push(Step::CreateDir {
-            path: folder.clone(),
+            path: art.folder.clone(),
         });
     }
     if need_backup {
-        for step in backup_dirs(&backup)? {
+        for step in backup_dirs(&art.backup)? {
             prepare.push(step);
         }
     }
@@ -223,9 +305,11 @@ pub fn plan_set_art(
     let count = transactions.len();
     plan.transactions.extend(transactions);
     plan.set_title(if count == 0 {
-        Phrase::title("noCoverToWrite")
-    } else {
+        Phrase::title("noArtToWrite")
+    } else if items.iter().all(|i| i.kind == ArtKind::Cov) {
         Phrase::title("writeCovers").count(count)
+    } else {
+        Phrase::title("writeArt").count(count)
     });
     if count == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
@@ -251,9 +335,9 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
     let existing = existing_art(&entries, startup, kind);
     if existing.is_empty() {
         return Err(OpError::NotFound(
-            Phrase::error("noCover")
+            Phrase::error("noArt")
                 .with("startup", startup)
-                .with("kind", kind.to_string()),
+                .with("kind", kind_name(kind)),
         ));
     }
     let backup = rel(&format!(
@@ -261,8 +345,8 @@ pub fn plan_delete_art(fs: &dyn DeviceFs, startup: &str, kind: ArtKind) -> Resul
         journal::new_id(),
         folder.as_str()
     ))?;
-    let title = Phrase::title("deleteCover")
-        .with("kind", kind.to_string())
+    let title = Phrase::title("deleteArt")
+        .with("kind", kind_name(kind))
         .with("startup", startup);
     let mut plan = Plan::titled(
         PlanKind::Art,

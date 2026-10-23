@@ -17,10 +17,14 @@ use std::sync::{Arc, PoisonError};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
+use yaoplm_core::checks::Checked;
+use yaoplm_core::plan::{Plan, Step};
 use yaoplm_core::{Game as CoreGame, GameLocation, Phrase as Said, ScanOptions};
+use yaoplm_device::HostFs;
+use yaoplm_formats::ul_cfg::UlCfg;
 use yaoplm_hash::redump::{Candidate, Data, RedumpIndex, Unknown, Verdict};
 use yaoplm_hash::{Algorithms, HashError, Hashes};
-use yaoplm_net::cache::{Cache, HashedFile};
+use yaoplm_net::cache::{Cache, HashedFile, HashedFrom};
 use yaoplm_net::redump::{DatInfo, RedumpStore, Update};
 
 use crate::art::Net;
@@ -202,6 +206,14 @@ pub struct GameVerification {
     pub status: VerifyStatus,
     pub reason: Option<UnknownReason>,
     pub hashes: Option<HashValues>,
+    /// The raw data track of the CD dump the game was added from (BIN/CUE,
+    /// CHD), hashed while it was written: Redump lists CDs by their tracks.
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<HashValues>,
+    /// The verdict compares `track` rather than the image.
+    #[serde(default)]
+    pub by_track: bool,
     /// The matching dump (verified).
     pub redump: Option<RedumpEntry>,
     /// The game ID is one of the matching entry's serials.
@@ -233,9 +245,21 @@ pub(crate) struct Outcome {
     pub redump: Option<RedumpEntry>,
     pub serial_matches: Option<bool>,
     pub candidates: Vec<RedumpEntry>,
+    /// The verdict compares the raw CD track, not the ISO.
+    pub by_track: bool,
 }
 
-pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &str) -> Outcome {
+/// The verdict for an image with `hashes`. A CD added from its raw dump is
+/// judged by the `track` hashed then: the ISO keeps 2048 of every 2352
+/// bytes and can never hash like Redump's BIN (ADR-0026, ADR-0030). A
+/// match of either proves the image; without one, the track says more
+/// about a CD.
+pub(crate) fn outcome(
+    index: Option<&RedumpIndex>,
+    hashes: &Hashes,
+    track: Option<&Hashes>,
+    startup: &str,
+) -> Outcome {
     let Some(index) = index else {
         return Outcome {
             status: VerifyStatus::Unknown,
@@ -243,9 +267,25 @@ pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &st
             redump: None,
             serial_matches: None,
             candidates: Vec::new(),
+            by_track: false,
         };
     };
-    match index.verify(hashes, Some(startup), Data::Iso) {
+    let by_image = || index.verify(hashes, Some(startup), Data::Iso);
+    let (verdict, by_track) = match track.map(|t| index.verify(t, Some(startup), Data::Raw)) {
+        Some(raw @ Verdict::Verified { .. }) => (raw, true),
+        Some(raw) => match by_image() {
+            iso @ Verdict::Verified { .. } => (iso, false),
+            _ => (raw, true),
+        },
+        None => (by_image(), false),
+    };
+    let mut o = verdict_outcome(verdict);
+    o.by_track = by_track;
+    o
+}
+
+fn verdict_outcome(verdict: Verdict) -> Outcome {
+    match verdict {
         Verdict::Verified {
             game,
             serial_matches,
@@ -255,6 +295,7 @@ pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &st
             redump: Some((&game).into()),
             serial_matches: Some(serial_matches),
             candidates: Vec::new(),
+            by_track: false,
         },
         Verdict::BadDump(candidates) => Outcome {
             status: VerifyStatus::BadDump,
@@ -262,6 +303,7 @@ pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &st
             redump: None,
             serial_matches: None,
             candidates: candidates.iter().map(Into::into).collect(),
+            by_track: false,
         },
         Verdict::Unknown(Unknown::NotListed) => Outcome {
             status: VerifyStatus::Unknown,
@@ -269,6 +311,7 @@ pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &st
             redump: None,
             serial_matches: None,
             candidates: Vec::new(),
+            by_track: false,
         },
         Verdict::Unknown(Unknown::CdImage(candidates)) => Outcome {
             status: VerifyStatus::Unknown,
@@ -276,6 +319,7 @@ pub(crate) fn outcome(index: Option<&RedumpIndex>, hashes: &Hashes, startup: &st
             redump: None,
             serial_matches: None,
             candidates: candidates.iter().map(Into::into).collect(),
+            by_track: false,
         },
     }
 }
@@ -478,7 +522,10 @@ pub(crate) fn verify_job(
             (Ok(files), Some(cache)) if !params.fresh => cache
                 .hashes(&keys(&volume, files), params.md5)
                 .ok()
-                .flatten(),
+                .flatten()
+                // Hashes taken while the game was written say nothing about
+                // what the device holds: the check reads it once (ADR-0030).
+                .and_then(|(hashes, from)| (from == HashedFrom::Files).then_some(hashes)),
             _ => None,
         };
         if cached.is_none()
@@ -524,7 +571,8 @@ pub(crate) fn verify_job(
                     Ok(hashes) => {
                         // The cache only saves time; a failure costs a re-read.
                         if let Some(cache) = cache {
-                            let _ = cache.put_hashes(&keys(&volume, list), &hashes);
+                            let _ =
+                                cache.put_hashes(&keys(&volume, list), &hashes, HashedFrom::Files);
                         }
                         Ok(hashes)
                     }
@@ -544,7 +592,8 @@ pub(crate) fn verify_job(
         };
         let entry = match hashed {
             Ok(hashes) => {
-                let o = outcome(index.as_deref(), &hashes, &game.startup);
+                let track = cache.and_then(|c| c.track(&hashes).ok().flatten());
+                let o = outcome(index.as_deref(), &hashes, track.as_ref(), &game.startup);
                 GameVerification {
                     title: game.title.clone(),
                     startup: game.startup.clone(),
@@ -555,6 +604,8 @@ pub(crate) fn verify_job(
                     status: o.status,
                     reason: o.reason,
                     hashes: Some((&hashes).into()),
+                    track: track.as_ref().map(Into::into),
+                    by_track: o.by_track,
                     redump: o.redump,
                     serial_matches: o.serial_matches,
                     candidates: o.candidates,
@@ -575,6 +626,8 @@ pub(crate) fn verify_job(
                     status: VerifyStatus::Failed,
                     reason: None,
                     hashes: None,
+                    track: None,
+                    by_track: false,
                     redump: None,
                     serial_matches: None,
                     candidates: Vec::new(),
@@ -584,17 +637,7 @@ pub(crate) fn verify_job(
                 }
             }
         };
-        ctx.log(JobLogEntry::Verify {
-            at: now_ms(),
-            startup: entry.startup.clone(),
-            title: entry.title.clone(),
-            status: entry.status,
-            reason: entry.reason,
-            redump: entry.redump.as_ref().map(|r| r.name.clone()),
-            cached: entry.cached,
-            error: entry.error.clone(),
-            error_phrase: entry.error_phrase.clone(),
-        });
+        ctx.log(log_entry(&entry));
         results.push(entry);
     }
     ctx.progress(total, Some(total), None);
@@ -605,8 +648,9 @@ pub(crate) fn verify_job(
 }
 
 /// Fills `Game::dump` from the hash cache for games whose files did not
-/// change since they were hashed. No image is read; when the cache cannot
-/// be opened the library simply has no verdicts.
+/// change since they were hashed, also while they were written. No image
+/// is read; when the cache cannot be opened the library simply has no
+/// verdicts.
 pub(crate) fn attach_checks(
     wire: &mut crate::library::Library,
     core: &yaoplm_core::Library,
@@ -621,14 +665,21 @@ pub(crate) fn attach_checks(
         let Ok(files) = hashed_files(core_game) else {
             continue;
         };
-        let Ok(Some(hashes)) = cache.hashes(&keys(&volume, &files), false) else {
+        let Ok(Some((hashes, _))) = cache.hashes(&keys(&volume, &files), false) else {
             continue;
         };
-        let o = outcome(index.as_deref(), &hashes, &core_game.startup);
+        let track = cache.track(&hashes).ok().flatten();
+        let o = outcome(
+            index.as_deref(),
+            &hashes,
+            track.as_ref(),
+            &core_game.startup,
+        );
         game.dump = Some(crate::library::DumpCheck {
             status: o.status,
             reason: o.reason,
             redump: o.redump.map(|r| r.name),
+            by_track: o.by_track,
         });
     }
 }
@@ -656,4 +707,210 @@ pub(crate) fn wanted_list(root: &Path, games: &[GameRef]) -> Vec<Wanted> {
             },
         })
         .collect()
+}
+
+/// The job log line for one game's verdict.
+pub(crate) fn log_entry(entry: &GameVerification) -> JobLogEntry {
+    JobLogEntry::Verify {
+        at: now_ms(),
+        startup: entry.startup.clone(),
+        title: entry.title.clone(),
+        status: entry.status,
+        reason: entry.reason,
+        redump: entry.redump.as_ref().map(|r| r.name.clone()),
+        cached: entry.cached,
+        error: entry.error.clone(),
+        error_phrase: entry.error_phrase.clone(),
+    }
+}
+
+/// Keeps the hashes a plan took while writing (GAME-5).
+pub(crate) struct Recorder<'a> {
+    net: &'a Net,
+    fs: &'a HostFs,
+    plan: &'a Plan,
+    /// The volume part of the cache keys, read once.
+    volume: Option<String>,
+}
+
+impl<'a> Recorder<'a> {
+    pub(crate) fn new(net: &'a Net, fs: &'a HostFs, plan: &'a Plan) -> Self {
+        Self {
+            net,
+            fs,
+            plan,
+            volume: None,
+        }
+    }
+
+    /// Stores the hashes transaction `transaction` took while writing its
+    /// game under the files it wrote, marked as taken while writing, and
+    /// returns the verdict. The device is not read again: the scan shows
+    /// the verdict at once, and `VerifyGames` reads the files once.
+    pub(crate) fn record(
+        &mut self,
+        transaction: usize,
+        checked: &Checked,
+    ) -> Option<GameVerification> {
+        let tx = self.plan.transactions.get(transaction)?;
+        let game = tx.game.as_ref()?;
+        let targets: Vec<PathBuf> = tx
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::WriteFile { path, .. } | Step::WriteZso { path, .. } => {
+                    Some(self.fs.resolve(path))
+                }
+                _ => None,
+            })
+            .collect();
+        let files = targets
+            .iter()
+            .map(|path| {
+                let meta = std::fs::metadata(path)?;
+                let modified = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos());
+                Ok((path.clone(), meta.len(), modified))
+            })
+            .collect::<Result<Vec<_>, std::io::Error>>();
+        // The cache only saves time: without it the verdict still stands.
+        if let Ok(service) = self.net.service() {
+            let cache = service.cache();
+            if let Ok(files) = &files {
+                let volume = self
+                    .volume
+                    .get_or_insert_with(|| volume_key(self.fs.root()));
+                let _ = cache.put_hashes(&keys(volume, files), &checked.image, HashedFrom::Writing);
+            }
+            if let Some(track) = &checked.track {
+                let _ = cache.put_track(&checked.image, track);
+            }
+        }
+        let index = self.net.redump().map(|(_, index)| index);
+        let o = outcome(
+            index.as_deref(),
+            &checked.image,
+            checked.track.as_ref(),
+            &game.startup,
+        );
+        let (path, ul_index) = if game.format == "UL" {
+            let ul_cfg = tx.steps.iter().find_map(|step| match step {
+                Step::PutFile { path, content, .. } => Some((path, content)),
+                _ => None,
+            });
+            let index = ul_cfg.and_then(|(_, content)| {
+                UlCfg::parse(&content.0)
+                    .records
+                    .iter()
+                    .rposition(|r| r.startup() == game.startup && r.name() == game.title)
+            });
+            (
+                ul_cfg.map_or_else(String::new, |(path, _)| {
+                    display_path(&self.fs.resolve(path))
+                }),
+                index.and_then(|i| u32::try_from(i).ok()),
+            )
+        } else {
+            (
+                targets.first().map(|p| display_path(p)).unwrap_or_default(),
+                None,
+            )
+        };
+        Some(GameVerification {
+            title: game.title.clone(),
+            startup: game.startup.clone(),
+            path,
+            ul_index,
+            media: game.media.into(),
+            format: match game.format.as_str() {
+                "ZSO" => GameFormat::ZSO,
+                "UL" => GameFormat::UL,
+                _ => GameFormat::ISO,
+            },
+            status: o.status,
+            reason: o.reason,
+            hashes: Some((&checked.image).into()),
+            track: checked.track.as_ref().map(Into::into),
+            by_track: o.by_track,
+            redump: o.redump,
+            serial_matches: o.serial_matches,
+            candidates: o.candidates,
+            cached: false,
+            error: None,
+            error_phrase: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hashes(size: u64, sha1: u8) -> Hashes {
+        Hashes {
+            size,
+            crc32: 0,
+            sha1: [sha1; 20],
+            md5: None,
+        }
+    }
+
+    fn index() -> RedumpIndex {
+        let sha = |b: u8| format!("{b:02x}").repeat(20);
+        let xml = format!(
+            r#"<datafile>
+<game name="Cd (USA)" id="1"><serial>SLUS-20001</serial>
+  <rom name="Cd (USA).cue" size="90" crc="00000000" sha1="{c}"/>
+  <rom name="Cd (USA).bin" size="4704" crc="00000000" sha1="{b}"/></game>
+<game name="Dvd (USA)" id="2"><serial>SLUS-20002</serial>
+  <rom name="Dvd (USA).iso" size="4096" crc="00000000" sha1="{i}"/></game>
+</datafile>"#,
+            c = sha(0xcc),
+            b = sha(0xbb),
+            i = sha(0x11),
+        );
+        RedumpIndex::new(yaoplm_hash::dat::parse(xml.as_bytes()).unwrap())
+    }
+
+    #[test]
+    fn a_match_of_either_proves_the_image() {
+        let index = index();
+        // The CD's raw track matches.
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x01),
+            Some(&hashes(4704, 0xbb)),
+            "SLUS_200.01",
+        );
+        assert_eq!(o.status, VerifyStatus::Verified);
+        assert!(o.by_track);
+        // A raw dump made from a disc Redump lists as an ISO: the ISO matches.
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x11),
+            Some(&hashes(4704, 0x99)),
+            "SLUS_200.02",
+        );
+        assert_eq!(o.status, VerifyStatus::Verified);
+        assert!(!o.by_track);
+        // Neither: the track's verdict, a bad dump rather than "CD image".
+        let o = outcome(
+            Some(&index),
+            &hashes(4096, 0x02),
+            Some(&hashes(4704, 0x98)),
+            "SLUS_200.01",
+        );
+        assert_eq!(o.status, VerifyStatus::BadDump);
+        assert!(o.by_track);
+        let o = outcome(Some(&index), &hashes(4096, 0x02), None, "SLUS_200.01");
+        assert_eq!(o.reason, Some(UnknownReason::CdImage));
+        assert!(!o.by_track);
+        // No DAT: nothing compared at all.
+        let o = outcome(None, &hashes(4096, 0x02), Some(&hashes(4704, 0xbb)), "X");
+        assert_eq!(o.reason, Some(UnknownReason::NoDat));
+        assert!(!o.by_track);
+    }
 }

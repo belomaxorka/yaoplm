@@ -216,6 +216,10 @@ pub struct DumpCheck {
     pub reason: Option<crate::verify::UnknownReason>,
     /// The Redump name of the matching dump.
     pub redump: Option<String>,
+    /// The verdict compares the raw CD track the game was added from, not
+    /// the image.
+    #[serde(default)]
+    pub by_track: bool,
 }
 
 impl Game {

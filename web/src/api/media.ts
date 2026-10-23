@@ -13,13 +13,18 @@ function extensionOf(path: string): string {
 }
 
 /**
- * The front cover the UI shows: the PNG first, because that is what OPL
- * 1.2 loads; another format only when there is nothing else (the scan
+ * The picture of `kind` the UI shows: the PNG first, because that is what
+ * OPL 1.2 loads; another format only when there is nothing else (the scan
  * warns about it).
  */
+export function artOf(game: Game, kind: string): Art | undefined {
+  const files = game.art.filter((art) => art.kind.toUpperCase() === kind && LOADABLE.includes(extensionOf(art.path)));
+  return files.find((art) => extensionOf(art.path) === "png") ?? files[0];
+}
+
+/** The front cover (COV). */
 export function coverOf(game: Game): Art | undefined {
-  const covers = game.art.filter((art) => art.kind.toUpperCase() === "COV" && LOADABLE.includes(extensionOf(art.path)));
-  return covers.find((art) => extensionOf(art.path) === "png") ?? covers[0];
+  return artOf(game, "COV");
 }
 
 export function hasCover(game: Game): boolean {

@@ -9,7 +9,8 @@
 //! few things to warn about; `<folder>/sources` holds images to import;
 //! `<folder>/mirror` holds local mirrors of the two cover sources with a
 //! cover each (ART-1), so the art screens work without the network, and a
-//! Redump DAT that verifies some of the games and not others (GAME-5). Pass
+//! Redump DAT that verifies some of the games and not others (GAME-5), and
+//! `sets/` with two picture sets to import (ART-5). Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -26,6 +27,7 @@ use yaoplm_api::{Api, Layout, Request, Response};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
 use yaoplm_test_support::dat::DatBuilder;
+use yaoplm_test_support::packed;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -55,6 +57,9 @@ fn import(root: &Path, sources: &[PathBuf], layout: Layout) {
     let api = Api::new();
     let Response::Plan(plan) = api
         .dispatch(Request::PlanImport {
+            verify: None,
+            database_titles: None,
+            covers: None,
             root: root.to_string_lossy().into_owned(),
             sources: sources
                 .iter()
@@ -163,6 +168,24 @@ fn main() -> ExitCode {
         &mirror.join("libretro/Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
         &cover(256, 362, 110, image::ImageFormat::Png),
     );
+    // A CD to add, dumped raw as Redump does: xlenore has its cover and the
+    // DAT its data track, so adding it writes the cover and verifies it
+    // (ART-8, GAME-5).
+    let new_game = to_bin(
+        &yaoplm_test_support::fixtures::boot_iso(
+            yaoplm_test_support::fixtures::placeholder_elf(),
+            "SLUS_299.99",
+            0,
+        )
+        .build()
+        .to_vec(),
+        RawMode::Mode2_2352,
+        0,
+    );
+    write(
+        &mirror.join("xlenore/covers/default/SLUS-29999.jpg"),
+        &cover(300, 420, 160, image::ImageFormat::Jpeg),
+    );
     // A Redump DAT to import (GAME-5): the retail game and the DVD-9 game
     // match, the split game's ID is listed with other bytes (a bad dump),
     // the uppercase one is not listed at all.
@@ -170,7 +193,7 @@ fn main() -> ExitCode {
     let last = lf_damaged.len() - 1;
     lf_damaged[last] ^= 0xFF;
     write(
-        &mirror.join("redump/Sony - PlayStation 2 - Datfile (3) (2026-10-23 01-56-22).dat"),
+        &mirror.join("redump/Sony - PlayStation 2 - Datfile (4) (2026-10-23 01-56-22).dat"),
         DatBuilder::new()
             .iso(
                 "Retail Game (USA)",
@@ -187,6 +210,7 @@ fn main() -> ExitCode {
                 Some("SCES-50003"),
                 &lf_damaged,
             )
+            .bin_cue("New Game (USA)", Some("SLUS-29999"), &new_game)
             .build()
             .as_bytes(),
     );
@@ -194,6 +218,36 @@ fn main() -> ExitCode {
     write(
         &mirror.join("custom-cover.jpg"),
         &cover(350, 500, 20, image::ImageFormat::Jpeg),
+    );
+    // Picture sets (ART-5): an OPL Manager art backup (`PS2/<ID>/` with
+    // numbered screenshots) and an `art.tar`. One picture is for a game
+    // that already has a cover and one for a game not on the device.
+    let jpg = |w, h, hue| cover(w, h, hue, image::ImageFormat::Jpeg);
+    let (icon, screen, front, other) = (
+        jpg(64, 64, 90),
+        jpg(320, 240, 120),
+        jpg(140, 200, 60),
+        jpg(140, 200, 150),
+    );
+    write(
+        &mirror.join("sets/OPLM art backup.zip"),
+        &packed::zip(
+            &[
+                ("PS2/SLUS_200.62/SLUS_200.62_ICO.jpg", &icon),
+                ("PS2/SLUS_200.62/SLUS_200.62_SCR_00.jpg", &screen),
+                ("PS2/SLUS_212.18/SLUS_212.18_COV.jpg", &front),
+                ("PS2/SLES_888.88/SLES_888.88_COV.jpg", &other),
+            ],
+            false,
+        )
+        .unwrap(),
+    );
+    write(
+        &mirror.join("sets/art.tar"),
+        &packed::tar(&[(
+            "SLUS_212.18_COV2.png",
+            &cover(140, 200, 30, image::ImageFormat::Png),
+        )]),
     );
     for n in 0..extra {
         let id = format!("SLUS_{:03}.{:02}", 300 + n / 100, n % 100);
@@ -220,6 +274,11 @@ fn main() -> ExitCode {
     write(
         &sources.join("folder/SLUS_200.62.Retail Copy.iso"),
         &Variant::Retail.build().to_vec(),
+    );
+    write(&sources.join("New Game.bin"), &new_game);
+    write(
+        &sources.join("New Game.cue"),
+        cue_sheet("New Game.bin", RawMode::Mode2_2352, 0).as_bytes(),
     );
     write(&sources.join("notes.txt"), b"not an image\n");
 

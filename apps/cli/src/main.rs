@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
-use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting};
+use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting, ArtType};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
@@ -105,6 +105,25 @@ enum Command {
         /// Store images as ZSO (OPL 1.2.0 beta; not with ul chunks).
         #[arg(long, conflicts_with = "ul")]
         zso: bool,
+        /// Skip the dump check: by default every image is hashed while it
+        /// is written and compared with the stored Redump DAT.
+        #[arg(long)]
+        no_verify: bool,
+        /// Title the games the bundled database knows by its name there;
+        /// the others keep the title of their file name.
+        #[arg(long)]
+        db_titles: bool,
+        /// Look for the covers of the games being added (as `art fetch`
+        /// does) and write them together with the games.
+        #[arg(long)]
+        covers: bool,
+        /// With --covers: read a source from a folder with its repository
+        /// layout, xlenore=DIR or libretro=DIR. Repeatable.
+        #[arg(long = "mirror", value_name = "SOURCE=DIR", requires = "covers")]
+        mirrors: Vec<String>,
+        /// With --covers: skip a source, xlenore or libretro. Repeatable.
+        #[arg(long = "skip-source", value_name = "SOURCE", requires = "covers")]
+        skipped: Vec<String>,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -244,25 +263,55 @@ enum ArtCommand {
         /// Skip a source: xlenore or libretro. Repeatable.
         #[arg(long = "skip-source", value_name = "SOURCE")]
         skipped: Vec<String>,
+        /// Picture types to look for: COV (default), SCR, SCR2, LGO; ICO,
+        /// COV2, LAB and BG have no open source. Repeatable.
+        #[arg(long = "kind", value_name = "TYPE")]
+        kinds: Vec<String>,
         #[command(flatten)]
         apply: Apply,
     },
-    /// Use an image file as a game's cover (resized and stored as PNG).
+    /// Use an image file as a game's picture (resized and stored as PNG).
     Set {
         root: PathBuf,
         /// ID, title, file name, path or ul:<index> (see `yaoplm scan`).
         game: String,
         image: PathBuf,
-        /// Leave an existing cover alone instead of replacing it.
+        /// Leave an existing picture alone instead of replacing it.
         #[arg(long)]
         keep_existing: bool,
+        /// The picture type: COV (default), COV2, LAB, ICO, LGO, SCR, SCR2
+        /// or BG.
+        #[arg(long, value_name = "TYPE")]
+        kind: Option<String>,
         #[command(flatten)]
         apply: Apply,
     },
-    /// Delete a game's cover (a copy stays in .yaoplm/backup/).
+    /// Delete a game's picture (a copy stays in .yaoplm/backup/).
     Rm {
         root: PathBuf,
         game: String,
+        /// The picture type, COV by default.
+        #[arg(long, value_name = "TYPE")]
+        kind: Option<String>,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Take the pictures of the games on a device from picture sets you
+    /// have: OPL Manager's art backups (zip or 7z), folders, art.tar. The
+    /// rest of a set is left out; a plan shows what is written.
+    Import {
+        root: PathBuf,
+        /// Folders, .zip, .7z or .tar files, or single pictures.
+        #[arg(required = true)]
+        sets: Vec<PathBuf>,
+        /// Only these types (COV, COV2, LAB, ICO, LGO, SCR, SCR2, BG).
+        /// Repeatable; every type by default.
+        #[arg(long = "kind", value_name = "TYPE")]
+        kinds: Vec<String>,
+        /// Replace pictures the device has (copies stay in
+        /// .yaoplm/backup/).
+        #[arg(long)]
+        replace: bool,
         #[command(flatten)]
         apply: Apply,
     },
@@ -447,6 +496,11 @@ fn main() -> anyhow::Result<ExitCode> {
             move_sources,
             ul,
             zso,
+            no_verify,
+            db_titles,
+            covers,
+            mirrors,
+            skipped,
             title,
             media,
             name_style,
@@ -464,7 +518,7 @@ fn main() -> anyhow::Result<ExitCode> {
                     media: media.map(Into::into),
                 })
                 .collect();
-            let request = Request::PlanImport {
+            let mut request = Request::PlanImport {
                 root: text(&root),
                 sources: sources.iter().map(|s| absolute(s)).collect(),
                 profile: Some(apply.profile.into()),
@@ -477,7 +531,20 @@ fn main() -> anyhow::Result<ExitCode> {
                 layout: Some(if ul { Layout::Ul } else { Layout::Auto }),
                 overrides: (!overrides.is_empty()).then_some(overrides),
                 compress: Some(zso),
+                verify: Some(!no_verify),
+                database_titles: Some(db_titles),
+                covers: None,
             };
+            if covers {
+                let found =
+                    match find_import_covers(&api, &request, &root, &mirrors, &skipped, &apply)? {
+                        Ok(found) => found,
+                        Err(error) => return fail(&error, apply.json),
+                    };
+                if let (Some(id), Request::PlanImport { covers, .. }) = (found, &mut request) {
+                    *covers = Some(id);
+                }
+            }
             plan_and_apply(&api, request, &apply)
         }
         Command::Convert {
@@ -675,6 +742,70 @@ fn main() -> anyhow::Result<ExitCode> {
     }
 }
 
+/// Plans `request` once to learn its games, then searches their covers
+/// (ART-8). The id of the cover set, or `None` when there is nothing to
+/// search or the search failed (the network): the games are then added
+/// without covers. A search the API refuses (an unknown source, a mirror
+/// that is not a folder) is an error, as it is for `art fetch`.
+fn find_import_covers(
+    api: &Api,
+    request: &Request,
+    root: &Path,
+    mirrors: &[String],
+    skipped: &[String],
+    apply: &Apply,
+) -> anyhow::Result<Result<Option<String>, yaoplm_api::ApiError>> {
+    let plan = match api.dispatch(request.clone()) {
+        Ok(Response::Plan(plan)) => plan,
+        // The real planning call reports the problem.
+        _ => return Ok(Ok(None)),
+    };
+    let games = plan.transactions.iter().any(|t| t.game.is_some());
+    let sources = art_sources(mirrors, skipped)?;
+    let job = games.then(|| {
+        api.dispatch(Request::FetchArt {
+            root: text(root),
+            profile: Some(apply.profile.into()),
+            scope: None,
+            games: None,
+            sources: (!sources.is_empty()).then_some(sources),
+            kind: None,
+            kinds: None,
+            import: Some(plan.id.clone()),
+        })
+    });
+    let found = match job {
+        Some(Ok(Response::Job { job })) => {
+            let info = wait_job(api, job, io::stderr().is_terminal() && !apply.json);
+            match (info.status, info.result) {
+                (JobStatus::Finished, Some(JobResult::Covers(search))) => {
+                    if !apply.json {
+                        eprintln!(
+                            "Covers: {} found, {} not found, {} already on the device",
+                            search.found, search.missing, search.present
+                        );
+                    }
+                    Some(search.id)
+                }
+                _ => {
+                    let message = info
+                        .error
+                        .map_or_else(|| "the cover search failed".to_owned(), |e| e.message);
+                    eprintln!("yaoplm: {message}; the games are added without covers");
+                    None
+                }
+            }
+        }
+        Some(Err(error)) => {
+            let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
+            return Ok(Err(error));
+        }
+        _ => None,
+    };
+    let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
+    Ok(Ok(found))
+}
+
 /// `xlenore=DIR` and `--skip-source` flags as the API wants them.
 fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<ArtSourceSetting>> {
     let mut settings = Vec::new();
@@ -706,9 +837,14 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             games,
             mirrors,
             skipped,
+            kinds,
             apply,
         } => {
             let sources = art_sources(&mirrors, &skipped)?;
+            let kinds = kinds
+                .iter()
+                .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             let request = Request::FetchArt {
                 root: text(&root),
                 profile: Some(apply.profile.into()),
@@ -720,6 +856,8 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                 games: (!games.is_empty()).then_some(games),
                 sources: (!sources.is_empty()).then_some(sources),
                 kind: None,
+                kinds: (!kinds.is_empty()).then_some(kinds),
+                import: None,
             };
             let job = match api.dispatch(request) {
                 Ok(Response::Job { job }) => job,
@@ -749,6 +887,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             game,
             image,
             keep_existing,
+            kind,
             apply,
         } => {
             let startup = find_startup(api, &root, &game, apply.profile)?;
@@ -759,19 +898,58 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                     path: absolute(&image),
                 },
                 profile: Some(apply.profile.into()),
-                kind: None,
+                kind,
                 overwrite: Some(!keep_existing),
             };
             plan_and_apply(api, request, &apply)
         }
-        ArtCommand::Rm { root, game, apply } => {
+        ArtCommand::Rm {
+            root,
+            game,
+            kind,
+            apply,
+        } => {
             let startup = find_startup(api, &root, &game, apply.profile)?;
             let request = Request::DeleteArt {
                 root: text(&root),
                 startup,
-                kind: None,
+                kind,
             };
             plan_and_apply(api, request, &apply)
+        }
+        ArtCommand::Import {
+            root,
+            sets,
+            kinds,
+            replace,
+            apply,
+        } => {
+            let kinds = kinds
+                .iter()
+                .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let request = Request::ImportArt {
+                root: text(&root),
+                sources: sets.iter().map(|s| absolute(s)).collect(),
+                profile: Some(apply.profile.into()),
+                kinds: (!kinds.is_empty()).then_some(kinds),
+                overwrite: Some(replace),
+            };
+            let job = match api.dispatch(request) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, apply.json),
+            };
+            let info = wait_job(api, job, io::stderr().is_terminal() && !apply.json);
+            match (info.status, info.result) {
+                (JobStatus::Finished, Some(JobResult::Plan(plan))) => apply_plan(api, plan, &apply),
+                (_, _) => {
+                    let error = info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("the import failed"));
+                    fail(&error, apply.json)
+                }
+            }
         }
         ArtCommand::Cache { clear, json } => {
             if clear && let Err(error) = api.dispatch(Request::ClearArtCache) {

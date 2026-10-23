@@ -16,6 +16,7 @@
 //! `cargo test -p yaoplm-api --features ts-export`.
 
 pub mod art;
+mod art_pack;
 pub mod devices;
 pub mod dir;
 mod error;
@@ -58,6 +59,7 @@ use yaoplm_core::plan::Plan;
 use yaoplm_core::recovery;
 use yaoplm_device::advice::{DiagnoseOptions, count_apple_double};
 use yaoplm_device::{HostFs, HostSources, RelPath};
+use yaoplm_formats::art::ArtKind;
 use yaoplm_formats::iso_name;
 
 pub const NAME: &str = "YAOPLM";
@@ -331,8 +333,25 @@ impl Api {
                 layout,
                 overrides,
                 compress,
+                verify,
+                database_titles,
+                covers,
             } => {
                 let (path, fs) = self.root(&root)?;
+                let covers = match covers {
+                    Some(id) => Some(
+                        self.plans
+                            .covers(&id)
+                            .filter(|c| c.root == path)
+                            .ok_or_else(|| {
+                                ApiError::phrased(
+                                    ErrorCode::NotFound,
+                                    &Said::error("coversExpired").with("id", &id),
+                                )
+                            })?,
+                    ),
+                    None => None,
+                };
                 // Sources are read, and deleted in move mode: the same
                 // allow-list applies to them.
                 let inputs = sources
@@ -363,10 +382,31 @@ impl Api {
                     },
                     overrides,
                     compress: compress.unwrap_or(false),
+                    check: verify.unwrap_or(false),
+                    database_titles: database_titles.unwrap_or(false),
+                    covers: covers.as_ref().map(|c| c.items.clone()).unwrap_or_default(),
                 };
                 let sources = ArchiveSources::new(&HostSources);
-                let plan =
+                let mut plan =
                     import::plan_import(&fs, &sources, &inputs, &options).map_err(io_error)?;
+                if let Some(covers) = covers {
+                    // What the search could not find, for the games added.
+                    let added: std::collections::HashSet<String> = plan
+                        .transactions
+                        .iter()
+                        .filter_map(|t| t.game.as_ref())
+                        .map(|g| yaoplm_formats::serial::lookup_key(&g.startup))
+                        .collect();
+                    plan.skipped.extend(
+                        covers
+                            .missing
+                            .into_iter()
+                            .filter(|(startup, _)| {
+                                added.contains(&yaoplm_formats::serial::lookup_key(startup))
+                            })
+                            .map(|(_, skipped)| skipped),
+                    );
+                }
                 Ok(self.store(path, plan))
             }
             Request::ConvertGames {
@@ -472,6 +512,7 @@ impl Api {
                     .clone()
                     .unwrap_or_else(|| Said::title("plan").with("title", &stored.plan.title));
                 let root = display_path(&stored.root);
+                let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
                     JobKind::ExecutePlan,
                     &title,
@@ -481,6 +522,8 @@ impl Api {
                         let fs = HostFs::new(&stored.root).map_err(io_error)?;
                         let sources = ArchiveSources::new(&HostSources);
                         let plan = &stored.plan;
+                        let mut recorder = verify::Recorder::new(&net, &fs, plan);
+                        let mut checks = Vec::new();
                         let report = exec::execute_with_events(
                             plan,
                             &Context {
@@ -541,6 +584,16 @@ impl Api {
                                         error_phrase: error.as_ref().map(Phrase::from),
                                     });
                                 }
+                                Event::Checked {
+                                    transaction,
+                                    checked,
+                                    ..
+                                } => {
+                                    if let Some(entry) = recorder.record(transaction, checked) {
+                                        ctx.log(verify::log_entry(&entry));
+                                        checks.push(entry);
+                                    }
+                                }
                             },
                         );
                         Ok(JobResult::Execution(ExecutionReport {
@@ -558,6 +611,7 @@ impl Api {
                             error: report.error.as_ref().map(ToString::to_string),
                             error_phrase: report.error.as_ref().map(|e| Phrase::from(&e.phrase())),
                             journal: report.journal,
+                            checks,
                         }))
                     },
                 );
@@ -589,26 +643,114 @@ impl Api {
                 games,
                 sources,
                 kind,
+                kinds,
+                import,
             } => {
                 let (path, _fs) = self.root(&root)?;
-                let kind = art::art_kind(kind.as_deref())?;
+                let mut wanted: Vec<ArtKind> = match kinds {
+                    Some(kinds) if !kinds.is_empty() => kinds.into_iter().map(Into::into).collect(),
+                    _ => vec![art::art_kind(kind.as_deref())?],
+                };
+                // Each type once, in the order first named.
+                let mut seen = std::collections::HashSet::new();
+                wanted.retain(|kind| seen.insert(*kind));
                 let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
+                // The plan may be replaced while the search runs: its games
+                // are read now. Games being added get their front cover.
+                let import = import
+                    .map(|id| art::import_targets(&self.plans, &id, &path, ArtKind::Cov))
+                    .transpose()?;
+                if import.is_some() {
+                    wanted = vec![ArtKind::Cov];
+                }
                 let params = art::FetchParams {
                     root: path.clone(),
                     profile: profile.unwrap_or_default(),
                     scope: scope.unwrap_or_default(),
                     games,
                     sources,
-                    kind,
+                    kinds: wanted,
+                    import,
                 };
+                let title = Said::title(if params.kinds == [ArtKind::Cov] {
+                    "findCovers"
+                } else {
+                    "findPictures"
+                });
                 let net = Arc::clone(&self.net);
                 let plans = self.plans.clone();
                 let job = self.jobs.spawn(
                     JobKind::FetchArt,
-                    &Said::title("findCovers"),
+                    &title,
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| art::fetch_job(ctx, &net, &plans, params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::ImportArt {
+                root,
+                sources,
+                profile,
+                kinds,
+                overwrite,
+            } => {
+                let (path, _fs) = self.root(&root)?;
+                // Sets are read from the host: the same allow-list applies.
+                let sources = sources
+                    .iter()
+                    .map(|s| self.paths.resolve(s))
+                    .collect::<Result<Vec<_>, _>>()?;
+                art_pack::check_sources(&sources)?;
+                let kinds: Vec<ArtKind> = match kinds {
+                    Some(kinds) if !kinds.is_empty() => kinds.into_iter().map(Into::into).collect(),
+                    _ => ArtKind::ALL.to_vec(),
+                };
+                let params = art_pack::PackParams {
+                    root: path.clone(),
+                    profile: profile.unwrap_or_default(),
+                    sources,
+                    kinds,
+                    overwrite: overwrite.unwrap_or(false),
+                };
+                let net = Arc::clone(&self.net);
+                let plans = self.plans.clone();
+                let job = self.jobs.spawn(
+                    JobKind::ImportArt,
+                    &Said::title("importArt"),
+                    Some(display_path(&path)),
+                    Queue::Read,
+                    move |ctx| art_pack::import_job(ctx, &net, &plans, params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::FindArt {
+                root,
+                startup,
+                kind,
+                profile,
+                sources,
+            } => {
+                let (path, _fs) = self.root(&root)?;
+                let kind: ArtKind = kind.into();
+                let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
+                let title = Said::title("findArt")
+                    .with("startup", &startup)
+                    .with("kind", yaoplm_core::art::kind_name(kind));
+                let params = art::FindParams {
+                    root: path.clone(),
+                    profile: profile.unwrap_or_default(),
+                    startup,
+                    kind,
+                    sources,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::FetchArt,
+                    &title,
+                    Some(display_path(&path)),
+                    Queue::Read,
+                    move |ctx| art::find_job(ctx, &net, params),
                 );
                 Ok(Response::Job { job })
             }

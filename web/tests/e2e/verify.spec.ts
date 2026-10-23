@@ -9,7 +9,7 @@ import { openLibrary } from "./helpers";
 // the fixture as it was built) and leaves every game in its format.
 test.describe.configure({ mode: "serial" });
 
-const DAT_GAMES = 3;
+const DAT_GAMES = 4;
 
 async function importDat(page: Page) {
   const panel = page.getByTestId("redump-panel").first();
@@ -114,6 +114,53 @@ test("the add page offers ZSO and the bulk dialog counts the games", async ({ pa
   await dialog.getByTestId("convert-target-zso").click();
   await expect(dialog.getByTestId("convert-count")).toHaveText(/^Change format: \d of 5\.$/);
   await page.keyboard.press("Escape");
+});
+
+test("games are added with their covers and checked as they are written", async ({ page, request }) => {
+  await openLibrary(page, request);
+  await page.goto("/library/add");
+  // Both are on by default (ART-8, GAME-5).
+  await expect(page.getByTestId("covers-on-add")).toBeChecked();
+  await expect(page.getByTestId("check-on-add")).toBeChecked();
+  await page.getByTestId("browse-server").click();
+  const browser = page.getByTestId("folder-browser");
+  await browser.getByRole("button", { name: "sources" }).click();
+  await browser.getByRole("checkbox", { name: "Select New Game.cue" }).check();
+  await browser.getByRole("checkbox", { name: "Select Disc Image.cue" }).check();
+  await browser.getByTestId("browser-add").click();
+  await page.getByTestId("preview-plan").click();
+
+  const plan = page.getByTestId("import-plan");
+  const search = plan.getByTestId("cover-search");
+  await expect(search).toHaveAttribute("data-status", "done");
+  await expect(search.getByTestId("cover-search-result")).toHaveText("Found: 1, not found: 0, already on the device: 1.");
+  await expect(search.getByTestId("job-log")).toContainText("SLUS_299.99 New Game: found at xlenore");
+  // The plan comes back with the cover right after its game.
+  const steps = plan.getByTestId("plan-transaction");
+  await expect(steps).toHaveCount(3);
+  const texts = await steps.allInnerTexts();
+  const game = texts.findIndex((t) => t.includes("CD/SLUS_299.99.New Game.iso"));
+  expect(game).toBeGreaterThanOrEqual(0);
+  expect(texts[game + 1]).toContain("ART/SLUS_299.99_COV.png");
+
+  await plan.getByTestId("plan-confirm").click();
+  await expect(page).toHaveURL(/\/jobs$/);
+  const job = page.getByTestId("job-card").filter({ hasText: "Import 2 games" }).first();
+  await expect(job).toHaveAttribute("data-status", "finished");
+  const checks = job.getByTestId("job-checks");
+  await expect(checks).toContainText("Verified: 2");
+  await checks.getByRole("button", { name: /Dump checks/ }).click();
+  const results = checks.getByTestId("verify-results");
+  // The CD is matched through the data track of its BIN, the DVD by its ISO.
+  await expect(results).toContainText("New Game (USA)");
+  await expect(results).toContainText("Dual Layer Quest (USA)");
+  await expect(results.getByText("Checked by the data track of the BIN or CHD the game was added from.")).toHaveCount(1);
+
+  // The library has the cover, and the verdict comes from the cache.
+  await page.goto("/library");
+  await page.getByRole("listitem", { name: /New Game/ }).click();
+  await expect(page.getByTestId("art-slot-COV")).toHaveAttribute("data-has-art", "true");
+  await expect(page.getByTestId("game-dump").getByTestId("dump-badge")).toHaveAttribute("data-status", "verified");
 });
 
 // Screenshots for the PR (TESTING.md), saved with the others.

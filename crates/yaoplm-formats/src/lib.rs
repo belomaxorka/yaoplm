@@ -23,6 +23,7 @@ pub mod media;
 pub mod profile;
 pub mod serial;
 pub mod system_cnf;
+pub mod tar;
 pub mod ul_cfg;
 pub mod usba_crc32;
 pub mod vmc;

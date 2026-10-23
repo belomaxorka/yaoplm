@@ -7,6 +7,7 @@ import {
   CircleX,
   Clock,
   Database,
+  FolderInput,
   History,
   ImageDown,
   ListChecks,
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
+import type { ArtType } from "@/api/generated/ArtType";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { JobLogEntry } from "@/api/generated/JobLogEntry";
 import type { TxOutcome } from "@/api/generated/TxOutcome";
@@ -30,8 +32,10 @@ import { Progress } from "@/components/ui/progress";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { jobTitle } from "@/features/jobs/jobTitle";
 import { usePlan } from "@/features/plan/usePlan";
+import { artTypes } from "@/features/art/kinds";
 import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
 import { DumpIcon } from "@/features/verify/DumpBadge";
+import { VerificationResults } from "@/features/verify/VerificationResults";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 import { errorText, phraseText } from "@/lib/phrase";
@@ -140,10 +144,12 @@ function JobCard({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
   const { cancel, dismiss, load, executedPlans } = useJobs();
   const [logOpen, setLogOpen] = useState(false);
+  const [checksOpen, setChecksOpen] = useState(false);
   const active = job.status === "queued" || job.status === "running";
   const report = job.result?.type === "Execution" ? job.result : null;
   const verification = job.result?.type === "Verification" ? job.result : null;
   const redump = job.result?.type === "Redump" ? job.result : null;
+  const covers = job.result?.type === "Covers" ? job.result : null;
   const pendingPlan = job.result?.type === "Plan" && !executedPlans.has(job.result.id) ? job.result : null;
   const KindIcon = kindIcons[job.kind];
   // Plans, cover searches and dump checks keep a log; the rest only report progress.
@@ -187,8 +193,8 @@ function JobCard({ job }: { job: JobInfo }) {
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="job-plan">
               <span>
                 {pendingPlan.executable
-                  ? t("jobs.planReady", { title: pendingPlan.title, count: pendingPlan.transactions.length })
-                  : t("jobs.planEmpty", { title: pendingPlan.title })}
+                  ? t("jobs.planReady", { title: phraseText(pendingPlan.titlePhrase, pendingPlan.title) })
+                  : t("jobs.planEmpty", { title: phraseText(pendingPlan.titlePhrase, pendingPlan.title) })}
               </span>
               <Button
                 size="sm"
@@ -215,6 +221,11 @@ function JobCard({ job }: { job: JobInfo }) {
                 </li>
               ))}
             </ul>
+          )}
+          {covers && (
+            <p className="mt-2 text-sm" data-testid="job-covers">
+              {t("add.coversResult", { found: covers.found, missing: covers.missing, present: covers.present })}
+            </p>
           )}
           {redump && (
             <p className="mt-2 text-sm" data-testid="job-redump">
@@ -245,6 +256,29 @@ function JobCard({ job }: { job: JobInfo }) {
                     <Link to="/library">{t("jobs.recover")}</Link>
                   </Button>
                 </p>
+              )}
+              {report.checks.length > 0 && (
+                <div data-testid="job-checks">
+                  <Button variant="ghost" size="sm" aria-expanded={checksOpen} onClick={() => setChecksOpen(!checksOpen)}>
+                    <ChevronDown className={cn("transition-transform", checksOpen && "rotate-180")} aria-hidden />
+                    {t("jobs.checks", { count: report.checks.length })}
+                  </Button>
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {statusCounts(report.checks).map(([status, count]) => (
+                      <li key={status}>
+                        <Badge variant="outline" className={dumpColours[status]}>
+                          <DumpIcon status={status} className="size-3" />
+                          {t(`dump.count.${status}`, { count })}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  {checksOpen && (
+                    <div className="mt-2 flex max-h-96 flex-col">
+                      <VerificationResults report={{ games: report.checks, dat: null }} summary={false} />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -289,6 +323,7 @@ const kindIcons = {
   fetchArt: ImageDown,
   verifyGames: ShieldCheck,
   updateRedump: Database,
+  importArt: FolderInput,
 } as const;
 
 const stepStateColours = {
@@ -339,6 +374,12 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
                 title: entry.title,
                 source: entry.source ?? "",
               })}
+            {/* Front covers are the usual case; any other type is named. */}
+            {entry.kind === "art" && entry.art.toUpperCase() !== "COV" && (
+              <span className="ml-1.5 rounded border px-1 text-[0.65rem] text-muted-foreground">
+                {isArtType(entry.art) ? t(`art.kinds.${entry.art}`) : entry.art}
+              </span>
+            )}
             {entry.kind === "verify" &&
               t(`jobs.verifyState.${entry.status}`, {
                 startup: entry.startup,
@@ -365,4 +406,8 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
       ))}
     </ol>
   );
+}
+
+function isArtType(value: string): value is ArtType {
+  return (artTypes as readonly string[]).includes(value);
 }

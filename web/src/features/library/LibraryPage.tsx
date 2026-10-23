@@ -5,6 +5,7 @@ import {
   ArrowDownAZ,
   ArrowUpZA,
   Disc3,
+  FolderInput,
   FolderPlus,
   HardDrive,
   ImageDown,
@@ -37,6 +38,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
+import { ArtImportDialog } from "@/features/art/ArtImportDialog";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { CoverThumb, GameCover } from "@/features/library/GameCover";
 import {
@@ -131,6 +133,7 @@ function LibraryView({
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
 
@@ -211,7 +214,7 @@ function LibraryView({
             <ImageOff aria-hidden />
             {t("library.noCover", { count: withoutCover })}
           </Toggle>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <Select value={filters.sort} onValueChange={(sort) => setFilters({ sort: sort as SortKey })}>
               <SelectTrigger size="sm" aria-label={t("library.sort")}>
                 <SelectValue />
@@ -266,6 +269,16 @@ function LibraryView({
             >
               <ImageDown aria-hidden />
               {t("library.downloadCovers")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+              disabled={!data || data.games.length === 0}
+              data-testid="import-pictures"
+            >
+              <FolderInput aria-hidden />
+              {t("library.importPictures")}
             </Button>
             <Button
               variant="outline"
@@ -339,6 +352,7 @@ function LibraryView({
       </div>
       <PlanDialog flow={initFlow} />
       {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} />}
+      <ArtImportDialog root={root} open={importOpen} onOpenChange={setImportOpen} />
       {data && <VerifyDialog root={root} games={data.games} open={verifyOpen} onOpenChange={setVerifyOpen} />}
       <ConvertDialog root={root} games={games} open={convertOpen} onOpenChange={setConvertOpen} />
 

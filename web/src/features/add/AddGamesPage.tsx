@@ -1,14 +1,16 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
 import { ArrowLeft, FilePlus2, FolderOpen, FolderSearch, Loader2, Trash2, Upload } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 import type { ImportOverride } from "@/api/generated/ImportOverride";
 import type { Media } from "@/api/generated/Media";
 import type { PlanTransaction } from "@/api/generated/PlanTransaction";
+import type { PlanView } from "@/api/generated/PlanView";
 import type { Request } from "@/api/generated/Request";
+import { RpcError } from "@/api/transport";
 import { EmptyState } from "@/components/EmptyState";
 import { PageScroll } from "@/components/PageScroll";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { listenForDrops, pickFiles, pickFolder } from "@/features/add/desktop";
+import { CoverSearchPanel } from "@/features/add/CoverSearchPanel";
 import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
+import { useCoverSearch } from "@/features/add/useCoverSearch";
+import { enabledSources } from "@/features/art/sources";
 import { PlanDetails } from "@/features/plan/PlanDetails";
 import { usePlan } from "@/features/plan/usePlan";
 import { baseName } from "@/lib/format";
@@ -29,6 +34,38 @@ interface Override {
   media?: Media;
 }
 
+/** The file a transaction writes from: the game's image, or a cover in the cache. */
+function sourceOf(transaction: PlanTransaction): string | null {
+  return (
+    transaction.steps.find((step) => (step.op === "writeFile" || step.op === "writeZso") && step.source)?.source ?? null
+  );
+}
+
+/**
+ * Keys for the plan's transactions that survive a re-plan: by source and
+ * kind, not by position (covers are inserted after their games) or by
+ * destination (it follows the title being typed).
+ */
+function transactionKeys(plan: PlanView | null): string[] {
+  const seen = new Map<string, number>();
+  return (plan?.transactions ?? []).map((tx) => {
+    const base = `${sourceOf(tx) ?? ""}|${tx.titlePhrase?.key ?? ""}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}|${n}`;
+  });
+}
+
+/** An import plan that names a cover set the server no longer keeps (an hour at most). */
+function coversExpired(request: Request, error: unknown): boolean {
+  return (
+    request.type === "PlanImport" &&
+    request.covers !== undefined &&
+    error instanceof RpcError &&
+    error.phrase?.key === "errors.coversExpired"
+  );
+}
+
 /**
  * Add games (IMP-1, IMP-3, IMP-10, IMP-11): pick sources, see the plan the
  * core builds for them, adjust a title or CD/DVD per game, confirm. Moving
@@ -37,7 +74,7 @@ interface Override {
 export function AddGamesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const root = settings.root;
   const [sources, setSources] = useState<string[]>([]);
   const [move, setMove] = useState(false);
@@ -50,6 +87,14 @@ export function AddGamesPage() {
   const flow = usePlan({ onExecuted: () => void navigate("/jobs") });
   const desktop = isTauri();
   const zsoReadable = settings.profile !== "Opl110";
+  const coverSources = enabledSources(settings).length > 0;
+  const coversWanted = settings.coversOnAdd && coverSources;
+  const covers = useCoverSearch(root, flow.plan, coversWanted);
+  const coverSet = coversWanted && covers.state?.status === "done" ? (covers.state.result?.id ?? null) : null;
+  // A plan that needs covers comes with its search already running: no frame
+  // offers to confirm it first.
+  const searching = covers.state?.status === "running";
+  const keys = useMemo(() => transactionKeys(flow.plan), [flow.plan]);
 
   const addSources = useCallback((paths: string[]) => {
     setSources((current) => [...current, ...paths.filter((p) => !current.includes(p))]);
@@ -72,30 +117,75 @@ export function AddGamesPage() {
       layout: alwaysUl ? "ul" : "auto",
       ...(compress && zsoReadable ? { compress: true } : {}),
       ...(list.length > 0 ? { overrides: list } : {}),
+      verify: settings.checkOnAdd,
+      databaseTitles: settings.titlesFromDb,
+      ...(coverSet ? { covers: coverSet } : {}),
     };
-  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl, compress, zsoReadable]);
+  }, [
+    root,
+    sources,
+    overrides,
+    settings.profile,
+    settings.nameStyle,
+    move,
+    alwaysUl,
+    compress,
+    zsoReadable,
+    settings.checkOnAdd,
+    settings.titlesFromDb,
+    coverSet,
+  ]);
+
+  const sendPlan = (req: Request, keep: boolean) => {
+    void flow.request(req, {
+      keep,
+      onError: (error) => {
+        if (!coversExpired(req, error)) return false;
+        // Every plan naming an expired cover set fails: search again instead.
+        // The plan on screen stays (it is stale without the set, and the
+        // title being typed keeps its field). It was built with that set,
+        // so it has most likely expired as well: the new search waits for
+        // the plan the debounce makes without covers.
+        covers.reset(flow.plan?.id);
+        return true;
+      },
+    });
+  };
 
   // Re-plan a moment after the last edit; the plan is the only truth about names and media.
-  const planned = useRef<Request | null>(null);
+  const requestJson = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
+  const [plannedJson, setPlannedJson] = useState<string | null>(null);
   useEffect(() => {
-    if (!flow.plan && !flow.pending && !flow.error) planned.current = null;
-  }, [flow.plan, flow.pending, flow.error]);
-  useEffect(() => {
-    if (!request || planned.current === null) return;
-    if (JSON.stringify(request) === JSON.stringify(planned.current)) return;
+    if (!request || plannedJson === null || requestJson === plannedJson) return;
     const timer = setTimeout(() => {
-      planned.current = request;
-      void flow.request(request);
+      setPlannedJson(requestJson);
+      sendPlan(request, true);
     }, 400);
     return () => clearTimeout(timer);
     // flow.request is stable; the plan itself must not retrigger planning.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request]);
+  }, [requestJson, plannedJson]);
+  // The plan on screen predates an edit, or the covers just found: it is not
+  // the one to run.
+  const stale = plannedJson !== null && requestJson !== plannedJson;
 
   const preview = () => {
     if (!request) return;
-    planned.current = request;
-    void flow.request(request);
+    setPlannedJson(requestJson);
+    sendPlan(request, false);
+  };
+
+  const cancel = () => {
+    setPlannedJson(null);
+    flow.discard();
+    covers.reset();
+  };
+
+  const removeSource = (source: string) => {
+    const rest = sources.filter((p) => p !== source);
+    setSources(rest);
+    // Nothing left to add: the plan on screen stands for nothing.
+    if (rest.length === 0) cancel();
   };
 
   if (!root) {
@@ -107,12 +197,10 @@ export function AddGamesPage() {
     );
   }
 
-  const sourceOf = (transaction: PlanTransaction): string | null =>
-    transaction.steps.find((step) => (step.op === "writeFile" || step.op === "writeZso") && step.source)?.source ?? null;
-
   const renderOverride = (transaction: PlanTransaction) => {
     const source = sourceOf(transaction);
-    if (!source || !transaction.game) return null;
+    // A cover written with its game follows the game's title and media.
+    if (!source || !transaction.game || transaction.titlePhrase?.key === "titles.artFor") return null;
     const current = overrides[source] ?? {};
     return (
       <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -174,7 +262,7 @@ export function AddGamesPage() {
             <div className="flex flex-wrap justify-center gap-2">
               {desktop ? (
                 <>
-                  <Button onClick={() => void pickFiles().then(addSources)}>
+                  <Button onClick={() => void pickFiles(t("add.filesFilter")).then(addSources)}>
                     <FilePlus2 aria-hidden />
                     {t("add.pickFiles")}
                   </Button>
@@ -209,7 +297,7 @@ export function AddGamesPage() {
                     variant="ghost"
                     size="icon-sm"
                     aria-label={t("add.removeSource", { name: baseName(source) })}
-                    onClick={() => setSources((s) => s.filter((p) => p !== source))}
+                    onClick={() => removeSource(source)}
                   >
                     <Trash2 aria-hidden />
                   </Button>
@@ -251,6 +339,48 @@ export function AddGamesPage() {
               </span>
             </span>
           </Label>
+          <Label htmlFor={`${ids}-titles`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-titles`}
+              checked={settings.titlesFromDb}
+              onCheckedChange={(titlesFromDb) => update({ titlesFromDb })}
+              className="mt-0.5"
+              data-testid="titles-from-db"
+            />
+            <span>
+              {t("settings.titlesFromDb")}
+              <span className="block text-xs text-muted-foreground">{t("settings.titlesFromDbHint")}</span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-covers`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-covers`}
+              checked={coversWanted}
+              disabled={!coverSources}
+              onCheckedChange={(coversOnAdd) => update({ coversOnAdd })}
+              className="mt-0.5"
+              data-testid="covers-on-add"
+            />
+            <span>
+              {t("settings.coversOnAdd")}
+              <span className="block text-xs text-muted-foreground">
+                {coverSources ? t("settings.coversOnAddHint") : t("art.noSources")}
+              </span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-check`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-check`}
+              checked={settings.checkOnAdd}
+              onCheckedChange={(checkOnAdd) => update({ checkOnAdd })}
+              className="mt-0.5"
+              data-testid="check-on-add"
+            />
+            <span>
+              {t("settings.checkOnAdd")}
+              <span className="block text-xs text-muted-foreground">{t("settings.checkOnAddHint")}</span>
+            </span>
+          </Label>
           <p className="text-xs text-muted-foreground">
             {t("add.usingSettings", {
               profile: t(`settings.profiles.${settings.profile}`),
@@ -267,7 +397,7 @@ export function AddGamesPage() {
           </div>
         )}
 
-        {flow.pending && (
+        {flow.pending && !flow.plan && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
             <Loader2 className="size-4 animate-spin" aria-hidden />
             {t("plan.building")}
@@ -284,14 +414,25 @@ export function AddGamesPage() {
               <h3 className="text-base font-semibold">{phraseText(flow.plan.titlePhrase, flow.plan.title)}</h3>
               <p className="text-xs text-muted-foreground">{t("add.planHint")}</p>
             </div>
-            <PlanDetails plan={flow.plan} renderTransaction={renderOverride} />
+            {covers.state && <CoverSearchPanel search={covers.state} onStop={covers.stop} onRetry={covers.retry} />}
+            <PlanDetails
+              plan={flow.plan}
+              renderTransaction={renderOverride}
+              keyOf={(_transaction, index) => keys[index] ?? String(index)}
+            />
             <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
-              <Button variant="outline" onClick={flow.discard} disabled={flow.executing}>
+              {(flow.pending || stale) && (
+                <span className="mr-auto flex items-center gap-2 text-sm text-muted-foreground" role="status">
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  {t("plan.updating")}
+                </span>
+              )}
+              <Button variant="outline" onClick={cancel} disabled={flow.executing}>
                 {t("common.cancel")}
               </Button>
               <Button
                 variant={flow.plan.deletesUserData ? "destructive" : "default"}
-                disabled={!flow.plan.executable || flow.executing}
+                disabled={!flow.plan.executable || flow.executing || flow.pending || stale || searching}
                 onClick={() => void flow.execute(flow.plan?.deletesUserData ?? false)}
                 data-testid="plan-confirm"
               >

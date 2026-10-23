@@ -13,12 +13,13 @@
 //! Nothing is written here. Conflicts with what is already on the device
 //! skip that source with a reason; a lack of space blocks the whole plan.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
 use yaoplm_device::fs::{DeviceFs, find_entry};
 use yaoplm_device::source::SourceFs;
+use yaoplm_formats::art::ArtKind;
 use yaoplm_formats::iso_name::{
     self, ImageExtension, NameError, NameFormat, NameStyle, TITLE_MAX, build_file_name,
     is_name_safe_startup, sanitize_title,
@@ -29,8 +30,11 @@ use yaoplm_formats::usba_crc32::usba_crc32;
 use yaoplm_formats::{LoaderProfile, Media, zso};
 use yaoplm_i18n::Phrase;
 
+use crate::art::{ArtFolder, ArtItem};
 use crate::device::{DeviceState, join, on_disk};
-use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
+use crate::plan::{
+    Bytes, Check, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction,
+};
 use crate::reasons;
 use crate::scan::CD_MAX_BYTES;
 use crate::source::{ProbeError, Probed, probe, sheet_files};
@@ -70,6 +74,17 @@ pub struct ImportOptions {
     pub overrides: Vec<ImportOverride>,
     /// Store images as ZSO (GAME-4): OPL 1.2.0 beta only, never for `ul`.
     pub compress: bool,
+    /// Hash every image while it is written, for a dump check (GAME-5).
+    pub check: bool,
+    /// Title every game the bundled database knows by its name there
+    /// (META-1); the others keep the title of their file name. A title the
+    /// user typed always wins. Without it the database names only games
+    /// whose file names give no title.
+    pub database_titles: bool,
+    /// Pictures found for the games being added (ART-8): each is written
+    /// right after its game, once per game ID and kind, unless the device
+    /// already has that picture.
+    pub covers: Vec<ArtItem>,
 }
 
 /// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
@@ -257,6 +272,12 @@ struct Planner<'a> {
     sources: &'a dyn SourceFs,
     options: &'a ImportOptions,
     plan: Plan,
+    /// Read only when the options carry pictures.
+    art: Option<ArtFolder>,
+    /// The pictures of the options by [`serial::lookup_key`], in order.
+    covers: HashMap<String, Vec<&'a ArtItem>>,
+    /// Pictures already planned, as lower-case ID and kind.
+    covered: HashSet<(String, ArtKind)>,
     /// Names claimed by this plan, lower-case, as `CD/x.iso` or `ul.x`.
     claimed: HashSet<String>,
     /// Game IDs on the device or in this plan.
@@ -314,8 +335,13 @@ impl Planner<'_> {
             Some(title) => title,
             None => {
                 let from_name = title_from_path(path);
-                match known_title_for(&from_name, &startup) {
-                    Some(known) => {
+                let known = if self.options.database_titles {
+                    titles::known_title(&startup)
+                } else {
+                    known_title_for(&from_name, &startup)
+                };
+                match known {
+                    Some(known) if known != from_name => {
                         notices.push(Notice::info(
                             Phrase::notice("titleFromDatabase")
                                 .with("startup", &startup)
@@ -323,7 +349,7 @@ impl Planner<'_> {
                         ));
                         known
                     }
-                    None => from_name,
+                    _ => from_name,
                 }
             }
         };
@@ -373,9 +399,47 @@ impl Planner<'_> {
             }
         }
         tx.notices = notices;
+        let game = tx.game.clone();
         self.plan.transactions.push(tx);
         self.games += 1;
+        if let Some(game) = game {
+            self.plan_covers(&game);
+        }
         Ok(())
+    }
+
+    /// The pictures of `game` that the options carry, right after it.
+    fn plan_covers(&mut self, game: &GameInfo) {
+        let (Some(art), Some(items)) = (
+            &self.art,
+            self.covers.get(&serial::lookup_key(&game.startup)),
+        ) else {
+            return;
+        };
+        for &item in items {
+            if !self
+                .covered
+                .insert((game.startup.to_lowercase(), item.kind))
+            {
+                continue;
+            }
+            // Named and shown as the game is added, whatever the search saw.
+            let item = ArtItem {
+                startup: game.startup.clone(),
+                title: game.title.clone(),
+                media: game.media,
+                format: game.format.clone(),
+                ..item.clone()
+            };
+            match art.write(&mut self.plan, self.sources, &item, false) {
+                Ok(Ok((tx, _))) => self.plan.transactions.push(tx),
+                Ok(Err(skipped)) => self.plan.skipped.push(skipped),
+                Err(err) => self.plan.skipped.push(skip(
+                    &item.file,
+                    Phrase::notice("unreadable").with("error", err.to_string()),
+                )),
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -435,11 +499,14 @@ impl Planner<'_> {
                 Phrase::notice("badName").with("reason", reasons::bad_name(&e)),
             )
         })?;
-        let source = if keep_zso {
+        let mut source = if keep_zso {
             probed.raw_source()
         } else {
             probed.iso_source()
         };
+        if self.options.check {
+            source.check = Some(if keep_zso { Check::Zso } else { Check::Image });
+        }
         let len = source.len;
         self.plan.sources.push(source);
         let mut tx = Transaction::titled(
@@ -542,7 +609,11 @@ impl Planner<'_> {
             ));
         }
 
-        self.plan.sources.push(probed.iso_source());
+        let mut iso = probed.iso_source();
+        if self.options.check {
+            iso.check = Some(Check::Image);
+        }
+        self.plan.sources.push(iso);
         let source = self.plan.sources.len() - 1;
         let mut tx = Transaction::titled(
             Phrase::title("splitGame")
@@ -622,12 +693,27 @@ pub fn plan_import(
     let folders = state.missing_folders()?;
     let (candidates, skipped) = expand_inputs(sources, inputs);
     plan.skipped = skipped;
+    let art = if options.covers.is_empty() {
+        None
+    } else {
+        Some(ArtFolder::read(fs, &state)?)
+    };
+    let mut covers: HashMap<String, Vec<&ArtItem>> = HashMap::new();
+    for item in &options.covers {
+        covers
+            .entry(serial::lookup_key(&item.startup))
+            .or_default()
+            .push(item);
+    }
 
     let mut planner = Planner {
         state,
         sources,
         options,
         plan,
+        art,
+        covers,
+        covered: HashSet::new(),
         claimed: HashSet::new(),
         startups,
         ul_next: None,

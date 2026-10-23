@@ -137,10 +137,16 @@ export function PlanSummary({ plan }: { plan: PlanView }) {
 export function PlanDetails({
   plan,
   renderTransaction,
+  keyOf = (_transaction, index) => String(index),
 }: {
   plan: PlanView;
   /** Extra controls inside a transaction card, e.g. import overrides. */
   renderTransaction?: (transaction: PlanTransaction, index: number) => ReactNode;
+  /**
+   * A key that stays with a transaction across re-plans, so controls in its
+   * card keep their focus when transactions are inserted before it.
+   */
+  keyOf?: (transaction: PlanTransaction, index: number) => string;
 }) {
   const { t } = useTranslation();
   const blockers = plan.notices.filter((n) => n.level === "error");
@@ -161,7 +167,7 @@ export function PlanDetails({
           </h3>
           <ul className="flex flex-col gap-2">
             {plan.transactions.map((transaction, index) => (
-              <TransactionCard key={index} index={index} transaction={transaction}>
+              <TransactionCard key={keyOf(transaction, index)} index={index} transaction={transaction}>
                 {renderTransaction?.(transaction, index)}
               </TransactionCard>
             ))}

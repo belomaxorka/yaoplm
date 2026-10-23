@@ -2,6 +2,7 @@
 import type { ArtInput } from "./ArtInput";
 import type { ArtScope } from "./ArtScope";
 import type { ArtSourceSetting } from "./ArtSourceSetting";
+import type { ArtType } from "./ArtType";
 import type { ConvertTarget } from "./ConvertTarget";
 import type { GameRef } from "./GameRef";
 import type { ImportOverride } from "./ImportOverride";
@@ -37,7 +38,24 @@ verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfi
 /**
  * Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
  */
-compress?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+compress?: boolean, 
+/**
+ * Hash the images while they are written and check them against
+ * the stored Redump DAT (GAME-5); the verdicts land in the job log
+ * and the hash cache. Off when absent.
+ */
+verify?: boolean, 
+/**
+ * Title the games the bundled database knows by its name there;
+ * the others keep their file name's title. Off when absent: only
+ * games whose file names give no title are named by the database.
+ */
+databaseTitles?: boolean, 
+/**
+ * A cover set from `FetchArt` with `import` (ART-8): every game
+ * gets its cover written right after it, in the same plan.
+ */
+covers?: string, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
 /**
  * How images made from `ul` chunks are named.
  */
@@ -55,9 +73,31 @@ games?: Array<string>,
  */
 sources?: Array<ArtSourceSetting>, 
 /**
- * `COV` for now.
+ * One picture type by its suffix; `kinds` takes several.
  */
-kind?: string, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
+kind?: string, 
+/**
+ * The picture types to look for (ART-2); COV when neither this nor
+ * `kind` is given.
+ */
+kinds?: Array<ArtType>, 
+/**
+ * The id of an import plan: look for the covers of the games it
+ * adds, `missing` scope (ART-8).
+ */
+import?: string, } | { "type": "FindArt", root: string, startup: string, kind: ArtType, profile?: LoaderProfile, sources?: Array<ArtSourceSetting>, } | { "type": "ImportArt", root: string, 
+/**
+ * Folders, archives or picture files.
+ */
+sources: Array<string>, profile?: LoaderProfile, 
+/**
+ * Every type when absent.
+ */
+kinds?: Array<ArtType>, 
+/**
+ * Replace pictures the device has; they move to the backup folder.
+ */
+overwrite?: boolean, } | { "type": "SetArt", root: string, startup: string, input: ArtInput, profile?: LoaderProfile, kind?: string, 
 /**
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.
