@@ -1,4 +1,4 @@
-import { ImageDown, ImageOff } from "lucide-react";
+import { ImageDown, ImageOff, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,15 @@ import { useJobs } from "@/jobs/context";
  * log while it runs, what it found once done. The plan is confirmed only
  * after it, or without covers once the user stops it.
  */
-export function CoverSearchPanel({ search, onStop }: { search: CoverSearchState; onStop: () => void }) {
+export function CoverSearchPanel({
+  search,
+  onStop,
+  onRetry,
+}: {
+  search: CoverSearchState;
+  onStop: () => void;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation();
   const { jobs } = useJobs();
   const job = search.job === null ? undefined : jobs.find((j) => j.id === search.job);
@@ -24,6 +32,12 @@ export function CoverSearchPanel({ search, onStop }: { search: CoverSearchState;
           <Button size="sm" variant="outline" onClick={onStop} data-testid="cover-search-stop">
             <ImageOff aria-hidden />
             {t("add.coversSkip")}
+          </Button>
+        )}
+        {(search.status === "stopped" || search.status === "failed") && (
+          <Button size="sm" variant="outline" onClick={onRetry} data-testid="cover-search-retry">
+            <RotateCcw aria-hidden />
+            {t("add.coversRetry")}
           </Button>
         )}
       </div>

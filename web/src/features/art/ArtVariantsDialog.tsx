@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { Ban, Check, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
@@ -18,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { artAspect } from "@/features/art/kinds";
 import { requestSources } from "@/features/art/sources";
 import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
@@ -81,13 +83,11 @@ function VariantsBody({
   const [variants, setVariants] = useState<ArtVariant[] | null>(null);
   const [chosen, setChosen] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
 
   useEffect(() => {
-    // Once per opening, also under React's double effects in development.
-    if (started.current) return;
-    started.current = true;
-    void (async () => {
+    const poll = new AbortController();
+    let job: JobId | null = null;
+    const run = async () => {
       try {
         const id = await findArt(transport, {
           type: "FindArt",
@@ -97,16 +97,32 @@ function VariantsBody({
           profile: settings.profile,
           sources: requestSources(settings),
         });
+        if (poll.signal.aborted) {
+          void cancel(id).catch(() => undefined);
+          return;
+        }
+        job = id;
         setJobId(id);
-        const info = await waitForJob(transport, id);
+        const info = await waitForJob(transport, id, poll.signal);
+        job = null;
+        if (poll.signal.aborted) return;
         if (info.status === "finished" && info.result?.type === "ArtVariants") setVariants(info.result.variants);
         else if (info.error) setError(errorText(info.error));
         else setVariants([]);
       } catch (err) {
-        setError(errorText(err));
+        if (!poll.signal.aborted) setError(errorText(err));
       }
-    })();
-  }, [transport, root, game.startup, kind, settings]);
+    };
+    // Started a tick later: StrictMode's development double effect cleans up
+    // synchronously and drops the first start, so one opening runs one job.
+    const timer = setTimeout(() => void run(), 0);
+    // Closing the dialog stops a search nobody waits for.
+    return () => {
+      clearTimeout(timer);
+      poll.abort();
+      if (job !== null) void cancel(job).catch(() => undefined);
+    };
+  }, [transport, root, game.startup, kind, settings, cancel]);
 
   const job = jobId === null ? undefined : jobs.find((j) => j.id === jobId);
   const running = variants === null && error === null;
@@ -134,36 +150,38 @@ function VariantsBody({
         </div>
       )}
       {variants && variants.length > 0 && (
-        <ul className="grid min-h-0 grid-cols-2 gap-3 overflow-auto p-1 sm:grid-cols-3" role="radiogroup" aria-label={t(`art.kinds.${kind}`)}>
+        // Radix gives the cards roving focus: arrow keys move the choice.
+        <RadioGroup
+          value={String(chosen)}
+          onValueChange={(value) => setChosen(Number(value))}
+          aria-label={t(`art.kinds.${kind}`)}
+          className="min-h-0 grid-cols-2 gap-3 overflow-auto p-1 sm:grid-cols-3"
+        >
           {variants.map((variant, index) => (
-            <li key={`${variant.source}:${variant.origin}`}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={index === chosen}
-                onClick={() => setChosen(index)}
-                className={cn(
-                  "flex w-full flex-col gap-1.5 rounded-lg border p-2 text-left transition-colors",
-                  index === chosen ? "border-primary ring-2 ring-primary" : "hover:bg-muted/60",
-                )}
-                title={variant.origin}
-                data-testid="art-variant"
-              >
-                <img
-                  src={`data:image/png;base64,${variant.png}`}
-                  alt=""
-                  className="w-full rounded border bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-[length:16px_16px] object-contain"
-                  style={{ aspectRatio: artAspect[kind] }}
-                />
-                <span className="flex items-center gap-1 text-xs font-medium">
-                  {index === chosen && <Check className="size-3" aria-hidden />}
-                  {variant.source}
-                </span>
-                <span className="truncate font-mono text-[0.65rem] text-muted-foreground">{variant.origin.replace(/^.*[\\/]/, "")}</span>
-              </button>
-            </li>
+            <RadioGroupPrimitive.Item
+              key={`${variant.source}:${variant.origin}`}
+              value={String(index)}
+              className={cn(
+                "flex w-full flex-col gap-1.5 rounded-lg border p-2 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                index === chosen ? "border-primary ring-2 ring-primary" : "hover:bg-muted/60",
+              )}
+              title={variant.origin}
+              data-testid="art-variant"
+            >
+              <img
+                src={`data:image/png;base64,${variant.png}`}
+                alt=""
+                className="w-full rounded border bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-[length:16px_16px] object-contain"
+                style={{ aspectRatio: artAspect[kind] }}
+              />
+              <span className="flex items-center gap-1 text-xs font-medium">
+                {index === chosen && <Check className="size-3" aria-hidden />}
+                {variant.source}
+              </span>
+              <span className="truncate font-mono text-[0.65rem] text-muted-foreground">{variant.origin.replace(/^.*[\\/]/, "")}</span>
+            </RadioGroupPrimitive.Item>
           ))}
-        </ul>
+        </RadioGroup>
       )}
       <DialogFooter>
         {running && jobId !== null ? (

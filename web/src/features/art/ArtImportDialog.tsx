@@ -31,6 +31,15 @@ import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
+/** What the user chose in the form. */
+interface ImportForm {
+  sets: string[];
+  kinds: ArtType[];
+  replace: boolean;
+}
+
+const freshForm = (): ImportForm => ({ sets: [], kinds: [...artTypes], replace: false });
+
 /**
  * "Import pictures" (ART-5): picture sets the user has (OPL Manager's art
  * backups, folders, `art.tar`) are read by an ImportArt job, which keeps
@@ -46,7 +55,13 @@ export function ArtImportDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const flow = usePlan({ onExecuted: () => onOpenChange(false) });
+  // Kept here, not in the body: cancelling the plan brings the form back as it was.
+  const [form, setForm] = useState<ImportForm>(freshForm);
+  const close = () => {
+    setForm(freshForm());
+    onOpenChange(false);
+  };
+  const flow = usePlan({ onExecuted: close });
   const [running, setRunning] = useState(false);
 
   return (
@@ -54,8 +69,8 @@ export function ArtImportDialog({
       <Dialog
         open={open && flow.plan === null && !flow.pending}
         onOpenChange={(next) => {
-          if (!next && running) return;
-          onOpenChange(next);
+          if (next) onOpenChange(true);
+          else if (!running) close();
         }}
       >
         <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-xl" data-testid="art-import-dialog">
@@ -63,12 +78,14 @@ export function ArtImportDialog({
             <DialogTitle>{t("artImport.title")}</DialogTitle>
             <DialogDescription>{t("artImport.description")}</DialogDescription>
           </DialogHeader>
-          {/* Mounted only while open, so every opening starts afresh. */}
+          {/* Mounted only while open; closing resets the form, so every opening starts afresh. */}
           <ImportBody
             root={root}
+            form={form}
+            onFormChange={setForm}
             onRunning={setRunning}
             onPlan={(plan) => flow.adopt(plan)}
-            onClose={() => onOpenChange(false)}
+            onClose={close}
           />
         </DialogContent>
       </Dialog>
@@ -99,11 +116,15 @@ function SetIcon({ path }: { path: string }) {
 
 function ImportBody({
   root,
+  form,
+  onFormChange,
   onRunning,
   onPlan,
   onClose,
 }: {
   root: string;
+  form: ImportForm;
+  onFormChange: (change: (form: ImportForm) => ImportForm) => void;
   onRunning: (running: boolean) => void;
   onPlan: (plan: PlanView) => void;
   onClose: () => void;
@@ -114,9 +135,10 @@ function ImportBody({
   const { jobs, cancel } = useJobs();
   const ids = useId();
   const desktop = isTauri();
-  const [sets, setSets] = useState<string[]>([]);
-  const [kinds, setKinds] = useState<ArtType[]>([...artTypes]);
-  const [replace, setReplace] = useState(false);
+  const { sets, kinds, replace } = form;
+  const setSets = (change: (sets: string[]) => string[]) => onFormChange((f) => ({ ...f, sets: change(f.sets) }));
+  const setKinds = (change: (kinds: ArtType[]) => ArtType[]) => onFormChange((f) => ({ ...f, kinds: change(f.kinds) }));
+  const setReplace = (replace: boolean) => onFormChange((f) => ({ ...f, replace }));
   const [browserOpen, setBrowserOpen] = useState(false);
   const [jobId, setJobId] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,8 +152,11 @@ function ImportBody({
 
   // Sets dropped onto the window while the form is shown (desktop only).
   useEffect(
-    () => (showForm ? listenForDrops((paths) => setSets((current) => withSets(current, paths))) : undefined),
-    [showForm],
+    () =>
+      showForm
+        ? listenForDrops((paths) => onFormChange((f) => ({ ...f, sets: withSets(f.sets, paths) })))
+        : undefined,
+    [showForm, onFormChange],
   );
 
   const start = async () => {
@@ -196,7 +221,7 @@ function ImportBody({
             <div className="flex flex-wrap gap-2">
               {desktop ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={() => void pickPictureSets().then(addSets)}>
+                  <Button variant="outline" size="sm" onClick={() => void pickPictureSets(t("artImport.sets")).then(addSets)}>
                     <FileArchive aria-hidden />
                     {t("artImport.addFiles")}
                   </Button>

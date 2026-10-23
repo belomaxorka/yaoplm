@@ -46,9 +46,15 @@ export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => 
   /**
    * Plans `req`. With `keep`, the current plan stays on screen until the
    * new one replaces it (a re-plan after an edit), but cannot run meanwhile.
+   * `onError` hears the failure of the newest request only, before anything
+   * changes on screen; returning `true` says it handled the failure: the plan
+   * on screen stays and no error shows.
    */
   const request = useCallback(
-    async (req: Request, options: { keep?: boolean } = {}): Promise<PlanView | null> => {
+    async (
+      req: Request,
+      options: { keep?: boolean; onError?: (error: unknown) => boolean | void } = {},
+    ): Promise<PlanView | null> => {
       if (!options.keep) forget();
       const mine = ++generation.current;
       setState((s) => ({ plan: options.keep ? s.plan : null, pending: true, executing: false, error: null }));
@@ -63,7 +69,13 @@ export function usePlan(options: { onExecuted?: (job: JobId, plan: PlanView) => 
         setState({ plan, pending: false, executing: false, error: null });
         return plan;
       } catch (error) {
-        if (mine === generation.current) {
+        if (mine !== generation.current) return null;
+        const handled = options.onError?.(error) === true;
+        // The handler planned again: that request owns the state now.
+        if (mine !== generation.current) return null;
+        if (handled) {
+          setState((s) => ({ ...s, pending: false, error: null }));
+        } else {
           forget();
           setState({ plan: null, pending: false, executing: false, error: message(error) });
         }

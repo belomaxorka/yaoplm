@@ -17,7 +17,8 @@
 //!
 //! The same manifest keeps the hash cache of dump verification (GAME-5):
 //! hashes of an image keyed by its files' paths, sizes and modification
-//! times, so a game is read in full only once until it changes.
+//! times, so a game is read in full only once until it changes. Hashes
+//! taken while a game was written are marked as such ([`HashedFrom`]).
 
 use std::fs;
 use std::io;
@@ -38,6 +39,9 @@ pub const ART_DIR: &str = "art-cache";
 pub const MANIFEST: &str = "cache.sqlite";
 /// How long a "not found" answer is believed.
 pub const MISSING_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
+/// How long a connection waits for another process (the CLI next to the
+/// desktop app) that holds the manifest's write lock.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -213,12 +217,13 @@ CREATE TABLE IF NOT EXISTS objects (
     PRIMARY KEY (source, key)
 );
 CREATE TABLE IF NOT EXISTS hashes (
-    files     TEXT PRIMARY KEY,
-    size      INTEGER NOT NULL,
-    crc32     TEXT NOT NULL,
-    sha1      TEXT NOT NULL,
-    md5       TEXT,
-    hashed_at INTEGER NOT NULL
+    files        TEXT PRIMARY KEY,
+    size         INTEGER NOT NULL,
+    crc32        TEXT NOT NULL,
+    sha1         TEXT NOT NULL,
+    md5          TEXT,
+    hashed_at    INTEGER NOT NULL,
+    from_writing INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS tracks (
     image_sha1 TEXT NOT NULL,
@@ -231,6 +236,17 @@ CREATE TABLE IF NOT EXISTS tracks (
     PRIMARY KEY (image_sha1, image_size)
 );
 ";
+
+/// Where cached hashes of an image came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashedFrom {
+    /// The files themselves were read.
+    Files,
+    /// The bytes written to the files, hashed from the source while they
+    /// were written (ADR-0030): the device was never read back, so a stick
+    /// that corrupts what it stores would go unnoticed.
+    Writing,
+}
 
 /// One file an image was read from, as it was when hashed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,6 +289,7 @@ impl Cache {
             &path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+        db.busy_timeout(BUSY_TIMEOUT)?;
         Ok(Some(Self {
             root: data_dir.to_path_buf(),
             db: Mutex::new(db),
@@ -283,8 +300,10 @@ impl Cache {
     pub fn open(data_dir: &Path) -> Result<Self, NetError> {
         fs::create_dir_all(data_dir.join(ART_DIR)).map_err(NetError::io(data_dir))?;
         let db = Connection::open(data_dir.join(MANIFEST))?;
+        db.busy_timeout(BUSY_TIMEOUT)?;
         db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
         db.execute_batch(SCHEMA)?;
+        migrate(&db)?;
         Ok(Self {
             root: data_dir.to_path_buf(),
             db: Mutex::new(db),
@@ -471,52 +490,83 @@ impl Cache {
     }
 
     /// Hashes of an image whose files have not changed since they were
-    /// hashed. With `md5`, a row without MD5 does not count.
-    pub fn hashes(&self, files: &[HashedFile<'_>], md5: bool) -> Result<Option<Hashes>, NetError> {
+    /// hashed, and where they came from. With `md5`, a row without MD5 does
+    /// not count.
+    pub fn hashes(
+        &self,
+        files: &[HashedFile<'_>],
+        md5: bool,
+    ) -> Result<Option<(Hashes, HashedFrom)>, NetError> {
         let Some(key) = files_key(files) else {
             return Ok(None);
         };
-        let row = self
-            .db()
-            .query_row(
-                "SELECT size, crc32, sha1, md5 FROM hashes WHERE files = ?1",
-                params![key],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((size, crc32, sha1, md5_hex)) = row else {
+        let db = self.db();
+        let query = |sql: &str| {
+            db.query_row(sql, params![key], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .optional()
+        };
+        let row =
+            match query("SELECT size, crc32, sha1, md5, from_writing FROM hashes WHERE files = ?1")
+            {
+                // A cache from before the column, opened read-only: every row
+                // there was read from its files. (SQLite reports it with the
+                // statement and its offset, as `SqlInputError`.)
+                Err(err) if err.to_string().starts_with("no such column") => {
+                    query("SELECT size, crc32, sha1, md5, 0 FROM hashes WHERE files = ?1")?
+                }
+                other => other?,
+            };
+        let Some((size, crc32, sha1, md5_hex, from_writing)) = row else {
             return Ok(None);
         };
         let md5_value = md5_hex.as_deref().and_then(parse_hex::<16>);
         if md5 && md5_value.is_none() {
             return Ok(None);
         }
+        let from = if from_writing == 0 {
+            HashedFrom::Files
+        } else {
+            HashedFrom::Writing
+        };
         Ok(parse_hex::<4>(&crc32)
             .zip(parse_hex::<20>(&sha1))
-            .map(|(crc32, sha1)| Hashes {
-                size: size.max(0) as u64,
-                crc32: u32::from_be_bytes(crc32),
-                sha1,
-                md5: md5_value,
+            .map(|(crc32, sha1)| {
+                (
+                    Hashes {
+                        size: size.max(0) as u64,
+                        crc32: u32::from_be_bytes(crc32),
+                        sha1,
+                        md5: md5_value,
+                    },
+                    from,
+                )
             }))
     }
 
-    /// Remembers the hashes of an image read from `files`.
-    pub fn put_hashes(&self, files: &[HashedFile<'_>], hashes: &Hashes) -> Result<(), NetError> {
+    /// Remembers the hashes of an image stored in `files`.
+    pub fn put_hashes(
+        &self,
+        files: &[HashedFile<'_>],
+        hashes: &Hashes,
+        from: HashedFrom,
+    ) -> Result<(), NetError> {
         let Some(key) = files_key(files) else {
             return Ok(());
         };
         self.db().execute(
-            "INSERT INTO hashes (files, size, crc32, sha1, md5, hashed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO hashes (files, size, crc32, sha1, md5, hashed_at, from_writing)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(files) DO UPDATE SET size = excluded.size, crc32 = excluded.crc32,
-               sha1 = excluded.sha1, md5 = excluded.md5, hashed_at = excluded.hashed_at",
+               sha1 = excluded.sha1, md5 = excluded.md5, hashed_at = excluded.hashed_at,
+               from_writing = excluded.from_writing",
             params![
                 key,
                 i64::try_from(hashes.size).unwrap_or(i64::MAX),
@@ -524,6 +574,7 @@ impl Cache {
                 hex(&hashes.sha1),
                 hashes.md5_hex(),
                 i64::try_from(now_secs()).unwrap_or(i64::MAX),
+                i64::from(from == HashedFrom::Writing),
             ],
         )?;
         Ok(())
@@ -613,6 +664,43 @@ impl Cache {
             .query_row("SELECT COUNT(*) FROM objects", [], |r| r.get(0))?;
         let bytes = dir_size(&self.root.join(ART_DIR)).unwrap_or(0);
         Ok((rows.max(0) as u64, bytes))
+    }
+}
+
+/// Brings a cache made by an older version up to [`SCHEMA`]: `CREATE TABLE
+/// IF NOT EXISTS` leaves an existing table as it was.
+///
+/// The CLI, the desktop app and the server may open the same old cache at
+/// once. The column is looked for again once this connection holds the
+/// write lock, so only the first one adds it; the others wait for it
+/// ([`BUSY_TIMEOUT`]) and find it there.
+fn migrate(db: &Connection) -> Result<(), NetError> {
+    let has_column = |db: &Connection| {
+        db.prepare("SELECT 1 FROM pragma_table_info('hashes') WHERE name = 'from_writing'")?
+            .exists([])
+    };
+    if has_column(db)? {
+        return Ok(());
+    }
+    let tx = rusqlite::Transaction::new_unchecked(db, rusqlite::TransactionBehavior::Immediate)?;
+    if !has_column(&tx)? {
+        // Old rows were all read from their files.
+        add_column(
+            &tx,
+            "ALTER TABLE hashes ADD COLUMN from_writing INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Runs `ALTER TABLE ... ADD COLUMN`; a column that is there already is
+/// what was wanted.
+fn add_column(db: &Connection, sql: &str) -> Result<(), rusqlite::Error> {
+    match db.execute_batch(sql) {
+        // `SqliteFailure` or, with the statement and offset, `SqlInputError`.
+        Err(err) if err.to_string().starts_with("duplicate column name") => Ok(()),
+        other => other,
     }
 }
 
@@ -751,17 +839,22 @@ mod tests {
             sha1: [7; 20],
             md5: None,
         };
+        let read = |h: Hashes| Some((h, HashedFrom::Files));
         assert_eq!(cache.hashes(&[file], false).unwrap(), None);
-        cache.put_hashes(&[file], &hashes).unwrap();
-        assert_eq!(cache.hashes(&[file], false).unwrap(), Some(hashes));
+        cache
+            .put_hashes(&[file], &hashes, HashedFrom::Files)
+            .unwrap();
+        assert_eq!(cache.hashes(&[file], false).unwrap(), read(hashes));
         // MD5 was not computed: a run that wants it reads the image again.
         assert_eq!(cache.hashes(&[file], true).unwrap(), None);
         let with_md5 = Hashes {
             md5: Some([9; 16]),
             ..hashes
         };
-        cache.put_hashes(&[file], &with_md5).unwrap();
-        assert_eq!(cache.hashes(&[file], true).unwrap(), Some(with_md5));
+        cache
+            .put_hashes(&[file], &with_md5, HashedFrom::Files)
+            .unwrap();
+        assert_eq!(cache.hashes(&[file], true).unwrap(), read(with_md5));
         // A touched file is a new key, and so is the same file on another
         // stick mounted at the same letter.
         let touched = HashedFile {
@@ -776,7 +869,7 @@ mod tests {
         assert_eq!(cache.hashes(&[other_stick], false).unwrap(), None);
         // Reading needs no write access and creates nothing.
         let reader = Cache::open_existing(dir.path()).unwrap().unwrap();
-        assert_eq!(reader.hashes(&[file], true).unwrap(), Some(with_md5));
+        assert_eq!(reader.hashes(&[file], true).unwrap(), read(with_md5));
         let empty = tempfile::tempdir().unwrap();
         assert!(Cache::open_existing(empty.path()).unwrap().is_none());
         assert_eq!(fs::read_dir(empty.path()).unwrap().count(), 0);
@@ -785,11 +878,124 @@ mod tests {
             modified: None,
             ..file
         };
-        cache.put_hashes(&[timeless], &hashes).unwrap();
+        cache
+            .put_hashes(&[timeless], &hashes, HashedFrom::Files)
+            .unwrap();
         assert_eq!(cache.hashes(&[timeless], false).unwrap(), None);
         // Clearing the covers keeps the hashes.
         cache.clear().unwrap();
         assert!(cache.hashes(&[file], true).unwrap().is_some());
+    }
+
+    #[test]
+    fn hashes_taken_while_writing_are_marked_until_the_files_are_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Path::new("E:/CD/SLUS_200.62.Game.iso");
+        let file = HashedFile {
+            volume: "7E1CD2C5|FAT32|31914983424",
+            path,
+            len: 2048,
+            modified: Some(5),
+        };
+        let hashes = Hashes {
+            size: 2048,
+            crc32: 1,
+            sha1: [2; 20],
+            md5: None,
+        };
+        // A cache from before the mark: its rows were read from the files.
+        {
+            let db = Connection::open(dir.path().join(MANIFEST)).unwrap();
+            db.execute_batch(
+                "CREATE TABLE hashes (files TEXT PRIMARY KEY, size INTEGER NOT NULL,
+                   crc32 TEXT NOT NULL, sha1 TEXT NOT NULL, md5 TEXT, hashed_at INTEGER NOT NULL);",
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO hashes VALUES (?1, 2048, '00000001', ?2, NULL, 0)",
+                params![files_key(&[file]).unwrap(), hex(&[2; 20])],
+            )
+            .unwrap();
+        }
+        let old = Cache::open_existing(dir.path()).unwrap().unwrap();
+        assert_eq!(
+            old.hashes(&[file], false).unwrap(),
+            Some((hashes, HashedFrom::Files))
+        );
+        drop(old);
+
+        // Opening it for writing adds the column and keeps the rows.
+        let cache = Cache::open(dir.path()).unwrap();
+        assert_eq!(
+            cache.hashes(&[file], false).unwrap(),
+            Some((hashes, HashedFrom::Files))
+        );
+        drop(cache);
+        let cache = Cache::open(dir.path()).unwrap();
+        cache
+            .put_hashes(&[file], &hashes, HashedFrom::Writing)
+            .unwrap();
+        assert_eq!(
+            cache.hashes(&[file], false).unwrap(),
+            Some((hashes, HashedFrom::Writing))
+        );
+        // Reading the files replaces the mark.
+        cache
+            .put_hashes(&[file], &hashes, HashedFrom::Files)
+            .unwrap();
+        assert_eq!(
+            cache.hashes(&[file], false).unwrap(),
+            Some((hashes, HashedFrom::Files))
+        );
+    }
+
+    /// Two processes open the same old cache at once: the one that waits
+    /// for the other's write lock finds the column added, and neither
+    /// fails ("duplicate column name", or busy).
+    #[test]
+    fn an_old_cache_opened_twice_at_once_is_migrated_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join(MANIFEST);
+        {
+            let db = Connection::open(&manifest).unwrap();
+            db.execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE hashes (files TEXT PRIMARY KEY, size INTEGER NOT NULL,
+                   crc32 TEXT NOT NULL, sha1 TEXT NOT NULL, md5 TEXT, hashed_at INTEGER NOT NULL);",
+            )
+            .unwrap();
+            db.execute_batch(SCHEMA).unwrap();
+        }
+        // The other process has added the column and not committed yet: the
+        // opener below finds no column, then waits for the write lock.
+        let other = Connection::open(&manifest).unwrap();
+        other
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 ALTER TABLE hashes ADD COLUMN from_writing INTEGER NOT NULL DEFAULT 0;",
+            )
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        let opener = std::thread::spawn(move || Cache::open(&path).map(drop));
+        std::thread::sleep(Duration::from_millis(300));
+        other.execute_batch("COMMIT").unwrap();
+        opener.join().unwrap().unwrap();
+        // And once more, migrated already.
+        let cache = Cache::open(dir.path()).unwrap();
+        assert_eq!(cache.stats().unwrap().0, 0);
+    }
+
+    #[test]
+    fn a_column_added_already_is_not_an_error() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        add_column(
+            &db,
+            "ALTER TABLE hashes ADD COLUMN from_writing INTEGER NOT NULL DEFAULT 0;",
+        )
+        .unwrap();
+        // Other errors still are.
+        assert!(add_column(&db, "ALTER TABLE nowhere ADD COLUMN x INTEGER;").is_err());
     }
 
     #[test]

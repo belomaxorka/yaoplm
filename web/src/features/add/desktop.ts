@@ -3,17 +3,18 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 /**
  * Native pickers and drag-and-drop exist only in the desktop app. The
  * modules are loaded lazily so the browser build never touches them.
+ * A picker's `filter` names its file types in the UI language.
  */
 
 /** What the importer takes (IMP-1, IMP-1b); zip and 7z open like folders. */
 export const IMAGE_EXTENSIONS = ["iso", "zso", "bin", "cue", "chd", "zip", "7z"];
 
-export async function pickFiles(): Promise<string[]> {
+export async function pickFiles(filter: string): Promise<string[]> {
   if (!isTauri()) return [];
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({
     multiple: true,
-    filters: [{ name: "PS2 images and archives", extensions: IMAGE_EXTENSIONS }],
+    filters: [{ name: filter, extensions: IMAGE_EXTENSIONS }],
   });
   if (!picked) return [];
   return Array.isArray(picked) ? picked : [picked];
@@ -22,12 +23,12 @@ export async function pickFiles(): Promise<string[]> {
 export const DAT_EXTENSIONS = ["dat", "xml", "zip"];
 
 /** A Redump DAT to import (META-2): the file redump.info serves, or its zip. */
-export async function pickDat(): Promise<string | null> {
+export async function pickDat(filter: string): Promise<string | null> {
   if (!isTauri()) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({
     multiple: false,
-    filters: [{ name: "Redump DAT", extensions: DAT_EXTENSIONS }],
+    filters: [{ name: filter, extensions: DAT_EXTENSIONS }],
   });
   return typeof picked === "string" ? picked : null;
 }
@@ -42,12 +43,12 @@ export async function pickFolder(): Promise<string | null> {
 export const IMAGE_PICK_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 
 /** One image file for a cover (ART-3). */
-export async function pickImage(): Promise<string | null> {
+export async function pickImage(filter: string): Promise<string | null> {
   if (!isTauri()) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({
     multiple: false,
-    filters: [{ name: "Images", extensions: IMAGE_PICK_EXTENSIONS }],
+    filters: [{ name: filter, extensions: IMAGE_PICK_EXTENSIONS }],
   });
   return typeof picked === "string" ? picked : null;
 }
@@ -56,12 +57,12 @@ export async function pickImage(): Promise<string | null> {
 export const PICTURE_SET_EXTENSIONS = ["zip", "7z", "tar"];
 
 /** Picture sets: OPL Manager's art backups, `art.tar`, or single pictures. */
-export async function pickPictureSets(): Promise<string[]> {
+export async function pickPictureSets(filter: string): Promise<string[]> {
   if (!isTauri()) return [];
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({
     multiple: true,
-    filters: [{ name: "Picture sets", extensions: [...PICTURE_SET_EXTENSIONS, ...IMAGE_PICK_EXTENSIONS] }],
+    filters: [{ name: filter, extensions: [...PICTURE_SET_EXTENSIONS, ...IMAGE_PICK_EXTENSIONS] }],
   });
   if (!picked) return [];
   return Array.isArray(picked) ? picked : [picked];

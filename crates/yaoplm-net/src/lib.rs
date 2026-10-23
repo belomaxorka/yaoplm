@@ -255,9 +255,7 @@ impl ArtService {
                     .await
                 {
                     // Several Redump names often lead to the same file.
-                    let same =
-                        |c: &Cover| std::fs::read(&c.png).ok() == std::fs::read(&cover.png).ok();
-                    if !found.iter().any(same) {
+                    if !found.iter().any(|c| same_picture(&c.png, &cover.png)) {
                         found.push(cover);
                     }
                 }
@@ -483,6 +481,15 @@ impl ArtService {
             },
         )?;
         self.cover_from(&record, kind, size, false, label)
+    }
+}
+
+/// Two PNGs with the same bytes. Files that cannot be read are never the
+/// same: two failed reads say nothing about the pictures.
+fn same_picture(a: &Path, b: &Path) -> bool {
+    match (std::fs::read(a), std::fs::read(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
     }
 }
 
@@ -1015,5 +1022,23 @@ mod tests {
         // No source has icons.
         let none = service.fetch_cover(&request(ArtKind::Ico, SIZE)).await;
         assert!(none.cover.is_none() && none.attempts.is_empty());
+    }
+
+    #[test]
+    fn pictures_are_the_same_only_when_both_are_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b, c) = (
+            dir.path().join("a.png"),
+            dir.path().join("b.png"),
+            dir.path().join("c.png"),
+        );
+        std::fs::write(&a, png(4, 4)).unwrap();
+        std::fs::write(&b, png(4, 4)).unwrap();
+        std::fs::write(&c, png(5, 4)).unwrap();
+        assert!(same_picture(&a, &b));
+        assert!(!same_picture(&a, &c));
+        let (gone, lost) = (dir.path().join("gone.png"), dir.path().join("lost.png"));
+        assert!(!same_picture(&gone, &lost));
+        assert!(!same_picture(&a, &gone));
     }
 }

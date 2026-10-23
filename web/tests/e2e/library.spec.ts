@@ -78,6 +78,10 @@ test("the game card shows warnings, CFG and keyboard navigation works", async ({
 test("a game is added from the server folders through the plan", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library/add");
+  // Covers on add have their own test (verify.spec): without them this plan
+  // does not depend on what the cache holds from other tests.
+  await page.getByTestId("covers-on-add").uncheck();
+  await expect(page.getByTestId("covers-on-add")).not.toBeChecked();
   await page.getByTestId("browse-server").click();
   const browser = page.getByTestId("folder-browser");
   await browser.getByRole("button", { name: "sources" }).click();

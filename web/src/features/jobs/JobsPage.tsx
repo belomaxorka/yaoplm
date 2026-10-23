@@ -193,10 +193,7 @@ function JobCard({ job }: { job: JobInfo }) {
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="job-plan">
               <span>
                 {pendingPlan.executable
-                  ? t("jobs.planReady", {
-                      title: phraseText(pendingPlan.titlePhrase, pendingPlan.title),
-                      count: pendingPlan.transactions.length,
-                    })
+                  ? t("jobs.planReady", { title: phraseText(pendingPlan.titlePhrase, pendingPlan.title) })
                   : t("jobs.planEmpty", { title: phraseText(pendingPlan.titlePhrase, pendingPlan.title) })}
               </span>
               <Button

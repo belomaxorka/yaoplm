@@ -651,7 +651,9 @@ impl Api {
                     Some(kinds) if !kinds.is_empty() => kinds.into_iter().map(Into::into).collect(),
                     _ => vec![art::art_kind(kind.as_deref())?],
                 };
-                wanted.dedup();
+                // Each type once, in the order first named.
+                let mut seen = std::collections::HashSet::new();
+                wanted.retain(|kind| seen.insert(*kind));
                 let sources = art::source_configs(&self.paths, &sources.unwrap_or_default())?;
                 // The plan may be replaced while the search runs: its games
                 // are read now. Games being added get their front cover.
@@ -670,11 +672,16 @@ impl Api {
                     kinds: wanted,
                     import,
                 };
+                let title = Said::title(if params.kinds == [ArtKind::Cov] {
+                    "findCovers"
+                } else {
+                    "findPictures"
+                });
                 let net = Arc::clone(&self.net);
                 let plans = self.plans.clone();
                 let job = self.jobs.spawn(
                     JobKind::FetchArt,
-                    &Said::title("findCovers"),
+                    &title,
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| art::fetch_job(ctx, &net, &plans, params),

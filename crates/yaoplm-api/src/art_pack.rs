@@ -6,14 +6,27 @@
 //! the device are taken (the owner's decision, 2026-10-23): a backup holds
 //! tens of thousands of games. Names are read as OPL names art and as OPL
 //! Manager numbers screenshots (`yaoplm_formats::art::pack_picture`),
-//! wherever they sit in the set. Every picture is transcoded to the
-//! profile's size like a downloaded one, and the job ends with a plan:
-//! nothing is written before the user confirms it, and a replaced picture
-//! keeps a copy in the device's backup folder (ADR-0025). OPL Manager's
-//! private art server is never asked (rule 3): the files come from the
-//! user.
+//! wherever they sit in the set. A file that is not wanted (a type not
+//! asked for, a game not on the device, a slot the device fills, a better
+//! picture found already) is passed over unread; in a folder it is not
+//! even opened.
+//!
+//! What cannot be read (ADR-0033). Lenient, in a folder and a zip, where
+//! each picture is read on its own: a picture that cannot be opened, read
+//! or unpacked (a damaged entry, a compression method there is no decoder
+//! for, encryption) and a subfolder that cannot be listed are skipped with
+//! their path, and the rest of the set is taken. Fatal, ending the job: a
+//! tar or 7z stream that breaks, since nothing after the break can be
+//! found; a zip whose central directory is broken; a set that cannot be
+//! opened at all.
+//!
+//! Every picture is transcoded to the profile's size like a downloaded
+//! one, and the job ends with a plan: nothing is written before the user
+//! confirms it, and a replaced picture keeps a copy in the device's backup
+//! folder (ADR-0025). OPL Manager's private art server is never asked
+//! (rule 3): the files come from the user.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -107,6 +120,32 @@ struct Chosen {
     item: ArtItem,
 }
 
+/// A file of a folder set, opened on its first read. A file that is not
+/// wanted (a type not asked for, another game, a slot the device fills, a
+/// better picture found already) is never read, so one of those that
+/// cannot be opened (locked, no access) is counted or passed over like the
+/// rest instead of reported (ADR-0033).
+struct OpenOnRead<'a> {
+    path: &'a Path,
+    file: Option<File>,
+}
+
+impl<'a> OpenOnRead<'a> {
+    fn new(path: &'a Path) -> Self {
+        Self { path, file: None }
+    }
+}
+
+impl Read for OpenOnRead<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let file = match &mut self.file {
+            Some(file) => file,
+            None => self.file.insert(File::open(self.path)?),
+        };
+        file.read(buf)
+    }
+}
+
 /// Collects the pictures of a set while it is read.
 struct Collector<'a> {
     ctx: &'a JobContext,
@@ -118,13 +157,18 @@ struct Collector<'a> {
     skipped: Vec<Skipped>,
     /// Pictures of games that are not on the device.
     other_games: usize,
-    /// Pictures the device has already (kept).
-    present: usize,
+    /// Slots the device fills already (kept), whatever number of sets
+    /// hold a picture for them.
+    present: HashSet<(String, ArtKind)>,
     files: u64,
+    /// A picture that cannot be read is skipped rather than ending the
+    /// set: in a folder and a zip each file is read on its own, while in a
+    /// tar or a solid 7z the stream itself is broken.
+    lenient: bool,
 }
 
 impl Collector<'_> {
-    /// Looks at one file of a set: `label` names it for the log.
+    /// Looks at one file of a set; `name` is its path inside the set.
     fn file(&mut self, set: &str, name: &str, size: u64, data: &mut dyn Read) -> io::Result<()> {
         self.files += 1;
         if self.ctx.is_cancelled() {
@@ -141,11 +185,11 @@ impl Collector<'_> {
             self.other_games += 1;
             return Ok(());
         };
+        let slot = (target.startup.to_lowercase(), picture.kind);
         if !self.params.overwrite && target.present.contains(&picture.kind) {
-            self.present += 1;
+            self.present.insert(slot);
             return Ok(());
         }
-        let slot = (target.startup.to_lowercase(), picture.kind);
         let rank = rank(&picture.extension);
         if self.chosen.get(&slot).is_some_and(|c| c.rank <= rank) {
             return Ok(());
@@ -157,7 +201,16 @@ impl Collector<'_> {
             self.skip(&label, Said::error("imageTooLarge").with("path", &label));
             return Ok(());
         }
-        data.take(MAX_PICTURE).read_to_end(&mut bytes)?;
+        if let Err(err) = data.take(MAX_PICTURE).read_to_end(&mut bytes) {
+            if !self.lenient {
+                return Err(err);
+            }
+            self.skip(
+                &label,
+                Said::notice("pictureUnreadable").with("error", err.to_string()),
+            );
+            return Ok(());
+        }
         let size = recommended_size(
             self.profile,
             ArtSubject::Game {
@@ -207,8 +260,32 @@ impl Collector<'_> {
         });
     }
 
-    fn folder(&mut self, set: &str, dir: &Path, depth: usize) -> io::Result<()> {
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)?
+    /// Reads the folder `dir` of the folder set at `base`. Only the set's
+    /// own folder must be readable: a subfolder or a file that is not (the
+    /// "System Volume Information" of an NTFS drive) is skipped with its
+    /// path.
+    fn folder(&mut self, set: &str, base: &Path, dir: &Path, depth: usize) -> io::Result<()> {
+        // `ART/SLUS_200.62_COV.png`: where a file is in the set.
+        let inside = |path: &Path| {
+            path.strip_prefix(base)
+                .unwrap_or(path)
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/")
+        };
+        let listing = match std::fs::read_dir(dir) {
+            Ok(listing) => listing,
+            Err(err) if depth > 0 => {
+                self.skip(
+                    &format!("{set}: {}", inside(dir)),
+                    Said::notice("unreadable").with("error", err.to_string()),
+                );
+                return Ok(());
+            }
+            Err(err) => return Err(err),
+        };
+        let mut entries: Vec<PathBuf> = listing
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| {
@@ -218,21 +295,30 @@ impl Collector<'_> {
             .collect();
         entries.sort();
         for path in entries {
-            let meta = std::fs::symlink_metadata(&path)?;
+            let name = inside(&path);
+            let meta = match std::fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(err) => {
+                    self.skip(
+                        &format!("{set}: {name}"),
+                        Said::notice("unreadable").with("error", err.to_string()),
+                    );
+                    continue;
+                }
+            };
             if meta.is_dir() {
                 if depth < MAX_DEPTH {
-                    self.folder(set, &path, depth + 1)?;
+                    self.folder(set, base, &path, depth + 1)?;
                 }
             } else if meta.is_file() {
-                let name = path
+                let file_name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                // Open only what may be a picture: a folder set can hold
-                // the user's whole collection.
-                if pack_picture(&name).is_some() {
-                    let mut file = File::open(&path)?;
-                    self.file(set, &name, meta.len(), &mut file)?;
+                // Only what may be a picture: a folder set can hold the
+                // user's whole collection.
+                if pack_picture(&file_name).is_some() {
+                    self.file(set, &name, meta.len(), &mut OpenOnRead::new(&path))?;
                 }
             }
         }
@@ -252,8 +338,10 @@ impl Collector<'_> {
                     .with("error", err.to_string()),
             )
         };
-        let result: Result<(), String> = match set_kind(path) {
-            Some(SetKind::Folder) => self.folder(&set, path, 0).map_err(|e| e.to_string()),
+        let kind = set_kind(path);
+        self.lenient = matches!(kind, Some(SetKind::Folder | SetKind::Archive(Kind::Zip)));
+        let result: Result<(), String> = match kind {
+            Some(SetKind::Folder) => self.folder(&set, path, path, 0).map_err(|e| e.to_string()),
             Some(SetKind::Picture) => File::open(path)
                 .and_then(|mut f| {
                     let size = f.metadata()?.len();
@@ -307,12 +395,14 @@ pub(crate) fn import_job(
         chosen: HashMap::new(),
         skipped: Vec::new(),
         other_games: 0,
-        present: 0,
+        present: HashSet::new(),
         files: 0,
+        lenient: false,
     };
     for path in &params.sources {
         collector.read_set(path)?;
     }
+    let present = collector.present.len();
     let mut chosen: Vec<Chosen> = collector.chosen.into_values().collect();
     chosen.sort_by(|a, b| {
         (a.item.title.as_str(), a.item.kind.suffix())
@@ -323,17 +413,16 @@ pub(crate) fn import_job(
     let mut plan = plan_set_art(&fs, &HostSources, &items, params.overwrite)
         .map_err(ApiError::internal_error)?;
     plan.skipped.extend(collector.skipped);
-    if collector.present > 0 {
-        plan.notices.push(Notice::info(
-            Said::notice("artPresent").count(collector.present),
-        ));
+    if present > 0 {
+        plan.notices
+            .push(Notice::info(Said::notice("artPresent").count(present)));
     }
     if collector.other_games > 0 {
         plan.notices.push(Notice::info(
             Said::notice("otherGamesLeftOut").count(collector.other_games),
         ));
     }
-    if items.is_empty() && collector.present == 0 {
+    if items.is_empty() && present == 0 {
         plan.notices.retain(|n| n.code != "nothingToWrite");
         plan.notices
             .push(Notice::error(Said::notice("nothingForTheseGames")));

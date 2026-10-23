@@ -1,8 +1,9 @@
 import { ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { GameVerification } from "@/api/generated/GameVerification";
+import type { HashValues } from "@/api/generated/HashValues";
 import type { VerificationReport } from "@/api/generated/VerificationReport";
 import { Badge } from "@/components/ui/badge";
 import { statusColours, statusCounts } from "@/features/verify/dump";
@@ -49,6 +50,7 @@ export function VerificationResults({
 function ResultRow({ game }: { game: GameVerification }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const trackId = useId();
   return (
     <li className="border-b p-2 last:border-0" data-testid="verify-row" data-status={game.status}>
       <div className="flex flex-wrap items-center gap-2">
@@ -96,37 +98,41 @@ function ResultRow({ game }: { game: GameVerification }) {
         {game.error && <span className="text-destructive">{phraseText(game.errorPhrase, game.error)}</span>}
       </div>
       {open && game.hashes && (
-        <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5 rounded-md bg-muted/50 p-2 font-mono text-xs">
-          <dt className="text-muted-foreground">{t("game.size")}</dt>
-          <dd>
-            {formatBytes(game.hashes.size)} ({game.hashes.size})
-          </dd>
-          <dt className="text-muted-foreground">CRC-32</dt>
-          <dd className="wrap-anywhere">{game.hashes.crc32}</dd>
-          <dt className="text-muted-foreground">SHA-1</dt>
-          <dd className="wrap-anywhere">{game.hashes.sha1}</dd>
-          {game.hashes.md5 && (
-            <>
-              <dt className="text-muted-foreground">MD5</dt>
-              <dd className="wrap-anywhere">{game.hashes.md5}</dd>
-            </>
-          )}
+        <div className="mt-2 flex flex-col gap-2 rounded-md bg-muted/50 p-2 text-xs">
+          <HashList hashes={game.hashes} />
           {game.track && (
-            <>
-              <dt className="col-span-2 mt-1 font-sans text-muted-foreground">{t("dump.trackHashes")}</dt>
-              <dt className="text-muted-foreground">{t("game.size")}</dt>
-              <dd>
-                {formatBytes(game.track.size)} ({game.track.size})
-              </dd>
-              <dt className="text-muted-foreground">CRC-32</dt>
-              <dd className="wrap-anywhere">{game.track.crc32}</dd>
-              <dt className="text-muted-foreground">SHA-1</dt>
-              <dd className="wrap-anywhere">{game.track.sha1}</dd>
-            </>
+            <section aria-labelledby={trackId}>
+              <h4 id={trackId} className="mb-0.5 text-muted-foreground">
+                {t("dump.trackHashes")}
+              </h4>
+              <HashList hashes={game.track} />
+            </section>
           )}
-        </dl>
+        </div>
       )}
     </li>
+  );
+}
+
+function HashList({ hashes }: { hashes: HashValues }) {
+  const { t } = useTranslation();
+  return (
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5 font-mono">
+      <dt className="text-muted-foreground">{t("game.size")}</dt>
+      <dd>
+        {formatBytes(hashes.size)} ({hashes.size})
+      </dd>
+      <dt className="text-muted-foreground">CRC-32</dt>
+      <dd className="wrap-anywhere">{hashes.crc32}</dd>
+      <dt className="text-muted-foreground">SHA-1</dt>
+      <dd className="wrap-anywhere">{hashes.sha1}</dd>
+      {hashes.md5 && (
+        <>
+          <dt className="text-muted-foreground">MD5</dt>
+          <dd className="wrap-anywhere">{hashes.md5}</dd>
+        </>
+      )}
+    </dl>
   );
 }
 

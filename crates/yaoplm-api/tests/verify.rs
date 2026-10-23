@@ -9,6 +9,7 @@ use std::io::Cursor;
 
 use serde_json::{Value, json};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
+use yaoplm_api::library::GameFormat;
 use yaoplm_api::verify::{GameVerification, UnknownReason, VerificationReport, VerifyStatus};
 use yaoplm_api::{Api, JobId};
 use yaoplm_formats::Media;
@@ -289,8 +290,10 @@ fn junk_dat_is_refused() {
 }
 
 /// Games added with `verify` (GAME-5): hashed while written, judged at
-/// once, and the hashes cached under the new files, so later checks and
-/// scans read nothing. A CD from its raw BIN is judged by the track.
+/// once, and the hashes cached under the new files, marked as taken while
+/// writing: a scan shows the verdicts without reading, an explicit check
+/// reads each game once (ADR-0030). A CD from its raw BIN is judged by the
+/// track.
 #[test]
 fn checks_while_adding_games() {
     use yaoplm_test_support::bincue::{RawMode, to_bin};
@@ -369,23 +372,8 @@ fn checks_while_adding_games() {
         .count();
     assert_eq!(verdicts, 3);
 
-    // The cache already has every image under its new file.
-    let (verified, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
-    assert_eq!(verified.games.len(), 3);
-    assert!(verified.games.iter().all(|g| g.cached), "{verified:?}");
-    let cd_game = game(&verified, "SLUS_200.62");
-    assert_eq!(cd_game.status, VerifyStatus::Verified);
-    assert!(cd_game.track.is_some());
-
-    // Read again: the ISO hashes lead back to the track by their content.
-    let (fresh, _) = verify(
-        &api,
-        json!({"type": "VerifyGames", "root": device, "fresh": true}),
-    );
-    let cd_game = game(&fresh, "SLUS_200.62");
-    assert!(!cd_game.cached);
-    assert_eq!(cd_game.status, VerifyStatus::Verified);
-
+    // The scan has every verdict at once, from the hashes taken while
+    // writing.
     let scan = run(&api, json!({"type": "ScanLibrary", "root": device}));
     let Some(JobResult::Library(library)) = scan.result else {
         panic!("unexpected result {:?}", scan.result);
@@ -401,6 +389,20 @@ fn checks_while_adding_games() {
     assert_eq!(dump("SLUS_200.62").status, VerifyStatus::Verified);
     assert!(dump("SLUS_200.62").by_track);
     assert!(!dump("SLUS_212.18").by_track);
+    assert_eq!(dump("SLPM_999.99").reason, Some(UnknownReason::NotListed));
+
+    // Those hashes came from the sources, not from the device: the check
+    // reads every game once, then answers from the cache.
+    let (verified, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
+    assert_eq!(verified.games.len(), 3);
+    assert!(verified.games.iter().all(|g| !g.cached), "{verified:?}");
+    // The ISO read from the device leads back to the track by its content.
+    let cd_game = game(&verified, "SLUS_200.62");
+    assert_eq!(cd_game.status, VerifyStatus::Verified);
+    assert!(cd_game.by_track && cd_game.track.is_some());
+    let (again, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
+    assert!(again.games.iter().all(|g| g.cached), "{again:?}");
+    assert_eq!(game(&again, "SLUS_200.62").status, VerifyStatus::Verified);
 
     // Without `verify` nothing is hashed.
     let device2 = dir.path().join("stick2");
@@ -417,4 +419,106 @@ fn checks_while_adding_games() {
         panic!("unexpected result");
     };
     assert!(report.checks.is_empty());
+}
+
+/// The hashes taken while writing `ul` chunks and a ZSO land under the
+/// keys a later check computes from the files (every chunk, the ZSO
+/// itself), and a CD written as `ul` from its BIN keeps its track.
+#[test]
+fn checks_while_adding_ul_and_zso_games() {
+    use yaoplm_test_support::bincue::{RawMode, to_bin};
+
+    let dir = tempfile::tempdir().unwrap();
+    let device = dir.path().join("stick");
+    let cds = dir.path().join("cds");
+    let dvds = dir.path().join("dvds");
+    for folder in [&device, &cds, &dvds] {
+        fs::create_dir_all(folder).unwrap();
+    }
+    let cd = Variant::Retail.build().to_vec();
+    let bin = to_bin(&cd, RawMode::Mode2_2352, 0);
+    fs::write(cds.join("Cd Game.bin"), &bin).unwrap();
+    fs::write(
+        cds.join("Cd Game.cue"),
+        "FILE \"Cd Game.bin\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n",
+    )
+    .unwrap();
+    let dvd = Variant::Dvd9.build().to_vec();
+    fs::write(dvds.join("Dvd Game.iso"), &dvd).unwrap();
+    let dat = DatBuilder::new()
+        .iso("Dvd9 (USA)", Some("SLUS 21218"), &dvd)
+        .bin_cue("Retail (USA)", Some("SLUS-20062"), &bin)
+        .build();
+    let dat_path = dir.path().join("redump.dat");
+    fs::write(&dat_path, dat).unwrap();
+    let api = Api::new().with_data_dir(dir.path().join("data"));
+    run(&api, json!({"type": "UpdateRedump", "file": dat_path}));
+
+    let mut checks = Vec::new();
+    for import in [
+        json!({"type": "PlanImport", "root": device, "sources": [cds], "layout": "ul", "verify": true}),
+        json!({"type": "PlanImport", "root": device, "sources": [dvds], "compress": true, "verify": true}),
+    ] {
+        let plan = call(&api, import);
+        assert_eq!(plan["executable"], true, "{plan}");
+        let info = run(
+            &api,
+            json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+        );
+        let Some(JobResult::Execution(report)) = info.result else {
+            panic!("unexpected result {:?}", info.result);
+        };
+        assert!(report.error.is_none(), "{report:?}");
+        checks.extend(report.checks);
+    }
+    assert_eq!(checks.len(), 2, "{checks:?}");
+    let ul = checks.iter().find(|c| c.startup == "SLUS_200.62").unwrap();
+    assert_eq!(ul.format, GameFormat::UL);
+    assert_eq!(ul.ul_index, Some(0));
+    assert!(ul.path.ends_with("ul.cfg"), "{}", ul.path);
+    assert_eq!(ul.status, VerifyStatus::Verified);
+    assert!(ul.by_track);
+    let zso = checks.iter().find(|c| c.startup == "SLUS_212.18").unwrap();
+    assert_eq!(zso.format, GameFormat::ZSO);
+    assert!(zso.path.ends_with(".zso"), "{}", zso.path);
+    assert_eq!(zso.status, VerifyStatus::Verified);
+
+    // The scan finds both under the keys of the files it sees.
+    let scan = |api: &Api| {
+        let scan = run(api, json!({"type": "ScanLibrary", "root": device}));
+        let Some(JobResult::Library(library)) = scan.result else {
+            panic!("unexpected result {:?}", scan.result);
+        };
+        library
+    };
+    let library = scan(&api);
+    let dump = |startup: &str| {
+        library
+            .games
+            .iter()
+            .find(|g| g.startup == startup)
+            .and_then(|g| g.dump.clone())
+            .unwrap_or_else(|| panic!("{startup} has no verdict"))
+    };
+    assert_eq!(dump("SLUS_200.62").status, VerifyStatus::Verified);
+    assert!(dump("SLUS_200.62").by_track);
+    assert_eq!(dump("SLUS_212.18").status, VerifyStatus::Verified);
+
+    // The check reads both once, then answers from the cache.
+    let (first, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
+    assert!(first.games.iter().all(|g| !g.cached), "{first:?}");
+    let (second, _) = verify(&api, json!({"type": "VerifyGames", "root": device}));
+    assert!(second.games.iter().all(|g| g.cached), "{second:?}");
+    let ul = game(&second, "SLUS_200.62");
+    assert_eq!(ul.status, VerifyStatus::Verified);
+    assert!(ul.by_track);
+    assert_eq!(game(&second, "SLUS_212.18").status, VerifyStatus::Verified);
+    // A later scan still judges the CD by its track.
+    let library = scan(&api);
+    let ul_game = library
+        .games
+        .iter()
+        .find(|g| g.startup == "SLUS_200.62")
+        .unwrap();
+    assert!(ul_game.dump.as_ref().unwrap().by_track);
 }

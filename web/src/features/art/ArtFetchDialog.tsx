@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { Ban, Globe, ImageDown, Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,11 +33,20 @@ import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
+/** What the user chose in the form. */
+interface FetchForm {
+  kinds: ArtType[];
+  /** `null` until the user picks one: the default follows the game in `only`. */
+  scope: ArtScope | null;
+}
+
+const freshForm = (): FetchForm => ({ kinds: ["COV"], scope: null });
+
 /**
- * "Download covers" (ART-1, ART-4): pick the scope, start the FetchArt
- * job, watch its per-game log, then confirm the plan it produced. The
- * network is touched only after Start; nothing is written before the plan
- * is confirmed (SPEC §6).
+ * "Download pictures" (ART-1, ART-4): pick the types and the scope, start
+ * the FetchArt job, watch its per-game log, then confirm the plan it
+ * produced. The network is touched only after Start; nothing is written
+ * before the plan is confirmed (SPEC §6).
  */
 export function ArtFetchDialog({
   root,
@@ -53,7 +63,13 @@ export function ArtFetchDialog({
   only?: Game;
 }) {
   const { t } = useTranslation();
-  const flow = usePlan({ onExecuted: () => onOpenChange(false) });
+  // Kept here, not in the body: cancelling the plan brings the form back as it was.
+  const [form, setForm] = useState<FetchForm>(freshForm);
+  const close = () => {
+    setForm(freshForm());
+    onOpenChange(false);
+  };
+  const flow = usePlan({ onExecuted: close });
   const [running, setRunning] = useState(false);
 
   return (
@@ -61,8 +77,8 @@ export function ArtFetchDialog({
       <Dialog
         open={open && flow.plan === null && !flow.pending}
         onOpenChange={(next) => {
-          if (!next && running) return;
-          onOpenChange(next);
+          if (next) onOpenChange(true);
+          else if (!running) close();
         }}
       >
         <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-xl" data-testid="art-fetch-dialog">
@@ -70,14 +86,16 @@ export function ArtFetchDialog({
             <DialogTitle>{only ? t("art.fetchOneTitle", { title: only.title }) : t("art.fetchTitle")}</DialogTitle>
             <DialogDescription>{t("art.fetchDescription")}</DialogDescription>
           </DialogHeader>
-          {/* Mounted only while open, so every opening starts afresh. */}
+          {/* Mounted only while open; closing resets the form, so every opening starts afresh. */}
           <FetchBody
             root={root}
             games={games}
             only={only}
+            form={form}
+            onFormChange={setForm}
             onRunning={setRunning}
             onPlan={(plan) => flow.adopt(plan)}
-            onClose={() => onOpenChange(false)}
+            onClose={close}
           />
         </DialogContent>
       </Dialog>
@@ -90,6 +108,8 @@ function FetchBody({
   root,
   games,
   only,
+  form,
+  onFormChange,
   onRunning,
   onPlan,
   onClose,
@@ -97,6 +117,8 @@ function FetchBody({
   root: string;
   games: readonly Game[];
   only?: Game;
+  form: FetchForm;
+  onFormChange: (change: (form: FetchForm) => FetchForm) => void;
   onRunning: (running: boolean) => void;
   onPlan: (plan: PlanView) => void;
   onClose: () => void;
@@ -106,10 +128,12 @@ function FetchBody({
   const { settings } = useSettings();
   const { jobs, cancel } = useJobs();
   const ids = useId();
-  const [scope, setScope] = useState<ArtScope>(only && hasCover(only) ? "all" : "missing");
+  const { kinds } = form;
+  const scope = form.scope ?? (only && hasCover(only) ? "all" : "missing");
+  const setScope = (value: ArtScope) => onFormChange((f) => ({ ...f, scope: value }));
+  const setKinds = (change: (kinds: ArtType[]) => ArtType[]) => onFormChange((f) => ({ ...f, kinds: change(f.kinds) }));
   const fetchable = useFetchableTypes();
-  const [kinds, setKinds] = useState<ArtType[]>(["COV"]);
-  const chosen = kinds.filter((kind) => fetchable.has(kind));
+  const chosen = kinds.filter((kind) => fetchable.types.has(kind));
   const coversOnly = chosen.length === 1 && chosen[0] === "COV";
   const [jobId, setJobId] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +185,7 @@ function FetchBody({
             <legend className="mb-2 text-sm font-medium">{t("art.kindsLegend")}</legend>
             <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
               {artTypes
-                .filter((kind) => fetchable.has(kind))
+                .filter((kind) => fetchable.types.has(kind))
                 .map((kind) => (
                   <li key={kind}>
                     <Label htmlFor={`${ids}-kind-${kind}`} className="font-normal">
@@ -178,6 +202,20 @@ function FetchBody({
                   </li>
                 ))}
             </ul>
+            {/* Switched-off sources are named in the sources box below. */}
+            {fetchable.blocked && fetchable.blocked.why !== "noSources" && (
+              <p
+                className={cn(
+                  "flex items-center gap-2 text-sm",
+                  fetchable.blocked.why === "failed" ? "text-destructive" : "text-muted-foreground",
+                )}
+                role={fetchable.blocked.why === "failed" ? "alert" : "status"}
+                data-testid="art-kinds-unavailable"
+              >
+                {fetchable.blocked.why === "loading" && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                {fetchable.blocked.text}
+              </p>
+            )}
             <p className="mt-1.5 text-xs text-muted-foreground">{t("art.kindsHint")}</p>
           </fieldset>
           {/* One game: the dialog title names it, there is nothing to choose. */}

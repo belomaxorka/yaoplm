@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
 import { ClipboardPaste, FileImage, ImageDown, ImageOff, Loader2, Replace } from "lucide-react";
-import { type DragEvent, useEffect, useState } from "react";
+import { type DragEvent, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ArtInput } from "@/api/generated/ArtInput";
@@ -35,6 +35,9 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const fetchable = useFetchableTypes();
+  // Every disabled Download has the same reason at any one time.
+  const unavailable = fetchable.blocked?.text ?? t("art.noSourceForKind");
+  const unavailableId = useId();
   const [variantsFor, setVariantsFor] = useState<ArtType | null>(null);
   const [browseFor, setBrowseFor] = useState<ArtType | null>(null);
   const [hovering, setHovering] = useState<ArtType | "any" | null>(null);
@@ -103,7 +106,8 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {artTypes.map((kind) => {
           const art = artOf(game, kind);
-          const canFetch = fetchable.has(kind);
+          const canFetch = fetchable.types.has(kind);
+          const kindName = t(`art.kinds.${kind}`);
           const onDrop = (event: DragEvent<HTMLLIElement>) => {
             event.preventDefault();
             setHovering(null);
@@ -149,7 +153,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                 )}
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{t(`art.kinds.${kind}`)}</div>
+                <div className="truncate text-sm font-medium">{kindName}</div>
                 <div className="truncate font-mono text-xs text-muted-foreground" title={art?.path}>
                   {art
                     ? art.width !== null && art.height !== null
@@ -163,8 +167,9 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                   size="icon-sm"
                   variant="outline"
                   disabled={!canFetch}
-                  title={canFetch ? t("art.downloadKind") : t("art.noSourceForKind")}
-                  aria-label={`${t("art.downloadKind")}: ${t(`art.kinds.${kind}`)}`}
+                  title={canFetch ? t("art.downloadKind") : unavailable}
+                  aria-label={t("art.downloadKindLabel", { kind: kindName })}
+                  aria-describedby={canFetch ? undefined : unavailableId}
                   onClick={() => setVariantsFor(kind)}
                   data-testid={`art-download-${kind}`}
                 >
@@ -176,7 +181,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                       size="icon-sm"
                       variant="outline"
                       title={t("art.replace")}
-                      aria-label={`${t("art.replace")} ${t(`art.kinds.${kind}`)}`}
+                      aria-label={t("art.replaceKindLabel", { kind: kindName })}
                       data-testid={`art-replace-${kind}`}
                     >
                       <Replace aria-hidden />
@@ -185,7 +190,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem
                       onSelect={() => {
-                        if (desktop) void pickImage().then((path) => path && setArt(kind, { kind: "file", path }));
+                        if (desktop) void pickImage(t("art.imagesFilter")).then((path) => path && setArt(kind, { kind: "file", path }));
                         else setBrowseFor(kind);
                       }}
                       data-testid={`art-from-file-${kind}`}
@@ -205,7 +210,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                     variant="outline"
                     className="text-destructive"
                     title={t("art.delete")}
-                    aria-label={`${t("art.delete")}: ${t(`art.kinds.${kind}`)}`}
+                    aria-label={t("art.deleteKindLabel", { kind: kindName })}
                     onClick={() => void flow.request({ type: "DeleteArt", root, startup: game.startup, kind })}
                     data-testid={`art-delete-${kind}`}
                   >
@@ -218,6 +223,10 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
         })}
       </ul>
       <p className="text-xs text-muted-foreground">{desktop ? t("art.dropHintDesktop") : t("art.dropHintBrowser")}</p>
+      {/* Read as the description of a disabled Download, not on its own. */}
+      <span id={unavailableId} hidden>
+        {unavailable}
+      </span>
       {notice && (
         <p className="text-xs text-destructive" role="alert">
           {notice}

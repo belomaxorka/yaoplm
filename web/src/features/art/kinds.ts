@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
 import type { ArtType } from "@/api/generated/ArtType";
 import { attribution } from "@/api/rpc";
+import { enabledSources } from "@/features/art/sources";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 /** Picture types in the order the game card shows them (SPEC §5.4.1). */
@@ -23,18 +26,37 @@ export const artAspect: Record<ArtType, number> = {
   BG: 640 / 480,
 };
 
+export interface FetchableTypes {
+  /** The types the enabled sources have; empty while `blocked`. */
+  types: ReadonlySet<ArtType>;
+  /**
+   * Why no type can be downloaded now, the same for every type: the
+   * sources' types are still loading or failed to load, or every source
+   * is switched off.
+   */
+  blocked: { why: "loading" | "failed" | "noSources"; text: string } | null;
+}
+
 /**
  * The types the enabled cover sources have (the core lists them per
  * source in the About data); the rest come from files and picture sets.
  */
-export function useFetchableTypes(): ReadonlySet<ArtType> {
+export function useFetchableTypes(): FetchableTypes {
+  const { t } = useTranslation();
   const { transport } = useApi();
   const { settings } = useSettings();
   const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport), staleTime: Infinity });
+  if (enabledSources(settings).length === 0) {
+    return { types: new Set(), blocked: { why: "noSources", text: t("art.noSources") } };
+  }
+  if (about.isPending) return { types: new Set(), blocked: { why: "loading", text: t("art.sourcesLoading") } };
+  if (about.isError) {
+    return { types: new Set(), blocked: { why: "failed", text: t("art.sourcesFailed", { error: errorText(about.error) }) } };
+  }
   const types = new Set<ArtType>();
-  for (const source of about.data?.art ?? []) {
+  for (const source of about.data.art) {
     const enabled = settings.artSources[source.id as keyof typeof settings.artSources]?.enabled ?? false;
     if (enabled) for (const kind of source.kinds) types.add(kind);
   }
-  return types;
+  return { types, blocked: null };
 }

@@ -156,7 +156,8 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
   await expect(plan.getByTestId("plan-skipped")).toContainText("SLUS_200.62 Retail Game (LGO)");
   await page.keyboard.press("Escape");
   await page.goto("/jobs");
-  const job = page.getByTestId("job-card").filter({ hasText: "Cover search" }).first();
+  // Not covers only: the job is a picture search.
+  const job = page.getByTestId("job-card").filter({ hasText: "Picture search" }).first();
   await job.getByRole("button", { name: /^Log/ }).click();
   await expect(job.getByTestId("job-log")).toContainText("Logo");
 });
@@ -184,8 +185,8 @@ test("picture sets fill the games on the device", async ({ page, request }) => {
   await expect(plan).toContainText("ART/SLUS_200.62_SCR.png");
   await expect(plan).toContainText("ART/SLUS_212.18_COV2.png");
   await expect(plan).not.toContainText("SLUS_212.18_COV.png");
-  await expect(plan).toContainText("Already on the device and left alone: 1");
-  await expect(plan).toContainText("Left out, for games not on this device: 1");
+  await expect(plan).toContainText("Kept pictures the device already has: 1");
+  await expect(plan).toContainText("Skipped pictures of games not on this device: 1");
   await plan.getByTestId("plan-confirm").click();
   await expect(plan).toBeHidden();
 

@@ -24,7 +24,7 @@ use yaoplm_device::HostFs;
 use yaoplm_formats::ul_cfg::UlCfg;
 use yaoplm_hash::redump::{Candidate, Data, RedumpIndex, Unknown, Verdict};
 use yaoplm_hash::{Algorithms, HashError, Hashes};
-use yaoplm_net::cache::{Cache, HashedFile};
+use yaoplm_net::cache::{Cache, HashedFile, HashedFrom};
 use yaoplm_net::redump::{DatInfo, RedumpStore, Update};
 
 use crate::art::Net;
@@ -251,8 +251,9 @@ pub(crate) struct Outcome {
 
 /// The verdict for an image with `hashes`. A CD added from its raw dump is
 /// judged by the `track` hashed then: the ISO keeps 2048 of every 2352
-/// bytes and can never hash like Redump's BIN (ADR-0026). A match of
-/// either proves the image; without one, the track says more about a CD.
+/// bytes and can never hash like Redump's BIN (ADR-0026, ADR-0030). A
+/// match of either proves the image; without one, the track says more
+/// about a CD.
 pub(crate) fn outcome(
     index: Option<&RedumpIndex>,
     hashes: &Hashes,
@@ -521,7 +522,10 @@ pub(crate) fn verify_job(
             (Ok(files), Some(cache)) if !params.fresh => cache
                 .hashes(&keys(&volume, files), params.md5)
                 .ok()
-                .flatten(),
+                .flatten()
+                // Hashes taken while the game was written say nothing about
+                // what the device holds: the check reads it once (ADR-0030).
+                .and_then(|(hashes, from)| (from == HashedFrom::Files).then_some(hashes)),
             _ => None,
         };
         if cached.is_none()
@@ -567,7 +571,8 @@ pub(crate) fn verify_job(
                     Ok(hashes) => {
                         // The cache only saves time; a failure costs a re-read.
                         if let Some(cache) = cache {
-                            let _ = cache.put_hashes(&keys(&volume, list), &hashes);
+                            let _ =
+                                cache.put_hashes(&keys(&volume, list), &hashes, HashedFrom::Files);
                         }
                         Ok(hashes)
                     }
@@ -643,8 +648,9 @@ pub(crate) fn verify_job(
 }
 
 /// Fills `Game::dump` from the hash cache for games whose files did not
-/// change since they were hashed. No image is read; when the cache cannot
-/// be opened the library simply has no verdicts.
+/// change since they were hashed, also while they were written. No image
+/// is read; when the cache cannot be opened the library simply has no
+/// verdicts.
 pub(crate) fn attach_checks(
     wire: &mut crate::library::Library,
     core: &yaoplm_core::Library,
@@ -659,7 +665,7 @@ pub(crate) fn attach_checks(
         let Ok(files) = hashed_files(core_game) else {
             continue;
         };
-        let Ok(Some(hashes)) = cache.hashes(&keys(&volume, &files), false) else {
+        let Ok(Some((hashes, _))) = cache.hashes(&keys(&volume, &files), false) else {
             continue;
         };
         let track = cache.track(&hashes).ok().flatten();
@@ -738,8 +744,9 @@ impl<'a> Recorder<'a> {
     }
 
     /// Stores the hashes transaction `transaction` took while writing its
-    /// game under the files it wrote, as `VerifyGames` would have, and
-    /// returns the verdict. The device is not read again.
+    /// game under the files it wrote, marked as taken while writing, and
+    /// returns the verdict. The device is not read again: the scan shows
+    /// the verdict at once, and `VerifyGames` reads the files once.
     pub(crate) fn record(
         &mut self,
         transaction: usize,
@@ -768,16 +775,16 @@ impl<'a> Recorder<'a> {
                     .map(|d| d.as_nanos());
                 Ok((path.clone(), meta.len(), modified))
             })
-            .collect::<Result<Vec<_>, std::io::Error>>()
-            .ok()?;
-        let volume = self
-            .volume
-            .get_or_insert_with(|| volume_key(self.fs.root()))
-            .clone();
+            .collect::<Result<Vec<_>, std::io::Error>>();
         // The cache only saves time: without it the verdict still stands.
         if let Ok(service) = self.net.service() {
             let cache = service.cache();
-            let _ = cache.put_hashes(&keys(&volume, &files), &checked.image);
+            if let Ok(files) = &files {
+                let volume = self
+                    .volume
+                    .get_or_insert_with(|| volume_key(self.fs.root()));
+                let _ = cache.put_hashes(&keys(volume, files), &checked.image, HashedFrom::Writing);
+            }
             if let Some(track) = &checked.track {
                 let _ = cache.put_track(&checked.image, track);
             }

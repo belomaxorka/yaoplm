@@ -536,7 +536,11 @@ fn main() -> anyhow::Result<ExitCode> {
                 covers: None,
             };
             if covers {
-                let found = find_import_covers(&api, &request, &root, &mirrors, &skipped, &apply)?;
+                let found =
+                    match find_import_covers(&api, &request, &root, &mirrors, &skipped, &apply)? {
+                        Ok(found) => found,
+                        Err(error) => return fail(&error, apply.json),
+                    };
                 if let (Some(id), Request::PlanImport { covers, .. }) = (found, &mut request) {
                     *covers = Some(id);
                 }
@@ -740,7 +744,9 @@ fn main() -> anyhow::Result<ExitCode> {
 
 /// Plans `request` once to learn its games, then searches their covers
 /// (ART-8). The id of the cover set, or `None` when there is nothing to
-/// search or the search failed: the games are then added without covers.
+/// search or the search failed (the network): the games are then added
+/// without covers. A search the API refuses (an unknown source, a mirror
+/// that is not a folder) is an error, as it is for `art fetch`.
 fn find_import_covers(
     api: &Api,
     request: &Request,
@@ -748,11 +754,11 @@ fn find_import_covers(
     mirrors: &[String],
     skipped: &[String],
     apply: &Apply,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Result<Option<String>, yaoplm_api::ApiError>> {
     let plan = match api.dispatch(request.clone()) {
         Ok(Response::Plan(plan)) => plan,
         // The real planning call reports the problem.
-        _ => return Ok(None),
+        _ => return Ok(Ok(None)),
     };
     let games = plan.transactions.iter().any(|t| t.game.is_some());
     let sources = art_sources(mirrors, skipped)?;
@@ -791,16 +797,13 @@ fn find_import_covers(
             }
         }
         Some(Err(error)) => {
-            eprintln!(
-                "yaoplm: {}; the games are added without covers",
-                error.message
-            );
-            None
+            let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
+            return Ok(Err(error));
         }
         _ => None,
     };
     let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
-    Ok(found)
+    Ok(Ok(found))
 }
 
 /// `xlenore=DIR` and `--skip-source` flags as the API wants them.

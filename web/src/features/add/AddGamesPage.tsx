@@ -8,7 +8,9 @@ import { useNavigate } from "react-router";
 import type { ImportOverride } from "@/api/generated/ImportOverride";
 import type { Media } from "@/api/generated/Media";
 import type { PlanTransaction } from "@/api/generated/PlanTransaction";
+import type { PlanView } from "@/api/generated/PlanView";
 import type { Request } from "@/api/generated/Request";
+import { RpcError } from "@/api/transport";
 import { EmptyState } from "@/components/EmptyState";
 import { PageScroll } from "@/components/PageScroll";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,38 @@ import { useSettings } from "@/settings/context";
 interface Override {
   title?: string;
   media?: Media;
+}
+
+/** The file a transaction writes from: the game's image, or a cover in the cache. */
+function sourceOf(transaction: PlanTransaction): string | null {
+  return (
+    transaction.steps.find((step) => (step.op === "writeFile" || step.op === "writeZso") && step.source)?.source ?? null
+  );
+}
+
+/**
+ * Keys for the plan's transactions that survive a re-plan: by source and
+ * kind, not by position (covers are inserted after their games) or by
+ * destination (it follows the title being typed).
+ */
+function transactionKeys(plan: PlanView | null): string[] {
+  const seen = new Map<string, number>();
+  return (plan?.transactions ?? []).map((tx) => {
+    const base = `${sourceOf(tx) ?? ""}|${tx.titlePhrase?.key ?? ""}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}|${n}`;
+  });
+}
+
+/** An import plan that names a cover set the server no longer keeps (an hour at most). */
+function coversExpired(request: Request, error: unknown): boolean {
+  return (
+    request.type === "PlanImport" &&
+    request.covers !== undefined &&
+    error instanceof RpcError &&
+    error.phrase?.key === "errors.coversExpired"
+  );
 }
 
 /**
@@ -57,7 +91,10 @@ export function AddGamesPage() {
   const coversWanted = settings.coversOnAdd && coverSources;
   const covers = useCoverSearch(root, flow.plan, coversWanted);
   const coverSet = coversWanted && covers.state?.status === "done" ? (covers.state.result?.id ?? null) : null;
+  // A plan that needs covers comes with its search already running: no frame
+  // offers to confirm it first.
   const searching = covers.state?.status === "running";
+  const keys = useMemo(() => transactionKeys(flow.plan), [flow.plan]);
 
   const addSources = useCallback((paths: string[]) => {
     setSources((current) => [...current, ...paths.filter((p) => !current.includes(p))]);
@@ -99,6 +136,22 @@ export function AddGamesPage() {
     coverSet,
   ]);
 
+  const sendPlan = (req: Request, keep: boolean) => {
+    void flow.request(req, {
+      keep,
+      onError: (error) => {
+        if (!coversExpired(req, error)) return false;
+        // Every plan naming an expired cover set fails: search again instead.
+        // The plan on screen stays (it is stale without the set, and the
+        // title being typed keeps its field). It was built with that set,
+        // so it has most likely expired as well: the new search waits for
+        // the plan the debounce makes without covers.
+        covers.reset(flow.plan?.id);
+        return true;
+      },
+    });
+  };
+
   // Re-plan a moment after the last edit; the plan is the only truth about names and media.
   const requestJson = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
   const [plannedJson, setPlannedJson] = useState<string | null>(null);
@@ -106,7 +159,7 @@ export function AddGamesPage() {
     if (!request || plannedJson === null || requestJson === plannedJson) return;
     const timer = setTimeout(() => {
       setPlannedJson(requestJson);
-      void flow.request(request, { keep: true });
+      sendPlan(request, true);
     }, 400);
     return () => clearTimeout(timer);
     // flow.request is stable; the plan itself must not retrigger planning.
@@ -119,12 +172,20 @@ export function AddGamesPage() {
   const preview = () => {
     if (!request) return;
     setPlannedJson(requestJson);
-    void flow.request(request);
+    sendPlan(request, false);
   };
 
   const cancel = () => {
     setPlannedJson(null);
     flow.discard();
+    covers.reset();
+  };
+
+  const removeSource = (source: string) => {
+    const rest = sources.filter((p) => p !== source);
+    setSources(rest);
+    // Nothing left to add: the plan on screen stands for nothing.
+    if (rest.length === 0) cancel();
   };
 
   if (!root) {
@@ -135,9 +196,6 @@ export function AddGamesPage() {
       </PageScroll>
     );
   }
-
-  const sourceOf = (transaction: PlanTransaction): string | null =>
-    transaction.steps.find((step) => (step.op === "writeFile" || step.op === "writeZso") && step.source)?.source ?? null;
 
   const renderOverride = (transaction: PlanTransaction) => {
     const source = sourceOf(transaction);
@@ -204,7 +262,7 @@ export function AddGamesPage() {
             <div className="flex flex-wrap justify-center gap-2">
               {desktop ? (
                 <>
-                  <Button onClick={() => void pickFiles().then(addSources)}>
+                  <Button onClick={() => void pickFiles(t("add.filesFilter")).then(addSources)}>
                     <FilePlus2 aria-hidden />
                     {t("add.pickFiles")}
                   </Button>
@@ -239,7 +297,7 @@ export function AddGamesPage() {
                     variant="ghost"
                     size="icon-sm"
                     aria-label={t("add.removeSource", { name: baseName(source) })}
-                    onClick={() => setSources((s) => s.filter((p) => p !== source))}
+                    onClick={() => removeSource(source)}
                   >
                     <Trash2 aria-hidden />
                   </Button>
@@ -356,8 +414,12 @@ export function AddGamesPage() {
               <h3 className="text-base font-semibold">{phraseText(flow.plan.titlePhrase, flow.plan.title)}</h3>
               <p className="text-xs text-muted-foreground">{t("add.planHint")}</p>
             </div>
-            {covers.state && <CoverSearchPanel search={covers.state} onStop={covers.stop} />}
-            <PlanDetails plan={flow.plan} renderTransaction={renderOverride} />
+            {covers.state && <CoverSearchPanel search={covers.state} onStop={covers.stop} onRetry={covers.retry} />}
+            <PlanDetails
+              plan={flow.plan}
+              renderTransaction={renderOverride}
+              keyOf={(_transaction, index) => keys[index] ?? String(index)}
+            />
             <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
               {(flow.pending || stale) && (
                 <span className="mr-auto flex items-center gap-2 text-sm text-muted-foreground" role="status">

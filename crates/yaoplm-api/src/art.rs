@@ -202,7 +202,10 @@ pub struct ArtCacheInfo {
 pub(crate) struct Net {
     data_dir: PathBuf,
     runtime: OnceLock<Result<tokio::runtime::Runtime, String>>,
-    service: OnceLock<Result<Arc<ArtService>, String>>,
+    /// Kept once opened. A cache that could not be opened (another process
+    /// held it too long) is tried again on the next call, not for the life
+    /// of the process.
+    service: Mutex<Option<Arc<ArtService>>>,
     /// The parsed Redump DAT and the SHA-256 it was parsed from.
     pub(crate) redump: Mutex<Option<(String, Arc<RedumpIndex>)>>,
     /// One DAT download or import at a time: two at once would both pass
@@ -234,7 +237,7 @@ impl Net {
         Self {
             data_dir,
             runtime: OnceLock::new(),
-            service: OnceLock::new(),
+            service: Mutex::new(None),
             redump: Mutex::new(None),
             redump_update: Mutex::new(()),
         }
@@ -259,14 +262,18 @@ impl Net {
     }
 
     pub(crate) fn service(&self) -> Result<Arc<ArtService>, ApiError> {
-        self.service
-            .get_or_init(|| {
-                ArtService::open(&self.data_dir)
-                    .map(Arc::new)
-                    .map_err(|e| e.to_string())
-            })
-            .clone()
-            .map_err(|e| ApiError::internal_error(format!("cannot open the art cache: {e}")))
+        let mut service = self
+            .service
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(service) = service.as_ref() {
+            return Ok(Arc::clone(service));
+        }
+        let opened = ArtService::open(&self.data_dir)
+            .map(Arc::new)
+            .map_err(|e| ApiError::internal_error(format!("cannot open the art cache: {e}")))?;
+        *service = Some(Arc::clone(&opened));
+        Ok(opened)
     }
 
     /// Runs a future to completion on the network runtime, from a job
@@ -524,11 +531,12 @@ fn redump_names(startup: &str) -> Vec<String> {
 }
 
 /// Why nothing was found for a picture, for the log and the plan: no
-/// source has the type, every source is off, nothing at the sources asked,
-/// or errors.
+/// source has the type, every source is off, the game has no Redump name
+/// to look up, nothing at the sources asked, or errors.
 fn why_missing(
     kind: ArtKind,
     sources: &[SourceConfig],
+    redump_names: &[String],
     attempts: &[yaoplm_net::Attempt],
 ) -> (ArtLogState, Said) {
     let errors: Vec<String> = attempts
@@ -552,6 +560,10 @@ fn why_missing(
         Said::notice("noSourceForKind").with("kind", kind_name(kind))
     } else if sources.is_empty() {
         Said::notice("noArtSource")
+    } else if redump_names.is_empty() && sources.iter().any(|s| s.id.kinds().contains(&kind)) {
+        // A source that is on has the type but had nowhere to look: it
+        // finds pictures by the Redump name the bundled database gives.
+        Said::notice("notInTitleDatabase")
     } else {
         // The sources that are on do not have this type.
         Said::notice("noSourceForKind").with("kind", kind_name(kind))
@@ -650,7 +662,8 @@ pub(crate) fn fetch_job(
                 None,
             ),
             None => {
-                let (state, phrase) = why_missing(*kind, &params.sources, &outcome.attempts);
+                let (state, phrase) =
+                    why_missing(*kind, &params.sources, &names, &outcome.attempts);
                 (state, None, Some(phrase))
             }
         };
@@ -834,7 +847,7 @@ pub(crate) fn find_job(
         });
     }
     if variants.is_empty() {
-        let (state, phrase) = why_missing(params.kind, &params.sources, &attempts);
+        let (state, phrase) = why_missing(params.kind, &params.sources, &names, &attempts);
         ctx.log(JobLogEntry::Art {
             at: now_ms(),
             startup: game.startup.clone(),
