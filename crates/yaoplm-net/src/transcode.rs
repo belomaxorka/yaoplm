@@ -14,7 +14,7 @@ use std::io::Cursor;
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
 use image::codecs::png::{CompressionType, FilterType as PngFilter, PngEncoder};
 use image::{DynamicImage, GenericImageView, ImageEncoder, ImageReader, Limits};
-use yaoplm_formats::art::{ArtKind, ArtSize, MAX_DIMENSION};
+use yaoplm_formats::art::{ArtKind, ArtSize, MAX_DIMENSION, png_header};
 
 use crate::NetError;
 
@@ -83,17 +83,33 @@ fn resize(source: &DynamicImage, width: u32, height: u32) -> Result<DynamicImage
 }
 
 /// Resizes `bytes` (PNG, JPEG, BMP, GIF or WebP) to `size` and encodes a
-/// PNG with 8 bits per channel: RGB, or RGBA when the input has alpha.
+/// PNG with 8 bits per channel: RGB, or RGBA when the input has alpha. A
+/// PNG that already has the size, 8 bits or fewer and no interlacing is
+/// kept as it is.
 pub fn to_png(bytes: &[u8], size: ArtSize) -> Result<Transcoded, NetError> {
     to_png_fit(bytes, size, Fit::Stretch)
 }
 
-/// [`to_png`] with a choice of [`Fit`]; `Contain` always yields RGBA.
+/// [`to_png`] with a choice of [`Fit`]; `Contain` yields RGBA unless the
+/// PNG is kept as it is.
 pub fn to_png_fit(bytes: &[u8], size: ArtSize, fit: Fit) -> Result<Transcoded, NetError> {
     let width = size.width.clamp(1, MAX_DIMENSION);
     let height = size.height.clamp(1, MAX_DIMENSION);
     let decoded = decode(bytes)?;
     let (source_width, source_height) = decoded.dimensions();
+    // OPL Manager's backups hold palette PNGs at OPL's sizes (research/13
+    // §3): kept byte for byte they load as palette textures (T4/T8, one
+    // byte a pixel at most); re-encoded as RGB they take 2-2.6 times the
+    // space on the device and 3-4 times the texture memory.
+    if (source_width, source_height) == (width, height) && usable_as_is(bytes) {
+        return Ok(Transcoded {
+            png: bytes.to_vec(),
+            width,
+            height,
+            source_width,
+            source_height,
+        });
+    }
     let resized = match fit {
         Fit::Stretch => {
             let source = if decoded.color().has_alpha() {
@@ -138,6 +154,12 @@ pub fn to_png_fit(bytes: &[u8], size: ArtSize, fit: Fit) -> Result<Transcoded, N
     })
 }
 
+/// A PNG OPL can load as it is: 8 bits or fewer per channel or palette
+/// index (RiptOPL refuses 16) and not interlaced.
+fn usable_as_is(bytes: &[u8]) -> bool {
+    png_header(bytes).is_some_and(|h| h.bit_depth <= 8) && bytes.get(28) == Some(&0)
+}
+
 /// True when `bytes` start like an image we can decode.
 pub fn looks_like_image(bytes: &[u8]) -> bool {
     ImageReader::new(Cursor::new(bytes))
@@ -150,8 +172,9 @@ pub fn looks_like_image(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
     use image::{ImageBuffer, Rgb, Rgba};
-    use yaoplm_formats::art::png_header;
 
     fn jpeg(width: u32, height: u32) -> Vec<u8> {
         let img = ImageBuffer::from_fn(width, height, |x, y| {
@@ -183,6 +206,77 @@ mod tests {
         assert_eq!(png_header(&out.png).unwrap().height, 200);
     }
 
+    /// A PNG with a palette of four colours, like the pictures of OPL
+    /// Manager's backups since 2024 (`image` cannot write one).
+    fn palette_png(width: u32, height: u32) -> Vec<u8> {
+        fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            let mut crc = crc32fast::Hasher::new();
+            crc.update(kind);
+            crc.update(data);
+            out.extend_from_slice(&crc.finalize().to_be_bytes());
+        }
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 3, 0, 0, 0]);
+        let mut rows = Vec::new();
+        for y in 0..height {
+            rows.push(0);
+            rows.extend((0..width).map(|x| ((x + y) % 4) as u8));
+        }
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(&rows).unwrap();
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        chunk(&mut out, b"IHDR", &ihdr);
+        chunk(
+            &mut out,
+            b"PLTE",
+            &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255],
+        );
+        chunk(&mut out, b"IDAT", &z.finish().unwrap());
+        chunk(&mut out, b"IEND", &[]);
+        out
+    }
+
+    #[test]
+    fn a_png_that_fits_is_kept_as_it_is() {
+        let size = ArtSize {
+            width: 140,
+            height: 200,
+        };
+        let png = palette_png(140, 200);
+        assert_eq!(png_header(&png).unwrap().color_type, 3, "palette");
+        let out = to_png(&png, size).unwrap();
+        assert_eq!(out.png, png, "byte for byte");
+        // Fitted logos too, when they already have the size.
+        let logo = palette_png(300, 125);
+        let out = to_png_fit(
+            &logo,
+            ArtSize {
+                width: 300,
+                height: 125,
+            },
+            Fit::Contain,
+        )
+        .unwrap();
+        assert_eq!(out.png, logo);
+        // Another size is resized as before, to RGB.
+        let out = to_png(&palette_png(280, 400), size).unwrap();
+        let header = png_header(&out.png).unwrap();
+        assert_eq!(
+            (header.width, header.height, header.color_type),
+            (140, 200, 2)
+        );
+        // A damaged PNG of the right size is refused, not passed on.
+        let mut broken = png.clone();
+        let at = broken.len() - 20;
+        broken[at] ^= 0xFF;
+        assert!(to_png(&broken, size).is_err());
+    }
+
     #[test]
     fn alpha_is_kept_and_16_bit_is_flattened() {
         let img = ImageBuffer::from_fn(10, 10, |x, _| Rgba([x as u8, 0, 0, 128]));
@@ -203,6 +297,16 @@ mod tests {
         let header = png_header(&out.png).unwrap();
         assert_eq!(header.bit_depth, 8);
         assert_eq!(header.color_type, 6, "RGBA");
+        // Even at its own size: 16 bits never reach the device.
+        let out = to_png(
+            &rgba16,
+            ArtSize {
+                width: 10,
+                height: 10,
+            },
+        )
+        .unwrap();
+        assert_eq!(png_header(&out.png).unwrap().bit_depth, 8);
     }
 
     #[test]

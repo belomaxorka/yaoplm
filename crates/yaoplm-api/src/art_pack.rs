@@ -181,6 +181,16 @@ impl Collector<'_> {
         if !self.params.kinds.contains(&picture.kind) {
             return Ok(());
         }
+        // OPL Manager's backups keep PS1 pictures in `PS1/`, under IDs that
+        // PS2 games can have too (research/13 §3); OPL does not look PS1
+        // games' pictures up by ID, so they are never the device's.
+        if name
+            .split(['/', '\\'])
+            .any(|part| part.eq_ignore_ascii_case("PS1"))
+        {
+            self.other_games += 1;
+            return Ok(());
+        }
         let Some(target) = self.games.get(&serial::lookup_key(&picture.key)) else {
             self.other_games += 1;
             return Ok(());

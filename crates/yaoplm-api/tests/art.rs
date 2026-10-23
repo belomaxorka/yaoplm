@@ -834,9 +834,11 @@ fn picture_sets_fill_the_games_on_the_device() {
     fs::create_dir_all(sets.join("folder/ART")).unwrap();
     let jpg = |w, h| image_bytes(w, h, image::ImageFormat::Jpeg);
     let png = |w, h| image_bytes(w, h, image::ImageFormat::Png);
-    // OPL Manager's layout: PS2/<ID>/<ID>_<TYPE>.jpg, numbered screenshots.
+    // OPL Manager's layout: PS2/<ID>/<ID>_<TYPE>.jpg, numbered screenshots;
+    // PS1 pictures come first, and an ID can be in both folders.
     let backup = packed::zip(
         &[
+            ("PS1/SLUS_200.62/SLUS_200.62_ICO.png", &png(64, 64)),
             ("PS2/SLUS_200.62/SLUS_200.62_COV.jpg", &jpg(300, 420)),
             ("PS2/SLUS_200.62/SLUS_200.62_SCR_00.jpg", &jpg(640, 480)),
             ("PS2/SLUS_200.62/SLUS_200.62_SCR_01.jpg", &jpg(640, 480)),
@@ -903,7 +905,8 @@ fn picture_sets_fill_the_games_on_the_device() {
         ],
         "{plan:#?}"
     );
-    // Retail's cover is on the device; the other game's two are not ours.
+    // Retail's cover is on the device; the other game's two and the PS1
+    // icon are not ours.
     let notice = |code: &str| {
         plan.notices
             .iter()
@@ -918,7 +921,7 @@ fn picture_sets_fill_the_games_on_the_device() {
     );
     assert_eq!(
         notice("otherGamesLeftOut"),
-        "Skipped pictures of games not on this device: 2"
+        "Skipped pictures of games not on this device: 3"
     );
     let icon = plan
         .transactions

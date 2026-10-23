@@ -42,13 +42,31 @@ Date: 2026-10-23. Scope: milestone M5, PR 2a (ART-2, ART-3, ART-5, ART-8, GAME-5
 
 ### OPL Manager backups
 
-No backup was available locally; the layout comes from four independent readers and matches all of them:
+The layout was first reconstructed from four independent readers, then checked on 2026-10-24 against two real backups (below):
 
 - Items `OPLM_ART_YYYY_MM` on archive.org (2018-11 to 2024-09), one zip of about 6 GB each (research/03 §2.1).
 - Zip root `PS1/` and `PS2/`, then `<ID>/` in OPL form (`SLUS_200.62`), then `<ID>_<TYPE>.<ext>` (PyOPLM `storage.py` `get_relative_source_path`; HDL's URL `PS2%2F<ID>%2F<ID>_COV.jpg`; vapi `setup_db.sh`).
 - **Screenshots and backgrounds are numbered**: `<ID>_SCR_00`, `_SCR_01`, …, `<ID>_BG_00`, …; `SCR_00` is SCR, `SCR_01` is SCR2, `BG_00` is BG, the rest have no place in OPL (PyOPLM `index_artwork`; HDL `ArtMan.cpp`; Orbit `artwork-filenames.ts` `INDEXED_REMOTE_TYPES`).
 - Extensions are mixed: in 2023_07, COV, COV2, LAB, BG and SCR are `.jpg`, ICO and LGO `.png` (HDL `ArtMan.cpp`). A shell script (astaroth666) expects `_SCR.png` instead; YAOPLM accepts both forms, any of png, jpg, jpeg, bmp, gif, webp, in any case.
 - Title lists `PS1_LIST.CSV` and `PS2_LIST.CSV` sit at the root; YAOPLM does not need them (titles come from the bundled database, ADR-0024).
+
+**Checked on real backups (2026-10-24).** The tables of contents of `OPLM_ART_2024_09` (5.5 GB) and `OPLM_ART_2023_07` (6.2 GB) were read from archive.org with range requests (`scripts/oplm-backup-toc.py`: 4 requests and about 8 MB per backup, no pictures), and ten pictures of one game were fetched one by one. Results:
+
+| | 2024_09 | 2023_07 |
+|---|---|---|
+| Entries | 102 803 | 93 952 |
+| PS2 / PS1 games | 10 350 / 5 963 | 9 728 / 4 357 |
+| Compression | none (stored) | deflate |
+| Formats | all `.png`; the samples are 8-bit palette PNGs at OPL's sizes (COV 140×200, ICO 64×64, SCR 250×188, BG 640×480) | `.jpg` (RGB) for COV, COV2, LAB, SCR, BG; `.png` (RGBA) for ICO, LGO; 996 `.PNG` and one `.JPG` in upper case |
+| Order of entries | by type, so one game's pictures are spread over 4 GB | by game |
+| Largest picture | 1.7 MB | 1.4 MB |
+| Root files | `PS1_LIST.csv/.txt`, `PS2_LIST.csv/.txt` | the same in upper case, plus directory entries `PS1/`, `PS2/` |
+| IDs in both `PS1/` and `PS2/` | 1 | 18 |
+
+- Every one of the 196 745 picture names is read by `pack_picture` as the type its name says, under the ID of its folder (`crates/yaoplm-formats/tests/oplm_backups.rs`, a real-data test); 42 261 further numbered screenshots and backgrounds (`SCR_02`+, `BG_01`+, up to `SCR_30`) are left out by design. One folder is in lower case (`slps_…`); IDs are compared without case.
+- **PS1 pictures are left out.** Their IDs overlap PS2 IDs (misfiled games), and `PS1/` comes first in the zip, so a PS1 picture could have filled a PS2 game's slot. OPL does not look PS1 games' pictures up by ID (POPS and VCD names, research/07), so any path with a `PS1` folder is skipped and counted with the pictures of other games.
+- **Pictures that already fit are kept byte for byte.** A PNG of exactly the element's size, 8 bits or fewer and not interlaced, goes to the device as it is: the 2024 palette PNGs keep their palette (OPL loads them as T4/T8 textures, a byte a pixel at most) instead of becoming RGB, which on these samples took 2.06 to 2.57 times the space. Everything else is transcoded as before.
+- End to end, `yaoplm art import` with both samples wrote seven pictures for SLUS_200.62: `SCR_00` → SCR, `SCR_01` → SCR2, `BG_00` → BG, the PNG of a slot beating the JPEG, the first set winning between two PNGs.
 
 Tools that took these files into `ART/` as they are wrote names OPL 1.2 never reads: `.jpg` (PyOPLM, libopl, logi-26, PyOPL-Utility, PS2IsoManager) and `_SCR_01`, `_BG_00` (Tbx). PyOPLM issue #7 is the other trap: a prefix glob `<ID>_COV*` also matches `COV2`. YAOPLM parses each name exactly (`yaoplm_formats::art::pack_picture`) and transcodes every picture to PNG at the profile's size.
 
@@ -87,4 +105,3 @@ No manager does this in one confirmed plan. Orbit downloads art after the copy f
 
 - **ICO at 128×128 on stock OPL**: check on the console whether a 128×128 icon looks sharper than the upscaled 64×64 one, and whether OPL 1.1 handles it (it has the old 64×64 theme).
 - **Mode 2 Form 2 sectors in a real CD's data track** (postgap): the raw-track hash takes every sector as it is, but the ISO conversion refuses Form 2 user data. A real Redump-format CD dump is needed to confirm the "verified" path end to end.
-- A real OPL Manager backup to confirm the numbered names and the extensions per type.
