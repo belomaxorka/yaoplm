@@ -60,7 +60,8 @@ pub fn hex(bytes: &[u8]) -> String {
 /// `N` bytes from exactly `2 * N` hex digits, either case.
 pub fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
     let text = text.trim();
-    if text.len() != N * 2 || !text.is_ascii() {
+    // `from_str_radix` alone would take a sign: `+1+2+3+4`.
+    if text.len() != N * 2 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let mut out = [0u8; N];
@@ -260,12 +261,68 @@ mod tests {
         assert!(err.to_string().contains("disk gone"));
     }
 
+    /// At most 1000 bytes per read; fails once `fail_at` bytes are out.
+    struct Trickle<'a> {
+        data: &'a [u8],
+        pos: usize,
+        fail_at: Option<usize>,
+    }
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.fail_at.is_some_and(|at| self.pos >= at) {
+                return Err(io::Error::other("cable pulled"));
+            }
+            let n = buf.len().min(1000).min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn short_reads_and_late_errors() {
+        let data: Vec<u8> = (0..BLOCK_SIZE + 4321).map(|i| (i % 253) as u8).collect();
+        let mut reader = Trickle {
+            data: &data,
+            pos: 0,
+            fail_at: None,
+        };
+        let hashes = hash_reader(
+            &mut reader,
+            Algorithms { md5: true },
+            &|| false,
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(hashes.size, data.len() as u64);
+        assert_eq!(hashes.crc32, crc32fast::hash(&data));
+        let sha1: [u8; 20] = Sha1::digest(&data).into();
+        assert_eq!(hashes.sha1, sha1);
+
+        // The error comes after a whole block went to the hashing threads.
+        let mut reader = Trickle {
+            data: &data,
+            pos: 0,
+            fail_at: Some(BLOCK_SIZE + 2000),
+        };
+        let err = hash_reader(
+            &mut reader,
+            Algorithms { md5: true },
+            &|| false,
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("cable pulled"), "{err}");
+    }
+
     #[test]
     fn hex_round_trip() {
         assert_eq!(parse_hex::<4>("414FA339"), Some([0x41, 0x4f, 0xa3, 0x39]));
         assert_eq!(parse_hex::<4>(" 414fa339 "), Some([0x41, 0x4f, 0xa3, 0x39]));
         assert_eq!(parse_hex::<4>("414fa33"), None);
         assert_eq!(parse_hex::<4>("414fa33g"), None);
+        assert_eq!(parse_hex::<4>("+1+2+3+4"), None);
         assert_eq!(parse_hex::<2>("éé"), None);
         assert_eq!(hex(&[0, 0xab]), "00ab");
     }

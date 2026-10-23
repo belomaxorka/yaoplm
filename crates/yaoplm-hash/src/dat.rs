@@ -75,6 +75,8 @@ pub enum DatError {
     Xml(String),
     #[error("not a Logiqx datafile (no <datafile> element)")]
     NotADatafile,
+    #[error("the DAT ends before </datafile>: the file is cut off")]
+    Truncated,
 }
 
 /// Where text currently goes.
@@ -195,6 +197,8 @@ pub fn parse(xml: &[u8]) -> Result<Datafile, DatError> {
     let mut buf = Vec::new();
     let mut datafile = Datafile::default();
     let mut seen_root = false;
+    // quick-xml reports the end of input as Eof even with elements open.
+    let mut closed_root = false;
     let mut in_header = false;
     let mut game: Option<Game> = None;
     let mut field = Field::None;
@@ -216,6 +220,13 @@ pub fn parse(xml: &[u8]) -> Result<Datafile, DatError> {
                             ..Game::default()
                         });
                     }
+                    // Redump closes `<rom/>` itself; other tools write
+                    // `<rom ...></rom>`.
+                    "rom" => {
+                        if let (Some(game), Some(rom)) = (game.as_mut(), rom(&e)) {
+                            game.roms.push(rom);
+                        }
+                    }
                     n => {
                         field = field_for(in_header, game.is_some(), n);
                         text.clear();
@@ -235,7 +246,10 @@ pub fn parse(xml: &[u8]) -> Result<Datafile, DatError> {
                         id: attr(&e, "id"),
                         ..Game::default()
                     }),
-                    "datafile" => seen_root = true,
+                    "datafile" => {
+                        seen_root = true;
+                        closed_root = true;
+                    }
                     _ => {}
                 }
             }
@@ -260,6 +274,7 @@ pub fn parse(xml: &[u8]) -> Result<Datafile, DatError> {
             Event::End(e) => {
                 let name = e.local_name();
                 match name.as_ref() {
+                    "datafile" => closed_root = true,
                     "header" => in_header = false,
                     n if is_game(n) => {
                         if let Some(done) = game.take() {
@@ -286,6 +301,9 @@ pub fn parse(xml: &[u8]) -> Result<Datafile, DatError> {
     }
     if !seen_root {
         return Err(DatError::NotADatafile);
+    }
+    if !closed_root {
+        return Err(DatError::Truncated);
     }
     Ok(datafile)
 }
@@ -364,5 +382,20 @@ mod tests {
             parse(b"<datafile><game name='x'></datafile>"),
             Err(DatError::Xml(_))
         ));
+    }
+
+    #[test]
+    fn cut_off_dats_and_other_layouts() {
+        // A download cut short parses up to the cut, but is refused.
+        let cut = &SAMPLE[..SAMPLE.find("<machine").unwrap()];
+        assert_eq!(parse(cut.as_bytes()), Err(DatError::Truncated));
+        assert!(parse(b"<datafile/>").unwrap().games.is_empty());
+        // `<rom></rom>` instead of `<rom/>`, references in text.
+        let dat = parse(
+            br#"<datafile><game name="A"><description>Tom &amp; Jerry &#233;</description><rom name="a.iso" size="4" sha1="2fd4e1c67a2d28fced849ee1bb76e7391b93eb12"></rom></game></datafile>"#,
+        )
+        .unwrap();
+        assert_eq!(dat.games[0].roms.len(), 1);
+        assert_eq!(dat.games[0].description.as_deref(), Some("Tom & Jerry é"));
     }
 }

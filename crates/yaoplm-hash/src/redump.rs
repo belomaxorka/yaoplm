@@ -243,6 +243,10 @@ impl RedumpIndex {
         if others.is_empty() && !cds.is_empty() {
             return Verdict::Unknown(Unknown::CdImage(cds));
         }
+        if others.is_empty() {
+            // Entries with this ID but no image to compare with.
+            return Verdict::Unknown(Unknown::NotListed);
+        }
         others.extend(cds);
         Verdict::BadDump(others)
     }

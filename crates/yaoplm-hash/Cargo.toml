@@ -14,10 +14,6 @@ md-5.workspace = true
 quick-xml.workspace = true
 sha1.workspace = true
 thiserror.workspace = true
-yaoplm-formats.workspace = true
-
-[dev-dependencies]
-proptest.workspace = true
 
 [lints]
 workspace = true
