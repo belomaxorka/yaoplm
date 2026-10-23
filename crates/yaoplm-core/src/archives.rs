@@ -6,9 +6,13 @@
 //! folder walk, CUE sheets naming their BINs, the probe, the copy) works on
 //! them unchanged. Members are never deleted: moving a game out of an
 //! archive leaves the archive alone, and the plan says so.
+//!
+//! Small members (CUE sheets) are read once and kept: planning reads a
+//! sheet several times, and in a solid 7z each read would decode
+//! everything in front of it again.
 
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -16,12 +20,27 @@ use yaoplm_device::source::{ReadSeek, SourceFs, SourceMeta};
 use yaoplm_formats::archive::{self, Entry, Kind};
 
 type Listing = Arc<Vec<Entry>>;
+/// Small members by archive and name, with the archive's time.
+type Kept = HashMap<(PathBuf, String), (Option<u128>, Arc<Vec<u8>>)>;
+
+/// Members up to this size are kept in memory once read.
+const SMALL_MEMBER: u64 = 1 << 20;
+
+/// A kept member, readable by many [`Cursor`]s at once.
+struct Shared(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for Shared {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 /// A [`SourceFs`] that opens zip and 7z archives like folders.
 pub struct ArchiveSources<'a> {
     inner: &'a dyn SourceFs,
     /// Listings by archive path, with the archive's time when listed.
     listings: Mutex<HashMap<PathBuf, (Option<u128>, Listing)>>,
+    small: Mutex<Kept>,
 }
 
 impl std::fmt::Debug for ArchiveSources<'_> {
@@ -46,6 +65,7 @@ impl<'a> ArchiveSources<'a> {
         Self {
             inner,
             listings: Mutex::new(HashMap::new()),
+            small: Mutex::new(HashMap::new()),
         }
     }
 
@@ -148,7 +168,15 @@ impl SourceFs for ArchiveSources<'_> {
             .iter()
             .filter_map(|e| {
                 let rest = e.name.strip_prefix(&prefix)?;
-                (!rest.is_empty() && !rest.contains('/')).then(|| dir.join(rest))
+                // One plain component, so the child stays inside `dir`
+                // (`archive::list` already dropped drives and `..`).
+                let mut parts = Path::new(rest).components();
+                match (parts.next(), parts.next()) {
+                    (Some(Component::Normal(_)), None) if !rest.contains('/') => {
+                        Some(dir.join(rest))
+                    }
+                    _ => None,
+                }
             })
             .collect();
         children.sort();
@@ -159,18 +187,43 @@ impl SourceFs for ArchiveSources<'_> {
         let Some(at) = self.locate(path) else {
             return self.inner.open(path);
         };
-        let (_, listing) = self.listing(&at.archive, at.kind)?;
-        let name = Self::find(&listing, &at.inner)
-            .map(|e| e.name.clone())
-            .unwrap_or(at.inner);
-        let file = self.inner.open(&at.archive)?;
-        let reader = archive::open_entry(at.kind, Box::new(file), &name).map_err(|e| {
+        let (meta, listing) = self.listing(&at.archive, at.kind)?;
+        let entry = Self::find(&listing, &at.inner).ok_or_else(|| {
             io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("{}: {e}", at.archive.display()),
+                io::ErrorKind::NotFound,
+                format!("{} is not in the archive", at.inner),
             )
         })?;
-        Ok(Box::new(reader))
+        let key = (at.archive.clone(), entry.name.clone());
+        if entry.size <= SMALL_MEMBER
+            && let Some((modified, bytes)) = self
+                .small
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&key)
+            && *modified == meta.modified
+        {
+            return Ok(Box::new(Cursor::new(Shared(Arc::clone(bytes)))));
+        }
+        let file = self.inner.open(&at.archive)?;
+        let mut reader =
+            archive::open_entry(at.kind, Box::new(file), &entry.name).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("{}: {e}", at.archive.display()),
+                )
+            })?;
+        if entry.size > SMALL_MEMBER {
+            return Ok(Box::new(reader));
+        }
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        let bytes = Arc::new(bytes);
+        self.small
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key, (meta.modified, Arc::clone(&bytes)));
+        Ok(Box::new(Cursor::new(Shared(bytes))))
     }
 
     fn remove(&self, path: &Path) -> io::Result<()> {

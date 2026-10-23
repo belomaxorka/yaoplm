@@ -137,7 +137,11 @@ fn walk(
                     ));
                 }
             }
-            Err(_) => skipped.push(skip(&path, "unreadable", "cannot read this file")),
+            Err(err) => skipped.push(skip(
+                &path,
+                "unreadable",
+                format!("cannot read this file: {err}"),
+            )),
         }
     }
 }
@@ -151,7 +155,11 @@ pub fn expand_inputs(sources: &dyn SourceFs, inputs: &[PathBuf]) -> (Vec<PathBuf
         match sources.metadata(input) {
             Ok(meta) if meta.is_dir => walk(sources, input, 0, &mut found, &mut skipped),
             Ok(_) => found.push(input.clone()),
-            Err(_) => skipped.push(skip(input, "notFound", "does not exist")),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                skipped.push(skip(input, "notFound", "does not exist"));
+            }
+            // A damaged archive, a folder the user may not read...
+            Err(err) => skipped.push(skip(input, "unreadable", err.to_string())),
         }
     }
     let mut seen = HashSet::new();
@@ -367,7 +375,7 @@ impl Planner<'_> {
         if self.options.transfer == Transfer::Move {
             if self.sources.in_archive(&probed.data_path) {
                 notices.push(Notice::info(
-                    "archiveKept",
+                    "sourceArchiveKept",
                     "the game comes from an archive: the archive is not deleted",
                 ));
             } else {

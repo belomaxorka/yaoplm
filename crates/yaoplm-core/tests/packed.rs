@@ -199,7 +199,7 @@ fn zip_and_seven_zip_members() {
     );
     let notices = codes(&plan);
     assert!(notices.contains(&"fromArchive".to_owned()));
-    assert!(notices.contains(&"archiveKept".to_owned()));
+    assert!(notices.contains(&"sourceArchiveKept".to_owned()));
     // Archives are never deleted, even in move mode.
     assert!(
         !plan
@@ -212,4 +212,50 @@ fn zip_and_seven_zip_members() {
     assert_eq!(fs.bytes("CD/SLUS_200.62.Zipped Game.iso").unwrap(), iso);
     assert_eq!(fs.bytes("CD/SCES_500.03.Packed.iso").unwrap(), other);
     assert!(host.removed().is_empty());
+}
+
+#[test]
+fn archives_stay_closed_and_odd_members_are_refused() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let host = VirtualSources::new();
+    let iso = Variant::Retail.build().to_vec();
+    // 7-Zip's -spf keeps the drive: the member must stay inside the archive.
+    host.add_file(
+        src("Spf.zip"),
+        Content::Bytes(zip(&[("C:\\Games\\Spf Game.iso", &iso)], true).unwrap()),
+    );
+    host.add_file(
+        src("Chd.zip"),
+        Content::Bytes(zip(&[("Disc.chd", &chd_dvd(&iso).unwrap())], true).unwrap()),
+    );
+    host.add_file(
+        src("Broken.7z"),
+        Content::Bytes(b"7z\xBC\xAF\x27\x1C junk".to_vec()),
+    );
+    let sources = ArchiveSources::new(&host);
+    let plan = plan_import(
+        &fs,
+        &sources,
+        &[src("Spf.zip"), src("Chd.zip"), src("Broken.7z")],
+        &options(),
+    )
+    .unwrap();
+    let read: Vec<_> = plan.sources.iter().map(|s| s.path.clone()).collect();
+    assert_eq!(read, [src("Spf.zip").join("Games").join("Spf Game.iso")]);
+    let mut skipped: Vec<_> = plan
+        .skipped
+        .iter()
+        .map(|s| (s.path.clone(), s.reason.code.clone()))
+        .collect();
+    skipped.sort();
+    assert_eq!(
+        skipped,
+        [
+            (src("Broken.7z"), "unreadable".to_owned()),
+            (
+                src("Chd.zip").join("Disc.chd"),
+                "unsupportedSource".to_owned()
+            ),
+        ]
+    );
 }

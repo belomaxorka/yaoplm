@@ -352,6 +352,14 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
     };
     let data_len = files.last().map_or(0, |f| f.len);
     let packed = sources.in_archive(&data_path);
+    if packed && format == InputFormat::Chd {
+        // A CHD keeps its hunk map at the end and points back at earlier
+        // hunks: inside a compressed archive every jump decodes it again.
+        return Err(ProbeError::Unsupported(
+            "a CHD inside an archive is not read: unpack the CHD first (it is compressed already)"
+                .into(),
+        ));
+    }
 
     let reader = sources.open(&data_path).map_err(io_err(&data_path))?;
     let mut chd_cd = false;
