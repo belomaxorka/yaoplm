@@ -12,7 +12,7 @@
 | UI unit | Компоненты, транспорт, i18n (все ключи есть в `en` и `ru`) | vitest |
 | UI e2e | Сценарии в браузере против `yaoplm-server` с фикстурной библиотекой из `make_library` | Playwright, `web/tests/e2e/` |
 | Desktop e2e | Позже: `tauri-driver` (WebDriver) на Windows и Linux | — |
-| Железо | Реальная PS2 и OPL, чек-листы из ROADMAP | пользователь |
+| Железо | Реальная PS2 и OPL, чек-листы из ROADMAP и подробные списки в `docs/testing/` (M4: [m4-console-checklist.md](testing/m4-console-checklist.md)) | пользователь |
 
 ## Фикстуры
 
