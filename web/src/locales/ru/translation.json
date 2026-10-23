@@ -207,6 +207,7 @@
     "skippedDescription": "Эти файлы лежат в папках игр, но OPL не покажет их в списке.",
     "scanning": "Сканирование библиотеки…",
     "scanFailed": "Сканирование не удалось: {{error}}",
+    "retryScan": "Сканировать снова",
     "missingFolders": "Не хватает папок OPL: {{folders}}",
     "createFolders": "Создать папки",
     "noGamesTitle": "Игр пока нет",

@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -294,9 +295,16 @@ function LibraryView({
         <RecoveryBanner root={root} />
         {isPending && <ScanProgress root={root} />}
         {error && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-            {t("library.scanFailed", { error })}
-          </p>
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            <span className="min-w-0 flex-1 wrap-anywhere">{t("library.scanFailed", { error })}</span>
+            <Button size="sm" variant="outline" onClick={rescan} disabled={isFetching}>
+              <RefreshCw aria-hidden />
+              {t("library.retryScan")}
+            </Button>
+          </div>
         )}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
         {missingFolders.length > 0 && (
@@ -337,6 +345,8 @@ function LibraryView({
           </Button>
         </div>
       )}
+      {/* The first scan: the shape of the grid, not an empty page that jumps. */}
+      {isPending && !data && <GridSkeleton />}
       {games.length > 0 && (shownView === "grid" ? <GameGrid games={games} /> : <GameTable games={games} />)}
 
       {data && (
@@ -441,6 +451,26 @@ function AdvancedFilters({
         </ToggleGroupItem>
       </ToggleGroup>
     </>
+  );
+}
+
+/** Placeholder cards while the first scan runs; hidden from screen readers, the progress speaks. */
+function GridSkeleton() {
+  return (
+    <div
+      className="grid min-h-0 flex-1 content-start gap-4 overflow-hidden px-6 py-4"
+      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))` }}
+      aria-hidden
+      data-testid="grid-skeleton"
+    >
+      {Array.from({ length: 12 }, (_, index) => (
+        <div key={index} className="flex flex-col gap-2 p-2">
+          <Skeleton className="aspect-[7/10] w-full rounded-lg" />
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ))}
+    </div>
   );
 }
 

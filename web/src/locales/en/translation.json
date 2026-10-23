@@ -201,6 +201,7 @@
     "skippedDescription": "These files are in the game folders but OPL will not list them.",
     "scanning": "Scanning the library…",
     "scanFailed": "The scan failed: {{error}}",
+    "retryScan": "Scan again",
     "missingFolders": "Missing OPL folders: {{folders}}",
     "createFolders": "Create folders",
     "noGamesTitle": "No games yet",
