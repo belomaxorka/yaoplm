@@ -76,6 +76,11 @@ pub struct ImportOptions {
     pub compress: bool,
     /// Hash every image while it is written, for a dump check (GAME-5).
     pub check: bool,
+    /// Title every game the bundled database knows by its name there
+    /// (META-1); the others keep the title of their file name. A title the
+    /// user typed always wins. Without it the database names only games
+    /// whose file names give no title.
+    pub database_titles: bool,
     /// Pictures found for the games being added (ART-8): each is written
     /// right after its game, once per game ID and kind, unless the device
     /// already has that picture.
@@ -327,8 +332,13 @@ impl Planner<'_> {
             Some(title) => title,
             None => {
                 let from_name = title_from_path(path);
-                match known_title_for(&from_name, &startup) {
-                    Some(known) => {
+                let known = if self.options.database_titles {
+                    titles::known_title(&startup)
+                } else {
+                    known_title_for(&from_name, &startup)
+                };
+                match known {
+                    Some(known) if known != from_name => {
                         notices.push(Notice::info(
                             Phrase::notice("titleFromDatabase")
                                 .with("startup", &startup)
@@ -336,7 +346,7 @@ impl Planner<'_> {
                         ));
                         known
                     }
-                    None => from_name,
+                    _ => from_name,
                 }
             }
         };

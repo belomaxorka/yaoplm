@@ -189,6 +189,12 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
+        /// Title the games the bundled database knows by its name there;
+        /// the others keep their file name's title. Off when absent: only
+        /// games whose file names give no title are named by the database.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        database_titles: Option<bool>,
         /// A cover set from `FetchArt` with `import` (ART-8): every game
         /// gets its cover written right after it, in the same plan.
         #[serde(default, skip_serializing_if = "Option::is_none")]

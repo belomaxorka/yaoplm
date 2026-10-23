@@ -31,6 +31,8 @@ export interface Settings {
   checkOnAdd: boolean;
   /** Look for covers of the games being added (ART-8). */
   coversOnAdd: boolean;
+  /** Title the games being added by the bundled database (META-1). */
+  titlesFromDb: boolean;
   /** Cover sources in priority order (ART-1). */
   artSources: Record<ArtSourceId, ArtSourceSettings>;
 }
@@ -43,6 +45,7 @@ export const defaultSettings: Settings = {
   verify: true,
   checkOnAdd: true,
   coversOnAdd: true,
+  titlesFromDb: true,
   artSources: {
     xlenore: { enabled: true, mirror: "" },
     libretro: { enabled: true, mirror: "" },
@@ -93,6 +96,7 @@ export function readSettings(): Settings {
       verify: typeof p.verify === "boolean" ? p.verify : defaultSettings.verify,
       checkOnAdd: typeof p.checkOnAdd === "boolean" ? p.checkOnAdd : defaultSettings.checkOnAdd,
       coversOnAdd: typeof p.coversOnAdd === "boolean" ? p.coversOnAdd : defaultSettings.coversOnAdd,
+      titlesFromDb: typeof p.titlesFromDb === "boolean" ? p.titlesFromDb : defaultSettings.titlesFromDb,
       artSources: readArtSources(p.artSources),
     };
   } catch {

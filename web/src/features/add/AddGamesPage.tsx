@@ -81,9 +81,23 @@ export function AddGamesPage() {
       ...(compress && zsoReadable ? { compress: true } : {}),
       ...(list.length > 0 ? { overrides: list } : {}),
       verify: settings.checkOnAdd,
+      databaseTitles: settings.titlesFromDb,
       ...(coverSet ? { covers: coverSet } : {}),
     };
-  }, [root, sources, overrides, settings.profile, settings.nameStyle, move, alwaysUl, compress, zsoReadable, settings.checkOnAdd, coverSet]);
+  }, [
+    root,
+    sources,
+    overrides,
+    settings.profile,
+    settings.nameStyle,
+    move,
+    alwaysUl,
+    compress,
+    zsoReadable,
+    settings.checkOnAdd,
+    settings.titlesFromDb,
+    coverSet,
+  ]);
 
   // Re-plan a moment after the last edit; the plan is the only truth about names and media.
   const requestJson = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
@@ -128,7 +142,7 @@ export function AddGamesPage() {
   const renderOverride = (transaction: PlanTransaction) => {
     const source = sourceOf(transaction);
     // A cover written with its game follows the game's title and media.
-    if (!source || !transaction.game || transaction.titlePhrase?.key === "titles.coverFor") return null;
+    if (!source || !transaction.game || transaction.titlePhrase?.key === "titles.artFor") return null;
     const current = overrides[source] ?? {};
     return (
       <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -265,6 +279,19 @@ export function AddGamesPage() {
               <span className="block text-xs text-muted-foreground">
                 {zsoReadable ? t("add.compressHint") : t("add.compressNotForProfile")}
               </span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-titles`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-titles`}
+              checked={settings.titlesFromDb}
+              onCheckedChange={(titlesFromDb) => update({ titlesFromDb })}
+              className="mt-0.5"
+              data-testid="titles-from-db"
+            />
+            <span>
+              {t("settings.titlesFromDb")}
+              <span className="block text-xs text-muted-foreground">{t("settings.titlesFromDbHint")}</span>
             </span>
           </Label>
           <Label htmlFor={`${ids}-covers`} className="items-start font-normal">

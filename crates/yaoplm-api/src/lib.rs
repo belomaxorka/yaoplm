@@ -333,6 +333,7 @@ impl Api {
                 overrides,
                 compress,
                 verify,
+                database_titles,
                 covers,
             } => {
                 let (path, fs) = self.root(&root)?;
@@ -381,6 +382,7 @@ impl Api {
                     overrides,
                     compress: compress.unwrap_or(false),
                     check: verify.unwrap_or(false),
+                    database_titles: database_titles.unwrap_or(false),
                     covers: covers.as_ref().map(|c| c.items.clone()).unwrap_or_default(),
                 };
                 let sources = ArchiveSources::new(&HostSources);

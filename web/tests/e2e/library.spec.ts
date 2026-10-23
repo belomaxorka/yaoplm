@@ -92,7 +92,10 @@ test("a game is added from the server folders through the plan", async ({ page, 
   await expect(plan).toBeVisible();
   await expect(plan.getByTestId("plan-transaction")).toHaveCount(1);
   await expect(plan).toContainText("SCES_500.03");
-  await expect(plan).toContainText("CD/SCES_500.03.Lf Game.iso");
+  // The bundled database knows the game: its title replaces the file's.
+  await expect(page.getByTestId("titles-from-db")).toBeChecked();
+  await expect(plan).toContainText("CD/SCES_500.03.Dead or Alive 2 - Hardcore.iso");
+  await expect(plan).toContainText("The bundled database calls SCES_500.03 “Dead or Alive 2 - Hardcore”");
 
   // A title override re-plans; the file name follows.
   await plan.getByLabel("Title").fill("Lf Renamed");

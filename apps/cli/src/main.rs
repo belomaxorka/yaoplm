@@ -109,6 +109,10 @@ enum Command {
         /// is written and compared with the stored Redump DAT.
         #[arg(long)]
         no_verify: bool,
+        /// Title the games the bundled database knows by its name there;
+        /// the others keep the title of their file name.
+        #[arg(long)]
+        db_titles: bool,
         /// Look for the covers of the games being added (as `art fetch`
         /// does) and write them together with the games.
         #[arg(long)]
@@ -474,6 +478,7 @@ fn main() -> anyhow::Result<ExitCode> {
             ul,
             zso,
             no_verify,
+            db_titles,
             covers,
             mirrors,
             skipped,
@@ -508,6 +513,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 overrides: (!overrides.is_empty()).then_some(overrides),
                 compress: Some(zso),
                 verify: Some(!no_verify),
+                database_titles: Some(db_titles),
                 covers: None,
             };
             if covers {

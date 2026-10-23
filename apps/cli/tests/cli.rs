@@ -222,6 +222,21 @@ fn add_prints_the_plan_and_needs_yes() {
     assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
     assert!(s.root.join("APPS").is_dir());
 
+    // With --db-titles the bundled database names the games it knows.
+    let other = s.root.parent().unwrap().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let named = run(&[
+        "add".as_ref(),
+        other.as_os_str(),
+        s.games.as_os_str(),
+        "--db-titles".as_ref(),
+    ]);
+    assert!(
+        stdout(&named).contains("+ write CD/SLUS_200.62.Grand Theft Auto III.iso"),
+        "{}",
+        stdout(&named)
+    );
+
     // The same games again: skipped, nothing to apply.
     let again = run(&[
         "add".as_ref(),

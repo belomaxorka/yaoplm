@@ -46,6 +46,12 @@ compress?: boolean,
  */
 verify?: boolean, 
 /**
+ * Title the games the bundled database knows by its name there;
+ * the others keep their file name's title. Off when absent: only
+ * games whose file names give no title are named by the database.
+ */
+databaseTitles?: boolean, 
+/**
  * A cover set from `FetchArt` with `import` (ART-8): every game
  * gets its cover written right after it, in the same plan.
  */

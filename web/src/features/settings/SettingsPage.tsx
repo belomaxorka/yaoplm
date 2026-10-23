@@ -104,6 +104,14 @@ export function SettingsPage() {
             <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
               <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
             </SettingRow>
+            <SettingRow label={t("settings.titlesFromDb")} hint={t("settings.titlesFromDbHint")} htmlFor={`${ids}-titles`}>
+              <Switch
+                id={`${ids}-titles`}
+                checked={settings.titlesFromDb}
+                onCheckedChange={(titlesFromDb) => update({ titlesFromDb })}
+                data-testid="settings-titles-from-db"
+              />
+            </SettingRow>
           </CardContent>
         </Card>
 
