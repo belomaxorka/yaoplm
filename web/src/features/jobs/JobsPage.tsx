@@ -34,6 +34,7 @@ import { statusColours as dumpColours, statusCounts } from "@/features/verify/du
 import { DumpIcon } from "@/features/verify/DumpBadge";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
+import { errorText, phraseText } from "@/lib/phrase";
 
 /**
  * Jobs panel (IMP-9): one card per job with progress, speed, time left,
@@ -113,8 +114,8 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
         {job.rate !== null && <span>{formatRate(job.rate)}</span>}
         {eta && <span>{t("jobs.eta", { time: eta })}</span>}
         {job.item && (
-          <span className="truncate" title={job.item}>
-            {job.item}
+          <span className="truncate" title={phraseText(job.itemPhrase, job.item)}>
+            {phraseText(job.itemPhrase, job.item)}
           </span>
         )}
       </div>
@@ -160,7 +161,7 @@ function JobCard({ job }: { job: JobInfo }) {
         <KindIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium wrap-anywhere">{jobTitle(t, job)}</span>
+            <span className="font-medium wrap-anywhere">{jobTitle(job)}</span>
             <Badge variant="outline" className={cn("gap-1", statusColours[job.status])}>
               <JobStatusIcon job={job} className="size-3" />
               {t(`jobs.status.${job.status}`)}
@@ -179,7 +180,7 @@ function JobCard({ job }: { job: JobInfo }) {
           )}
           {job.error && (
             <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive" role="alert">
-              {job.error.message}
+              {errorText(job.error)}
             </p>
           )}
           {pendingPlan && (
@@ -234,7 +235,7 @@ function JobCard({ job }: { job: JobInfo }) {
                   </li>
                 ))}
               </ul>
-              {report.error && <p className="text-destructive">{report.error}</p>}
+              {report.error && <p className="text-destructive">{phraseText(report.errorPhrase, report.error)}</p>}
               {report.cancelled && <p className="text-muted-foreground">{t("jobs.cancelledNote")}</p>}
               {report.journal && (
                 <p className="flex flex-wrap items-center gap-2 text-destructive">
@@ -326,7 +327,8 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
         >
           <span className="shrink-0 text-muted-foreground tabular-nums">{formatTime(entry.at)}</span>
           <span className="min-w-0 wrap-anywhere">
-            {entry.kind === "transaction" && t(`jobs.txState.${entry.state}`, { title: entry.title })}
+            {entry.kind === "transaction" &&
+              t(`jobs.txState.${entry.state}`, { title: phraseText(entry.titlePhrase, entry.title) })}
             {entry.kind === "step" &&
               t(`jobs.stepState.${entry.state}`, {
                 step: t(`plan.steps.${entry.op}`, { path: entry.path, to: entry.to ?? "" }),
@@ -351,7 +353,9 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
               <span className="block text-muted-foreground">{t("dump.fromCache")}</span>
             )}
             {entry.kind === "verify" && entry.error && <span className="block">{entry.error}</span>}
-            {entry.kind === "step" && entry.error && <span className="block">{entry.error}</span>}
+            {entry.kind === "step" && entry.error && (
+              <span className="block">{phraseText(entry.errorPhrase, entry.error)}</span>
+            )}
             {entry.kind === "art" && entry.detail && <span className="block text-muted-foreground">{entry.detail}</span>}
           </span>
         </li>

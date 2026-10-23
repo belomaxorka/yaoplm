@@ -23,6 +23,7 @@ pub mod journal;
 mod model;
 mod multipart;
 pub mod ops;
+pub mod phrase;
 pub mod plan;
 pub mod recovery;
 mod scan;
@@ -35,6 +36,7 @@ pub use model::{
     App, ArtFile, CfgSummary, CheatSummary, Game, GameFormat, GameLocation, Library, SkipReason,
     Skipped, UlPart, Warning,
 };
+pub use phrase::{Param, Phrase};
 pub use scan::{
     CD_MAX_BYTES, OPL_FOLDERS, ScanError, ScanOptions, scan_library, scan_library_with,
 };

@@ -35,8 +35,8 @@ export function JobsDock() {
           <li key={job.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">
               <JobStatusIcon job={job} />
-              <span className="truncate" title={job.title}>
-                {jobTitle(t, job)}
+              <span className="truncate" title={jobTitle(job)}>
+                {jobTitle(job)}
               </span>
             </div>
             <JobProgressLine job={job} />

@@ -19,6 +19,7 @@ import {
 import { DAT_EXTENSIONS } from "@/features/add/desktop";
 import { isImageName } from "@/features/art/clipboard";
 import { formatBytes } from "@/lib/format";
+import { errorText } from "@/lib/phrase";
 
 function isDatName(name: string): boolean {
   const dot = name.lastIndexOf(".");
@@ -105,7 +106,7 @@ export function FolderBrowserDialog({
         </div>
         <ul className="min-h-48 flex-1 overflow-auto rounded-md border" aria-label={t("add.entries")}>
           {listing.isPending && <li className="p-3 text-sm text-muted-foreground">{t("common.loading")}</li>}
-          {listing.error && <li className="p-3 text-sm text-destructive">{listing.error.message}</li>}
+          {listing.error && <li className="p-3 text-sm text-destructive">{errorText(listing.error)}</li>}
           {listing.data?.entries.length === 0 && (
             <li className="p-3 text-sm text-muted-foreground">{t("add.emptyFolder")}</li>
           )}

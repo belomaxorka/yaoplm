@@ -9,7 +9,6 @@ import type { GameVerification } from "@/api/generated/GameVerification";
 import type { JobId } from "@/api/generated/JobId";
 import type { VerificationReport } from "@/api/generated/VerificationReport";
 import { redumpStatus, verifyGames, waitForJob } from "@/api/rpc";
-import { RpcError } from "@/api/transport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +29,7 @@ import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { useJobs } from "@/jobs/context";
 import { formatBytes } from "@/lib/format";
 import { gameRef } from "@/lib/gameKey";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 type Scope = "unchecked" | "all";
@@ -127,7 +127,7 @@ function VerifyBody({
         setReport(result);
       }
     } catch (err) {
-      setError(err instanceof RpcError ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setStarting(false);
       onRunning(false);
@@ -189,7 +189,7 @@ function VerifyBody({
           <JobProgressLine job={job} />
           {job.error && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-              {job.error.message}
+              {errorText(job.error)}
             </p>
           )}
           {job.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("dump.cancelled")}</p>}

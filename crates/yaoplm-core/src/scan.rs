@@ -28,6 +28,7 @@ use crate::model::{
     Skipped, UlPart, Warning,
 };
 use crate::multipart::MultiPartFile;
+use crate::phrase::Phrase;
 
 /// Folders `sbCreateFolders()` makes, in the order OPL creates them.
 pub const OPL_FOLDERS: [&str; 9] = [
@@ -67,6 +68,21 @@ pub enum ScanError {
     NotADirectory(PathBuf),
     #[error("cancelled")]
     Cancelled,
+}
+
+impl ScanError {
+    /// For front ends that translate it (ADR-0029).
+    pub fn phrase(&self) -> Phrase {
+        match self {
+            Self::Io { path, source } => Phrase::error("pathError")
+                .with("path", path.display().to_string())
+                .with("error", source.to_string()),
+            Self::NotADirectory(path) => {
+                Phrase::error("notAFolder").with("path", path.display().to_string())
+            }
+            Self::Cancelled => Phrase::error("cancelled"),
+        }
+    }
 }
 
 fn io_err(path: &Path) -> impl FnOnce(io::Error) -> ScanError + '_ {

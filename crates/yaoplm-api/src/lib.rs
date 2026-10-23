@@ -23,6 +23,7 @@ mod events;
 pub mod jobs;
 pub mod library;
 mod paths;
+pub mod phrase;
 pub mod plans;
 mod protocol;
 pub mod verify;
@@ -45,7 +46,9 @@ use jobs::{
     TxOutcome, now_ms,
 };
 use library::{ImageDetails, Library, LoaderProfile};
+use phrase::Phrase;
 use plans::PlanStore;
+use yaoplm_core::Phrase as Said;
 use yaoplm_core::archives::ArchiveSources;
 use yaoplm_core::convert;
 use yaoplm_core::exec::{self, Context, Event, Outcome, StepEvent, TxEvent};
@@ -78,15 +81,38 @@ impl Default for Api {
 }
 
 pub(crate) fn op_error(err: OpError) -> ApiError {
-    match err {
-        OpError::NotFound(m) => ApiError::not_found(m),
-        OpError::Invalid(m) | OpError::Conflict(m) => ApiError::bad_request(m),
-        OpError::Io(e) => ApiError::internal(e.to_string()),
-    }
+    let code = match err {
+        OpError::NotFound(_) => ErrorCode::NotFound,
+        OpError::Invalid(_) | OpError::Conflict(_) => ErrorCode::BadRequest,
+        OpError::Io(_) => ErrorCode::Internal,
+    };
+    ApiError::phrased(code, &err.phrase())
 }
 
 fn io_error(err: std::io::Error) -> ApiError {
-    ApiError::internal(err.to_string())
+    ApiError::phrased(
+        ErrorCode::Internal,
+        &Said::error("system").with("error", err.to_string()),
+    )
+}
+
+pub(crate) fn scan_error(err: &yaoplm_core::ScanError) -> ApiError {
+    let code = match err {
+        yaoplm_core::ScanError::NotADirectory(_) => ErrorCode::BadRequest,
+        yaoplm_core::ScanError::Cancelled => ErrorCode::Cancelled,
+        yaoplm_core::ScanError::Io { .. } => ErrorCode::Internal,
+    };
+    ApiError::phrased(code, &err.phrase())
+}
+
+/// A path the core refuses as a device path.
+pub(crate) fn path_error(err: &yaoplm_device::PathError) -> ApiError {
+    let (yaoplm_device::PathError::BadComponent(path)
+    | yaoplm_device::PathError::BadCharacter(path)) = err;
+    ApiError::phrased(
+        ErrorCode::BadRequest,
+        &Said::error("badPath").with("path", path),
+    )
 }
 
 fn name_style(style: Option<protocol::NameStyle>) -> Option<iso_name::NameStyle> {
@@ -136,10 +162,10 @@ impl Api {
     fn root(&self, raw: &str) -> Result<(PathBuf, HostFs), ApiError> {
         let path = self.paths.resolve(raw)?;
         if !path.is_dir() {
-            return Err(ApiError::bad_request(format!(
-                "{} is not a folder",
-                display_path(&path)
-            )));
+            return Err(ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("notAFolder").with("path", display_path(&path)),
+            ));
         }
         let fs = HostFs::new(&path).map_err(io_error)?;
         Ok((path, fs))
@@ -154,7 +180,10 @@ impl Api {
                     resolved
                         .strip_prefix(root)
                         .map_err(|_| {
-                            ApiError::bad_request(format!("{path} is not on this device"))
+                            ApiError::phrased(
+                                ErrorCode::BadRequest,
+                                &Said::error("notOnDevice").with("path", &path),
+                            )
                         })?
                         .to_path_buf()
                 } else {
@@ -164,8 +193,7 @@ impl Api {
                     .components()
                     .map(|c| c.as_os_str().to_string_lossy().into_owned())
                     .collect();
-                let rel = RelPath::new(&text.join("/"))
-                    .map_err(|e| ApiError::bad_request(e.to_string()))?;
+                let rel = RelPath::new(&text.join("/")).map_err(|e| path_error(&e))?;
                 Ok(ops::GameRef::Image { path: rel })
             }
             GameRef::Ul {
@@ -248,12 +276,12 @@ impl Api {
                     profile: profile.into(),
                     verify_images: verify.unwrap_or(true),
                 };
-                let title = format!("Scan {}", display_path(&path));
+                let title = Said::title("scanLibrary");
                 let root = display_path(&path);
                 let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
                     JobKind::ScanLibrary,
-                    title,
+                    &title,
                     Some(root),
                     Queue::Read,
                     move |ctx| {
@@ -262,17 +290,7 @@ impl Api {
                                 ctx.progress(done, Some(total), None);
                                 !ctx.is_cancelled()
                             })
-                            .map_err(|err| match err {
-                                yaoplm_core::ScanError::NotADirectory(_) => {
-                                    ApiError::bad_request(err.to_string())
-                                }
-                                yaoplm_core::ScanError::Cancelled => {
-                                    ApiError::new(ErrorCode::Cancelled, "cancelled")
-                                }
-                                yaoplm_core::ScanError::Io { .. } => {
-                                    ApiError::internal(err.to_string())
-                                }
-                            })?;
+                            .map_err(|err| scan_error(&err))?;
                         let mut wire = Library::from_core(&library, profile);
                         verify::attach_checks(&mut wire, &library, &net);
                         Ok(JobResult::Library(Box::new(wire)))
@@ -283,14 +301,18 @@ impl Api {
             Request::ImageInfo { path, profile } => {
                 let path = self.paths.resolve(&path)?;
                 if path.is_dir() {
-                    return Err(ApiError::bad_request(format!(
-                        "{} is a folder",
-                        display_path(&path)
-                    )));
+                    return Err(ApiError::phrased(
+                        ErrorCode::BadRequest,
+                        &Said::error("isAFolder").with("path", display_path(&path)),
+                    ));
                 }
                 let profile: LoaderProfile = profile.unwrap_or_default();
-                let info = yaoplm_core::image_info(&path, profile.into())
-                    .map_err(|err| ApiError::bad_request(err.to_string()))?;
+                let info = yaoplm_core::image_info(&path, profile.into()).map_err(|err| {
+                    ApiError::phrased(
+                        ErrorCode::BadRequest,
+                        &Said::error("system").with("error", err.to_string()),
+                    )
+                })?;
                 Ok(Response::ImageInfo(Box::new(ImageDetails::from(&info))))
             }
             Request::ListDir { path } => {
@@ -428,23 +450,39 @@ impl Api {
             } => {
                 let stored = self.plans.take(&plan, |stored| {
                     if let Some(blocker) = stored.plan.blockers().next() {
-                        return Err(ApiError::bad_request(blocker.message.clone()));
+                        // The notice's message names what is missing.
+                        let mut err = ApiError::phrased(
+                            ErrorCode::BadRequest,
+                            &Said::error("planBlocked").with("reason", Said::notice(&blocker.code)),
+                        );
+                        err.message.clone_from(&blocker.message);
+                        return Err(err);
                     }
                     if stored.plan.transactions.is_empty() {
-                        return Err(ApiError::bad_request("the plan has nothing to do"));
+                        return Err(ApiError::phrased(
+                            ErrorCode::BadRequest,
+                            &Said::error("planEmpty"),
+                        ));
                     }
                     if stored.plan.deletes_user_data() && confirm_delete != Some(true) {
-                        return Err(ApiError::bad_request(
-                            "this plan deletes files; confirm with confirmDelete",
+                        return Err(ApiError::phrased(
+                            ErrorCode::BadRequest,
+                            &Said::error("confirmDelete"),
                         ));
                     }
                     Ok(())
                 })?;
-                let title = stored.plan.title.clone();
+                // Plans always have a phrase now; `plan` passes an English
+                // title through.
+                let title = stored
+                    .plan
+                    .title_phrase
+                    .clone()
+                    .unwrap_or_else(|| Said::title("plan").with("title", &stored.plan.title));
                 let root = display_path(&stored.root);
                 let job = self.jobs.spawn(
                     JobKind::ExecutePlan,
-                    title,
+                    &title,
                     Some(root),
                     Queue::Write,
                     move |ctx| {
@@ -460,16 +498,23 @@ impl Api {
                             },
                             &mut |event| match event {
                                 Event::Progress(p) => {
-                                    ctx.progress(p.done, Some(p.total), Some(&p.title));
+                                    ctx.progress_with(
+                                        p.done,
+                                        Some(p.total),
+                                        Some(&p.title),
+                                        p.title_phrase.as_ref(),
+                                    );
                                 }
                                 Event::Transaction {
                                     index,
                                     title,
+                                    title_phrase,
                                     state,
                                 } => ctx.log(JobLogEntry::Transaction {
                                     at: now_ms(),
                                     index: u32::try_from(index).unwrap_or(u32::MAX),
                                     title: title.to_owned(),
+                                    title_phrase: title_phrase.map(Phrase::from),
                                     state: match state {
                                         TxEvent::Started => TxLogState::Started,
                                         TxEvent::Done => TxLogState::Done,
@@ -500,7 +545,8 @@ impl Api {
                                         path: view.path,
                                         to: view.to,
                                         state,
-                                        error,
+                                        error: error.as_ref().map(Said::english),
+                                        error_phrase: error.as_ref().map(Phrase::from),
                                     });
                                 }
                             },
@@ -518,6 +564,7 @@ impl Api {
                                 .collect(),
                             cancelled: report.cancelled,
                             error: report.error.as_ref().map(ToString::to_string),
+                            error_phrase: report.error.as_ref().map(|e| Phrase::from(&e.phrase())),
                             journal: report.journal,
                         }))
                     },
@@ -528,14 +575,17 @@ impl Api {
                 if self.plans.discard(&plan) {
                     Ok(Response::Ack)
                 } else {
-                    Err(ApiError::not_found(format!("no plan {plan}")))
+                    Err(ApiError::phrased(
+                        ErrorCode::NotFound,
+                        &Said::error("planExpired").with("id", &plan),
+                    ))
                 }
             }
             Request::GetJob { job } => self
                 .jobs
                 .get(job)
                 .map(|info| Response::JobState(Box::new(info)))
-                .ok_or_else(|| ApiError::not_found(format!("no job {}", job.0))),
+                .ok_or_else(|| jobs::job_gone(job)),
             Request::ListJobs => Ok(Response::Jobs {
                 jobs: self.jobs.list(),
             }),
@@ -561,13 +611,9 @@ impl Api {
                 };
                 let net = Arc::clone(&self.net);
                 let plans = self.plans.clone();
-                let title = match params.scope {
-                    art::ArtScope::Missing => "Find missing covers",
-                    art::ArtScope::All => "Find covers for every game",
-                };
                 let job = self.jobs.spawn(
                     JobKind::FetchArt,
-                    title,
+                    &Said::title("findCovers"),
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| art::fetch_job(ctx, &net, &plans, params),
@@ -623,7 +669,7 @@ impl Api {
                 let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
                     JobKind::VerifyGames,
-                    "Verify games against Redump",
+                    &Said::title("verifyGames"),
                     Some(display_path(&path)),
                     Queue::Read,
                     move |ctx| verify::verify_job(ctx, &net, params),
@@ -635,17 +681,19 @@ impl Api {
             }),
             Request::UpdateRedump { file } => {
                 let file = file.map(|f| self.paths.resolve(&f)).transpose()?;
-                let title = if file.is_some() {
-                    "Import a Redump DAT"
+                let title = Said::title(if file.is_some() {
+                    "importRedump"
                 } else {
-                    "Update the Redump DAT"
-                };
+                    "updateRedump"
+                });
                 let net = Arc::clone(&self.net);
-                let job =
-                    self.jobs
-                        .spawn(JobKind::UpdateRedump, title, None, Queue::Read, move |_| {
-                            verify::update_job(&net, file)
-                        });
+                let job = self.jobs.spawn(
+                    JobKind::UpdateRedump,
+                    &title,
+                    None,
+                    Queue::Read,
+                    move |_| verify::update_job(&net, file),
+                );
                 Ok(Response::Job { job })
             }
             Request::Attribution => Ok(Response::Attribution(Box::new(art::attribution()?))),
@@ -707,6 +755,7 @@ mod tests {
             total: None,
             rate: Some(20_000_000),
             item: None,
+            item_phrase: None,
         };
         assert_eq!(
             serde_json::to_value(event).unwrap(),

@@ -849,6 +849,7 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
                 total,
                 rate,
                 item,
+                ..
             } if *id == job => {
                 let mut stderr = io::stderr().lock();
                 let _ = write!(
@@ -882,12 +883,14 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
         id: job,
         kind: yaoplm_api::jobs::JobKind::ExecutePlan,
         title: String::new(),
+        title_phrase: None,
         root: None,
         status: JobStatus::Failed,
         done: 0,
         total: None,
         rate: None,
         item: None,
+        item_phrase: None,
         result: None,
         error: Some(yaoplm_api::ApiError::internal("the job vanished")),
         log: Vec::new(),

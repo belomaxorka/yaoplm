@@ -108,6 +108,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
                 id: event.job,
                 kind: event.kind,
                 title: event.title,
+                titlePhrase: event.titlePhrase,
                 root: event.root,
                 status: "queued",
                 done: 0,
@@ -129,6 +130,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
               total: event.total,
               rate: event.rate,
               item: event.item ?? job.item,
+              itemPhrase: event.item ? event.itemPhrase : job.itemPhrase,
             }));
             break;
           case "Log":

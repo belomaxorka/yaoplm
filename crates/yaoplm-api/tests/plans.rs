@@ -167,6 +167,38 @@ fn import_rename_move_delete() {
 }
 
 #[test]
+fn titles_and_errors_carry_phrases() {
+    let s = setup();
+    let api = Api::new();
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": s.device, "sources": [s.sources]}),
+    )
+    .unwrap();
+    // ADR-0029: the English title comes from the catalogue the UI
+    // translates the phrase with.
+    assert_eq!(plan["title"], "Import 2 games");
+    assert_eq!(
+        plan["titlePhrase"],
+        json!({"key": "titles.importGames", "params": {"count": 2}})
+    );
+    let copy = &plan["transactions"][1];
+    assert_eq!(copy["titlePhrase"]["key"], "titles.copyGame");
+    let name = copy["titlePhrase"]["params"]["name"].as_str().unwrap();
+    assert_eq!(copy["title"], format!("Copy {name} to CD"));
+
+    let err = call(&api, json!({"type": "ExecutePlan", "plan": "gone"})).unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert_eq!(err.message, "Plan gone expired or already ran");
+    let phrase = err.phrase.unwrap();
+    assert_eq!(phrase.key, "errors.planExpired");
+    assert_eq!(
+        serde_json::to_value(&phrase.params).unwrap(),
+        json!({"id": "gone"})
+    );
+}
+
+#[test]
 fn ul_games_by_index() {
     let s = setup();
     let api = Api::new();
@@ -351,6 +383,10 @@ fn job_log_reports_transactions_and_steps() {
     };
     assert_eq!(report.outcomes, [TxOutcome::RolledBack]);
     assert!(report.error.is_some());
+    assert_eq!(
+        report.error_phrase.as_ref().map(|p| p.key.as_str()),
+        Some("errors.alreadyExists")
+    );
     let failed = info.log.iter().find_map(|entry| match entry {
         JobLogEntry::Step {
             state: StepLogState::Failed,

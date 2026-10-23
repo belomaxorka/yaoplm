@@ -21,6 +21,7 @@ import type { StepOp } from "@/api/generated/StepOp";
 import { NoticeList } from "@/components/Notices";
 import { Badge } from "@/components/ui/badge";
 import { formatBytes } from "@/lib/format";
+import { phraseText } from "@/lib/phrase";
 
 const stepIcons: Record<StepOp, LucideIcon> = {
   createDir: FolderPlus,
@@ -78,7 +79,7 @@ export function TransactionCard({
     <li className="rounded-lg border bg-card p-3" data-testid="plan-transaction">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-muted-foreground">{index + 1}.</span>
-        <span className="font-medium">{transaction.title}</span>
+        <span className="font-medium">{phraseText(transaction.titlePhrase, transaction.title)}</span>
         {transaction.game && (
           <span className="ml-auto flex items-center gap-1">
             <Badge variant="outline">{transaction.game.media}</Badge>

@@ -9,6 +9,7 @@ use crate::devices::DeviceInfo;
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
+use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::verify::RedumpInfo;
 
@@ -390,12 +391,15 @@ pub struct JobId(pub u64);
 /// events, then exactly one of `Finished`, `Failed` or `Cancelled`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum JobEvent {
     Queued {
         job: JobId,
         kind: JobKind,
         title: String,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title_phrase: Option<Phrase>,
         /// The device the job works on, when it has one.
         root: Option<String>,
     },
@@ -411,6 +415,9 @@ pub enum JobEvent {
         rate: Option<u64>,
         /// What is being worked on, e.g. the game being copied.
         item: Option<String>,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_phrase: Option<Phrase>,
     },
     /// A line of a job's log: a transaction or step of a plan, a game of a
     /// cover search or dump check. `GetJob` returns the whole log, so a

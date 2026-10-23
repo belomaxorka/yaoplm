@@ -2,6 +2,7 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 
 import type { ApiError } from "@/api/generated/ApiError";
 import type { JobEvent } from "@/api/generated/JobEvent";
+import type { Phrase } from "@/api/generated/Phrase";
 import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { readStorage, writeStorage } from "@/lib/storage";
@@ -24,11 +25,14 @@ export interface Transport {
 
 export class RpcError extends Error {
   readonly code: ApiError["code"];
+  /** The message for the UI's language; see `errorText`. */
+  readonly phrase: Phrase | undefined;
 
   constructor(error: ApiError) {
     super(error.message);
     this.name = "RpcError";
     this.code = error.code;
+    this.phrase = error.phrase;
   }
 }
 

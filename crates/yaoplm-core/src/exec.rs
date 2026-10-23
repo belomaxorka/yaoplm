@@ -20,6 +20,7 @@ use yaoplm_device::{CancelToken, CopyError, RelPath, SourceFs, copy_exact};
 use yaoplm_formats::zso::{self, ZsoError};
 
 use crate::journal::{self, Journal, TxProgress, TxState};
+use crate::phrase::Phrase;
 use crate::plan::{Expect, Plan, PlanKind, Removal, Step};
 use crate::source::{device_path, open_stream};
 
@@ -29,6 +30,7 @@ pub struct Progress {
     pub transaction: usize,
     pub transactions: usize,
     pub title: String,
+    pub title_phrase: Option<Phrase>,
     /// Bytes written by the whole plan so far, and in total.
     pub done: u64,
     pub total: u64,
@@ -48,7 +50,7 @@ pub enum TxEvent {
 pub enum StepEvent {
     Started,
     Done,
-    Failed(String),
+    Failed(Phrase),
     /// Rolled back after a failure or a cancel.
     Undone,
 }
@@ -61,6 +63,7 @@ pub enum Event<'a> {
     Transaction {
         index: usize,
         title: &'a str,
+        title_phrase: Option<&'a Phrase>,
         state: TxEvent,
     },
     Step {
@@ -71,35 +74,84 @@ pub enum Event<'a> {
     },
 }
 
-#[derive(Debug, thiserror::Error)]
+/// Why a plan stopped. [`ExecError::phrase`] says it in the user's
+/// language (ADR-0029); `Display` is its English text.
+#[derive(Debug)]
 pub enum ExecError {
-    #[error("the plan cannot run: {0}")]
-    Blocked(String),
-    #[error("the device changed since the plan was made")]
-    DeviceChanged { planned: String, now: String },
-    #[error("{} changed since the plan was made", .0.display())]
+    /// A plan notice of level error; `code` names it.
+    Blocked {
+        code: String,
+        message: String,
+    },
+    DeviceChanged {
+        planned: String,
+        now: String,
+    },
     SourceChanged(PathBuf),
-    #[error("an unfinished operation is recorded on this device (journal {0}); recover it first")]
     Unfinished(String),
-    #[error("not enough free space: {needed} bytes needed, {free} available")]
-    NoSpace { needed: u64, free: u64 },
-    #[error("{0}")]
-    Precondition(String),
-    #[error("{context}: {source}")]
+    NoSpace {
+        needed: u64,
+        free: u64,
+    },
+    Precondition(Phrase),
     Io {
-        context: String,
-        #[source]
+        /// What was being done, such as `errors.cannotWrite`.
+        action: Phrase,
         source: io::Error,
     },
-    #[error("cancelled")]
     Cancelled,
 }
 
 impl ExecError {
-    fn io(context: impl Into<String>) -> impl FnOnce(io::Error) -> Self {
-        let context = context.into();
-        move |source| Self::Io { context, source }
+    fn io(action: Phrase) -> impl FnOnce(io::Error) -> Self {
+        move |source| Self::Io { action, source }
     }
+
+    pub fn phrase(&self) -> Phrase {
+        match self {
+            Self::Blocked { code, .. } => {
+                Phrase::error("planBlocked").with("reason", Phrase::notice(code))
+            }
+            Self::DeviceChanged { .. } => Phrase::error("deviceChanged"),
+            Self::SourceChanged(path) => {
+                Phrase::error("sourceChanged").with("path", path.display().to_string())
+            }
+            Self::Unfinished(id) => Phrase::error("unfinishedJournal").with("id", id),
+            Self::NoSpace { needed, free } => Phrase::error("noSpace")
+                .with("needed", *needed)
+                .with("free", *free),
+            Self::Precondition(phrase) => phrase.clone(),
+            Self::Io { action, source } => Phrase::error("io")
+                .with("action", action.clone())
+                .with("error", source.to_string()),
+            Self::Cancelled => Phrase::error("cancelled"),
+        }
+    }
+}
+
+impl std::fmt::Display for ExecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // The notice's own message names what is missing; its label
+            // alone would not.
+            Self::Blocked { message, .. } => write!(f, "the plan cannot run: {message}"),
+            other => f.write_str(&other.phrase().english()),
+        }
+    }
+}
+
+impl std::error::Error for ExecError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+/// `errors.<code>` about `path`, for [`ExecError::io`].
+fn doing(code: &str, path: &dyn std::fmt::Display) -> Phrase {
+    Phrase::error(code).with("path", path.to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,7 +194,9 @@ enum Mode {
 }
 
 fn rel_err(e: yaoplm_device::PathError) -> ExecError {
-    ExecError::Precondition(e.to_string())
+    let (yaoplm_device::PathError::BadComponent(path)
+    | yaoplm_device::PathError::BadCharacter(path)) = e;
+    ExecError::Precondition(Phrase::error("badPath").with("path", path))
 }
 
 fn part_path(path: &RelPath) -> Result<RelPath, ExecError> {
@@ -151,7 +205,7 @@ fn part_path(path: &RelPath) -> Result<RelPath, ExecError> {
 
 fn exists(fs: &dyn DeviceFs, path: &RelPath) -> Result<Option<yaoplm_device::FileMeta>, ExecError> {
     fs.metadata(path)
-        .map_err(ExecError::io(format!("cannot check {path}")))
+        .map_err(ExecError::io(doing("cannotCheck", &path)))
 }
 
 fn same_name(a: &RelPath, b: &RelPath) -> bool {
@@ -161,7 +215,7 @@ fn same_name(a: &RelPath, b: &RelPath) -> bool {
 fn remove_if_exists(fs: &dyn DeviceFs, path: &RelPath) -> Result<(), ExecError> {
     if exists(fs, path)?.is_some() {
         fs.remove_file(path)
-            .map_err(ExecError::io(format!("cannot remove {path}")))?;
+            .map_err(ExecError::io(doing("cannotRemove", &path)))?;
     }
     Ok(())
 }
@@ -175,7 +229,7 @@ fn ensure_parent(fs: &dyn DeviceFs, path: &RelPath) -> Result<(), ExecError> {
     }
     for dir in dirs.iter().rev() {
         fs.create_dir(dir)
-            .map_err(ExecError::io(format!("cannot create {dir}")))?;
+            .map_err(ExecError::io(doing("cannotCreate", &dir)))?;
     }
     Ok(())
 }
@@ -283,6 +337,7 @@ impl Runner<'_, '_> {
         (self.events)(Event::Transaction {
             index: self.current.transaction,
             title: &self.current.title,
+            title_phrase: self.current.title_phrase.as_ref(),
             state,
         });
     }
@@ -300,7 +355,7 @@ impl Runner<'_, '_> {
         match step {
             Step::CreateDir { path } => fs
                 .create_dir(path)
-                .map_err(ExecError::io(format!("cannot create {path}"))),
+                .map_err(ExecError::io(doing("cannotCreate", &path))),
             Step::RemoveDir { path } => {
                 if exists(fs, path)?.is_some_and(|m| m.is_dir) {
                     // A folder the user put files in stays.
@@ -327,7 +382,7 @@ impl Runner<'_, '_> {
                 let current = match exists(fs, path)? {
                     Some(_) => Some(
                         fs.read(path)
-                            .map_err(ExecError::io(format!("cannot read {path}")))?,
+                            .map_err(ExecError::io(doing("cannotRead", &path)))?,
                     ),
                     None => None,
                 };
@@ -340,28 +395,30 @@ impl Runner<'_, '_> {
                     Expect::Any => true,
                 };
                 if !ok {
-                    return Err(ExecError::Precondition(format!(
-                        "{path} changed since the plan was made"
-                    )));
+                    return Err(ExecError::Precondition(
+                        Phrase::error("sourceChanged").with("path", path.to_string()),
+                    ));
                 }
                 write_atomic(fs, path, &content.0)
-                    .map_err(ExecError::io(format!("cannot write {path}")))?;
+                    .map_err(ExecError::io(doing("cannotWrite", &path)))?;
                 self.done += content.0.len() as u64;
                 Ok(())
             }
             Step::CopyFile { from, to } => {
                 let data = fs
                     .read(from)
-                    .map_err(ExecError::io(format!("cannot read {from}")))?;
+                    .map_err(ExecError::io(doing("cannotRead", &from)))?;
                 if exists(fs, to)?.is_some() {
                     let same = fs.read(to).is_ok_and(|d| d == data);
                     if self.mode == Mode::Resume && same {
                         return Ok(());
                     }
-                    return Err(ExecError::Precondition(format!("{to} already exists")));
+                    return Err(ExecError::Precondition(
+                        Phrase::error("alreadyExists").with("path", to.to_string()),
+                    ));
                 }
                 ensure_parent(fs, to)?;
-                write_atomic(fs, to, &data).map_err(ExecError::io(format!("cannot write {to}")))
+                write_atomic(fs, to, &data).map_err(ExecError::io(doing("cannotWrite", &to)))
             }
             Step::Rename { from, to } => {
                 let source = exists(fs, from)?;
@@ -370,15 +427,22 @@ impl Runner<'_, '_> {
                     return Ok(());
                 }
                 if source.is_none() {
-                    return Err(ExecError::Precondition(format!("{from} does not exist")));
+                    return Err(ExecError::Precondition(
+                        Phrase::error("doesNotExist").with("path", from.to_string()),
+                    ));
                 }
                 if target.is_some() && !same_name(from, to) {
-                    return Err(ExecError::Precondition(format!("{to} already exists")));
+                    return Err(ExecError::Precondition(
+                        Phrase::error("alreadyExists").with("path", to.to_string()),
+                    ));
                 }
-                fs.rename(from, to)
-                    .map_err(ExecError::io(format!("cannot rename {from} to {to}")))?;
+                fs.rename(from, to).map_err(ExecError::io(
+                    Phrase::error("cannotRename")
+                        .with("from", from.to_string())
+                        .with("to", to.to_string()),
+                ))?;
                 fs.sync_dir(&to.parent().unwrap_or_default())
-                    .map_err(ExecError::io(format!("cannot sync {to}")))
+                    .map_err(ExecError::io(doing("cannotSync", &to)))
             }
             Step::Remove { path, len, what } => {
                 let Some(meta) = exists(fs, path)? else {
@@ -394,17 +458,19 @@ impl Runner<'_, '_> {
                     return Ok(());
                 }
                 fs.remove_file(path)
-                    .map_err(ExecError::io(format!("cannot remove {path}")))
+                    .map_err(ExecError::io(doing("cannotRemove", &path)))
             }
             Step::RemoveSource { source } => {
-                let source = self.plan.sources.get(*source).ok_or_else(|| {
-                    ExecError::Precondition("the plan names an unknown source".into())
-                })?;
+                let source = self
+                    .plan
+                    .sources
+                    .get(*source)
+                    .ok_or_else(|| ExecError::Precondition(Phrase::error("unknownSource")))?;
                 for file in &source.files {
                     match self.ctx.sources.remove(&file.path) {
                         Err(err) if err.kind() != io::ErrorKind::NotFound => {
                             return Err(ExecError::Io {
-                                context: format!("cannot remove {}", file.path.display()),
+                                action: doing("cannotRemove", &file.path.display()),
                                 source: err,
                             });
                         }
@@ -413,8 +479,9 @@ impl Runner<'_, '_> {
                 }
                 Ok(())
             }
-            Step::DropJournal { id } => journal::remove(fs, id)
-                .map_err(ExecError::io(format!("cannot remove journal {id}"))),
+            Step::DropJournal { id } => journal::remove(fs, id).map_err(ExecError::io(
+                Phrase::error("cannotRemoveJournal").with("id", id),
+            )),
         }
     }
 
@@ -432,23 +499,25 @@ impl Runner<'_, '_> {
                 self.done += len;
                 return Ok(());
             }
-            return Err(ExecError::Precondition(format!("{path} already exists")));
+            return Err(ExecError::Precondition(
+                Phrase::error("alreadyExists").with("path", path.to_string()),
+            ));
         }
         let index = source;
-        let source =
-            self.plan.sources.get(source).ok_or_else(|| {
-                ExecError::Precondition("the plan names an unknown source".into())
-            })?;
+        let source = self
+            .plan
+            .sources
+            .get(source)
+            .ok_or_else(|| ExecError::Precondition(Phrase::error("unknownSource")))?;
         let mut reader = match self.stream.take() {
             Some((at_source, at, reader)) if at_source == index && at == offset => reader,
-            _ => open_stream(self.ctx.sources, fs, source, offset).map_err(ExecError::io(
-                format!("cannot read {}", source.path.display()),
-            ))?,
+            _ => open_stream(self.ctx.sources, fs, source, offset)
+                .map_err(ExecError::io(doing("cannotRead", &source.path.display())))?,
         };
         remove_if_exists(fs, &part)?;
         let mut file = fs
             .create(&part)
-            .map_err(ExecError::io(format!("cannot create {part}")))?;
+            .map_err(ExecError::io(doing("cannotCreate", &part)))?;
         // Best effort: a refusal only costs contiguity.
         let _ = file.preallocate(len);
         let start = self.done;
@@ -465,24 +534,27 @@ impl Runner<'_, '_> {
             Err(CopyError::Cancelled) => return Err(ExecError::Cancelled),
             Err(CopyError::Io(source)) => {
                 return Err(ExecError::Io {
-                    context: format!("cannot write {path}"),
+                    action: doing("cannotWrite", &path),
                     source,
                 });
             }
             Err(err @ CopyError::ShortSource { .. }) => {
                 return Err(ExecError::Io {
-                    context: format!("cannot write {path}"),
+                    action: doing("cannotWrite", &path),
                     source: io::Error::new(io::ErrorKind::UnexpectedEof, err.to_string()),
                 });
             }
         }
         file.sync()
-            .map_err(ExecError::io(format!("cannot sync {part}")))?;
+            .map_err(ExecError::io(doing("cannotSync", &part)))?;
         drop(file);
-        fs.rename(&part, path)
-            .map_err(ExecError::io(format!("cannot rename {part}")))?;
+        fs.rename(&part, path).map_err(ExecError::io(
+            Phrase::error("cannotRename")
+                .with("from", part.to_string())
+                .with("to", path.to_string()),
+        ))?;
         fs.sync_dir(&path.parent().unwrap_or_default())
-            .map_err(ExecError::io(format!("cannot sync {path}")))?;
+            .map_err(ExecError::io(doing("cannotSync", &path)))?;
         self.done = start + len;
         self.stream = Some((index, offset + len, reader));
         Ok(())
@@ -494,10 +566,11 @@ impl Runner<'_, '_> {
     fn write_zso(&mut self, path: &RelPath, source: usize, max_len: u64) -> Result<(), ExecError> {
         let fs = self.ctx.fs;
         let part = part_path(path)?;
-        let source =
-            self.plan.sources.get(source).ok_or_else(|| {
-                ExecError::Precondition("the plan names an unknown source".into())
-            })?;
+        let source = self
+            .plan
+            .sources
+            .get(source)
+            .ok_or_else(|| ExecError::Precondition(Phrase::error("unknownSource")))?;
         if exists(fs, path)?.is_some() {
             // Done before an interruption only if it is our ZSO: something
             // else there must not pass for it (the old image goes next).
@@ -508,17 +581,18 @@ impl Runner<'_, '_> {
                 self.done += max_len;
                 return Ok(());
             }
-            return Err(ExecError::Precondition(format!("{path} already exists")));
+            return Err(ExecError::Precondition(
+                Phrase::error("alreadyExists").with("path", path.to_string()),
+            ));
         }
-        let reader = open_stream(self.ctx.sources, fs, source, 0).map_err(ExecError::io(
-            format!("cannot read {}", source.path.display()),
-        ))?;
+        let reader = open_stream(self.ctx.sources, fs, source, 0)
+            .map_err(ExecError::io(doing("cannotRead", &source.path.display())))?;
         // The compressor reads 2 KiB and writes a block at a time.
         let mut reader = BufReader::with_capacity(BLOCK_SIZE, reader);
         remove_if_exists(fs, &part)?;
         let mut file = fs
             .create(&part)
-            .map_err(ExecError::io(format!("cannot create {part}")))?;
+            .map_err(ExecError::io(doing("cannotCreate", &part)))?;
         let start = self.done;
         let result = {
             let events = &mut *self.events;
@@ -547,24 +621,27 @@ impl Runner<'_, '_> {
             Err(ZsoError::Stopped) => return Err(ExecError::Cancelled),
             Err(ZsoError::Io(source)) => {
                 return Err(ExecError::Io {
-                    context: format!("cannot write {path}"),
+                    action: doing("cannotWrite", &path),
                     source,
                 });
             }
             Err(other) => {
                 return Err(ExecError::Io {
-                    context: format!("cannot write {path}"),
+                    action: doing("cannotWrite", &path),
                     source: io::Error::new(io::ErrorKind::InvalidData, other.to_string()),
                 });
             }
         }
         file.sync()
-            .map_err(ExecError::io(format!("cannot sync {part}")))?;
+            .map_err(ExecError::io(doing("cannotSync", &part)))?;
         drop(file);
-        fs.rename(&part, path)
-            .map_err(ExecError::io(format!("cannot rename {part}")))?;
+        fs.rename(&part, path).map_err(ExecError::io(
+            Phrase::error("cannotRename")
+                .with("from", part.to_string())
+                .with("to", path.to_string()),
+        ))?;
         fs.sync_dir(&path.parent().unwrap_or_default())
-            .map_err(ExecError::io(format!("cannot sync {path}")))?;
+            .map_err(ExecError::io(doing("cannotSync", &path)))?;
         self.done = start + max_len;
         Ok(())
     }
@@ -578,7 +655,7 @@ impl Runner<'_, '_> {
             let mut failed = None;
             for undo_step in undo(step, self.plan) {
                 if let Err(err) = self.run(&undo_step) {
-                    failed.get_or_insert(err.to_string());
+                    failed.get_or_insert(err.phrase());
                     first_error.get_or_insert(err);
                 }
             }
@@ -617,7 +694,8 @@ fn check_sources(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
         if source.on_device {
             // The device has no times to compare; the size must hold.
             for file in &source.files {
-                let path = device_path(&file.path).map_err(ExecError::io("bad source path"))?;
+                let path = device_path(&file.path)
+                    .map_err(ExecError::io(Phrase::error("badSourcePath")))?;
                 match exists(ctx.fs, &path)? {
                     Some(meta) if !meta.is_dir && meta.len == file.len => {}
                     _ => return Err(ExecError::SourceChanged(file.path.clone())),
@@ -643,7 +721,7 @@ fn check_device(ctx: &Context<'_>, plan: &Plan) -> Result<u64, ExecError> {
     let info = ctx
         .fs
         .info()
-        .map_err(ExecError::io("cannot query the device"))?;
+        .map_err(ExecError::io(Phrase::error("cannotQueryDevice")))?;
     if info.fingerprint != plan.fingerprint {
         return Err(ExecError::DeviceChanged {
             planned: plan.fingerprint.clone(),
@@ -656,12 +734,15 @@ fn check_device(ctx: &Context<'_>, plan: &Plan) -> Result<u64, ExecError> {
 /// Everything that must hold before the first write.
 fn preflight(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
     if let Some(blocker) = plan.blockers().next() {
-        return Err(ExecError::Blocked(blocker.message.clone()));
+        return Err(ExecError::Blocked {
+            code: blocker.code.clone(),
+            message: blocker.message.clone(),
+        });
     }
     let free = check_device(ctx, plan)?;
-    journal::clean_temp(ctx.fs).map_err(ExecError::io("cannot clean up the journal folder"))?;
+    journal::clean_temp(ctx.fs).map_err(ExecError::io(Phrase::error("cannotCleanJournals")))?;
     let (journals, unreadable) =
-        journal::load_all(ctx.fs).map_err(ExecError::io("cannot read the journals"))?;
+        journal::load_all(ctx.fs).map_err(ExecError::io(Phrase::error("cannotReadJournals")))?;
     if let Some(bad) = unreadable.first() {
         return Err(ExecError::Unfinished(bad.file.clone()));
     }
@@ -715,7 +796,7 @@ pub fn execute_with_events(
     let mut journal = Journal::new(plan);
     if let Err(err) = journal::save(ctx.fs, &journal) {
         report.error = Some(ExecError::Io {
-            context: "cannot write the journal".into(),
+            action: Phrase::error("cannotWriteJournal"),
             source: err,
         });
         return report;
@@ -736,6 +817,7 @@ pub fn execute_with_events(
             transaction: 0,
             transactions: count,
             title: String::new(),
+            title_phrase: None,
             done: 0,
             total: plan.write_bytes(),
         },
@@ -756,6 +838,7 @@ pub fn execute_with_events(
         }
         runner.current.transaction = index;
         runner.current.title = tx.title.clone();
+        runner.current.title_phrase = tx.title_phrase.clone();
         runner.report();
         runner.tx_event(TxEvent::Started);
         let committed_at_start = tx.commit == 0;
@@ -767,9 +850,13 @@ pub fn execute_with_events(
             },
             done: 0,
         };
-        let mut failure = journal::save(ctx.fs, &journal)
-            .err()
-            .map(|e| (0, ExecError::io("cannot write the journal")(e), false));
+        let mut failure = journal::save(ctx.fs, &journal).err().map(|e| {
+            (
+                0,
+                ExecError::io(Phrase::error("cannotWriteJournal"))(e),
+                false,
+            )
+        });
 
         if failure.is_none() {
             for (i, step) in tx.steps.iter().enumerate() {
@@ -779,7 +866,7 @@ pub fn execute_with_events(
                 }
                 runner.step_event(i, step, StepEvent::Started);
                 if let Err(err) = runner.run(step) {
-                    runner.step_event(i, step, StepEvent::Failed(err.to_string()));
+                    runner.step_event(i, step, StepEvent::Failed(err.phrase()));
                     // A precondition failure did nothing; anything else may
                     // have left a partial result.
                     let touched = !matches!(err, ExecError::Precondition(_));
@@ -792,7 +879,11 @@ pub fn execute_with_events(
                     journal.progress[index].state = TxState::Committed;
                 }
                 if let Err(err) = journal::save(ctx.fs, &journal) {
-                    failure = Some((i + 1, ExecError::io("cannot write the journal")(err), false));
+                    failure = Some((
+                        i + 1,
+                        ExecError::io(Phrase::error("cannotWriteJournal"))(err),
+                        false,
+                    ));
                     break;
                 }
             }
@@ -804,7 +895,7 @@ pub fn execute_with_events(
                 report.outcomes[index] = Outcome::Done;
                 runner.tx_event(TxEvent::Done);
                 if let Err(err) = journal::save(ctx.fs, &journal) {
-                    report.error = Some(ExecError::io("cannot write the journal")(err));
+                    report.error = Some(ExecError::io(Phrase::error("cannotWriteJournal"))(err));
                     report.journal = Some(journal.id.clone());
                     return report;
                 }
@@ -861,7 +952,7 @@ pub fn execute_with_events(
         if let Err(err) = journal::remove(ctx.fs, &journal.id) {
             report
                 .error
-                .get_or_insert(ExecError::io("cannot remove the journal")(err));
+                .get_or_insert(ExecError::io(Phrase::error("cannotDropJournal"))(err));
             report.journal = Some(journal.id.clone());
         }
     } else {

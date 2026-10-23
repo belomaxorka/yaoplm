@@ -22,6 +22,7 @@ use yaoplm_device::fs::DeviceFs;
 use crate::device::DeviceState;
 use crate::exec::undo;
 use crate::journal::{self, Journal, TxState};
+use crate::phrase::{Param, Phrase};
 use crate::plan::{Notice, Plan, PlanKind, Step, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -79,16 +80,18 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
         let (steps, commit, verb): (Vec<Step>, usize, &str) = match (progress.state, action) {
             (TxState::Done | TxState::RolledBack, _) => continue,
             (TxState::Pending, RecoveryAction::Rollback) => continue,
-            (TxState::Pending, RecoveryAction::Resume) => (tx.steps.clone(), tx.commit, "Run"),
+            (TxState::Pending, RecoveryAction::Resume) => {
+                (tx.steps.clone(), tx.commit, "recoveryRun")
+            }
             // From the start: steps already done are skipped in resume
             // mode, and a rollback then undoes them too.
             (TxState::Running, RecoveryAction::Resume) if done < tx.commit => {
-                (tx.steps.clone(), tx.commit, "Finish")
+                (tx.steps.clone(), tx.commit, "recoveryFinish")
             }
             (TxState::Committed | TxState::Running, _) if done >= tx.commit => {
-                (tx.steps[done..].to_vec(), 0, "Finish")
+                (tx.steps[done..].to_vec(), 0, "recoveryFinish")
             }
-            (TxState::Committed, _) => (tx.steps[done..].to_vec(), 0, "Finish"),
+            (TxState::Committed, _) => (tx.steps[done..].to_vec(), 0, "recoveryFinish"),
             (TxState::Running, _) => {
                 // The step at `done` may have started; undoing it is safe.
                 let end = (done + 1).min(tx.steps.len());
@@ -97,10 +100,15 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
                     .rev()
                     .flat_map(|step| undo(step, &journal.plan))
                     .collect();
-                (undone, 0, "Undo")
+                (undone, 0, "recoveryUndo")
             }
         };
-        let mut recovery = Transaction::new(format!("{verb}: {}", tx.title));
+        // A journal written before titles had phrases keeps its English one.
+        let title = tx
+            .title_phrase
+            .clone()
+            .map_or_else(|| Param::from(&tx.title), Param::from);
+        let mut recovery = Transaction::titled(Phrase::title(verb).with("title", title));
         recovery.game = tx.game.clone();
         for (i, step) in steps.iter().enumerate() {
             if i < commit {
@@ -117,7 +125,7 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
         }
         plan.transactions.push(recovery);
     }
-    let mut drop = Transaction::new(format!("Close journal {}", journal.id));
+    let mut drop = Transaction::titled(Phrase::title("closeJournal").with("id", &journal.id));
     drop.then(Step::DropJournal {
         id: journal.id.clone(),
     });
@@ -165,9 +173,9 @@ pub fn plan_recovery(fs: &dyn DeviceFs, action: RecoveryAction) -> io::Result<Pl
         plan.notices
             .push(Notice::info("nothingToRecover", "no unfinished operation"));
     }
-    plan.title = match journals.len() - covered.len().min(journals.len()) {
-        1 => "Recover 1 unfinished operation".into(),
-        n => format!("Recover {n} unfinished operations"),
-    };
+    plan.set_title(
+        Phrase::title("recoverOperations")
+            .count(journals.len() - covered.len().min(journals.len())),
+    );
     Ok(plan)
 }
