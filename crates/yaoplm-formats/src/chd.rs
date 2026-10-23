@@ -30,7 +30,6 @@ use crate::iso9660::{SECTOR_SIZE, Sector, SectorSource};
 
 /// Sector data plus subcode in a CD CHD frame.
 pub const CD_FRAME: u64 = 2448;
-const CD_TRACK_PADDING: u64 = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChdError {
@@ -156,12 +155,16 @@ impl<R: Read + Seek> std::fmt::Debug for ChdImage<R> {
 }
 
 impl<R: Read + Seek> ChdImage<R> {
-    pub fn open(mut inner: R) -> Result<Self, ChdError> {
-        let mut chd = Chd::open(&mut inner, None)?;
+    pub fn open(inner: R) -> Result<Self, ChdError> {
+        let mut chd = Chd::open(inner, None)?;
+        // chd-rs opens a child CHD without its parent and fails only when a
+        // hunk refers to it, possibly halfway through a copy.
+        if chd.header().has_parent() {
+            return Err(ChdError::NeedsParent);
+        }
         let metadata: Vec<Metadata> = chd.metadata_refs().try_into()?;
         let unit = chd.header().unit_bytes();
         let logical = chd.header().logical_bytes();
-        drop(chd);
         let tracks = cd_tracks(&metadata)?;
         let layout = if tracks.is_empty() {
             if unit != SECTOR_SIZE as u32 {
@@ -177,14 +180,33 @@ impl<R: Read + Seek> ChdImage<R> {
             if let Some(data) = tracks[1..].iter().find(|t| track_mode(&t.kind).is_some()) {
                 return Err(ChdError::SecondDataTrack(data.number));
             }
+            let sectors = first
+                .frames
+                .checked_sub(first.stored_pregap)
+                .ok_or_else(|| {
+                    ChdError::Metadata(format!(
+                        "track 1 has {} frames but a pregap of {}",
+                        first.frames, first.stored_pregap
+                    ))
+                })?;
+            // The track must lie inside the CHD, or the copy fails at its end.
+            if first
+                .frames
+                .checked_mul(CD_FRAME)
+                .is_none_or(|end| end > logical)
+            {
+                return Err(ChdError::Metadata(format!(
+                    "track 1 ({} frames) runs past the end of the CHD",
+                    first.frames
+                )));
+            }
             Layout::Cd {
                 mode,
                 first_frame: first.stored_pregap,
-                sectors: first.frames.saturating_sub(first.stored_pregap),
+                sectors,
                 dropped: tracks[1..].to_vec(),
             }
         };
-        let chd = Chd::open(inner, None)?;
         Ok(Self {
             reader: ChdReader::new(chd),
             layout,
@@ -231,11 +253,6 @@ impl<R: Read + Seek> SectorSource for ChdImage<R> {
     }
 }
 
-/// Frames a CD track takes in the CHD: its frames rounded up to four.
-pub fn padded_frames(frames: u64) -> u64 {
-    frames.div_ceil(CD_TRACK_PADDING) * CD_TRACK_PADDING
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +279,5 @@ mod tests {
         assert_eq!(track_mode("MODE2_FORM1"), Some(TrackMode::Mode1_2048));
         assert_eq!(track_mode("MODE2_FORM2"), None);
         assert_eq!(track_mode("AUDIO"), None);
-        assert_eq!(padded_frames(9001), 9004);
     }
 }

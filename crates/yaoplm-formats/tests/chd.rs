@@ -13,7 +13,7 @@ use yaoplm_formats::image;
 use yaoplm_formats::iso9660::{SECTOR_SIZE, SectorSource};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::RawMode;
-use yaoplm_test_support::packed::{chd_cd, chd_dvd};
+use yaoplm_test_support::packed::{chd_cd, chd_cd_with, chd_dvd};
 
 fn sectors(image: &mut impl SectorSource) -> Vec<u8> {
     let mut out = Vec::new();
@@ -82,4 +82,32 @@ fn audio_tracks_are_dropped() {
 fn not_a_chd() {
     let err = ChdImage::open(Cursor::new(vec![0u8; 8192])).unwrap_err();
     assert!(matches!(err, ChdError::Chd(_)), "{err}");
+}
+
+#[test]
+fn other_track_types_and_a_stored_pregap() {
+    let iso = Variant::Retail.build().to_vec();
+    for (kind, raw, mode) in [
+        ("MODE2_FORM1", RawMode::Mode1_2048, TrackMode::Mode1_2048),
+        ("MODE2_FORM_MIX", RawMode::Mode2_2336, TrackMode::Mode2_2336),
+        ("MODE2_RAW", RawMode::Mode2_2352, TrackMode::Mode2_2352),
+    ] {
+        for pregap in [0, 150] {
+            let bytes = chd_cd_with(&iso, raw, kind, pregap, 0).unwrap();
+            let mut chd = ChdImage::open(Cursor::new(bytes)).unwrap();
+            let Layout::Cd {
+                mode: found,
+                first_frame,
+                sectors: n,
+                ..
+            } = chd.layout().clone()
+            else {
+                panic!("a CD");
+            };
+            assert_eq!(found, mode, "{kind}");
+            assert_eq!(first_frame, pregap as u64, "{kind}");
+            assert_eq!(n, iso.len() as u64 / 2048, "{kind}");
+            assert_eq!(sectors(&mut chd), iso, "{kind} with a pregap of {pregap}");
+        }
+    }
 }

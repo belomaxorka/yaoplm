@@ -12,6 +12,12 @@
 //! megabytes from its start and a copy reads it once, front to back, so
 //! both stay linear. RAR is not here: its only decoder has a licence that
 //! does not fit GPL-3 (ARCHITECTURE.md §2, feature `rar` later).
+//!
+//! Entry names are made safe the way 7-Zip extracts them: drive letters,
+//! `.` and `..` are dropped, so no name leads out of the archive (a 7z made
+//! with `-spf` stores `C:\Games\x.iso`). Every entry is checked against
+//! its CRC when read to the end: zip by its reader for compressed entries
+//! and here for stored ones, 7z by its decoder.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::Arc;
@@ -92,8 +98,24 @@ pub struct Entry {
     pub is_dir: bool,
 }
 
-fn clean(name: &str) -> String {
-    name.replace('\\', "/").trim_matches('/').to_owned()
+/// `C:` at the start of a component: a drive, which would make the
+/// component replace the path it is joined to.
+fn strip_drive(part: &str) -> &str {
+    match part.as_bytes() {
+        [letter, b':', ..] if letter.is_ascii_alphabetic() => &part[2..],
+        _ => part,
+    }
+}
+
+/// The name as `/`-separated components that stay inside the archive, or
+/// `None` when nothing is left.
+fn safe_name(raw: &str) -> Option<String> {
+    let parts: Vec<&str> = raw
+        .split(['/', '\\'])
+        .map(strip_drive)
+        .filter(|part| !part.is_empty() && *part != "." && *part != "..")
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 /// Everything in the archive, folders included (also the ones only
@@ -106,10 +128,9 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
             let mut out = Vec::with_capacity(archive.len());
             for index in 0..archive.len() {
                 let entry = archive.by_index_raw(index)?;
-                let name = clean(&entry.name()?);
-                if name.is_empty() {
+                let Some(name) = safe_name(&entry.name()?) else {
                     continue;
-                }
+                };
                 out.push(Entry {
                     name,
                     size: entry.size(),
@@ -126,12 +147,13 @@ pub fn list(kind: Kind, source: &mut dyn Source) -> Result<Vec<Entry>, ArchiveEr
                 .files
                 .iter()
                 .filter(|f| !f.is_anti_item)
-                .map(|f| Entry {
-                    name: clean(&f.name),
-                    size: f.size,
-                    is_dir: f.is_directory,
+                .filter_map(|f| {
+                    Some(Entry {
+                        name: safe_name(&f.name)?,
+                        size: f.size,
+                        is_dir: f.is_directory,
+                    })
                 })
-                .filter(|e| !e.name.is_empty())
                 .collect()
         }
     };
@@ -166,8 +188,46 @@ enum Inner {
     Window {
         file: Box<dyn Source>,
         start: u64,
+        crc: StoredCrc,
     },
     Piped(Piped),
+}
+
+/// The CRC of a stored entry, checked when it is read front to back.
+struct StoredCrc {
+    expected: u32,
+    /// The bytes hashed so far; `None` once a read skipped some.
+    hashed: Option<(u64, crc32fast::Hasher)>,
+}
+
+impl StoredCrc {
+    fn new(expected: u32) -> Self {
+        Self {
+            expected,
+            hashed: Some((0, crc32fast::Hasher::new())),
+        }
+    }
+
+    /// Takes the bytes read at `pos`; at the end of the entry, whether they
+    /// match.
+    fn update(&mut self, pos: u64, bytes: &[u8], size: u64) -> bool {
+        let Some((done, hasher)) = &mut self.hashed else {
+            return true;
+        };
+        if *done != pos {
+            self.hashed = None;
+            return true;
+        }
+        hasher.update(bytes);
+        *done += bytes.len() as u64;
+        if *done < size {
+            return true;
+        }
+        let Some((_, hasher)) = self.hashed.take() else {
+            return true;
+        };
+        hasher.finalize() == self.expected
+    }
 }
 
 impl std::fmt::Debug for EntryReader {
@@ -186,17 +246,21 @@ pub fn open_entry(
     name: &str,
 ) -> Result<EntryReader, ArchiveError> {
     file.seek(SeekFrom::Start(0))?;
-    let wanted = clean(name);
+    let wanted = safe_name(name).ok_or_else(|| ArchiveError::NotFound(name.to_owned()))?;
     match kind {
         Kind::Zip => {
-            let (size, stored_at) = {
+            let (size, stored_at, crc) = {
                 let mut archive = zip::ZipArchive::new(&mut *file)?;
                 let index = (0..archive.len())
                     .find(|&i| {
                         archive
                             .by_index_raw(i)
                             .ok()
-                            .and_then(|e| e.name().ok().map(|n| clean(&n) == wanted))
+                            .and_then(|e| {
+                                e.name()
+                                    .ok()
+                                    .map(|n| safe_name(&n).as_ref() == Some(&wanted))
+                            })
                             .unwrap_or(false)
                     })
                     .ok_or_else(|| ArchiveError::NotFound(wanted.clone()))?;
@@ -205,13 +269,21 @@ pub fn open_entry(
                     return Err(ArchiveError::Encrypted(wanted));
                 }
                 let stored = entry.compression() == zip::CompressionMethod::Stored;
-                (entry.size(), entry.data_start().filter(|_| stored))
+                (
+                    entry.size(),
+                    entry.data_start().filter(|_| stored),
+                    entry.crc32(),
+                )
             };
             Ok(EntryReader {
                 size,
                 pos: 0,
                 inner: match stored_at {
-                    Some(start) => Inner::Window { file, start },
+                    Some(start) => Inner::Window {
+                        file,
+                        start,
+                        crc: StoredCrc::new(crc),
+                    },
                     None => Inner::Piped(Piped::new(kind, wanted, file)),
                 },
             })
@@ -223,7 +295,7 @@ pub fn open_entry(
                 archive
                     .files
                     .iter()
-                    .find(|f| !f.is_directory && clean(&f.name) == wanted)
+                    .find(|f| !f.is_directory && safe_name(&f.name).as_ref() == Some(&wanted))
                     .map(|f| f.size)
                     .ok_or_else(|| ArchiveError::NotFound(wanted.clone()))?
             };
@@ -248,16 +320,31 @@ impl EntryReader {
 
 impl Read for EntryReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.pos >= self.size || buf.is_empty() {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.pos >= self.size {
+            // An error the decoder found after the last byte (zip checks
+            // the CRC on the read past the end) must not get lost.
+            if let Inner::Piped(piped) = &mut self.inner {
+                piped.finish(self.size)?;
+            }
             return Ok(0);
         }
         let want = usize::try_from(self.size - self.pos)
             .unwrap_or(usize::MAX)
             .min(buf.len());
         let n = match &mut self.inner {
-            Inner::Window { file, start } => {
+            Inner::Window { file, start, crc } => {
                 file.seek(SeekFrom::Start(*start + self.pos))?;
-                file.read(&mut buf[..want])?
+                let n = file.read(&mut buf[..want])?;
+                if !crc.update(self.pos, &buf[..n], self.size) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "the archive entry is damaged: its CRC does not match",
+                    ));
+                }
+                n
             }
             Inner::Piped(piped) => piped.read_at(self.pos, &mut buf[..want])?,
         };
@@ -316,15 +403,42 @@ impl Piped {
         if let Some(worker) = self.worker.take() {
             worker.stop.store(true, Ordering::SeqCst);
             drop(worker.rx);
-            let file = worker
-                .handle
-                .join()
-                .map_err(|_| io::Error::other("the archive decoder panicked"))?;
-            self.file = Some(file);
+            self.file = Some(join(worker.handle)?);
         }
         self.chunk.clear();
         self.chunk_at = 0;
         Ok(())
+    }
+
+    /// At the end of the entry: waits for the worker and reports what it
+    /// found after the last byte, a CRC error or more data than listed.
+    fn finish(&mut self, size: u64) -> io::Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        let mut result = Ok(());
+        while let Ok(message) = worker.rx.recv() {
+            match message {
+                Ok(block) if block.is_empty() => {}
+                Ok(_) => {
+                    result = Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("{} holds more than the {size} bytes it lists", self.name),
+                    ));
+                    worker.stop.store(true, Ordering::SeqCst);
+                    break;
+                }
+                Err(err) => {
+                    result = Err(err);
+                    break;
+                }
+            }
+        }
+        drop(worker.rx);
+        self.file = Some(join(worker.handle)?);
+        self.chunk.clear();
+        self.chunk_at = 0;
+        result
     }
 
     fn start(&mut self) -> io::Result<()> {
@@ -336,13 +450,15 @@ impl Piped {
         let (tx, rx) = sync_channel(IN_FLIGHT);
         let stop = Arc::new(AtomicBool::new(false));
         let (kind, name, flag) = (self.kind, self.name.clone(), Arc::clone(&stop));
-        let handle = thread::spawn(move || {
-            let mut file = file;
-            if let Err(err) = decode(kind, &name, &mut file, &tx, &flag) {
-                let _ = tx.send(Err(into_io(err)));
-            }
-            file
-        });
+        let handle = thread::Builder::new()
+            .name("archive-decoder".into())
+            .spawn(move || {
+                let mut file = file;
+                if let Err(err) = decode(kind, &name, &mut file, &tx, &flag) {
+                    let _ = tx.send(Err(into_io(err)));
+                }
+                file
+            })?;
         self.worker = Some(Worker {
             handle,
             rx,
@@ -380,11 +496,27 @@ impl Piped {
                     self.chunk = block;
                 }
                 Ok(Err(err)) => return Err(err),
-                // The worker finished: the entry ended early.
-                Err(_) => return Ok(0),
+                // The worker is gone before the entry's end: it panicked,
+                // or the entry is shorter than listed.
+                Err(_) => {
+                    if let Some(worker) = self.worker.take() {
+                        self.file = Some(join(worker.handle)?);
+                    }
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        format!("{} ends before its listed size", self.name),
+                    ));
+                }
             }
         }
     }
+}
+
+/// The archive file back from a finished worker.
+fn join(handle: JoinHandle<Box<dyn Source>>) -> io::Result<Box<dyn Source>> {
+    handle
+        .join()
+        .map_err(|_| io::Error::other("the archive decoder panicked"))
 }
 
 impl Drop for Piped {
@@ -446,7 +578,11 @@ fn decode(
                     archive
                         .by_index_raw(i)
                         .ok()
-                        .and_then(|e| e.name().ok().map(|n| clean(&n) == name))
+                        .and_then(|e| {
+                            e.name()
+                                .ok()
+                                .map(|n| safe_name(&n).as_deref() == Some(name))
+                        })
                         .unwrap_or(false)
                 })
                 .ok_or_else(|| ArchiveError::NotFound(name.to_owned()))?;
@@ -459,7 +595,7 @@ fn decode(
             let index = archive
                 .files
                 .iter()
-                .position(|f| !f.is_directory && clean(&f.name) == name)
+                .position(|f| !f.is_directory && safe_name(&f.name).as_deref() == Some(name))
                 .ok_or_else(|| ArchiveError::NotFound(name.to_owned()))?;
             let Some(block) = archive.stream_map.file_block_index[index] else {
                 // An empty file has no block.
@@ -467,7 +603,7 @@ fn decode(
             };
             let decoder = sevenz_rust2::BlockDecoder::new(1, block, &archive, &password, file);
             decoder.for_each_entries(&mut |entry, reader| {
-                if clean(&entry.name) == name {
+                if safe_name(&entry.name).as_deref() == Some(name) {
                     pump(reader, Some(tx), stop)?;
                     return Ok(false);
                 }
@@ -594,5 +730,67 @@ mod tests {
         assert!(list(Kind::SevenZip, &mut junk).is_err());
         assert_eq!(Kind::from_extension("7Z"), Some(Kind::SevenZip));
         assert_eq!(Kind::from_extension("rar"), None);
+    }
+
+    #[test]
+    fn names_stay_inside_the_archive() {
+        assert_eq!(
+            safe_name("C:\\Games\\x.iso").as_deref(),
+            Some("Games/x.iso")
+        );
+        assert_eq!(safe_name("/abs/../x.iso").as_deref(), Some("abs/x.iso"));
+        assert_eq!(safe_name("./a//b.iso").as_deref(), Some("a/b.iso"));
+        assert_eq!(safe_name("d:x.iso").as_deref(), Some("x.iso"));
+        assert_eq!(
+            safe_name("Game: Part 2.iso").as_deref(),
+            Some("Game: Part 2.iso")
+        );
+        assert_eq!(safe_name("C:"), None);
+        assert_eq!(safe_name("/../"), None);
+
+        let archive = zip_of(
+            &[("C:\\Games\\x.iso", b"x"), ("../up.iso", b"u")],
+            zip::CompressionMethod::Stored,
+        );
+        let entries = list(Kind::Zip, &mut Cursor::new(archive.clone())).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["Games/x.iso", "up.iso", "Games"]);
+        let mut x = Vec::new();
+        open_entry(Kind::Zip, Box::new(Cursor::new(archive)), "Games/x.iso")
+            .unwrap()
+            .read_to_end(&mut x)
+            .unwrap();
+        assert_eq!(x, b"x");
+    }
+
+    /// The archive with every copy of `content`'s CRC changed, so the data
+    /// reads fine but does not match.
+    fn bad_crc(archive: Vec<u8>, content: &[u8]) -> Vec<u8> {
+        let crc = crc32fast::hash(content).to_le_bytes();
+        let mut out = archive;
+        let mut at = 0;
+        while let Some(found) = out[at..].windows(4).position(|w| w == crc) {
+            out[at + found] ^= 0xFF;
+            at += found + 4;
+        }
+        out
+    }
+
+    #[test]
+    fn damaged_entries_are_reported() {
+        // A whole number of blocks: zip reports the CRC on the read past the
+        // last byte, which must not get lost.
+        let big = data(2 * BLOCK);
+        for method in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
+            let archive = bad_crc(zip_of(&[("Game.iso", &big)], method), &big);
+            let mut reader =
+                open_entry(Kind::Zip, Box::new(Cursor::new(archive)), "Game.iso").unwrap();
+            let mut all = Vec::new();
+            let err = reader.read_to_end(&mut all).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData, "{method:?}: {err}");
+        }
     }
 }

@@ -108,6 +108,10 @@ pub enum CueError {
     MultiSession,
     #[error("the track has no INDEX 01")]
     NoIndex,
+    #[error("track {0} has no INDEX, so the data track has no end")]
+    NextTrackNoIndex(u32),
+    #[error("track {0} starts before the data track does")]
+    TrackOrder(u32),
 }
 
 /// One `TRACK` of a sheet.
@@ -281,10 +285,18 @@ impl CueSheet {
         let start = index(track, 1).ok_or(CueError::NoIndex)?;
         // In one file holding every track, the next one starts at its
         // pregap (INDEX 00) when the file has it, else at INDEX 01.
-        let end = file
-            .tracks
-            .get(1)
-            .and_then(|next| index(next, 0).or_else(|| index(next, 1)));
+        let end = match file.tracks.get(1) {
+            None => None,
+            Some(next) => {
+                let end = index(next, 0)
+                    .or_else(|| index(next, 1))
+                    .ok_or(CueError::NextTrackNoIndex(next.number))?;
+                if end <= start {
+                    return Err(CueError::TrackOrder(next.number));
+                }
+                Some(end)
+            }
+        };
         let dropped: Vec<CueTrack> = self
             .files
             .iter()
@@ -299,7 +311,7 @@ impl CueSheet {
             file: file.name.clone(),
             mode,
             start_sector: start,
-            sectors: end.map(|end| end.saturating_sub(start)),
+            sectors: end.map(|end| end - start),
             dropped,
             other_files: self.files.iter().skip(1).map(|f| f.name.clone()).collect(),
         })
@@ -543,6 +555,16 @@ mod tests {
             Err(CueError::SecondDataTrack(2))
         );
         assert_eq!(reject("REM nothing\n"), Err(CueError::NoFile));
+        assert_eq!(
+            reject(
+                "FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:02:00\nTRACK 02 AUDIO\nINDEX 01 00:01:00\n"
+            ),
+            Err(CueError::TrackOrder(2))
+        );
+        assert_eq!(
+            reject("FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\n"),
+            Err(CueError::NextTrackNoIndex(2))
+        );
         assert_eq!(reject("FILE a.bin BINARY\n"), Err(CueError::NoTrack));
         assert_eq!(
             reject("FILE a.wav WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00\n"),

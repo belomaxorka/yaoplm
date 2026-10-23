@@ -15,6 +15,7 @@ chd = ["dep:chd"]
 
 [dependencies]
 chd = { workspace = true, optional = true }
+crc32fast.workspace = true
 lz4_flex.workspace = true
 sevenz-rust2.workspace = true
 thiserror.workspace = true

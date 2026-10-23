@@ -43,18 +43,38 @@ fn pad_track(frames: &mut Vec<u8>, count: usize) {
 /// A CD CHD: `iso` as track 1 in `mode`, then a silent audio track of
 /// `audio_frames` frames when that is not zero.
 pub fn chd_cd(iso: &[u8], mode: RawMode, audio_frames: usize) -> io::Result<Vec<u8>> {
+    chd_cd_with(iso, mode, chd_type(mode), 0, audio_frames)
+}
+
+/// [`chd_cd`] with the track type spelled out (`MODE2_FORM1` stores what
+/// `MODE1` does, `MODE2_FORM_MIX` what `MODE2` does) and `pregap` frames
+/// stored in front of the data (`PGTYPE:V...`).
+pub fn chd_cd_with(
+    iso: &[u8],
+    mode: RawMode,
+    kind: &str,
+    pregap: usize,
+    audio_frames: usize,
+) -> io::Result<Vec<u8>> {
     let sectors = iso.len() / 2048;
-    let mut frames = Vec::with_capacity((sectors + audio_frames + 8) * FRAME);
+    let mut frames = Vec::with_capacity((pregap + sectors + audio_frames + 8) * FRAME);
+    // Pregap frames hold no data; filler that would fail a sync check
+    // shows a reader that does not skip them.
+    frames.resize(pregap * FRAME, 0xA5);
     for (lba, sector) in iso.as_chunks::<2048>().0.iter().enumerate() {
         let raw = raw_sector(mode, lba as u64, sector);
         let mut frame = [0u8; FRAME];
         frame[..raw.len()].copy_from_slice(&raw);
         frames.extend_from_slice(&frame);
     }
-    pad_track(&mut frames, sectors);
+    pad_track(&mut frames, pregap + sectors);
+    let (pgtype, total) = if pregap > 0 {
+        (format!("V{kind}"), pregap + sectors)
+    } else {
+        ("MODE1".to_owned(), sectors)
+    };
     let mut tracks = vec![format!(
-        "TRACK:1 TYPE:{} SUBTYPE:NONE FRAMES:{sectors} PREGAP:0 PGTYPE:MODE1 PGSUB:RW POSTGAP:0",
-        chd_type(mode)
+        "TRACK:1 TYPE:{kind} SUBTYPE:NONE FRAMES:{total} PREGAP:{pregap} PGTYPE:{pgtype} PGSUB:RW POSTGAP:0"
     )];
     if audio_frames > 0 {
         frames.resize(frames.len() + audio_frames * FRAME, 0);
