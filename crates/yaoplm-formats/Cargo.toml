@@ -8,12 +8,21 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# CHD images (IMP-1b): pure Rust, BSD-3-Clause; on in the apps through
+# yaoplm-core's default features (ARCHITECTURE.md §2).
+chd = ["dep:chd"]
+
 [dependencies]
+chd = { workspace = true, optional = true }
 lz4_flex.workspace = true
+sevenz-rust2.workspace = true
 thiserror.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 cc.workspace = true
+sevenz-rust2 = { workspace = true, features = ["compress"] }
 proptest.workspace = true
 tempfile.workspace = true
 yaoplm-test-support.workspace = true

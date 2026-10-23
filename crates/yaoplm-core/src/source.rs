@@ -45,6 +45,8 @@ pub enum InputFormat {
     BinCue,
     /// A BIN without a sheet; the layout was detected.
     Bin,
+    /// A CHD of a CD or a DVD (IMP-1b).
+    Chd,
 }
 
 impl fmt::Display for InputFormat {
@@ -54,6 +56,7 @@ impl fmt::Display for InputFormat {
             Self::Zso => "ZSO",
             Self::BinCue => "BIN/CUE",
             Self::Bin => "BIN",
+            Self::Chd => "CHD",
         })
     }
 }
@@ -114,6 +117,16 @@ impl MediaHints {
     }
 }
 
+/// Where the ISO sectors sit in a BIN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BinTrack {
+    pub mode: TrackMode,
+    /// `INDEX 01` of the data track.
+    pub start: u64,
+    /// The length of the track when more tracks follow it in the file.
+    pub sectors: Option<u64>,
+}
+
 /// An import source, read and understood.
 #[derive(Debug, Clone)]
 pub struct Probed {
@@ -126,7 +139,9 @@ pub struct Probed {
     pub data_len: u64,
     /// The ZISO magic, whatever the extension says.
     pub zso: bool,
-    pub bin: Option<(TrackMode, u64)>,
+    /// A CHD, read through its own reader.
+    pub chd: bool,
+    pub bin: Option<BinTrack>,
     /// Uncompressed image size.
     pub iso_len: u64,
     /// The ID OPL shows, or why OPL hides the disc.
@@ -141,11 +156,12 @@ impl Probed {
     /// The plan source that yields the image as ISO sectors.
     pub fn iso_source(&self) -> Source {
         let kind = match (self.bin, self.zso) {
-            (Some((mode, start)), _) if mode != TrackMode::Mode1_2048 || start != 0 => {
+            _ if self.chd => SourceKind::Chd,
+            (Some(track), _) if track.mode != TrackMode::Mode1_2048 || track.start != 0 => {
                 SourceKind::Bin {
-                    sector_size: mode.sector_size(),
-                    data_offset: mode.data_offset(),
-                    first_sector: start,
+                    sector_size: track.mode.sector_size(),
+                    data_offset: track.mode.data_offset(),
+                    first_sector: track.start,
                     sectors: self.iso_len / SECTOR_SIZE as u64,
                 }
             }
@@ -256,12 +272,12 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
     let ext = extension(path);
     let mut notices = Vec::new();
     let (format, data_path, files, bin) = match ext.as_str() {
-        "iso" | "zso" => {
+        "iso" | "zso" | "chd" => {
             let file = source_file(sources, path)?;
-            let format = if ext == "zso" {
-                InputFormat::Zso
-            } else {
-                InputFormat::Iso
+            let format = match ext.as_str() {
+                "zso" => InputFormat::Zso,
+                "chd" => InputFormat::Chd,
+                _ => InputFormat::Iso,
             };
             (format, path.to_path_buf(), vec![file], None)
         }
@@ -274,7 +290,7 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
             let sheet =
                 CueSheet::parse(&head).map_err(|e| ProbeError::Unsupported(e.to_string()))?;
             let track = sheet
-                .single_data_track()
+                .data_track()
                 .map_err(|e| ProbeError::Unsupported(e.to_string()))?;
             let bin = resolve_bin(sources, path, &track.file).ok_or_else(|| {
                 ProbeError::Unsupported(format!(
@@ -282,12 +298,27 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
                     track.file
                 ))
             })?;
-            let files = vec![source_file(sources, path)?, source_file(sources, &bin)?];
+            // The files of the other tracks belong to the dump: a move
+            // deletes them too. The data file stays last.
+            let mut files = vec![source_file(sources, path)?];
+            for other in &track.other_files {
+                if let Some(found) = resolve_bin(sources, path, other) {
+                    files.push(source_file(sources, &found)?);
+                }
+            }
+            files.push(source_file(sources, &bin)?);
+            if !track.dropped.is_empty() {
+                notices.push(audio_dropped(track.dropped.len()));
+            }
             (
                 InputFormat::BinCue,
                 bin,
                 files,
-                Some((track.mode, track.start_sector)),
+                Some(BinTrack {
+                    mode: track.mode,
+                    start: track.start_sector,
+                    sectors: track.sectors,
+                }),
             )
         }
         "bin" => {
@@ -310,24 +341,29 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
                 InputFormat::Bin,
                 path.to_path_buf(),
                 vec![file],
-                Some((mode, 0)),
+                Some(BinTrack {
+                    mode,
+                    start: 0,
+                    sectors: None,
+                }),
             )
         }
         _ => return Err(ProbeError::NotAnImage),
     };
     let data_len = files.last().map_or(0, |f| f.len);
+    let packed = sources.in_archive(&data_path);
 
     let reader = sources.open(&data_path).map_err(io_err(&data_path))?;
+    let mut chd_cd = false;
     let (mut src, zso): (Box<dyn SectorSource + Send>, bool) = match bin {
-        Some((mode, start)) => {
-            let image = BinImage::new(
-                BufReader::with_capacity(1 << 20, reader),
-                mode,
-                start,
-                data_len,
-            )
-            .map_err(|e| ProbeError::Unsupported(e.to_string()))?;
-            (Box::new(image), false)
+        Some(track) => (Box::new(bin_image(reader, track, data_len)?), false),
+        None if format == InputFormat::Chd => {
+            let (image, cd, dropped) = open_chd(reader, &data_path)?;
+            chd_cd = cd;
+            if dropped > 0 {
+                notices.push(audio_dropped(dropped));
+            }
+            (image, false)
         }
         None => match DiscImage::open(reader) {
             Ok(image) => {
@@ -361,17 +397,27 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
             "the file is a ZSO although it is named .iso",
         ));
     }
+    if packed {
+        notices.push(Notice::info(
+            "fromArchive",
+            "read straight from the archive; nothing is unpacked to the computer first",
+        ));
+    }
 
     let iso_len = src.sector_count() * SECTOR_SIZE as u64;
     let pvd = iso9660::read_pvd(&mut src, PVD_LBA).ok();
-    let layers = pvd
-        .as_ref()
-        .map_or(Layers::Single, |pvd| iso9660::opl_layers(&mut src, pvd));
+    // Looking for a second layer reads the end of layer 0, which in an
+    // archive means decoding the whole image; a disc that big is a DVD
+    // anyway, and OPL finds the layer itself.
+    let layers = match &pvd {
+        Some(pvd) if !packed => iso9660::opl_layers(&mut src, pvd),
+        _ => Layers::Single,
+    };
     let mut hints = match &pvd {
         Some(pvd) => MediaHints::read(&mut src, pvd, layers),
         None => MediaHints::default(),
     };
-    hints.raw_cd_dump = bin.is_some_and(|(mode, _)| mode != TrackMode::Mode1_2048);
+    hints.raw_cd_dump = chd_cd || bin.is_some_and(|t| t.mode != TrackMode::Mode1_2048);
     let cnf = pvd
         .as_ref()
         .and_then(|pvd| image::read_system_cnf(&mut src, pvd).ok().flatten())
@@ -389,6 +435,7 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
         files,
         data_len,
         zso,
+        chd: format == InputFormat::Chd,
         bin,
         iso_len,
         ps1: cnf.boot2.is_none() && cnf.boot.is_some(),
@@ -396,6 +443,73 @@ pub fn probe(sources: &dyn SourceFs, path: &Path) -> Result<Probed, ProbeError> 
         hints,
         notices,
     })
+}
+
+fn audio_dropped(count: usize) -> Notice {
+    Notice::warning(
+        "audioTracksDropped",
+        format!(
+            "{count} audio tracks are left out: OPL plays a one-track disc, so music played from CD audio is missing"
+        ),
+    )
+}
+
+/// The ISO sectors of a BIN track.
+fn bin_image(
+    reader: Box<dyn ReadSeek>,
+    track: BinTrack,
+    data_len: u64,
+) -> Result<BinImage<BufReader<Box<dyn ReadSeek>>>, ProbeError> {
+    let reader = BufReader::with_capacity(1 << 20, reader);
+    match track.sectors {
+        Some(sectors) => {
+            let end = (track.start + sectors) * u64::from(track.mode.sector_size());
+            if end > data_len {
+                return Err(ProbeError::Unsupported(
+                    "the BIN ends before its data track does".into(),
+                ));
+            }
+            Ok(BinImage::with_sectors(
+                reader,
+                track.mode,
+                track.start,
+                sectors,
+            ))
+        }
+        None => BinImage::new(reader, track.mode, track.start, data_len)
+            .map_err(|e| ProbeError::Unsupported(e.to_string())),
+    }
+}
+
+/// A CHD as sectors, whether it is a CD, and how many tracks it drops.
+#[cfg(feature = "chd")]
+fn open_chd(
+    reader: Box<dyn ReadSeek>,
+    path: &Path,
+) -> Result<(Box<dyn SectorSource + Send>, bool, usize), ProbeError> {
+    use yaoplm_formats::chd::{ChdError, ChdImage, Layout};
+    let image = ChdImage::open(reader).map_err(|e| match e {
+        ChdError::Io(source) => ProbeError::Io {
+            path: path.to_path_buf(),
+            source,
+        },
+        other => ProbeError::Unsupported(other.to_string()),
+    })?;
+    let (cd, dropped) = match image.layout() {
+        Layout::Cd { dropped, .. } => (true, dropped.len()),
+        Layout::Dvd { .. } => (false, 0),
+    };
+    Ok((Box::new(image), cd, dropped))
+}
+
+#[cfg(not(feature = "chd"))]
+fn open_chd(
+    _reader: Box<dyn ReadSeek>,
+    _path: &Path,
+) -> Result<(Box<dyn SectorSource + Send>, bool, usize), ProbeError> {
+    Err(ProbeError::Unsupported(
+        "this build of YAOPLM reads no CHD images".into(),
+    ))
 }
 
 /// Reads a [`SectorSource`] as a byte stream from a sector boundary.
@@ -495,19 +609,24 @@ pub fn open_stream(
             sector_size,
             data_offset,
             first_sector,
-            ..
+            sectors,
         } => {
             let mode = TrackMode::from_layout(*sector_size, *data_offset).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "unknown BIN sector layout")
             })?;
-            let len = source.files.last().map_or(0, |f| f.len);
-            let image = BinImage::new(
+            let image = BinImage::with_sectors(
                 BufReader::with_capacity(1 << 20, reader),
                 mode,
                 *first_sector,
-                len,
-            )
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                *sectors,
+            );
+            sector_stream(image, offset)
+        }
+        SourceKind::Chd => {
+            let (image, _, _) = open_chd(reader, &source.path).map_err(|e| match e {
+                ProbeError::Io { source, .. } => source,
+                other => io::Error::new(io::ErrorKind::InvalidData, other.to_string()),
+            })?;
             sector_stream(image, offset)
         }
         SourceKind::Joined => Err(io::Error::other("joined sources are opened above")),

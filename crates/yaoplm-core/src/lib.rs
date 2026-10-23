@@ -11,6 +11,7 @@
 //!
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
+pub mod archives;
 pub mod art;
 pub mod convert;
 pub mod device;

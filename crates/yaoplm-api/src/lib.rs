@@ -46,6 +46,7 @@ use jobs::{
 };
 use library::{ImageDetails, Library, LoaderProfile};
 use plans::PlanStore;
+use yaoplm_core::archives::ArchiveSources;
 use yaoplm_core::convert;
 use yaoplm_core::exec::{self, Context, Event, Outcome, StepEvent, TxEvent};
 use yaoplm_core::import::{self, ImportOptions};
@@ -346,8 +347,9 @@ impl Api {
                     overrides,
                     compress: compress.unwrap_or(false),
                 };
+                let sources = ArchiveSources::new(&HostSources);
                 let plan =
-                    import::plan_import(&fs, &HostSources, &inputs, &options).map_err(io_error)?;
+                    import::plan_import(&fs, &sources, &inputs, &options).map_err(io_error)?;
                 Ok(self.store(path, plan))
             }
             Request::ConvertGames {
@@ -447,12 +449,13 @@ impl Api {
                     Queue::Write,
                     move |ctx| {
                         let fs = HostFs::new(&stored.root).map_err(io_error)?;
+                        let sources = ArchiveSources::new(&HostSources);
                         let plan = &stored.plan;
                         let report = exec::execute_with_events(
                             plan,
                             &Context {
                                 fs: &fs,
-                                sources: &HostSources,
+                                sources: &sources,
                                 cancel: ctx.cancel_token(),
                             },
                             &mut |event| match event {

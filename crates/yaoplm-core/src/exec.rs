@@ -248,6 +248,11 @@ struct Runner<'a, 'b> {
     total: u64,
     events: &'a mut dyn FnMut(Event<'_>),
     current: Progress,
+    /// Where the last write left its source: the source index, the offset
+    /// reached and the open reader. The next `ul` chunk of that source reads
+    /// on from it; opening the source again would mean, for an archive
+    /// member, decoding the image from the start once more.
+    stream: Option<(usize, u64, Box<dyn io::Read + Send>)>,
 }
 
 impl Runner<'_, '_> {
@@ -277,6 +282,12 @@ impl Runner<'_, '_> {
     /// precondition failure has no side effects.
     fn run(&mut self, step: &Step) -> Result<(), ExecError> {
         let fs = self.ctx.fs;
+        // Only a `ul` chunk right after the one before it keeps the stream;
+        // any other step closes it, so no file is deleted while still open
+        // (on FAT, Windows keeps the name of such a file until it is closed).
+        if !matches!(step, Step::WriteFile { .. }) {
+            self.stream = None;
+        }
         match step {
             Step::CreateDir { path } => fs
                 .create_dir(path)
@@ -409,13 +420,17 @@ impl Runner<'_, '_> {
             }
             return Err(ExecError::Precondition(format!("{path} already exists")));
         }
+        let index = source;
         let source =
             self.plan.sources.get(source).ok_or_else(|| {
                 ExecError::Precondition("the plan names an unknown source".into())
             })?;
-        let mut reader = open_stream(self.ctx.sources, fs, source, offset).map_err(
-            ExecError::io(format!("cannot read {}", source.path.display())),
-        )?;
+        let mut reader = match self.stream.take() {
+            Some((at_source, at, reader)) if at_source == index && at == offset => reader,
+            _ => open_stream(self.ctx.sources, fs, source, offset).map_err(ExecError::io(
+                format!("cannot read {}", source.path.display()),
+            ))?,
+        };
         remove_if_exists(fs, &part)?;
         let mut file = fs
             .create(&part)
@@ -455,6 +470,7 @@ impl Runner<'_, '_> {
         fs.sync_dir(&path.parent().unwrap_or_default())
             .map_err(ExecError::io(format!("cannot sync {path}")))?;
         self.done = start + len;
+        self.stream = Some((index, offset + len, reader));
         Ok(())
     }
 
@@ -696,6 +712,7 @@ pub fn execute_with_events(
             done: 0,
             total: plan.write_bytes(),
         },
+        stream: None,
     };
     runner.current.total = runner.total;
 

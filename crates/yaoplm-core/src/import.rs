@@ -70,8 +70,11 @@ pub struct ImportOptions {
     pub compress: bool,
 }
 
-/// Extensions OPL users have that YAOPLM does not import yet (IMP-1b/c).
-const LATER: [&str; 9] = ["chd", "cso", "zip", "7z", "rar", "nrg", "mdf", "img", "ecm"];
+/// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
+const LATER: [&str; 6] = ["cso", "rar", "nrg", "mdf", "img", "ecm"];
+/// Archives read as folders through [`crate::archives::ArchiveSources`];
+/// one met as a file is inside another archive.
+const ARCHIVES: [&str; 2] = ["zip", "7z"];
 const MAX_DEPTH: usize = 8;
 /// Kept free for the journal, CFG backups and directory growth.
 const RESERVE: u64 = 1 << 20;
@@ -118,8 +121,14 @@ fn walk(
             }
             Ok(_) => {
                 let ext = extension(&path);
-                if matches!(ext.as_str(), "iso" | "zso" | "cue" | "bin") {
+                if matches!(ext.as_str(), "iso" | "zso" | "cue" | "bin" | "chd") {
                     found.push(path);
+                } else if ARCHIVES.contains(&ext.as_str()) {
+                    skipped.push(skip(
+                        &path,
+                        "nestedArchive",
+                        "an archive inside an archive is not opened; unpack the outer one",
+                    ));
                 } else if LATER.contains(&ext.as_str()) {
                     skipped.push(skip(
                         &path,
@@ -356,9 +365,16 @@ impl Planner<'_> {
             ));
         }
         if self.options.transfer == Transfer::Move {
-            tx.then(Step::RemoveSource {
-                source: self.plan.sources.len() - 1,
-            });
+            if self.sources.in_archive(&probed.data_path) {
+                notices.push(Notice::info(
+                    "archiveKept",
+                    "the game comes from an archive: the archive is not deleted",
+                ));
+            } else {
+                tx.then(Step::RemoveSource {
+                    source: self.plan.sources.len() - 1,
+                });
+            }
         }
         tx.notices = notices;
         self.plan.transactions.push(tx);

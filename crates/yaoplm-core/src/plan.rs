@@ -39,6 +39,8 @@ pub enum SourceKind {
     /// `files` read one after the other: the `ul` chunks of a game being
     /// converted into one image (GAME-4).
     Joined,
+    /// The ISO sectors of a CHD (IMP-1b).
+    Chd,
 }
 
 /// A file a source reads, as it was when the plan was made.

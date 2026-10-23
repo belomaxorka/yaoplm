@@ -30,6 +30,11 @@ pub trait SourceFs: Send + Sync {
     fn open(&self, path: &Path) -> io::Result<Box<dyn ReadSeek>>;
     /// Deletes a source after it was moved to the device.
     fn remove(&self, path: &Path) -> io::Result<()>;
+    /// The file is a member of an archive (IMP-1b): seeking back means
+    /// decoding again from the start, and it is never deleted.
+    fn in_archive(&self, _path: &Path) -> bool {
+        false
+    }
 }
 
 /// The host file system.
