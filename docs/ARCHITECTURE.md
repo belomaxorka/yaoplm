@@ -93,7 +93,8 @@ yaoplm/
 ## 4. Слой API
 
 - Каждая операция — вариант `Request` в `yaoplm-api`. Например: `ListDevices`, `InspectDevice`, `ScanLibrary`, `ListDir`, `PlanImport`, `ExecutePlan`, `RenameGame`, `FetchArt`, `SetArt`, `DeleteArt`, `Attribution`, `ReadCfg`, `WriteCfg`, `CancelJob`.
-- `FetchArt` — задание, которое заканчивается планом (`JobResult::Plan`): поиск обложек идёт минутами и ведёт журнал по играм (`JobLogEntry::Art`), а запись на носитель остаётся планом с подтверждением (ADR-0025). Сеть используется только внутри этого задания: `yaoplm-api` держит tokio-runtime и вызывает `yaoplm-net` из потока задания.
+- `FetchArt` — задание, которое заканчивается планом (`JobResult::Plan`): поиск обложек идёт минутами и ведёт журнал по играм (`JobLogEntry::Art`), а запись на носитель остаётся планом с подтверждением (ADR-0025). Сеть используется только внутри заданий `FetchArt` и `UpdateRedump`: `yaoplm-api` держит tokio-runtime и вызывает `yaoplm-net` из потока задания.
+- `VerifyGames` — задание только на чтение: хеши образов, вердикты по DAT Redump, строка журнала на игру (`JobLogEntry::Verify`), результат `VerificationReport`. `RedumpStatus` и `UpdateRedump` (загрузка не чаще раза в неделю или импорт файла) управляют DAT (ADR-0026). `ConvertGames` возвращает план конвертации ISO ↔ ZSO ↔ ul (ADR-0027); `PlanImport` с `compress` пишет образы сразу в ZSO, а источники в zip и 7z читаются через `ArchiveSources` (ADR-0028).
 - `dispatch(Request) -> Result<Response, ApiError>`. Долгие операции сразу возвращают `JobId`, а прогресс приходит потоком `JobEvent`. Планы ещё и ведут журнал шагов (`JobEvent::Log`: транзакция или шаг начат, выполнен, откачен, провален); `GetJob` отдаёт его целиком, поэтому переподключившийся клиент ничего не теряет.
 - `ListDir` показывает папки для выбора источников в браузере: сервер отдаёт только свои корни и то, что внутри них (`PathPolicy`), десктоп — тома; скрытые файлы и симлинки не показываются.
 - Транспорты:
@@ -117,11 +118,12 @@ yaoplm/
 
 ## 6. Хранение состояния
 
-- Каталог данных приложения (`dirs`, переопределяется `YAOPLM_DATA_DIR` и `--data-dir` сервера): `cache.sqlite`, `art-cache/<source>/<key>/` (оригинал и производные PNG), позже `settings.toml` и `db/` (скачанные DAT). Десктоп и CLI: `%LOCALAPPDATA%\yaoplm`, `~/.local/share/yaoplm`, `~/Library/Application Support/yaoplm`.
+- Каталог данных приложения (`dirs`, переопределяется `YAOPLM_DATA_DIR` и `--data-dir` сервера): `cache.sqlite`, `art-cache/<source>/<key>/` (оригинал и производные PNG), `db/redump-ps2.dat` с метаданными `db/redump-ps2.json` и отметкой последнего запроса `db/redump-ps2.asked` (с M5, ADR-0026), позже `settings.toml`. Создаётся при первой записи в кэш: сканирование только читает его. Десктоп и CLI: `%LOCALAPPDATA%\yaoplm`, `~/.local/share/yaoplm`, `~/Library/Application Support/yaoplm`.
 - В SQLite лежат:
   - манифест обложек: источник, URL, ETag, `Last-Modified`, дата, SHA-256, лицензия, атрибуция (с M4);
   - результаты «не найдено» с TTL 7 дней (с M4);
-  - позже: индекс библиотек и кэш хешей с ключом путь+размер+mtime.
+  - кэш хешей образов (CRC-32, SHA-1, MD5) с ключом «том + путь + размер + mtime» каждого файла (с M5, ADR-0026); очистка кэша обложек его не трогает;
+  - позже: индекс библиотек.
 - Встроенная база названий (META-1) не лежит в каталоге данных, а вшита в бинарник: `data/titles.json.gz` (ADR-0024).
 - Источник истины — файлы на устройстве. Кэш можно удалить без потерь.
 - Настройки интерфейса (профиль загрузчика, стиль имён, открытый корень, вид библиотеки, проверка образов) с M3 хранятся в `localStorage` браузера или WebView (`yaoplm.settings`). `settings.toml` появится, когда настройки понадобятся CLI и серверу.
