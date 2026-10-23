@@ -86,7 +86,8 @@ Read before working:
   - errors via `thiserror` in libs and `anyhow` in apps;
   - small modules, one format per module in `yaoplm-formats`.
 - Each format module starts with a doc comment that links the research/02 section and the OPL source file it mirrors.
-- TS: strict mode, no `any`. API types come only from `web/src/api/generated/` (ts-rs output), never hand-written. Every user-visible string goes through i18n with both `en` and `ru` keys.
+- TS: strict mode, no `any`. API types come only from `web/src/api/generated/` (ts-rs output), never hand-written.
+- i18n (`docs/I18N.md`): every user-visible string goes through i18n, with keys in every supported language (`en`, `ru`) in the same commit as the feature, following the glossary, plural and typography rules there. A new notice code in the core needs `notices.<code>` in every language. `pnpm -C web test` checks key parity, plural forms, placeholders, duplicate keys, typography, untranslated copies and that every core notice code and keyed enum value has a translation; reread new strings in both languages before a PR.
 - Keep comments sparse and factual: why, not what.
 
 ## Commands
@@ -107,7 +108,8 @@ Update this section if they change.
 - Fuzz (nightly, `cargo install cargo-fuzz`): `cd fuzz && cargo +nightly fuzz run -O <iso|system_cnf|cfg|ul_cfg|zso|cht> -- -max_total_time=60`. On Windows add the MSVC ASan runtime folder (`VC\Tools\MSVC\<ver>\bin\Hostx64\x64`) to `PATH`. Seed ISOs: `cargo run -p yaoplm-test-support --example write_fixtures -- fuzz/corpus/iso`
 - Library tools: `cargo run -p yaoplm-cli -- scan <root>` and `cargo run -p yaoplm-cli -- info <image>` (`--json`, `--profile opl-1.2|opl-1.1|riptopl`)
 - Devices (read-only): `yaoplm devices [--all]`, `yaoplm device <root>`
-- Writes print a plan and need `--yes` (or "y" on a terminal): `yaoplm init <root>`, `yaoplm add <root> <files or folders> [--move] [--ul] [--title T] [--media cd|dvd]`, `yaoplm rename <root> <game> <title> [--id ID]`, `yaoplm rm <root> <game> [--with-related]`, `yaoplm mv <root> <game> --to cd|dvd`, `yaoplm recover <root> [--resume]`. `<game>` is an ID, title, file name, path or `ul:<index>`. Never point them at a real drive without the owner's confirmation (rule 1).
+- Dump checks (GAME-5, META-2, read-only): `yaoplm verify <root> [--game G]... [--md5] [--fresh] [--json]` (exit code 1 on a bad dump or an unreadable image), `yaoplm redump [--update | --import FILE] [--json]` (`--update` asks Redump at most once a week; tests and CI always use `--import`).
+- Writes print a plan and need `--yes` (or "y" on a terminal): `yaoplm init <root>`, `yaoplm add <root> <files, folders, zip or 7z> [--move] [--ul] [--zso] [--title T] [--media cd|dvd]`, `yaoplm convert <root> <game>... --to iso|zso|ul [--name-style id-title|title]`, `yaoplm rename <root> <game> <title> [--id ID]`, `yaoplm rm <root> <game> [--with-related]`, `yaoplm mv <root> <game> --to cd|dvd`, `yaoplm recover <root> [--resume]`. `<game>` is an ID, title, file name, path or `ul:<index>`. Never point them at a real drive without the owner's confirmation (rule 1).
 - Covers (ART-1..4): `yaoplm art fetch <root> [--all] [--game ID]... [--mirror xlenore=DIR] [--mirror libretro=DIR] [--skip-source S]`, `yaoplm art set <root> <game> <image> [--keep-existing]`, `yaoplm art rm <root> <game>`, `yaoplm art cache [--clear]`, `yaoplm about`. `fetch` goes to the network only without a mirror; tests and CI always use mirrors.
 - Real FAT32/exFAT drivers (Linux, mounted image files; CI job `real-fs`): `YAOPLM_FAT32_DIR=/mnt/fat32 YAOPLM_EXFAT_DIR=/mnt/exfat cargo test -p yaoplm-core --test real_fs -- --ignored`
 - Console test disc: `cargo run -p yaoplm-test-support --example make_boot_iso -- --elf <homebrew.elf> --out <image.iso> [--min-mib 4300]`

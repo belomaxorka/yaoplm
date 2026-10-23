@@ -11,15 +11,17 @@
 //!
 //! The batch stops at the first failure; transactions already done stay.
 
-use std::io;
+use std::io::{self, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
+use yaoplm_device::copy::BLOCK_SIZE;
 use yaoplm_device::fs::{DeviceFs, PART_SUFFIX, TMP_SUFFIX, write_atomic};
 use yaoplm_device::{CancelToken, CopyError, RelPath, SourceFs, copy_exact};
+use yaoplm_formats::zso::{self, ZsoError};
 
 use crate::journal::{self, Journal, TxProgress, TxState};
 use crate::plan::{Expect, Plan, PlanKind, Removal, Step};
-use crate::source::open_stream;
+use crate::source::{device_path, open_stream};
 
 /// What a front end needs to draw progress.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,8 +180,8 @@ fn ensure_parent(fs: &dyn DeviceFs, path: &RelPath) -> Result<(), ExecError> {
     Ok(())
 }
 
-/// The steps that undo `step`, for rollback and recovery.
-pub fn undo(step: &Step) -> Vec<Step> {
+/// The steps that undo `step` of `plan`, for rollback and recovery.
+pub fn undo(step: &Step, plan: &Plan) -> Vec<Step> {
     let ours = |path: &RelPath, len: u64| Step::Remove {
         path: path.clone(),
         len,
@@ -216,6 +218,25 @@ pub fn undo(step: &Step) -> Vec<Step> {
             }
             steps
         }
+        Step::WriteZso { path, source, .. } => {
+            let mut steps = Vec::new();
+            if let Ok(part) = path.with_suffix(PART_SUFFIX) {
+                steps.push(ours(&part, 0));
+            }
+            // The size is unknown up front: the header tells our ZSO from
+            // a file that was there before (the step refuses to replace
+            // one, but recovery undoes a step that may not have started).
+            if let Some(source) = plan.sources.get(*source) {
+                steps.push(Step::Remove {
+                    path: path.clone(),
+                    len: 0,
+                    what: Removal::OursZso {
+                        iso_len: source.len,
+                    },
+                });
+            }
+            steps
+        }
         Step::CopyFile { to, .. } => vec![ours(to, 0)],
         Step::Rename { from, to } => vec![Step::Rename {
             from: to.clone(),
@@ -236,6 +257,11 @@ struct Runner<'a, 'b> {
     total: u64,
     events: &'a mut dyn FnMut(Event<'_>),
     current: Progress,
+    /// Where the last write left its source: the source index, the offset
+    /// reached and the open reader. The next `ul` chunk of that source reads
+    /// on from it; opening the source again would mean, for an archive
+    /// member, decoding the image from the start once more.
+    stream: Option<(usize, u64, Box<dyn io::Read + Send>)>,
 }
 
 impl Runner<'_, '_> {
@@ -265,6 +291,12 @@ impl Runner<'_, '_> {
     /// precondition failure has no side effects.
     fn run(&mut self, step: &Step) -> Result<(), ExecError> {
         let fs = self.ctx.fs;
+        // Only a `ul` chunk right after the one before it keeps the stream;
+        // any other step closes it, so no file is deleted while still open
+        // (on FAT, Windows keeps the name of such a file until it is closed).
+        if !matches!(step, Step::WriteFile { .. }) {
+            self.stream = None;
+        }
         match step {
             Step::CreateDir { path } => fs
                 .create_dir(path)
@@ -282,6 +314,11 @@ impl Runner<'_, '_> {
                 offset,
                 len,
             } => self.write_file(path, *source, *offset, *len),
+            Step::WriteZso {
+                path,
+                source,
+                max_len,
+            } => self.write_zso(path, *source, *max_len),
             Step::PutFile {
                 path,
                 content,
@@ -347,7 +384,12 @@ impl Runner<'_, '_> {
                 let Some(meta) = exists(fs, path)? else {
                     return Ok(());
                 };
-                if *what == Removal::Ours && *len > 0 && meta.len != *len {
+                let ours = match what {
+                    Removal::Ours => *len == 0 || meta.len == *len,
+                    Removal::OursZso { iso_len } => holds_zso(fs, path, *iso_len),
+                    Removal::UserData | Removal::Cache => true,
+                };
+                if !ours {
                     // Not the file this operation created: leave it.
                     return Ok(());
                 }
@@ -392,13 +434,17 @@ impl Runner<'_, '_> {
             }
             return Err(ExecError::Precondition(format!("{path} already exists")));
         }
+        let index = source;
         let source =
             self.plan.sources.get(source).ok_or_else(|| {
                 ExecError::Precondition("the plan names an unknown source".into())
             })?;
-        let mut reader = open_stream(self.ctx.sources, source, offset).map_err(ExecError::io(
-            format!("cannot read {}", source.path.display()),
-        ))?;
+        let mut reader = match self.stream.take() {
+            Some((at_source, at, reader)) if at_source == index && at == offset => reader,
+            _ => open_stream(self.ctx.sources, fs, source, offset).map_err(ExecError::io(
+                format!("cannot read {}", source.path.display()),
+            ))?,
+        };
         remove_if_exists(fs, &part)?;
         let mut file = fs
             .create(&part)
@@ -438,6 +484,88 @@ impl Runner<'_, '_> {
         fs.sync_dir(&path.parent().unwrap_or_default())
             .map_err(ExecError::io(format!("cannot sync {path}")))?;
         self.done = start + len;
+        self.stream = Some((index, offset + len, reader));
+        Ok(())
+    }
+
+    /// Compresses the ISO sectors of `source` into a new ZSO at `path`
+    /// (GAME-4). The index is written last, so the file only becomes a
+    /// valid ZSO once complete; it is renamed into place after a sync.
+    fn write_zso(&mut self, path: &RelPath, source: usize, max_len: u64) -> Result<(), ExecError> {
+        let fs = self.ctx.fs;
+        let part = part_path(path)?;
+        let source =
+            self.plan.sources.get(source).ok_or_else(|| {
+                ExecError::Precondition("the plan names an unknown source".into())
+            })?;
+        if exists(fs, path)?.is_some() {
+            // Done before an interruption only if it is our ZSO: something
+            // else there must not pass for it (the old image goes next).
+            if self.mode == Mode::Resume
+                && exists(fs, &part)?.is_none()
+                && holds_zso(fs, path, source.len)
+            {
+                self.done += max_len;
+                return Ok(());
+            }
+            return Err(ExecError::Precondition(format!("{path} already exists")));
+        }
+        let reader = open_stream(self.ctx.sources, fs, source, 0).map_err(ExecError::io(
+            format!("cannot read {}", source.path.display()),
+        ))?;
+        // The compressor reads 2 KiB and writes a block at a time.
+        let mut reader = BufReader::with_capacity(BLOCK_SIZE, reader);
+        remove_if_exists(fs, &part)?;
+        let mut file = fs
+            .create(&part)
+            .map_err(ExecError::io(format!("cannot create {part}")))?;
+        let start = self.done;
+        let result = {
+            let events = &mut *self.events;
+            let current = &mut self.current;
+            let cancel = self.ctx.cancel;
+            let mut out = BufWriter::with_capacity(BLOCK_SIZE, &mut *file);
+            let mut reported = 0u64;
+            let compressed = zso::compress_with(
+                &mut reader,
+                source.len,
+                &mut out,
+                &|| cancel.is_cancelled(),
+                &mut |n| {
+                    if n - reported >= BLOCK_SIZE as u64 || n == source.len {
+                        reported = n;
+                        current.done = start + n;
+                        events(Event::Progress(current));
+                    }
+                },
+            );
+            let flushed = out.flush();
+            compressed.and_then(|stats| flushed.map(|()| stats).map_err(ZsoError::Io))
+        };
+        match result {
+            Ok(_) => {}
+            Err(ZsoError::Stopped) => return Err(ExecError::Cancelled),
+            Err(ZsoError::Io(source)) => {
+                return Err(ExecError::Io {
+                    context: format!("cannot write {path}"),
+                    source,
+                });
+            }
+            Err(other) => {
+                return Err(ExecError::Io {
+                    context: format!("cannot write {path}"),
+                    source: io::Error::new(io::ErrorKind::InvalidData, other.to_string()),
+                });
+            }
+        }
+        file.sync()
+            .map_err(ExecError::io(format!("cannot sync {part}")))?;
+        drop(file);
+        fs.rename(&part, path)
+            .map_err(ExecError::io(format!("cannot rename {part}")))?;
+        fs.sync_dir(&path.parent().unwrap_or_default())
+            .map_err(ExecError::io(format!("cannot sync {path}")))?;
+        self.done = start + max_len;
         Ok(())
     }
 
@@ -448,7 +576,7 @@ impl Runner<'_, '_> {
         let mut first_error = None;
         for (index, step) in steps.iter().enumerate().rev() {
             let mut failed = None;
-            for undo_step in undo(step) {
+            for undo_step in undo(step, self.plan) {
                 if let Err(err) = self.run(&undo_step) {
                     failed.get_or_insert(err.to_string());
                     first_error.get_or_insert(err);
@@ -465,15 +593,36 @@ impl Runner<'_, '_> {
     }
 }
 
+/// A ZSO whose header says it holds `iso_len` bytes of ISO.
+fn holds_zso(fs: &dyn DeviceFs, path: &RelPath, iso_len: u64) -> bool {
+    let mut header = [0u8; zso::HEADER_SIZE];
+    fs.open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .is_ok_and(|()| zso::ZsoHeader::parse(&header).is_some_and(|h| h.total_bytes == iso_len))
+}
+
 /// Sources read by the plan must be exactly as planned. Sources that are
 /// only removed (finishing a move) may already be partly gone.
 fn check_sources(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
     let steps = || plan.transactions.iter().flat_map(|t| &t.steps);
     for (index, source) in plan.sources.iter().enumerate() {
-        let read = steps().any(|s| matches!(s, Step::WriteFile { source, .. } if *source == index));
+        let read = steps().any(|s| {
+            matches!(s, Step::WriteFile { source, .. } | Step::WriteZso { source, .. } if *source == index)
+        });
         let removed =
             steps().any(|s| matches!(s, Step::RemoveSource { source } if *source == index));
         if !read && !removed {
+            continue;
+        }
+        if source.on_device {
+            // The device has no times to compare; the size must hold.
+            for file in &source.files {
+                let path = device_path(&file.path).map_err(ExecError::io("bad source path"))?;
+                match exists(ctx.fs, &path)? {
+                    Some(meta) if !meta.is_dir && meta.len == file.len => {}
+                    _ => return Err(ExecError::SourceChanged(file.path.clone())),
+                }
+            }
             continue;
         }
         for file in &source.files {
@@ -529,7 +678,7 @@ fn preflight(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
         return Err(ExecError::Unfinished(open.id.clone()));
     }
     check_sources(ctx, plan)?;
-    let needed = plan.write_bytes();
+    let needed = plan.peak_write_bytes();
     if needed > free {
         return Err(ExecError::NoSpace { needed, free });
     }
@@ -590,6 +739,7 @@ pub fn execute_with_events(
             done: 0,
             total: plan.write_bytes(),
         },
+        stream: None,
     };
     runner.current.total = runner.total;
 
@@ -687,7 +837,12 @@ pub fn execute_with_events(
                         return report;
                     }
                 }
-                break;
+                // A recovery goes on: its transactions stand alone, and the
+                // journals it closes last are settled once one of them is
+                // rolled back (a next recovery would only fail the same way).
+                if plan.kind != PlanKind::Recovery || report.cancelled {
+                    break;
+                }
             }
             Some((_, err, _)) => {
                 report.outcomes[index] = Outcome::Interrupted;
@@ -699,6 +854,9 @@ pub fn execute_with_events(
         }
     }
 
+    // The last step may have reported less than it counts for (a ZSO is
+    // counted at its worst case): end on the true total.
+    runner.report();
     if journal.is_settled() {
         if let Err(err) = journal::remove(ctx.fs, &journal.id) {
             report

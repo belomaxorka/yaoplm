@@ -2,6 +2,7 @@
 import type { ArtInput } from "./ArtInput";
 import type { ArtScope } from "./ArtScope";
 import type { ArtSourceSetting } from "./ArtSourceSetting";
+import type { ConvertTarget } from "./ConvertTarget";
 import type { GameRef } from "./GameRef";
 import type { ImportOverride } from "./ImportOverride";
 import type { JobId } from "./JobId";
@@ -32,7 +33,15 @@ profile?: LoaderProfile,
  * Also read images whose ID OPL takes from the name or
  * `games.bin`, to catch mismatches. Defaults to true.
  */
-verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
+verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
+/**
+ * Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
+ */
+compress?: boolean, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+/**
+ * How images made from `ul` chunks are named.
+ */
+nameStyle?: NameStyle, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
 /**
  * Defaults to `missing`.
  */
@@ -53,4 +62,17 @@ kind?: string, } | { "type": "SetArt", root: string, startup: string, input: Art
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.
  */
-overwrite?: boolean, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };
+overwrite?: boolean, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
+/**
+ * Only these games; every game when absent.
+ */
+games?: Array<GameRef>, profile?: LoaderProfile, 
+/**
+ * Also compute MD5 (CRC-32 and SHA-1 always).
+ */
+md5?: boolean, 
+/**
+ * Read every image even when its hashes are cached: finds damage
+ * that left a file's size and time alone.
+ */
+fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };

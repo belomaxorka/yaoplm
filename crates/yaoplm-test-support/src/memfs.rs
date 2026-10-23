@@ -9,7 +9,7 @@
 //! cleaned up until [`MemFs::replug`].
 
 use std::collections::BTreeMap;
-use std::io::{self, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use yaoplm_device::fs::{DeviceFile, DeviceFs, DirEntry, FileMeta, FsInfo};
@@ -58,6 +58,36 @@ impl Data {
         if let Self::Sparse { len, probes } = self {
             record_probes(probes, *len, buf);
             *len += buf.len() as u64;
+        }
+    }
+
+    /// Writes `buf` at `at` (at most the current length); what runs past
+    /// the end is appended.
+    fn write_at(&mut self, at: u64, buf: &[u8]) {
+        let len = self.len();
+        let inside = usize::try_from(len.saturating_sub(at))
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
+        let (over, rest) = buf.split_at(inside);
+        match self {
+            Self::Bytes(bytes) => {
+                let at = at as usize;
+                bytes[at..at + over.len()].copy_from_slice(over);
+            }
+            Self::Sparse { probes, .. } => {
+                let end = at + over.len() as u64;
+                for (&start, probe) in probes.range_mut(at.saturating_sub(PROBE_LEN as u64)..end) {
+                    for (i, byte) in probe.iter_mut().enumerate() {
+                        let pos = start + i as u64;
+                        if (at..end).contains(&pos) {
+                            *byte = over[(pos - at) as usize];
+                        }
+                    }
+                }
+            }
+        }
+        if !rest.is_empty() {
+            self.append(rest);
         }
     }
 }
@@ -309,6 +339,8 @@ struct MemFile {
     state: Arc<Mutex<State>>,
     key: String,
     path: RelPath,
+    /// Where the next write goes.
+    pos: u64,
 }
 
 impl Write for MemFile {
@@ -339,17 +371,23 @@ impl Write for MemFile {
             .nodes
             .get_mut(&self.key)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file was removed"))?;
-        let new_len = node.data.len() + accepted.len() as u64;
+        let old_len = node.data.len();
+        let new_len = old_len.max(self.pos + accepted.len() as u64);
         if limit.is_some_and(|max| new_len > max) {
             return Err(io::Error::new(
                 io::ErrorKind::FileTooLarge,
                 "FAT files are limited to 4 GiB - 1",
             ));
         }
-        if accepted.len() as u64 > free {
+        if new_len - old_len > free {
             return Err(io::Error::new(io::ErrorKind::StorageFull, "device is full"));
         }
-        node.data.append(accepted);
+        if self.pos == old_len {
+            node.data.append(accepted);
+        } else {
+            node.data.write_at(self.pos, accepted);
+        }
+        self.pos += accepted.len() as u64;
         if vanish {
             state.unplugged = true;
             return Err(gone());
@@ -359,6 +397,31 @@ impl Write for MemFile {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Seek for MemFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.unplugged {
+            return Err(gone());
+        }
+        let len = state.nodes.get(&self.key).map_or(0, |n| n.data.len());
+        let target = match pos {
+            SeekFrom::Start(n) => Some(n),
+            SeekFrom::End(d) => len.checked_add_signed(d),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        };
+        match target {
+            Some(t) if t <= len => {
+                self.pos = t;
+                Ok(t)
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "MemFs files cannot seek before the start or past the end",
+            )),
+        }
     }
 }
 
@@ -471,6 +534,7 @@ impl DeviceFs for MemFs {
             state: Arc::clone(&self.state),
             key: k,
             path: path.clone(),
+            pos: 0,
         }))
     }
 
@@ -631,9 +695,13 @@ mod tests {
                 probes: BTreeMap::new(),
             };
         }
+        file.seek(SeekFrom::End(0)).unwrap();
         assert_eq!(
             file.write(&[0]).unwrap_err().kind(),
             io::ErrorKind::FileTooLarge
         );
+        // Overwriting inside the file is fine at the limit.
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(&[1, 2, 3]).unwrap();
     }
 }

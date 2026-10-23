@@ -7,8 +7,9 @@ import type { ImageDetails } from "./ImageDetails";
 import type { JobId } from "./JobId";
 import type { JobInfo } from "./JobInfo";
 import type { PlanView } from "./PlanView";
+import type { RedumpInfo } from "./RedumpInfo";
 
 /**
  * The successful answer to a [`Request`].
  */
-export type Response = { "type": "Pong" } | { "type": "Version", name: string, version: string, } | { "type": "Ack" } | { "type": "Devices", devices: Array<DeviceInfo>, } | { "type": "Device" } & DeviceInfo | { "type": "ImageInfo" } & ImageDetails | { "type": "Dir" } & DirListing | { "type": "Plan" } & PlanView | { "type": "Job", job: JobId, } | { "type": "JobState" } & JobInfo | { "type": "Jobs", jobs: Array<JobInfo>, } | { "type": "Attribution" } & Attribution | { "type": "ArtCache" } & ArtCacheInfo;
+export type Response = { "type": "Pong" } | { "type": "Version", name: string, version: string, } | { "type": "Ack" } | { "type": "Devices", devices: Array<DeviceInfo>, } | { "type": "Device" } & DeviceInfo | { "type": "ImageInfo" } & ImageDetails | { "type": "Dir" } & DirListing | { "type": "Plan" } & PlanView | { "type": "Job", job: JobId, } | { "type": "JobState" } & JobInfo | { "type": "Jobs", jobs: Array<JobInfo>, } | { "type": "Attribution" } & Attribution | { "type": "ArtCache" } & ArtCacheInfo | { "type": "Redump", dat: RedumpInfo | null, };

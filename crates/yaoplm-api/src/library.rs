@@ -190,6 +190,20 @@ pub struct Game {
     pub warnings: Vec<Notice>,
     /// The title the bundled database gives this ID (META-1).
     pub known_title: Option<String>,
+    /// The last verification of this image, when its hashes are cached and
+    /// it has not changed since (GAME-5). Scans never hash.
+    pub dump: Option<DumpCheck>,
+}
+
+/// A game's standing against Redump, from the hash cache.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DumpCheck {
+    pub status: crate::verify::VerifyStatus,
+    pub reason: Option<crate::verify::UnknownReason>,
+    /// The Redump name of the matching dump.
+    pub redump: Option<String>,
 }
 
 impl Game {
@@ -243,6 +257,7 @@ impl Game {
                 .map(|c| u32::try_from(c.cheats).unwrap_or(u32::MAX)),
             warnings: notices(&game.warnings),
             known_title: core::titles::known_title(&game.startup),
+            dump: None,
         }
     }
 }

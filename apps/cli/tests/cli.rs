@@ -492,3 +492,155 @@ fn art_fetch_set_and_remove_from_mirrors() {
     assert!(stdout(&about).contains("PCSX2 GameIndex"));
     assert!(stdout(&about).contains("xlenore/ps2-covers"));
 }
+
+#[test]
+fn redump_import_and_verify() {
+    use yaoplm_test_support::Variant;
+    use yaoplm_test_support::dat::DatBuilder;
+    let lib = library();
+    let data = tempfile::tempdir().unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", data.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let status = cli(&["redump".as_ref()]);
+    assert!(status.status.success());
+    assert!(
+        stdout(&status).starts_with("No Redump DAT yet"),
+        "{}",
+        stdout(&status)
+    );
+
+    let dat = data.path().join("ps2.dat");
+    let retail = Variant::Retail.build().to_vec();
+    std::fs::write(
+        &dat,
+        DatBuilder::new()
+            .iso("Grand Theft Auto III (USA)", Some("SLUS-20062"), &retail)
+            .build(),
+    )
+    .unwrap();
+    let imported = cli(&["redump".as_ref(), "--import".as_ref(), dat.as_os_str()]);
+    assert!(
+        imported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    assert!(
+        stdout(&imported).contains("Imported."),
+        "{}",
+        stdout(&imported)
+    );
+    assert!(stdout(&imported).contains("1 games with serials"));
+
+    let verified = cli(&["verify".as_ref(), lib.path().as_os_str()]);
+    let text = stdout(&verified);
+    assert!(verified.status.success(), "{text}");
+    assert!(text.contains("SLUS_200.62  verified"), "{text}");
+    assert!(
+        text.contains("Redump: Grand Theft Auto III (USA)"),
+        "{text}"
+    );
+
+    let json = cli(&[
+        "verify".as_ref(),
+        lib.path().as_os_str(),
+        "--game".as_ref(),
+        "SLUS_200.62".as_ref(),
+        "--md5".as_ref(),
+        "--json".as_ref(),
+    ]);
+    assert!(json.status.success());
+    let report: serde_json::Value = serde_json::from_str(stdout(&json)).unwrap();
+    assert_eq!(report["games"][0]["status"], "verified");
+    assert_eq!(
+        report["games"][0]["hashes"]["md5"].as_str().map(str::len),
+        Some(32)
+    );
+
+    // `redump --json` prints the DAT itself, as --import does its result.
+    let shown = cli(&["redump".as_ref(), "--json".as_ref()]);
+    let shown: serde_json::Value = serde_json::from_str(stdout(&shown)).unwrap();
+    assert_eq!(shown["games"], 1);
+
+    // A DAT that lists the ID with other hashes: a bad dump, exit code 1.
+    let other = Variant::LfOnly.build().to_vec();
+    std::fs::write(
+        &dat,
+        DatBuilder::new()
+            .iso("Grand Theft Auto III (USA)", Some("SLUS-20062"), &other)
+            .build(),
+    )
+    .unwrap();
+    let imported = cli(&["redump".as_ref(), "--import".as_ref(), dat.as_os_str()]);
+    assert!(imported.status.success());
+    let bad = cli(&[
+        "verify".as_ref(),
+        lib.path().as_os_str(),
+        "--fresh".as_ref(),
+    ]);
+    assert_eq!(bad.status.code(), Some(1), "{}", stdout(&bad));
+    assert!(stdout(&bad).contains("BAD DUMP"), "{}", stdout(&bad));
+}
+
+#[test]
+fn add_compressed_then_convert() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.as_os_str(),
+        "--zso".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        stdout(&add).contains("+ compress to CD/SLUS_200.62.Retail.zso"),
+        "{}",
+        stdout(&add)
+    );
+    assert!(s.root.join("CD/SLUS_200.62.Retail.zso").is_file());
+
+    let dry = run(&[
+        "convert".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--to".as_ref(),
+        "iso".as_ref(),
+    ]);
+    let text = stdout(&dry);
+    assert!(dry.status.success(), "{text}");
+    assert!(text.contains("Plan: Convert 1 game to ISO"), "{text}");
+    assert!(
+        text.contains("- DELETE CD/SLUS_200.62.Retail.zso"),
+        "{text}"
+    );
+    assert!(
+        s.root.join("CD/SLUS_200.62.Retail.zso").is_file(),
+        "dry run"
+    );
+
+    let done = run(&[
+        "convert".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--to".as_ref(),
+        "iso".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        done.status.success(),
+        "{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
+    assert!(!s.root.join("CD/SLUS_200.62.Retail.zso").exists());
+}

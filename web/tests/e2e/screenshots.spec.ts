@@ -7,7 +7,7 @@ import { openLibrary } from "./helpers";
 
 const headings = {
   en: { devices: "Devices", library: "Library", game: "Game", add: "Add games", jobs: "Jobs", settings: "Settings" },
-  ru: { devices: "Устройства", library: "Библиотека", game: "Игра", add: "Добавить игры", jobs: "Задания", settings: "Настройки" },
+  ru: { devices: "Носители", library: "Библиотека", game: "Игра", add: "Добавить игры", jobs: "Задания", settings: "Настройки" },
 } as const;
 
 for (const language of ["en", "ru"] as const) {

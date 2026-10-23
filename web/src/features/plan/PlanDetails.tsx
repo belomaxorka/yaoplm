@@ -2,6 +2,7 @@ import { cn } from "cn";
 import {
   ArrowRightLeft,
   Copy,
+  FileArchive,
   FileInput,
   FilePen,
   FolderMinus,
@@ -25,6 +26,7 @@ const stepIcons: Record<StepOp, LucideIcon> = {
   createDir: FolderPlus,
   removeDir: FolderMinus,
   writeFile: FileInput,
+  writeZso: FileArchive,
   putFile: NotebookPen,
   copyFile: Copy,
   rename: FilePen,
@@ -49,13 +51,15 @@ function StepLine({ step }: { step: PlanStep }) {
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 wrap-anywhere">
         <span>{t(`plan.steps.${step.op}`, { path: step.path, to: step.to ?? "" })}</span>
-        {step.op === "writeFile" && step.source && (
+        {(step.op === "writeFile" || step.op === "writeZso") && step.source && (
           <span className="block text-xs text-muted-foreground">{t("plan.from", { source: step.source })}</span>
         )}
         {step.removal === "cache" && <span className="block text-xs text-muted-foreground">{t("plan.cache")}</span>}
       </span>
       {step.bytes !== null && step.bytes > 0 && (
-        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{formatBytes(step.bytes)}</span>
+        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+          {step.op === "writeZso" ? t("plan.atMost", { size: formatBytes(step.bytes) }) : formatBytes(step.bytes)}
+        </span>
       )}
     </li>
   );
@@ -99,11 +103,15 @@ export function TransactionCard({
 export function PlanSummary({ plan }: { plan: PlanView }) {
   const { t } = useTranslation();
   const after = plan.freeBytes - plan.writeBytes + plan.deleteBytes;
+  // A ZSO's size is known only once it is written: the plan counts the worst case.
+  const estimated = plan.transactions.some((tx) => tx.steps.some((step) => step.op === "writeZso"));
+  const writes = formatBytes(plan.writeBytes);
+  const free = formatBytes(Math.max(0, after));
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4" data-testid="plan-summary">
       <div>
         <dt className="text-xs text-muted-foreground">{t("plan.writes")}</dt>
-        <dd className="font-mono tabular-nums">{formatBytes(plan.writeBytes)}</dd>
+        <dd className="font-mono tabular-nums">{estimated ? t("plan.atMost", { size: writes }) : writes}</dd>
       </div>
       <div>
         <dt className="text-xs text-muted-foreground">{t("plan.deletes")}</dt>
@@ -118,7 +126,7 @@ export function PlanSummary({ plan }: { plan: PlanView }) {
       <div>
         <dt className="text-xs text-muted-foreground">{t("plan.freeAfter")}</dt>
         <dd className={cn("font-mono tabular-nums", after < 0 && "font-semibold text-destructive")}>
-          {formatBytes(Math.max(0, after))}
+          {estimated ? t("plan.atLeast", { size: free }) : free}
         </dd>
       </div>
     </dl>

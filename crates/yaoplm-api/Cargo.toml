@@ -23,6 +23,7 @@ ts-rs = { workspace = true, optional = true }
 yaoplm-core.workspace = true
 yaoplm-device.workspace = true
 yaoplm-formats.workspace = true
+yaoplm-hash.workspace = true
 yaoplm-net.workspace = true
 
 [dev-dependencies]

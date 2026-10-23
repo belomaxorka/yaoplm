@@ -268,15 +268,17 @@ fn lone_bin_and_broken_sheets() {
     assert!(lone.notices.iter().any(|n| n.code == "binLayoutDetected"));
     let mut codes = skipped_codes(&plan);
     codes.sort();
+    // Multi.cue says its data track runs 10 minutes, longer than Multi.bin;
+    // Game.chd is no CHD at all. Short.bin belongs to Short.cue: one entry,
+    // not two.
     assert_eq!(
         codes,
         [
-            "formatNotYetSupported",
+            "unsupportedSource",
             "unsupportedSource",
             "unsupportedSource",
             "unsupportedSource"
         ],
-        // Short.bin belongs to Short.cue: one entry, not two.
         "{:?}",
         plan.skipped
     );

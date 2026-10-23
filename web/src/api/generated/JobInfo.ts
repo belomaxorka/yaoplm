@@ -15,11 +15,11 @@ export type JobInfo = { id: JobId, kind: JobKind, title: string,
  */
 root: string | null, status: JobStatus, 
 /**
- * Bytes for plans, items for scans.
+ * Bytes for plans and verification, items for scans.
  */
 done: number, total: number | null, 
 /**
- * Bytes per second since the job started (plans only).
+ * Bytes per second since the job started (plans and dump checks).
  */
 rate: number | null, 
 /**
@@ -31,6 +31,6 @@ item: string | null,
  */
 result?: JobResult, error: ApiError | null, 
 /**
- * Transactions and steps so far (plans only); `ListJobs` leaves it out.
+ * The job's log so far (see [`JobLogEntry`]); `ListJobs` leaves it out.
  */
 log: Array<JobLogEntry>, };

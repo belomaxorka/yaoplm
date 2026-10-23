@@ -1,14 +1,18 @@
 //! Readers and writers for the on-disk formats OPL uses: ISO9660 and
 //! `SYSTEM.CNF`, `ul.cfg` and `USBA_crc32`, per-game CFG, ZSO, CUE/BIN, ART
-//! naming, VMC, CHT and APPS.
+//! naming, VMC, CHT and APPS; and the containers images arrive in: CHD,
+//! zip and 7z (IMP-1b).
 //!
 //! One format per module. Each module links the section of
 //! `docs/research/02-opl-formats.md` and the OPL source file it mirrors.
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003).
 
 pub mod apps;
+pub mod archive;
 pub mod art;
 pub mod cfg;
+#[cfg(feature = "chd")]
+pub mod chd;
 pub mod cht;
 pub mod cue;
 pub mod games_bin;

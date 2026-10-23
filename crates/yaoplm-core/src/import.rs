@@ -26,7 +26,7 @@ use yaoplm_formats::iso_name::{
 use yaoplm_formats::serial;
 use yaoplm_formats::ul_cfg::{self, UlRecord, split_plan};
 use yaoplm_formats::usba_crc32::usba_crc32;
-use yaoplm_formats::{LoaderProfile, Media};
+use yaoplm_formats::{LoaderProfile, Media, zso};
 
 use crate::device::{DeviceState, join, on_disk};
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction};
@@ -66,10 +66,15 @@ pub struct ImportOptions {
     pub transfer: Transfer,
     pub layout: Layout,
     pub overrides: Vec<ImportOverride>,
+    /// Store images as ZSO (GAME-4): OPL 1.2.0 beta only, never for `ul`.
+    pub compress: bool,
 }
 
-/// Extensions OPL users have that YAOPLM does not import yet (IMP-1b/c).
-const LATER: [&str; 9] = ["chd", "cso", "zip", "7z", "rar", "nrg", "mdf", "img", "ecm"];
+/// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
+const LATER: [&str; 6] = ["cso", "rar", "nrg", "mdf", "img", "ecm"];
+/// Archives read as folders through [`crate::archives::ArchiveSources`];
+/// one met as a file is inside another archive.
+const ARCHIVES: [&str; 2] = ["zip", "7z"];
 const MAX_DEPTH: usize = 8;
 /// Kept free for the journal, CFG backups and directory growth.
 const RESERVE: u64 = 1 << 20;
@@ -116,8 +121,14 @@ fn walk(
             }
             Ok(_) => {
                 let ext = extension(&path);
-                if matches!(ext.as_str(), "iso" | "zso" | "cue" | "bin") {
+                if matches!(ext.as_str(), "iso" | "zso" | "cue" | "bin" | "chd") {
                     found.push(path);
+                } else if ARCHIVES.contains(&ext.as_str()) {
+                    skipped.push(skip(
+                        &path,
+                        "nestedArchive",
+                        "an archive inside an archive is not opened; unpack the outer one",
+                    ));
                 } else if LATER.contains(&ext.as_str()) {
                     skipped.push(skip(
                         &path,
@@ -126,7 +137,11 @@ fn walk(
                     ));
                 }
             }
-            Err(_) => skipped.push(skip(&path, "unreadable", "cannot read this file")),
+            Err(err) => skipped.push(skip(
+                &path,
+                "unreadable",
+                format!("cannot read this file: {err}"),
+            )),
         }
     }
 }
@@ -140,7 +155,11 @@ pub fn expand_inputs(sources: &dyn SourceFs, inputs: &[PathBuf]) -> (Vec<PathBuf
         match sources.metadata(input) {
             Ok(meta) if meta.is_dir => walk(sources, input, 0, &mut found, &mut skipped),
             Ok(_) => found.push(input.clone()),
-            Err(_) => skipped.push(skip(input, "notFound", "does not exist")),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                skipped.push(skip(input, "notFound", "does not exist"));
+            }
+            // A damaged archive, a folder the user may not read...
+            Err(err) => skipped.push(skip(input, "unreadable", err.to_string())),
         }
     }
     let mut seen = HashSet::new();
@@ -354,9 +373,16 @@ impl Planner<'_> {
             ));
         }
         if self.options.transfer == Transfer::Move {
-            tx.then(Step::RemoveSource {
-                source: self.plan.sources.len() - 1,
-            });
+            if self.sources.in_archive(&probed.data_path) {
+                notices.push(Notice::info(
+                    "sourceArchiveKept",
+                    "the game comes from an archive: the archive is not deleted",
+                ));
+            } else {
+                tx.then(Step::RemoveSource {
+                    source: self.plan.sources.len() - 1,
+                });
+            }
         }
         tx.notices = notices;
         self.plan.transactions.push(tx);
@@ -381,7 +407,15 @@ impl Planner<'_> {
         } else {
             clean
         };
-        let ext = if keep_zso {
+        let compress = !keep_zso && self.options.compress;
+        if compress && !self.options.profile.reads_zso() {
+            notices.push(Notice::info(
+                "zsoNotForProfile",
+                "OPL 1.1.0 cannot read ZSO: the game is stored as ISO",
+            ));
+        }
+        let compress = compress && self.options.profile.reads_zso();
+        let ext = if keep_zso || compress {
             ImageExtension::Zso
         } else {
             ImageExtension::Iso
@@ -391,7 +425,7 @@ impl Planner<'_> {
         if !name.is_ascii() {
             notices.push(Notice::warning(
                 "nonAsciiName",
-                "non-ASCII characters in the name may not display or open on the console",
+                "non-ASCII characters in the name: the console may garble it or fail to open the file",
             ));
         }
         let folder = self
@@ -415,19 +449,35 @@ impl Planner<'_> {
         };
         let len = source.len;
         self.plan.sources.push(source);
-        let mut tx = Transaction::new(format!("Copy {name} to {folder}"));
+        let mut tx = Transaction::new(if compress {
+            format!("Compress {name} into {folder}")
+        } else {
+            format!("Copy {name} to {folder}")
+        });
         tx.game = Some(GameInfo {
             title: iso_name::classify(&name).map_or(clean.clone(), |n| n.title),
             startup: startup.to_owned(),
             media,
-            format: if keep_zso { "ZSO" } else { "ISO" }.into(),
+            format: if keep_zso || compress { "ZSO" } else { "ISO" }.into(),
         });
-        tx.push(Step::WriteFile {
-            path: target,
-            source: self.plan.sources.len() - 1,
-            offset: 0,
-            len,
-        });
+        if compress {
+            tx.push(Step::WriteZso {
+                path: target,
+                source: self.plan.sources.len() - 1,
+                max_len: zso::max_output(len),
+            });
+            notices.push(Notice::info(
+                "compressedToZso",
+                "stored as ZSO: smaller on the device; OPL 1.2.0 beta and newer read it",
+            ));
+        } else {
+            tx.push(Step::WriteFile {
+                path: target,
+                source: self.plan.sources.len() - 1,
+                offset: 0,
+                len,
+            });
+        }
         if let Some(cache) = self
             .state
             .drop_cache(media)
@@ -632,7 +682,7 @@ pub fn plan_import(
     }
     if games == 0 && plan.notices.iter().all(|n| n.code != "unfinishedOperation") {
         plan.notices
-            .push(Notice::error("nothingToImport", "no game to import"));
+            .push(Notice::error("nothingToImport", "no game to add"));
     }
     Ok(plan)
 }

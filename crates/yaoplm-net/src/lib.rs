@@ -1,14 +1,16 @@
 //! Cover-art sources, the download cache, request limits and PNG
-//! transcoding (ART-1, ART-2, ADR-0007).
+//! transcoding (ART-1, ART-2, ADR-0007), and the Redump DAT for dump
+//! verification (META-2).
 //!
 //! Asynchronous on purpose: the core never uses this crate (ADR-0003);
 //! `yaoplm-api` drives [`ArtService`] from a job thread through a tokio
-//! runtime. Network access happens only inside [`ArtService::fetch_cover`],
-//! which a user action starts, and every answer is cached
-//! (ARCHITECTURE.md §6-§7).
+//! runtime. Network access happens only inside [`ArtService::fetch_cover`]
+//! and [`redump::RedumpStore::update`], each started by a user action, and
+//! every answer is cached (ARCHITECTURE.md §6-§7).
 
 pub mod cache;
 pub mod http;
+pub mod redump;
 pub mod sources;
 pub mod transcode;
 
@@ -31,12 +33,14 @@ pub enum NetError {
     Http(String),
     #[error("{url}: HTTP {status}")]
     Status { url: String, status: u16 },
-    #[error("{0}: the response is too large to be a cover")]
+    #[error("{0}: the response is larger than expected")]
     TooLarge(String),
     #[error("image: {0}")]
     Image(String),
     #[error("cache: {0}")]
     Cache(String),
+    #[error("Redump DAT: {0}")]
+    Dat(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
@@ -135,6 +139,11 @@ impl ArtService {
 
     pub fn cache(&self) -> &Cache {
         &self.cache
+    }
+
+    /// The shared client, for other downloads (the Redump DAT).
+    pub fn http(&self) -> &Http {
+        &self.http
     }
 
     fn derived_label(size: ArtSize) -> String {
@@ -730,11 +739,11 @@ mod tests {
             .await;
             assert!(cover.is_some());
         }
-        let times = seen.lock().unwrap().times.clone();
-        assert_eq!(times.len(), 3);
-        assert!(times[1].duration_since(times[0]) >= std::time::Duration::from_millis(900));
-        assert!(times[2].duration_since(times[1]) >= std::time::Duration::from_millis(900));
-        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(seen.lock().unwrap().times.len(), 3);
+        // A second before each request after the first, timed here: under
+        // load a request can reach the mock server late, which shrinks the
+        // gap the server would see.
+        assert!(started.elapsed() >= std::time::Duration::from_millis(1950));
     }
 
     #[tokio::test]

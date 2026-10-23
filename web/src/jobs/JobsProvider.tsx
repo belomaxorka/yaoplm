@@ -80,16 +80,20 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     [transport],
   );
 
-  // The library changes only when a write job ends; wait for the queue to drain.
+  // The library changes when a write job ends; wait for the queue to drain.
+  // Dump verdicts come from the hash cache and the Redump DAT, so a finished
+  // check or DAT update shows up after a scan too (GAME-5).
   const rescanIfIdle = useCallback(
     (finished: JobInfo) => {
-      if (finished.kind !== "executePlan") return;
+      const verdicts =
+        finished.status === "finished" && (finished.kind === "verifyGames" || finished.kind === "updateRedump");
+      if (finished.kind !== "executePlan" && !verdicts) return;
       const stillWriting = [...latest.current.values()].some(
         (job) => job.id !== finished.id && job.kind === "executePlan" && isActive(job),
       );
       if (stillWriting) return;
       void queryClient.invalidateQueries({ queryKey: ["library"] });
-      void queryClient.invalidateQueries({ queryKey: ["device"] });
+      if (finished.kind === "executePlan") void queryClient.invalidateQueries({ queryKey: ["device"] });
     },
     [queryClient],
   );

@@ -275,7 +275,7 @@ impl fmt::Display for Warning {
             }
             Self::NonAsciiName => write!(
                 f,
-                "non-ASCII characters in the name may not display or open on the console"
+                "non-ASCII characters in the name: the console may garble it or fail to open the file"
             ),
             Self::SmbNameTooLong(len) => write!(
                 f,
@@ -309,14 +309,19 @@ impl fmt::Display for Warning {
                     "$Compatibility={value} sets bits outside {allowed:#x} for this loader"
                 )
             }
+            // OPL shows the slots as 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
             Self::VmcMissing { slot, name } => {
-                write!(f, "VMC slot {slot}: VMC/{name}.bin does not exist")
+                write!(f, "VMC slot {}: VMC/{name}.bin does not exist", slot + 1)
             }
             Self::VmcInvalid {
                 slot,
                 name,
                 problem,
-            } => write!(f, "VMC slot {slot}: VMC/{name}.bin is unusable: {problem}"),
+            } => write!(
+                f,
+                "VMC slot {}: VMC/{name}.bin is unusable: {problem}",
+                slot + 1
+            ),
             Self::ArtNotLoaded(file) => write!(f, "{file}: this loader only reads PNG art"),
             Self::ArtTooLarge {
                 file,

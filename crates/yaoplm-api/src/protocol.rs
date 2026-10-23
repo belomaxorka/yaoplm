@@ -10,6 +10,7 @@ use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
 use crate::plans::PlanView;
+use crate::verify::RedumpInfo;
 
 /// `ID.Title.iso` (ADR-0006, the default) or `Title.iso`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -39,6 +40,16 @@ pub enum Layout {
     #[default]
     Auto,
     /// Always `ul` chunks.
+    Ul,
+}
+
+/// What `ConvertGames` turns games into (GAME-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ConvertTarget {
+    Iso,
+    Zso,
     Ul,
 }
 
@@ -147,8 +158,8 @@ pub enum Request {
     PlanInit {
         root: String,
     },
-    /// Plans copying ISO, ZSO and BIN/CUE files or folders to a device
-    /// (IMP-1 to IMP-11).
+    /// Plans copying ISO, ZSO, BIN/CUE and CHD images, also from zip and 7z
+    /// archives, or folders of them, to a device (IMP-1 to IMP-11, IMP-1b).
     PlanImport {
         root: String,
         sources: Vec<String>,
@@ -167,6 +178,25 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ImportOverride>>,
+        /// Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        compress: Option<bool>,
+    },
+    /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
+    /// form is deleted after the new one is complete, so executing needs
+    /// `confirmDelete`.
+    ConvertGames {
+        root: String,
+        games: Vec<GameRef>,
+        target: ConvertTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// How images made from `ul` chunks are named.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        name_style: Option<NameStyle>,
     },
     /// Plans a rename (GAME-1). A new `startup` also moves CFG, art and
     /// cheats.
@@ -274,6 +304,37 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         kind: Option<String>,
     },
+    /// Hashes games on a device and matches them against the stored Redump
+    /// DAT (GAME-5): a job whose result is a `VerificationReport`. Reads
+    /// only; unchanged images come from the hash cache.
+    VerifyGames {
+        root: String,
+        /// Only these games; every game when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        games: Option<Vec<GameRef>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        /// Also compute MD5 (CRC-32 and SHA-1 always).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        md5: Option<bool>,
+        /// Read every image even when its hashes are cached: finds damage
+        /// that left a file's size and time alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        fresh: Option<bool>,
+    },
+    /// The stored Redump DAT, if any.
+    RedumpStatus,
+    /// A job that downloads the Redump DAT (at most once a week, META-2) or,
+    /// with `file`, imports a `.dat` or Redump `.zip` the user has.
+    UpdateRedump {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        file: Option<String>,
+    },
     /// Credits, licences and versions of the bundled data and the cover
     /// sources, for the About screen.
     Attribution,
@@ -312,6 +373,10 @@ pub enum Response {
     },
     Attribution(Box<Attribution>),
     ArtCache(ArtCacheInfo),
+    /// The stored Redump DAT; `None` before the first download or import.
+    Redump {
+        dat: Option<Box<RedumpInfo>>,
+    },
 }
 
 /// Identifies a long-running job for its whole lifetime.
@@ -347,8 +412,9 @@ pub enum JobEvent {
         /// What is being worked on, e.g. the game being copied.
         item: Option<String>,
     },
-    /// A transaction or step started or ended (plans only). `GetJob`
-    /// returns the whole log, so a client that reconnects misses nothing.
+    /// A line of a job's log: a transaction or step of a plan, a game of a
+    /// cover search or dump check. `GetJob` returns the whole log, so a
+    /// client that reconnects misses nothing.
     Log {
         job: JobId,
         entry: JobLogEntry,

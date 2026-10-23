@@ -18,8 +18,10 @@ use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
+use yaoplm_api::verify::{RedumpUpdate, VerifyStatus};
 use yaoplm_api::{
-    Api, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request, Response, Transfer,
+    Api, ConvertTarget, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request,
+    Response, Transfer,
 };
 
 #[derive(Debug, Parser)]
@@ -85,7 +87,8 @@ enum Command {
         #[command(flatten)]
         apply: Apply,
     },
-    /// Copy ISO, ZSO or BIN/CUE files (or folders of them) to a device.
+    /// Copy ISO, ZSO, BIN/CUE or CHD images (also from zip and 7z archives,
+    /// or folders of them) to a device.
     ///
     /// On FAT32, games over 4 GiB are split into ul chunks. File names are
     /// ID.Title.iso unless --name-style title is given.
@@ -99,6 +102,9 @@ enum Command {
         /// Store as ul chunks even where one image would fit.
         #[arg(long)]
         ul: bool,
+        /// Store images as ZSO (OPL 1.2.0 beta; not with ul chunks).
+        #[arg(long, conflicts_with = "ul")]
+        zso: bool,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -133,6 +139,22 @@ enum Command {
         #[command(flatten)]
         apply: Apply,
     },
+    /// Convert games between ISO, ZSO and ul chunks. The old form is
+    /// deleted once the new one is complete; the game ID, and with it the
+    /// CFG, art and cheats, stays.
+    Convert {
+        root: PathBuf,
+        /// ID, title, file name, path or ul:<index>.
+        #[arg(required = true)]
+        games: Vec<String>,
+        #[arg(long, value_enum)]
+        to: FormatArg,
+        /// How images made from ul chunks are named.
+        #[arg(long, value_enum)]
+        name_style: Option<StyleArg>,
+        #[command(flatten)]
+        apply: Apply,
+    },
     /// Move a game between CD/ and DVD/ (ul games: change the media byte).
     Mv {
         root: PathBuf,
@@ -155,6 +177,40 @@ enum Command {
     Art {
         #[command(subcommand)]
         command: ArtCommand,
+    },
+    /// Check games against Redump: CRC-32 and SHA-1 (and MD5 with --md5)
+    /// in one read of each image, then a match with the stored DAT.
+    ///
+    /// Unchanged images are not read again (hash cache). Exits with 1 when
+    /// a game is a bad dump or cannot be read.
+    Verify {
+        root: PathBuf,
+        /// Only this game: ID, title, file name, path or ul:<index>. Repeatable.
+        #[arg(long = "game", value_name = "GAME")]
+        games: Vec<String>,
+        /// Also compute MD5.
+        #[arg(long)]
+        md5: bool,
+        /// Read every image even when its hashes are cached: finds damage
+        /// that left a file's size and time alone.
+        #[arg(long)]
+        fresh: bool,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// The Redump DAT used by `verify`: show it, download a newer one (at
+    /// most once a week), or import a .dat or Redump .zip you have.
+    Redump {
+        /// Ask Redump for a newer DAT (at most once a week, whatever the
+        /// answer).
+        #[arg(long)]
+        update: bool,
+        /// Store this .dat or Redump .zip instead; no network.
+        #[arg(long, value_name = "FILE", conflicts_with = "update")]
+        import: Option<PathBuf>,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Credits and licences of the bundled data and the cover sources.
     About {
@@ -283,6 +339,23 @@ impl From<MediaArg> for Media {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum FormatArg {
+    Iso,
+    Zso,
+    Ul,
+}
+
+impl From<FormatArg> for ConvertTarget {
+    fn from(format: FormatArg) -> Self {
+        match format {
+            FormatArg::Iso => Self::Iso,
+            FormatArg::Zso => Self::Zso,
+            FormatArg::Ul => Self::Ul,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum StyleArg {
     /// SLUS_200.62.Title.iso (default).
     IdTitle,
@@ -373,6 +446,7 @@ fn main() -> anyhow::Result<ExitCode> {
             sources,
             move_sources,
             ul,
+            zso,
             title,
             media,
             name_style,
@@ -402,6 +476,24 @@ fn main() -> anyhow::Result<ExitCode> {
                 }),
                 layout: Some(if ul { Layout::Ul } else { Layout::Auto }),
                 overrides: (!overrides.is_empty()).then_some(overrides),
+                compress: Some(zso),
+            };
+            plan_and_apply(&api, request, &apply)
+        }
+        Command::Convert {
+            root,
+            games,
+            to,
+            name_style,
+            apply,
+        } => {
+            let refs = find_games(&api, &root, &games, apply.profile)?;
+            let request = Request::ConvertGames {
+                root: text(&root),
+                games: refs,
+                target: to.into(),
+                profile: Some(apply.profile.into()),
+                name_style: name_style.map(Into::into),
             };
             plan_and_apply(&api, request, &apply)
         }
@@ -467,6 +559,112 @@ fn main() -> anyhow::Result<ExitCode> {
             plan_and_apply(&api, request, &apply)
         }
         Command::Art { command } => art(&api, command),
+        Command::Verify {
+            root,
+            games,
+            md5,
+            fresh,
+            common,
+        } => {
+            let refs = if games.is_empty() {
+                Vec::new()
+            } else {
+                find_games(&api, &root, &games, common.profile)?
+            };
+            let request = Request::VerifyGames {
+                root: text(&root),
+                games: (!refs.is_empty()).then_some(refs),
+                profile: Some(common.profile.into()),
+                md5: Some(md5),
+                fresh: Some(fresh),
+            };
+            let job = match api.dispatch(request) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, common.json),
+            };
+            let info = wait_job(&api, job, io::stderr().is_terminal() && !common.json);
+            match info.result {
+                Some(JobResult::Verification(report)) => {
+                    if common.json {
+                        print_json(&report, true);
+                    } else {
+                        print!("{}", report::verification(&report));
+                    }
+                    let bad = report
+                        .games
+                        .iter()
+                        .any(|g| matches!(g.status, VerifyStatus::BadDump | VerifyStatus::Failed));
+                    Ok(if bad {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    })
+                }
+                _ => fail(
+                    &info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("verification failed")),
+                    common.json,
+                ),
+            }
+        }
+        Command::Redump {
+            update,
+            import,
+            json,
+        } => {
+            if !update && import.is_none() {
+                return match api.dispatch(Request::RedumpStatus) {
+                    Ok(Response::Redump { dat }) => {
+                        if json {
+                            print_json(&dat, true);
+                        } else {
+                            print!("{}", report::redump(dat.as_deref()));
+                        }
+                        Ok(ExitCode::SUCCESS)
+                    }
+                    Ok(other) => bail!("unexpected answer {other:?}"),
+                    Err(error) => fail(&error, json),
+                };
+            }
+            let job = match api.dispatch(Request::UpdateRedump {
+                file: import.as_deref().map(absolute),
+            }) {
+                Ok(Response::Job { job }) => job,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, json),
+            };
+            let info = wait_job(&api, job, false);
+            match info.result {
+                Some(JobResult::Redump(result)) => {
+                    if json {
+                        print_json(&result, true);
+                    } else {
+                        let what = match result.update {
+                            RedumpUpdate::Downloaded => "Downloaded a new DAT.".to_owned(),
+                            RedumpUpdate::NotModified => "Redump has nothing newer.".to_owned(),
+                            RedumpUpdate::TooSoon => format!(
+                                "Redump was asked less than a week ago; next request after {}.",
+                                result
+                                    .next_check
+                                    .map_or_else(|| "a week".to_owned(), report::date)
+                            ),
+                            RedumpUpdate::Imported => "Imported.".to_owned(),
+                        };
+                        println!("{what}");
+                        print!("{}", report::redump(result.dat.as_ref()));
+                    }
+                    Ok(ExitCode::SUCCESS)
+                }
+                _ => fail(
+                    &info
+                        .error
+                        .unwrap_or_else(|| yaoplm_api::ApiError::internal("the update failed")),
+                    json,
+                ),
+            }
+        }
         Command::About { json } => {
             let response = api.dispatch(Request::Attribution);
             show(response, json, |response| match response {
@@ -669,6 +867,14 @@ fn wait_job(api: &Api, job: JobId, progress: bool) -> JobInfo {
                 let _ = writeln!(stderr, "\r\x1b[2K{}", report::art_line(entry));
                 let _ = stderr.flush();
             }
+            JobEvent::Log {
+                job: id,
+                entry: entry @ JobLogEntry::Verify { .. },
+            } if *id == job => {
+                let mut stderr = io::stderr().lock();
+                let _ = writeln!(stderr, "\r\x1b[2K{}", report::verify_line(entry));
+                let _ = stderr.flush();
+            }
             _ => {}
         })
     });
@@ -733,6 +939,21 @@ fn game_ref(game: &Game) -> GameRef {
 /// Finds a game by ID, title, file name, path or `ul:<index>`.
 fn find_game(api: &Api, root: &Path, query: &str, profile: Profile) -> anyhow::Result<GameRef> {
     let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    match_game(&library, query)
+}
+
+/// Several games from one scan.
+fn find_games(
+    api: &Api,
+    root: &Path,
+    queries: &[String],
+    profile: Profile,
+) -> anyhow::Result<Vec<GameRef>> {
+    let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    queries.iter().map(|q| match_game(&library, q)).collect()
+}
+
+fn match_game(library: &Library, query: &str) -> anyhow::Result<GameRef> {
     if let Some(index) = query.strip_prefix("ul:") {
         let index: u32 = index.parse().context("ul:<index> takes a number")?;
         let game = library

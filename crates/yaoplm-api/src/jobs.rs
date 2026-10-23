@@ -23,6 +23,7 @@ use crate::art::ArtLogState;
 use crate::events::EventBus;
 use crate::library::Library;
 use crate::plans::{PlanView, StepOp};
+use crate::verify::{RedumpResult, UnknownReason, VerificationReport, VerifyStatus};
 use crate::{ApiError, ErrorCode, JobEvent, JobId};
 
 /// Finished jobs kept for `GetJob` / `ListJobs`.
@@ -40,6 +41,10 @@ pub enum JobKind {
     ExecutePlan,
     /// Finds covers and ends with a plan to write them (ART-1, ART-4).
     FetchArt,
+    /// Hashes games and matches them against Redump (GAME-5).
+    VerifyGames,
+    /// Downloads or imports the Redump DAT (META-2).
+    UpdateRedump,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +96,8 @@ pub enum JobResult {
     Execution(ExecutionReport),
     /// A plan to confirm with `ExecutePlan` (`FetchArt`).
     Plan(Box<PlanView>),
+    Verification(Box<VerificationReport>),
+    Redump(Box<RedumpResult>),
 }
 
 /// The state of a transaction in the live log.
@@ -116,8 +123,9 @@ pub enum StepLogState {
     Undone,
 }
 
-/// One line of a plan job's live log (the idea comes from OrbitPS2
-/// Manager's per-job log, research/10).
+/// One line of a job's live log: plans log transactions and steps, cover
+/// searches and dump checks one line per game (the idea comes from
+/// OrbitPS2 Manager's per-job log, research/10).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(
@@ -157,6 +165,19 @@ pub enum JobLogEntry {
         /// Where it came from, or why it is missing.
         detail: Option<String>,
     },
+    /// One game of a `VerifyGames` job.
+    Verify {
+        at: u64,
+        startup: String,
+        title: String,
+        status: VerifyStatus,
+        reason: Option<UnknownReason>,
+        /// The Redump name of the matching dump.
+        redump: Option<String>,
+        /// The hashes came from the cache.
+        cached: bool,
+        error: Option<String>,
+    },
 }
 
 /// A job as front ends see it.
@@ -170,10 +191,10 @@ pub struct JobInfo {
     /// The device the job works on, when it has one.
     pub root: Option<String>,
     pub status: JobStatus,
-    /// Bytes for plans, items for scans.
+    /// Bytes for plans and verification, items for scans.
     pub done: u64,
     pub total: Option<u64>,
-    /// Bytes per second since the job started (plans only).
+    /// Bytes per second since the job started (plans and dump checks).
     pub rate: Option<u64>,
     /// What is being worked on, e.g. the game being copied.
     pub item: Option<String>,
@@ -182,7 +203,7 @@ pub struct JobInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<JobResult>,
     pub error: Option<ApiError>,
-    /// Transactions and steps so far (plans only); `ListJobs` leaves it out.
+    /// The job's log so far (see [`JobLogEntry`]); `ListJobs` leaves it out.
     #[serde(default)]
     pub log: Vec<JobLogEntry>,
 }
@@ -491,7 +512,7 @@ fn run_job(inner: &Arc<Inner>, id: JobId, cancel: CancelToken, kind: JobKind, wo
         cancel,
         started: Instant::now(),
         last_event: Mutex::new(None),
-        rate: kind == JobKind::ExecutePlan,
+        rate: matches!(kind, JobKind::ExecutePlan | JobKind::VerifyGames),
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&context)))
         .unwrap_or_else(|_| Err(ApiError::internal("the job panicked")));

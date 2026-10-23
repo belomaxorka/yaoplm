@@ -75,7 +75,8 @@ test("the bulk run takes only the games without a cover", async ({ page, request
 
   // The jobs page keeps the search with its per-game log.
   await page.goto("/jobs");
-  const job = page.getByTestId("job-card").filter({ hasText: "Find missing covers" }).first();
+  // Cover searches carry a translated title, not the core's English one.
+  const job = page.getByTestId("job-card").filter({ hasText: "Cover search" }).first();
   await expect(job).toHaveAttribute("data-status", "finished");
   await job.getByRole("button", { name: /^Log/ }).click();
   await expect(job.getByTestId("job-log")).toContainText("SCES_500.03 Split Game: found at libretro");
@@ -116,7 +117,7 @@ test("the About screen credits the data and cover sources", async ({ page, reque
   await expect(about.getByTestId("source-pcsx2")).toContainText("GPL-3.0");
   await expect(about.getByTestId("source-libretro").first()).toContainText("CC BY-SA 4.0");
   await expect(about.getByTestId("source-xlenore")).toContainText("no licence stated");
-  await expect(about).toContainText(/\d{2,} serials, built 20\d\d-\d\d-\d\d/);
+  await expect(about).toContainText(/Game IDs: \d{2,}, built 20\d\d-\d\d-\d\d/);
   // The art sources and the cache are configurable.
   await expect(page.getByTestId("art-source-xlenore")).toContainText("xlenore/ps2-covers");
   await expect(page.getByText(/\d+ objects?, .* in /)).toBeVisible();

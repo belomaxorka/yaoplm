@@ -7,8 +7,13 @@
 //! ps2-opl-ripper `cd_sector.py`, rcheevos `cdreader.c`):
 //! - user data starts at byte 0 (`MODE1/2048`), 16 (`MODE1/2352`), 24
 //!   (`MODE2/2352`, Form 1) or 8 (`MODE2/2336`);
-//! - only one `FILE` (type `BINARY`) with one data `TRACK` is supported;
-//!   audio tracks, several files or sessions are refused, not dropped;
+//! - track 1 is the data track (type `BINARY`); later tracks, audio in the
+//!   PS2 discs that have them, are dropped and listed (IMP-1b): OPL
+//!   emulates a one-track disc, so their music is lost either way. A second
+//!   data track or a second session is refused, not dropped;
+//! - several `FILE`s (Redump's `(Track 1).bin`, `(Track 2).bin`) and one
+//!   file holding every track both work: in the latter the data track ends
+//!   where the next track starts (its `INDEX 00`, else `INDEX 01`);
 //! - every raw sector must carry the sync pattern and the mode the sheet
 //!   names; Mode 2 Form 2 sectors (no ECC, 2324 bytes) cannot become ISO
 //!   data and are refused;
@@ -91,18 +96,22 @@ pub enum CueError {
     Syntax { line: usize, problem: String },
     #[error("the sheet names no FILE")]
     NoFile,
-    #[error("the sheet names {0} files; only single-file BIN/CUE is supported")]
-    MultipleFiles(usize),
+    #[error("the sheet names no TRACK")]
+    NoTrack,
     #[error("FILE type {0} is not supported; only BINARY")]
     FileType(String),
-    #[error("the disc has {0} tracks; only single-track BIN/CUE is supported for now")]
-    MultipleTracks(usize),
+    #[error("track {0} is a second data track (mixed-mode or CD-Extra disc)")]
+    SecondDataTrack(u32),
     #[error("track mode {0} holds no PS2 data")]
     NotData(String),
     #[error("the disc has several sessions")]
     MultiSession,
     #[error("the track has no INDEX 01")]
     NoIndex,
+    #[error("track {0} has no INDEX, so the data track has no end")]
+    NextTrackNoIndex(u32),
+    #[error("track {0} starts before the data track does")]
+    TrackOrder(u32),
 }
 
 /// One `TRACK` of a sheet.
@@ -130,13 +139,20 @@ pub struct CueSheet {
     pub sessions: u32,
 }
 
-/// The one data track YAOPLM can turn into an ISO.
+/// The data track YAOPLM turns into an ISO.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataTrack {
     pub file: String,
     pub mode: TrackMode,
     /// `INDEX 01`, in sectors from the start of the BIN.
     pub start_sector: u64,
+    /// Sectors of the track when another track follows it in the same
+    /// file; `None` means up to the end of the file.
+    pub sectors: Option<u64>,
+    /// Tracks after the data track, which the ISO leaves out.
+    pub dropped: Vec<CueTrack>,
+    /// The other files the sheet names (only dropped tracks are in them).
+    pub other_files: Vec<String>,
 }
 
 fn decode(bytes: &[u8]) -> String {
@@ -247,36 +263,57 @@ impl CueSheet {
         Ok(sheet)
     }
 
-    /// The single data track, or why this sheet is not supported yet.
-    pub fn single_data_track(&self) -> Result<DataTrack, CueError> {
+    /// Track 1 as the data track, the tracks dropped after it, or why this
+    /// sheet cannot become an ISO.
+    pub fn data_track(&self) -> Result<DataTrack, CueError> {
         if self.sessions > 1 {
             return Err(CueError::MultiSession);
         }
-        let file = match self.files.as_slice() {
-            [] => return Err(CueError::NoFile),
-            [file] => file,
-            files => return Err(CueError::MultipleFiles(files.len())),
-        };
+        let file = self.files.first().ok_or(CueError::NoFile)?;
         if !file.file_type.eq_ignore_ascii_case("BINARY") {
             return Err(CueError::FileType(file.file_type.clone()));
         }
-        let track = match file.tracks.as_slice() {
-            [] => return Err(CueError::MultipleTracks(0)),
-            [track] => track,
-            tracks => return Err(CueError::MultipleTracks(tracks.len())),
-        };
+        let track = file.tracks.first().ok_or(CueError::NoTrack)?;
         let mode =
             TrackMode::parse(&track.mode).ok_or_else(|| CueError::NotData(track.mode.clone()))?;
-        let start = track
-            .indexes
+        let index = |t: &CueTrack, n: u32| {
+            t.indexes
+                .iter()
+                .find(|(i, _)| *i == n)
+                .map(|(_, frames)| u64::from(*frames))
+        };
+        let start = index(track, 1).ok_or(CueError::NoIndex)?;
+        // In one file holding every track, the next one starts at its
+        // pregap (INDEX 00) when the file has it, else at INDEX 01.
+        let end = match file.tracks.get(1) {
+            None => None,
+            Some(next) => {
+                let end = index(next, 0)
+                    .or_else(|| index(next, 1))
+                    .ok_or(CueError::NextTrackNoIndex(next.number))?;
+                if end <= start {
+                    return Err(CueError::TrackOrder(next.number));
+                }
+                Some(end)
+            }
+        };
+        let dropped: Vec<CueTrack> = self
+            .files
             .iter()
-            .find(|(n, _)| *n == 1)
-            .map(|(_, frames)| u64::from(*frames))
-            .ok_or(CueError::NoIndex)?;
+            .flat_map(|f| &f.tracks)
+            .skip(1)
+            .cloned()
+            .collect();
+        if let Some(data) = dropped.iter().find(|t| TrackMode::parse(&t.mode).is_some()) {
+            return Err(CueError::SecondDataTrack(data.number));
+        }
         Ok(DataTrack {
             file: file.name.clone(),
             mode,
             start_sector: start,
+            sectors: end.map(|end| end - start),
+            dropped,
+            other_files: self.files.iter().skip(1).map(|f| f.name.clone()).collect(),
         })
     }
 }
@@ -352,58 +389,77 @@ impl<R: Read + Seek> BinImage<R> {
                 sector_size: mode.sector_size(),
             });
         }
-        Ok(Self {
+        Ok(Self::with_sectors(inner, mode, start_sector, len / size))
+    }
+
+    /// A track of `sectors` sectors from `start_sector`, for a BIN that
+    /// holds more tracks after it.
+    pub fn with_sectors(inner: R, mode: TrackMode, start_sector: u64, sectors: u64) -> Self {
+        Self {
             inner,
             mode,
-            start,
-            sectors: len / size,
+            start: start_sector * u64::from(mode.sector_size()),
+            sectors,
             pos: None,
             raw: vec![0; mode.sector_size() as usize],
-        })
+        }
     }
 
     pub fn mode(&self) -> TrackMode {
         self.mode
     }
+}
 
-    /// Checks the raw header; `Ok(false)` for an empty Mode 0 sector.
-    fn check(&self, lba: u64) -> io::Result<bool> {
-        let raw = &self.raw;
-        match self.mode {
-            TrackMode::Mode1_2048 => Ok(true),
-            TrackMode::Mode2_2336 => {
-                if raw[0..4] != raw[4..8] {
-                    return Err(invalid(lba, "subheader copies differ"));
-                }
-                if raw[2] & 0x20 != 0 {
-                    return Err(invalid(lba, "Mode 2 Form 2 sector"));
-                }
-                Ok(true)
+/// The 2048 user-data bytes of a raw sector in `mode`, checked the way
+/// research/09 §2 asks (sync, mode byte, subheader copies, no Form 2). An
+/// empty Mode 0 sector reads as zeros. Also used for CHD frames.
+pub fn user_data(mode: TrackMode, raw: &[u8], lba: u64, out: &mut Sector) -> io::Result<()> {
+    if raw.len() < mode.sector_size() as usize {
+        return Err(invalid(lba, "short sector"));
+    }
+    let data = match mode {
+        TrackMode::Mode1_2048 => true,
+        TrackMode::Mode2_2336 => {
+            if raw[0..4] != raw[4..8] {
+                return Err(invalid(lba, "subheader copies differ"));
             }
-            TrackMode::Mode1_2352 | TrackMode::Mode2_2352 => {
-                if raw[..12] != SYNC {
-                    return Err(invalid(lba, "no sync pattern; wrong sector size?"));
-                }
-                match (raw[15], self.mode) {
-                    (0, _) if raw[16..].iter().all(|&b| b == 0) => Ok(false),
-                    (1, TrackMode::Mode1_2352) => Ok(true),
-                    (2, TrackMode::Mode2_2352) => {
-                        if raw[16..20] != raw[20..24] {
-                            return Err(invalid(lba, "subheader copies differ"));
-                        }
-                        if raw[18] & 0x20 != 0 {
-                            return Err(invalid(lba, "Mode 2 Form 2 sector"));
-                        }
-                        Ok(true)
+            if raw[2] & 0x20 != 0 {
+                return Err(invalid(lba, "Mode 2 Form 2 sector"));
+            }
+            true
+        }
+        TrackMode::Mode1_2352 | TrackMode::Mode2_2352 => {
+            if raw[..12] != SYNC {
+                return Err(invalid(lba, "no sync pattern; wrong sector size?"));
+            }
+            match (raw[15], mode) {
+                (0, _) if raw[16..2352].iter().all(|&b| b == 0) => false,
+                (1, TrackMode::Mode1_2352) => true,
+                (2, TrackMode::Mode2_2352) => {
+                    if raw[16..20] != raw[20..24] {
+                        return Err(invalid(lba, "subheader copies differ"));
                     }
-                    (mode, expected) => Err(invalid(
+                    if raw[18] & 0x20 != 0 {
+                        return Err(invalid(lba, "Mode 2 Form 2 sector"));
+                    }
+                    true
+                }
+                (found, expected) => {
+                    return Err(invalid(
                         lba,
-                        &format!("sector is mode {mode}, the sheet says {expected}"),
-                    )),
+                        &format!("sector is mode {found}, the sheet says {expected}"),
+                    ));
                 }
             }
         }
+    };
+    if data {
+        let offset = mode.data_offset() as usize;
+        out.copy_from_slice(&raw[offset..offset + SECTOR_SIZE]);
+    } else {
+        out.fill(0);
     }
+    Ok(())
 }
 
 impl<R: Read + Seek> SectorSource for BinImage<R> {
@@ -426,12 +482,7 @@ impl<R: Read + Seek> SectorSource for BinImage<R> {
         self.pos = None;
         self.inner.read_exact(&mut self.raw)?;
         self.pos = Some(at + size);
-        if self.check(lba)? {
-            let offset = self.mode.data_offset() as usize;
-            buf.copy_from_slice(&self.raw[offset..offset + SECTOR_SIZE]);
-        } else {
-            buf.fill(0);
-        }
+        user_data(self.mode, &self.raw, lba, buf)?;
         Ok(())
     }
 }
@@ -448,39 +499,73 @@ mod tests {
             b"\xEF\xBB\xBFREM Generated\r\nfile \"Game (USA).bin\" binary\r\n  track 01 mode2/2352\r\n    INDEX 01 00:00:00\r\n",
         )
         .unwrap();
-        let track = sheet.single_data_track().unwrap();
+        let track = sheet.data_track().unwrap();
         assert_eq!(track.file, "Game (USA).bin");
         assert_eq!(track.mode, TrackMode::Mode2_2352);
         assert_eq!(track.start_sector, 0);
+        assert_eq!(track.sectors, None);
+        assert!(track.dropped.is_empty());
 
         let sheet = CueSheet::parse(
             b"CATALOG 0000000000000\rFILE game.bin BINARY\rTRACK 1 MODE1/2048\rPREGAP 00:02:00\rINDEX 00 00:00:00\rINDEX 01 00:02:00\r",
         )
         .unwrap();
-        let track = sheet.single_data_track().unwrap();
+        let track = sheet.data_track().unwrap();
         assert_eq!(track.file, "game.bin");
         assert_eq!(track.start_sector, 150);
     }
 
     #[test]
+    fn multi_track_sheets_keep_the_data_track() {
+        // Redump: one file per track.
+        let sheet = CueSheet::parse(
+            b"FILE \"Game (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n",
+        )
+        .unwrap();
+        let track = sheet.data_track().unwrap();
+        assert_eq!(track.file, "Game (Track 1).bin");
+        assert_eq!(track.sectors, None, "the data track is its whole file");
+        assert_eq!(track.dropped.len(), 1);
+        assert_eq!(track.dropped[0].mode, "AUDIO");
+        assert_eq!(track.other_files, ["Game (Track 2).bin"]);
+
+        // One file holding every track: the data ends at track 2's pregap.
+        let sheet = CueSheet::parse(
+            b"FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 00 10:00:00\nINDEX 01 10:02:00\nTRACK 03 AUDIO\nINDEX 01 12:00:00\n",
+        )
+        .unwrap();
+        let track = sheet.data_track().unwrap();
+        assert_eq!(track.sectors, Some(10 * 60 * 75));
+        assert_eq!(track.dropped.len(), 2);
+        // Without INDEX 00 the next track starts at INDEX 01.
+        let sheet = CueSheet::parse(
+            b"FILE a.bin BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 01 00:00:30\n",
+        )
+        .unwrap();
+        assert_eq!(sheet.data_track().unwrap().sectors, Some(30));
+    }
+
+    #[test]
     fn rejects_what_opl_cannot_play() {
-        let reject = |text: &str| {
-            CueSheet::parse(text.as_bytes())
-                .unwrap()
-                .single_data_track()
-        };
+        let reject = |text: &str| CueSheet::parse(text.as_bytes()).unwrap().data_track();
         assert_eq!(
             reject(
-                "FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 00 10:00:00\n"
+                "FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nTRACK 02 MODE2/2352\nINDEX 01 10:00:00\n"
             ),
-            Err(CueError::MultipleTracks(2))
+            Err(CueError::SecondDataTrack(2))
         );
+        assert_eq!(reject("REM nothing\n"), Err(CueError::NoFile));
         assert_eq!(
             reject(
-                "FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nFILE b.bin BINARY\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n"
+                "FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:02:00\nTRACK 02 AUDIO\nINDEX 01 00:01:00\n"
             ),
-            Err(CueError::MultipleFiles(2))
+            Err(CueError::TrackOrder(2))
         );
+        assert_eq!(
+            reject("FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\n"),
+            Err(CueError::NextTrackNoIndex(2))
+        );
+        assert_eq!(reject("FILE a.bin BINARY\n"), Err(CueError::NoTrack));
         assert_eq!(
             reject("FILE a.wav WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00\n"),
             Err(CueError::FileType("WAVE".into()))

@@ -6,11 +6,13 @@ import {
   ChevronDown,
   CircleX,
   Clock,
+  Database,
   History,
   ImageDown,
   ListChecks,
   Loader2,
   ScanSearch,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -26,9 +28,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { PlanDialog } from "@/features/plan/PlanDialog";
+import { jobTitle } from "@/features/jobs/jobTitle";
 import { usePlan } from "@/features/plan/usePlan";
+import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
+import { DumpIcon } from "@/features/verify/DumpBadge";
 import { useJobs } from "@/jobs/context";
-import { formatBytes, formatEta, formatRate, formatTime, percent } from "@/lib/format";
+import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 
 /**
  * Jobs panel (IMP-9): one card per job with progress, speed, time left,
@@ -94,7 +99,7 @@ export function JobStatusIcon({ job, className }: { job: JobInfo; className?: st
 export function JobProgressLine({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
   const value = percent(job.done, job.total);
-  const bytes = job.kind === "executePlan";
+  const bytes = job.kind === "executePlan" || job.kind === "verifyGames";
   const eta = formatEta(job.done, job.total, job.rate);
   return (
     <div className="flex flex-col gap-1">
@@ -136,10 +141,12 @@ function JobCard({ job }: { job: JobInfo }) {
   const [logOpen, setLogOpen] = useState(false);
   const active = job.status === "queued" || job.status === "running";
   const report = job.result?.type === "Execution" ? job.result : null;
+  const verification = job.result?.type === "Verification" ? job.result : null;
+  const redump = job.result?.type === "Redump" ? job.result : null;
   const pendingPlan = job.result?.type === "Plan" && !executedPlans.has(job.result.id) ? job.result : null;
-  const KindIcon = job.kind === "scanLibrary" ? ScanSearch : job.kind === "fetchArt" ? ImageDown : ListChecks;
-  // Plans and cover searches keep a log; scans only report progress.
-  const plan = job.kind !== "scanLibrary";
+  const KindIcon = kindIcons[job.kind];
+  // Plans, cover searches and dump checks keep a log; the rest only report progress.
+  const plan = job.kind !== "scanLibrary" && job.kind !== "updateRedump";
   const flow = usePlan();
 
   // ListJobs leaves results and logs out; a finished plan fetches its own once.
@@ -153,7 +160,7 @@ function JobCard({ job }: { job: JobInfo }) {
         <KindIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium wrap-anywhere">{job.kind === "scanLibrary" ? t("jobs.scanTitle") : job.title}</span>
+            <span className="font-medium wrap-anywhere">{jobTitle(t, job)}</span>
             <Badge variant="outline" className={cn("gap-1", statusColours[job.status])}>
               <JobStatusIcon job={job} className="size-3" />
               {t(`jobs.status.${job.status}`)}
@@ -195,6 +202,26 @@ function JobCard({ job }: { job: JobInfo }) {
               </Button>
               <PlanDialog flow={flow} />
             </div>
+          )}
+          {verification && (
+            <ul className="mt-2 flex flex-wrap gap-1.5" data-testid="job-verification">
+              {statusCounts(verification.games).map(([status, count]) => (
+                <li key={status}>
+                  <Badge variant="outline" className={dumpColours[status]}>
+                    <DumpIcon status={status} className="size-3" />
+                    {t(`dump.count.${status}`, { count })}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+          {redump && (
+            <p className="mt-2 text-sm" data-testid="job-redump">
+              {t(`dump.update.${redump.update}`, {
+                games: redump.dat?.games ?? 0,
+                date: redump.nextCheck === null ? "" : formatDate(redump.nextCheck),
+              })}
+            </p>
           )}
           {report && (
             <div className="mt-2 flex flex-col gap-2 text-sm" data-testid="job-outcomes">
@@ -255,6 +282,14 @@ function JobCard({ job }: { job: JobInfo }) {
   );
 }
 
+const kindIcons = {
+  scanLibrary: ScanSearch,
+  executePlan: ListChecks,
+  fetchArt: ImageDown,
+  verifyGames: ShieldCheck,
+  updateRedump: Database,
+} as const;
+
 const stepStateColours = {
   started: "text-muted-foreground",
   done: "text-emerald-600 dark:text-emerald-400",
@@ -282,10 +317,12 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
             entry.kind === "transaction" ? "font-semibold" : "pl-3",
             entry.kind === "step" && stepStateColours[entry.state],
             entry.kind === "art" && artStateColours[entry.state],
+            entry.kind === "verify" && dumpColours[entry.status],
             entry.kind === "transaction" && entry.state === "rolledBack" && "text-amber-600 dark:text-amber-400",
             entry.kind === "transaction" && entry.state === "interrupted" && "text-destructive",
           )}
           data-art-state={entry.kind === "art" ? entry.state : undefined}
+          data-verify-status={entry.kind === "verify" ? entry.status : undefined}
         >
           <span className="shrink-0 text-muted-foreground tabular-nums">{formatTime(entry.at)}</span>
           <span className="min-w-0 wrap-anywhere">
@@ -301,6 +338,19 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
                 source: entry.source ?? "",
                 detail: entry.detail ?? "",
               })}
+            {entry.kind === "verify" &&
+              t(`jobs.verifyState.${entry.status}`, {
+                startup: entry.startup,
+                title: entry.title,
+                redump: entry.redump ?? "",
+              })}
+            {entry.kind === "verify" && entry.reason && (
+              <span className="block text-muted-foreground">{t(`dump.reason.${entry.reason}`)}</span>
+            )}
+            {entry.kind === "verify" && entry.cached && (
+              <span className="block text-muted-foreground">{t("dump.fromCache")}</span>
+            )}
+            {entry.kind === "verify" && entry.error && <span className="block">{entry.error}</span>}
             {entry.kind === "step" && entry.error && <span className="block">{entry.error}</span>}
             {entry.kind === "art" && entry.detail && <span className="block text-muted-foreground">{entry.detail}</span>}
           </span>

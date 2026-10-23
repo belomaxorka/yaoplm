@@ -9,7 +9,7 @@
 | Property / fuzz | Round-trip CFG и ZSO; парсеры не падают на мусоре | `proptest`, `fuzz/` (cargo-fuzz, локально и по расписанию) |
 | Integration | Импорт, переименование, удаление и перенос: на `MemFs` (семантика FAT, лимит 4 ГиБ, «выдёргивание» флешки), во временный каталог и в образ FAT32 через `fatfs`; нарезка 4,4 ГБ из `VirtualSources` без места на диске; сбои и восстановление по журналу. В CI ещё и loop-образы FAT32 и exFAT на настоящих драйверах Linux (задание `real-fs`) | `crates/yaoplm-core/tests/` |
 | API | Каждый `Request` через `dispatch` и через `yaoplm rpc` | `crates/yaoplm-api/tests/`, `apps/cli/tests/` |
-| UI unit | Компоненты, транспорт, i18n (все ключи есть в `en` и `ru`) | vitest |
+| UI unit | Компоненты, транспорт, i18n: ключи и формы множественного числа во всех языках, плейсхолдеры, дубли, типографика, переводы всех кодов уведомлений ядра и значений перечислений (`docs/I18N.md`) | vitest |
 | UI e2e | Сценарии в браузере против `yaoplm-server` с фикстурной библиотекой из `make_library` | Playwright, `web/tests/e2e/` |
 | Desktop e2e | Позже: `tauri-driver` (WebDriver) на Windows и Linux | — |
 | Железо | Реальная PS2 и OPL, чек-листы из ROADMAP и подробные списки в `docs/testing/` (M4: [m4-console-checklist.md](testing/m4-console-checklist.md)) | пользователь |

@@ -7,6 +7,7 @@ import type { JobInfo } from "@/api/generated/JobInfo";
 import type { Library } from "@/api/generated/Library";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { PlanView } from "@/api/generated/PlanView";
+import type { RedumpInfo } from "@/api/generated/RedumpInfo";
 import type { Request } from "@/api/generated/Request";
 import { call, RpcError, type Transport } from "@/api/transport";
 
@@ -63,6 +64,21 @@ export async function cancelJob(transport: Transport, job: JobId): Promise<void>
 /** Starts a cover search (ART-1, ART-4); the job ends with a plan to confirm. */
 export function fetchArt(transport: Transport, request: Extract<Request, { type: "FetchArt" }>): Promise<JobId> {
   return call(transport, request, "Job").then((r) => r.job);
+}
+
+/** Starts hashing games and comparing them with the Redump DAT (GAME-5). */
+export function verifyGames(transport: Transport, request: Extract<Request, { type: "VerifyGames" }>): Promise<JobId> {
+  return call(transport, request, "Job").then((r) => r.job);
+}
+
+/** The stored Redump DAT, or null before the first download or import (META-2). */
+export function redumpStatus(transport: Transport): Promise<RedumpInfo | null> {
+  return call(transport, { type: "RedumpStatus" }, "Redump").then((r) => r.dat);
+}
+
+/** Downloads the DAT (at most weekly) or imports `file` instead. */
+export function updateRedump(transport: Transport, file?: string): Promise<JobId> {
+  return call(transport, file ? { type: "UpdateRedump", file } : { type: "UpdateRedump" }, "Job").then((r) => r.job);
 }
 
 export async function attribution(transport: Transport): Promise<Attribution> {

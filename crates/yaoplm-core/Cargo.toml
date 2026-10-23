@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+default = ["chd"]
+# CHD images as import sources (IMP-1b).
+chd = ["yaoplm-formats/chd"]
+
 [dependencies]
 flate2.workspace = true
 serde.workspace = true
@@ -15,10 +20,12 @@ serde_json.workspace = true
 thiserror.workspace = true
 yaoplm-device.workspace = true
 yaoplm-formats.workspace = true
+yaoplm-hash.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
+zip.workspace = true
 yaoplm-test-support.workspace = true
 
 [lints]

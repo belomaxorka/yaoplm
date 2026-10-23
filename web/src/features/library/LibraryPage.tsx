@@ -13,7 +13,9 @@ import {
   List,
   Plus,
   RefreshCw,
+  Replace,
   Search,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +37,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
+import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { CoverThumb, GameCover } from "@/features/library/GameCover";
 import {
   applyFilters,
@@ -48,6 +51,8 @@ import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { RecoveryBanner } from "@/features/recovery/RecoveryBanner";
+import { DumpIcon } from "@/features/verify/DumpBadge";
+import { VerifyDialog } from "@/features/verify/VerifyDialog";
 import { useJobs } from "@/jobs/context";
 import { formatBytes, percent } from "@/lib/format";
 import { gameKey } from "@/lib/gameKey";
@@ -125,6 +130,8 @@ function LibraryView({
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
 
   // "/" focuses the search box, like most lists.
   useEffect(() => {
@@ -259,6 +266,27 @@ function LibraryView({
               <ImageDown aria-hidden />
               {t("library.downloadCovers")}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVerifyOpen(true)}
+              disabled={!data || data.games.length === 0}
+              data-testid="verify-dumps"
+            >
+              <ShieldCheck aria-hidden />
+              {t("library.verifyDumps")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConvertOpen(true)}
+              disabled={games.length === 0}
+              title={t("library.convertShownHint")}
+              data-testid="convert-shown"
+            >
+              <Replace aria-hidden />
+              {t("library.convertShown")}
+            </Button>
             <Button asChild size="sm">
               <Link to="/library/add">
                 <Plus aria-hidden />
@@ -310,6 +338,8 @@ function LibraryView({
       </div>
       <PlanDialog flow={initFlow} />
       {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} />}
+      {data && <VerifyDialog root={root} games={data.games} open={verifyOpen} onOpenChange={setVerifyOpen} />}
+      <ConvertDialog root={root} games={games} open={convertOpen} onOpenChange={setConvertOpen} />
 
       {data && data.games.length === 0 && !isPending && (
         <div className="flex flex-1 flex-col items-center justify-center p-6">
@@ -501,7 +531,10 @@ function GameCard({ game, index }: { game: Game; index: number }) {
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{game.startup}</span>
-          <span className="tabular-nums">{formatBytes(game.size, 1)}</span>
+          <span className="flex items-center gap-1 tabular-nums">
+            {game.dump && <DumpMark game={game} />}
+            {formatBytes(game.size, 1)}
+          </span>
         </div>
         {game.warnings.length > 0 && (
           <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
@@ -565,6 +598,7 @@ function GameTable({ games }: { games: Game[] }) {
                     {game.warnings.length}
                   </Badge>
                 )}
+                {game.dump && <DumpMark game={game} />}
               </span>
               <span className="font-mono text-xs">{game.startup}</span>
               <span className="text-xs">{game.media}</span>
@@ -575,5 +609,18 @@ function GameTable({ games }: { games: Game[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** The Redump verdict as an icon; the name says which. */
+function DumpMark({ game }: { game: Game }) {
+  const { t } = useTranslation();
+  if (!game.dump) return null;
+  const label = t(`dump.status.${game.dump.status}`);
+  return (
+    <span title={game.dump.redump ? `${label}: ${game.dump.redump}` : label} data-testid="dump-mark" data-status={game.dump.status}>
+      <DumpIcon status={game.dump.status} className="size-3.5" />
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }

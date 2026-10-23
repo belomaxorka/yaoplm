@@ -35,7 +35,7 @@ pub struct DirEntry {
     pub path: String,
     pub kind: EntryKind,
     pub size: Option<u64>,
-    /// `.iso`, `.zso`, `.bin` or `.cue`: the importer takes it (IMP-1).
+    /// An image, a sheet or an archive the importer takes (IMP-1, IMP-1b).
     pub importable: bool,
 }
 
@@ -51,7 +51,8 @@ pub struct DirListing {
     pub truncated: bool,
 }
 
-/// Extensions the importer accepts (`yaoplm_core::import`).
+/// Extensions the importer accepts (`yaoplm_core::import`); zip and 7z
+/// archives open like folders (IMP-1b).
 pub fn is_importable(name: &str) -> bool {
     Path::new(name)
         .extension()
@@ -59,7 +60,7 @@ pub fn is_importable(name: &str) -> bool {
         .is_some_and(|e| {
             matches!(
                 e.to_ascii_lowercase().as_str(),
-                "iso" | "zso" | "bin" | "cue"
+                "iso" | "zso" | "bin" | "cue" | "chd" | "zip" | "7z"
             )
         })
 }
@@ -183,10 +184,12 @@ mod tests {
 
     #[test]
     fn importable_extensions() {
-        for name in ["Game.iso", "game.ZSO", "disc.bin", "disc.Cue"] {
+        for name in [
+            "Game.iso", "game.ZSO", "disc.bin", "disc.Cue", "game.chd", "dump.zip", "dump.7z",
+        ] {
             assert!(is_importable(name), "{name}");
         }
-        for name in ["game.chd", "readme.txt", "iso", "folder", ".iso"] {
+        for name in ["game.rar", "readme.txt", "iso", "folder", ".iso"] {
             assert!(!is_importable(name), "{name}");
         }
     }

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRightLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
@@ -24,9 +24,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CoverActions } from "@/features/art/CoverActions";
+import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
+import { DumpBadge } from "@/features/verify/DumpBadge";
+import { VerifyDialog } from "@/features/verify/VerifyDialog";
 import { formatBytes } from "@/lib/format";
 import { findGame, gameRef } from "@/lib/gameKey";
 import { useSettings } from "@/settings/context";
@@ -86,6 +89,8 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const [renameOpen, setRenameOpen] = useState(false);
   const [presetTitle, setPresetTitle] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const flow = usePlan({
     onExecuted: () => void navigate("/library"),
   });
@@ -130,6 +135,14 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 <ArrowRightLeft aria-hidden />
                 {t("game.moveTo", { media: otherMedia })}
               </Button>
+              <Button variant="outline" onClick={() => setConvertOpen(true)} data-testid="game-convert">
+                <Replace aria-hidden />
+                {t("game.convert")}
+              </Button>
+              <Button variant="outline" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
+                <ShieldCheck aria-hidden />
+                {t("game.verify")}
+              </Button>
               <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
                 <Trash2 aria-hidden />
                 {t("game.delete")}
@@ -172,6 +185,18 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             )}
             <Fact label={t("game.media")}>{game.media}</Fact>
             <Fact label={t("game.format")}>{game.format}</Fact>
+            <Fact label={t("game.dump")}>
+              {game.dump ? (
+                <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
+                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} />
+                  {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                </span>
+              ) : (
+                <span className="text-muted-foreground" data-testid="game-dump">
+                  {t("game.dumpUnchecked")}
+                </span>
+              )}
+            </Fact>
             <Fact label={t("game.size")}>{formatBytes(game.size)}</Fact>
             <Fact label={t("game.path")} mono>
               {game.path}
@@ -235,7 +260,8 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 )}
               </Fact>
               {game.cfg.vmc.map((card, slot) => (
-                <Fact key={slot} label={t("game.vmcSlot", { slot })} mono>
+                // OPL numbers the slots 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
+                <Fact key={slot} label={t("game.vmcSlot", { slot: slot + 1 })} mono>
                   {card ?? <span className="font-sans text-muted-foreground">{t("game.vmcNone")}</span>}
                 </Fact>
               ))}
@@ -304,6 +330,14 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           setDeleteOpen(false);
           void flow.request({ type: "DeleteGame", root, game: gameRef(game), related });
         }}
+      />
+      <VerifyDialog root={root} games={games} only={game} open={verifyOpen} onOpenChange={setVerifyOpen} />
+      <ConvertDialog
+        root={root}
+        games={[game]}
+        open={convertOpen}
+        onOpenChange={setConvertOpen}
+        onExecuted={() => void navigate("/library")}
       />
       <PlanDialog flow={flow} />
     </PageScroll>

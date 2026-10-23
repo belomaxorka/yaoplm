@@ -15,6 +15,7 @@ Background research done before development started. Facts were checked against 
 | 09 | [import-prior-art.md](09-import-prior-art.md) | M2 prior art: how other tools write `ul` games and `ul.cfg`, BIN/CUE to ISO (offsets, refusals, lone BIN), CD/DVD detection and what the media byte changes in OPL, rename/delete/move and the files keyed by the game ID, write safety. Corrects 02 §4.4 |
 | 10 | [ui-prior-art.md](10-ui-prior-art.md) | M3 prior art: jobs panel, device picker, import plan, rename/delete dialogs, library grid; what was taken from OrbitPS2 Manager, POUM, OPL PC Tools and what was not repeated from OPLNova |
 | 11 | [art-prior-art.md](11-art-prior-art.md) | M4 prior art: bulk scopes and "skip existing" (Orbit), download hygiene and health repair (Toolbox), mirrors (PyOPLM), resize rules (OPL PC Tools, OPL itself); GitHub-API listings, single unlicensed databases and indexed-only PNGs not repeated |
+| 12 | [dump-prior-art.md](12-dump-prior-art.md) | M5 prior art: the Redump DAT (URL, User-Agent, no validators, serial shapes in the PS2 DAT), why CD ISOs never match, ZSO order and worst-case align (Orbit), `ul.cfg` records sharing chunks and OPL's `sbDelete`, the 1 GiB part rule, archives streamed instead of unpacked, CHD layout and parents |
 | — | [REFERENCES.md](REFERENCES.md) | Index of reference repositories (local clones in `D:\yaoplm-testdata\refs\`) and forum threads (ADR-0015) |
 
 Spot-checked by hand against OPL fork source (NathanNeurotic/Open-PS2-Loader @ 2089b79):

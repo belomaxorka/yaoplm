@@ -8,7 +8,7 @@
 //! once; `DeleteArt` plans a removal.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use yaoplm_core::{LoaderProfile, ScanOptions, titles};
 use yaoplm_device::{HostFs, HostSources};
 use yaoplm_formats::art::{ArtKind, ArtSubject, recommended_size};
 use yaoplm_formats::serial;
+use yaoplm_hash::RedumpIndex;
 use yaoplm_net::sources::{SourceConfig, SourceId};
 use yaoplm_net::{ArtService, AttemptResult, CoverRequest};
 
@@ -176,6 +177,11 @@ pub(crate) struct Net {
     data_dir: PathBuf,
     runtime: OnceLock<Result<tokio::runtime::Runtime, String>>,
     service: OnceLock<Result<Arc<ArtService>, String>>,
+    /// The parsed Redump DAT and the SHA-256 it was parsed from.
+    pub(crate) redump: Mutex<Option<(String, Arc<RedumpIndex>)>>,
+    /// One DAT download or import at a time: two at once would both pass
+    /// the weekly check and both ask Redump.
+    pub(crate) redump_update: Mutex<()>,
 }
 
 impl std::fmt::Debug for Net {
@@ -203,6 +209,8 @@ impl Net {
             data_dir,
             runtime: OnceLock::new(),
             service: OnceLock::new(),
+            redump: Mutex::new(None),
+            redump_update: Mutex::new(()),
         }
     }
 

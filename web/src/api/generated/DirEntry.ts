@@ -7,6 +7,6 @@ export type DirEntry = { name: string,
  */
 path: string, kind: EntryKind, size: number | null, 
 /**
- * `.iso`, `.zso`, `.bin` or `.cue`: the importer takes it (IMP-1).
+ * An image, a sheet or an archive the importer takes (IMP-1, IMP-1b).
  */
 importable: boolean, };

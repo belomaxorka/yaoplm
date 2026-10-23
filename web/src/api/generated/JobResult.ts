@@ -2,5 +2,7 @@
 import type { ExecutionReport } from "./ExecutionReport";
 import type { Library } from "./Library";
 import type { PlanView } from "./PlanView";
+import type { RedumpResult } from "./RedumpResult";
+import type { VerificationReport } from "./VerificationReport";
 
-export type JobResult = { "type": "Library" } & Library | { "type": "Execution" } & ExecutionReport | { "type": "Plan" } & PlanView;
+export type JobResult = { "type": "Library" } & Library | { "type": "Execution" } & ExecutionReport | { "type": "Plan" } & PlanView | { "type": "Verification" } & VerificationReport | { "type": "Redump" } & RedumpResult;

@@ -147,7 +147,8 @@ function FetchBody({
     <>
       {showForm && (
         <div className="flex flex-col gap-4">
-          <fieldset>
+          {/* One game: the dialog title names it, there is nothing to choose. */}
+          <fieldset hidden={only !== undefined}>
             <legend className="mb-2 text-sm font-medium">{t("art.scope")}</legend>
             <RadioGroup value={scope} onValueChange={(value) => setScope(value as ArtScope)}>
               <Label htmlFor={`${ids}-missing`} className="items-start font-normal">

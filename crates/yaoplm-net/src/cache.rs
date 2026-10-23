@@ -14,6 +14,10 @@
 //! too, so a missing cover is not asked for again for seven days. The whole
 //! folder can be deleted without losing anything: the device holds the
 //! truth, the cache only saves network round trips.
+//!
+//! The same manifest keeps the hash cache of dump verification (GAME-5):
+//! hashes of an image keyed by its files' paths, sizes and modification
+//! times, so a game is read in full only once until it changes.
 
 use std::fs;
 use std::io;
@@ -23,6 +27,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
+
+use yaoplm_hash::Hashes;
+use yaoplm_hash::digest::{hex, parse_hex};
 
 use crate::NetError;
 use crate::http::Validators;
@@ -205,9 +212,63 @@ CREATE TABLE IF NOT EXISTS objects (
     attribution   TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (source, key)
 );
+CREATE TABLE IF NOT EXISTS hashes (
+    files     TEXT PRIMARY KEY,
+    size      INTEGER NOT NULL,
+    crc32     TEXT NOT NULL,
+    sha1      TEXT NOT NULL,
+    md5       TEXT,
+    hashed_at INTEGER NOT NULL
+);
 ";
 
+/// One file an image was read from, as it was when hashed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HashedFile<'a> {
+    /// What tells the volume apart from another one mounted at the same
+    /// place (serial and size): two sticks show up as `E:` in turn, and a
+    /// copy keeps its file's size and time.
+    pub volume: &'a str,
+    pub path: &'a Path,
+    pub len: u64,
+    /// Nanoseconds since 1970; without it nothing is cached.
+    pub modified: Option<u128>,
+}
+
+/// The cache key of an image: every file with its volume, size and time.
+fn files_key(files: &[HashedFile<'_>]) -> Option<String> {
+    let mut parts = Vec::with_capacity(files.len());
+    for file in files {
+        parts.push(format!(
+            "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+            file.volume,
+            file.path.display(),
+            file.len,
+            file.modified?
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join("\u{1e}"))
+}
+
 impl Cache {
+    /// Opens the cache in `data_dir` for reading hashes only, without
+    /// creating anything: `None` when there is no cache yet. Scans use it,
+    /// so a read-only command never creates the app data folder.
+    pub fn open_existing(data_dir: &Path) -> Result<Option<Self>, NetError> {
+        let path = data_dir.join(MANIFEST);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let db = Connection::open_with_flags(
+            &path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        Ok(Some(Self {
+            root: data_dir.to_path_buf(),
+            db: Mutex::new(db),
+        }))
+    }
+
     /// Opens (or creates) the cache in `data_dir`.
     pub fn open(data_dir: &Path) -> Result<Self, NetError> {
         fs::create_dir_all(data_dir.join(ART_DIR)).map_err(NetError::io(data_dir))?;
@@ -399,7 +460,67 @@ impl Cache {
         Ok(path)
     }
 
-    /// Deletes every cached object and manifest row.
+    /// Hashes of an image whose files have not changed since they were
+    /// hashed. With `md5`, a row without MD5 does not count.
+    pub fn hashes(&self, files: &[HashedFile<'_>], md5: bool) -> Result<Option<Hashes>, NetError> {
+        let Some(key) = files_key(files) else {
+            return Ok(None);
+        };
+        let row = self
+            .db()
+            .query_row(
+                "SELECT size, crc32, sha1, md5 FROM hashes WHERE files = ?1",
+                params![key],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((size, crc32, sha1, md5_hex)) = row else {
+            return Ok(None);
+        };
+        let md5_value = md5_hex.as_deref().and_then(parse_hex::<16>);
+        if md5 && md5_value.is_none() {
+            return Ok(None);
+        }
+        Ok(parse_hex::<4>(&crc32)
+            .zip(parse_hex::<20>(&sha1))
+            .map(|(crc32, sha1)| Hashes {
+                size: size.max(0) as u64,
+                crc32: u32::from_be_bytes(crc32),
+                sha1,
+                md5: md5_value,
+            }))
+    }
+
+    /// Remembers the hashes of an image read from `files`.
+    pub fn put_hashes(&self, files: &[HashedFile<'_>], hashes: &Hashes) -> Result<(), NetError> {
+        let Some(key) = files_key(files) else {
+            return Ok(());
+        };
+        self.db().execute(
+            "INSERT INTO hashes (files, size, crc32, sha1, md5, hashed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(files) DO UPDATE SET size = excluded.size, crc32 = excluded.crc32,
+               sha1 = excluded.sha1, md5 = excluded.md5, hashed_at = excluded.hashed_at",
+            params![
+                key,
+                i64::try_from(hashes.size).unwrap_or(i64::MAX),
+                hashes.crc32_hex(),
+                hex(&hashes.sha1),
+                hashes.md5_hex(),
+                i64::try_from(now_secs()).unwrap_or(i64::MAX),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes every cached cover and its manifest row. Hashes stay: they
+    /// are not downloads, and reading the images again takes long.
     pub fn clear(&self) -> Result<(), NetError> {
         self.db().execute("DELETE FROM objects", [])?;
         let dir = self.root.join(ART_DIR);
@@ -536,6 +657,64 @@ mod tests {
         cache.clear().unwrap();
         assert_eq!(cache.stats().unwrap().0, 0);
         assert!(cache.get("xlenore", "SLUS-20062").unwrap().is_none());
+    }
+
+    #[test]
+    fn hashes_are_keyed_by_files_and_their_times() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::open(dir.path()).unwrap();
+        let path = Path::new("E:/DVD/SLUS_200.62.Game.iso");
+        let file = HashedFile {
+            volume: "7E1CD2C5|31914983424",
+            path,
+            len: 4096,
+            modified: Some(17),
+        };
+        let hashes = Hashes {
+            size: 4096,
+            crc32: 0x0102_0304,
+            sha1: [7; 20],
+            md5: None,
+        };
+        assert_eq!(cache.hashes(&[file], false).unwrap(), None);
+        cache.put_hashes(&[file], &hashes).unwrap();
+        assert_eq!(cache.hashes(&[file], false).unwrap(), Some(hashes));
+        // MD5 was not computed: a run that wants it reads the image again.
+        assert_eq!(cache.hashes(&[file], true).unwrap(), None);
+        let with_md5 = Hashes {
+            md5: Some([9; 16]),
+            ..hashes
+        };
+        cache.put_hashes(&[file], &with_md5).unwrap();
+        assert_eq!(cache.hashes(&[file], true).unwrap(), Some(with_md5));
+        // A touched file is a new key, and so is the same file on another
+        // stick mounted at the same letter.
+        let touched = HashedFile {
+            modified: Some(18),
+            ..file
+        };
+        assert_eq!(cache.hashes(&[touched], false).unwrap(), None);
+        let other_stick = HashedFile {
+            volume: "0BADF00D|31914983424",
+            ..file
+        };
+        assert_eq!(cache.hashes(&[other_stick], false).unwrap(), None);
+        // Reading needs no write access and creates nothing.
+        let reader = Cache::open_existing(dir.path()).unwrap().unwrap();
+        assert_eq!(reader.hashes(&[file], true).unwrap(), Some(with_md5));
+        let empty = tempfile::tempdir().unwrap();
+        assert!(Cache::open_existing(empty.path()).unwrap().is_none());
+        assert_eq!(fs::read_dir(empty.path()).unwrap().count(), 0);
+        // Without a time nothing is cached.
+        let timeless = HashedFile {
+            modified: None,
+            ..file
+        };
+        cache.put_hashes(&[timeless], &hashes).unwrap();
+        assert_eq!(cache.hashes(&[timeless], false).unwrap(), None);
+        // Clearing the covers keeps the hashes.
+        cache.clear().unwrap();
+        assert!(cache.hashes(&[file], true).unwrap().is_some());
     }
 
     #[test]

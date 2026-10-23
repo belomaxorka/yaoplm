@@ -36,6 +36,11 @@ pub enum SourceKind {
         first_sector: u64,
         sectors: u64,
     },
+    /// `files` read one after the other: the `ul` chunks of a game being
+    /// converted into one image (GAME-4).
+    Joined,
+    /// The ISO sectors of a CHD (IMP-1b).
+    Chd,
 }
 
 /// A file a source reads, as it was when the plan was made.
@@ -58,6 +63,11 @@ pub struct Source {
     /// data file is always last), checked for changes before execution and
     /// removed when moving.
     pub files: Vec<SourceFile>,
+    /// The source is on the device itself (a conversion, GAME-4): `path`
+    /// and the `files` are paths relative to the root, read through the
+    /// device and never removed through `RemoveSource`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_device: bool,
 }
 
 /// Small file contents, stored as hex in the journal.
@@ -113,6 +123,11 @@ pub enum Removal {
     Cache,
     /// A file YAOPLM created itself in this operation (rollback).
     Ours,
+    /// A ZSO this operation compressed (rollback of `WriteZso`, whose size
+    /// is not known up front): removed only when its header says it holds
+    /// `iso_len` bytes, so a file someone else put there stays.
+    #[serde(rename_all = "camelCase")]
+    OursZso { iso_len: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +149,14 @@ pub enum Step {
         source: usize,
         offset: u64,
         len: u64,
+    },
+    /// A new ZSO of the ISO sectors of source `source` (GAME-4). Its size is
+    /// known only once written; `max_len` is the worst case, reserved for
+    /// the space check. Written as `<path>.yaoplm-part`, synced, renamed.
+    WriteZso {
+        path: RelPath,
+        source: usize,
+        max_len: u64,
     },
     /// Replaces a small file atomically (`ul.cfg`, a CFG).
     PutFile {
@@ -180,11 +203,24 @@ impl Step {
         )
     }
 
-    /// Bytes this step writes to the device.
+    /// Bytes this step writes to the device (at most).
     pub fn write_bytes(&self) -> u64 {
         match self {
             Self::WriteFile { len, .. } => *len,
+            Self::WriteZso { max_len, .. } => *max_len,
             Self::PutFile { content, .. } => content.0.len() as u64,
+            _ => 0,
+        }
+    }
+
+    /// Bytes of the user's files this step deletes on the device.
+    pub fn freed_bytes(&self) -> u64 {
+        match self {
+            Self::Remove {
+                len,
+                what: Removal::UserData,
+                ..
+            } => *len,
             _ => 0,
         }
     }
@@ -317,6 +353,8 @@ pub enum PlanKind {
     Recovery,
     /// Cover art written or removed (ART-1, ART-3, ART-4).
     Art,
+    /// Games converted between ISO, ZSO and `ul` (GAME-4).
+    Convert,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -354,6 +392,21 @@ impl Plan {
 
     pub fn write_bytes(&self) -> u64 {
         self.transactions.iter().map(Transaction::write_bytes).sum()
+    }
+
+    /// The most free space the plan needs at any moment. Transactions run
+    /// in order and a conversion deletes the old image at the end of its
+    /// own transaction, so what it frees is there for the next one.
+    pub fn peak_write_bytes(&self) -> u64 {
+        let mut running = 0u64;
+        let mut peak = 0u64;
+        for tx in &self.transactions {
+            running += tx.write_bytes();
+            peak = peak.max(running);
+            let freed: u64 = tx.steps.iter().map(Step::freed_bytes).sum();
+            running = running.saturating_sub(freed);
+        }
+        peak
     }
 
     /// Bytes of the user's files this plan deletes (shown highlighted).

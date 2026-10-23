@@ -9,8 +9,14 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+chd = { workspace = true, features = ["encode"] }
+crc32fast.workspace = true
 fatfs = { version = "0.3.6", default-features = false, features = ["std", "alloc"] }
+md-5.workspace = true
+sevenz-rust2 = { workspace = true, features = ["compress"] }
+sha1.workspace = true
 yaoplm-device.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
