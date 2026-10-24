@@ -134,8 +134,9 @@ test("games are added with their covers and checked as they are written", async 
   const search = plan.getByTestId("cover-search");
   await expect(search).toHaveAttribute("data-status", "done");
   await expect(search.getByTestId("cover-search-result")).toHaveText(
-    // Every type the mirrors have is looked for; they have covers only.
-    "Pictures found: 1, not found: 6, on the device already: 1.",
+    // All eight types are looked for (OPL Manager's backup has every type,
+    // ADR-0035); the mirrors have one of them for these two games.
+    "Pictures found: 1, not found: 13, on the device already: 2.",
   );
   await expect(search.getByTestId("job-log")).toContainText("SLUS_299.99 New Game: found at xlenore");
   // The plan comes back with the cover right after its game.
