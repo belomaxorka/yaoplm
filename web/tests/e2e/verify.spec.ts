@@ -147,7 +147,8 @@ test("games are added with their covers and checked as they are written", async 
   // The plan comes back with the cover right after its game.
   const steps = plan.getByTestId("plan-transaction");
   await expect(steps).toHaveCount(3);
-  const texts = await steps.allInnerTexts();
+  // Text, not innerText: each operation's steps are folded away.
+  const texts = await steps.allTextContents();
   const game = texts.findIndex((t) => t.includes("CD/SLUS_299.99.New Game.iso"));
   expect(game).toBeGreaterThanOrEqual(0);
   expect(texts[game + 1]).toContain("ART/SLUS_299.99_COV.png");
