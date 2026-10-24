@@ -161,7 +161,11 @@
     "zsoHeader": "ZSO header: {{reason}}",
     "zsoMayNotFit": "FAT32 holds files up to 4 GiB: if the ZSO comes out larger, the conversion is undone",
     "zsoNotForProfile": "OPL 1.1.0 cannot read ZSO: the game is stored as ISO",
-    "zsoUnsupportedByProfile": "OPL 1.1.0 cannot read ZSO"
+    "zsoUnsupportedByProfile": "OPL 1.1.0 cannot read ZSO",
+    "vmcReplaced": "{{path}} is replaced by a blank card; the old one moves to {{folder}} with its saves",
+    "vmcNotOnDevice": "VMC slot {{slot}}: VMC/{{name}}.bin is not on the device; OPL creates an 8 MiB card when its VMC menu is opened, or asks at launch to use the memory card instead",
+    "settingsUnchanged": "The settings are already like this; nothing to write",
+    "vmcFragmented": "{{path}} lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Free some space or defragment the device, then create the card again"
   },
   "library": {
     "title": "Library",
@@ -317,7 +321,8 @@
       "remove": "Delete {{path}}",
       "removeSource": "Delete source {{path}}",
       "dropJournal": "Close journal {{path}}",
-      "writeZso": "Compress into {{path}}"
+      "writeZso": "Compress into {{path}}",
+      "writeVmc": "Format memory card {{path}}"
     },
     "confirmDelete": "I understand that files will be deleted",
     "confirm": "Confirm and run",
@@ -807,7 +812,10 @@
     "importArt": "Picture import",
     "verifyGames": "Dump check",
     "updateRedump": "Redump DAT update",
-    "importRedump": "Redump DAT import"
+    "importRedump": "Redump DAT import",
+    "gameSettings": "Settings of {{title}}",
+    "createVmc": "Create VMC {{name}}",
+    "createVmcs": "Create VMCs: {{count}}"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
@@ -889,7 +897,13 @@
     "datInvalid": "Redump DAT: {{error}}",
     "cacheError": "Cache: {{error}}",
     "imageError": "Image: {{error}}",
-    "internal": "Internal error: {{error}}"
+    "internal": "Internal error: {{error}}",
+    "cfgNotOpl": "{{path}} is in wOPL’s libconfig format; YAOPLM does not rewrite it",
+    "vmcExists": "VMC/{{name}}.bin already exists: choose it for the slot or replace it",
+    "vmcSize": "A VMC is 8, 16, 32 or 64 MiB, not {{size}} MiB",
+    "vmcTwice": "VMC {{name}} is listed twice",
+    "vmcNameInvalid": "This VMC name does not work: {{reason}}",
+    "settingsInvalid": "OPL cannot use this setting: {{reason}}"
   },
   "reasons": {
     "appBadBoot": "boot must be a plain ELF file name, not {{boot}}",
@@ -963,6 +977,21 @@
     "zsoNotZso": "no ZISO magic",
     "zsoPartialBlock": "the uncompressed size {{size}} is not a multiple of 2048; the tail is unreadable",
     "zsoUnreadable": "OPL cannot read this ZSO: {{reason}}",
-    "zsoVersion": "version {{version}} is newer than 1"
+    "zsoVersion": "version {{version}} is newer than 1",
+    "compatibilityBits": "modes {{value}} include bits this loader does not know (allowed {{allowed}})",
+    "altStartupTooLong": "the alternative startup {{value}} is too long (at most {{max}} characters)",
+    "altStartupChars": "the alternative startup {{value}} is not a file name on the disc (only letters, digits, underscores, dots, hyphens and backslashes)",
+    "vmcSlotName": "VMC slot {{slot}}: {{reason}}",
+    "gsmVmode": "GSM video mode {{value}} is not one of OPL’s 0 to {{max}}",
+    "cheatMode": "cheat mode {{value}} is neither 0 nor 1",
+    "cfgKeyEmpty": "the key is empty",
+    "cfgKeyTooLong": "key {{key}} is too long (at most {{max}} characters)",
+    "cfgKeyChars": "key {{key}} has a character OPL cannot store (=, a line break or a leading space)",
+    "cfgRuntimeKey": "key {{key}} starts with #: OPL never saves such keys",
+    "cfgValueTooLong": "the value of {{key}} is too long ({{length}} bytes; OPL keeps {{max}})",
+    "cfgValueChars": "the value of {{key}} has a line break or NUL",
+    "vmcNameEmpty": "the name is empty",
+    "vmcNameTooLong": "{{name}} is too long (at most {{max}} characters)",
+    "vmcNameChars": "{{name}} has characters outside ASCII or ones a file name cannot hold"
   }
 }

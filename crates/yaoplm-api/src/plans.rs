@@ -75,6 +75,10 @@ pub enum PlanKind {
     Recovery,
     Art,
     Convert,
+    /// Game settings (CFG-2).
+    Settings,
+    /// Memory cards (VMC-1).
+    Vmc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +91,8 @@ pub enum StepOp {
     /// Writes a ZSO compressed from the source (GAME-4); `bytes` is the
     /// most it can take.
     WriteZso,
+    /// Formats a blank memory card (VMC-1).
+    WriteVmc,
     /// Replaces a small file atomically (`ul.cfg`, a CFG).
     PutFile,
     CopyFile,
@@ -146,6 +152,19 @@ pub struct PlanTransaction {
     /// Steps before this index are undone if anything fails.
     pub commit: u32,
     pub notices: Vec<PlanNotice>,
+    /// CFG keys this transaction changes (CFG-2).
+    #[serde(default)]
+    pub cfg_changes: Vec<CfgKeyChange>,
+}
+
+/// A CFG key before and after a plan; `None` is absent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CfgKeyChange {
+    pub key: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +210,8 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Recovery => PlanKind::Recovery,
         core::PlanKind::Art => PlanKind::Art,
         core::PlanKind::Convert => PlanKind::Convert,
+        core::PlanKind::Settings => PlanKind::Settings,
+        core::PlanKind::Vmc => PlanKind::Vmc,
     }
 }
 
@@ -233,6 +254,10 @@ pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
             bytes: Some(*max_len),
             source: source(*s),
             ..base(StepOp::WriteZso, path)
+        },
+        Step::WriteVmc { path, size_mb, .. } => PlanStep {
+            bytes: Some(u64::from(*size_mb) << 20),
+            ..base(StepOp::WriteVmc, path)
         },
         Step::PutFile { path, content, .. } => PlanStep {
             bytes: Some(content.0.len() as u64),
@@ -305,6 +330,15 @@ impl PlanView {
                     steps: tx.steps.iter().map(|s| step(plan, s)).collect(),
                     commit: u32::try_from(tx.commit).unwrap_or(u32::MAX),
                     notices: tx.notices.iter().map(PlanNotice::from).collect(),
+                    cfg_changes: tx
+                        .cfg_changes
+                        .iter()
+                        .map(|c| CfgKeyChange {
+                            key: c.key.clone(),
+                            before: c.before.clone(),
+                            after: c.after.clone(),
+                        })
+                        .collect(),
                 })
                 .collect(),
             skipped: plan

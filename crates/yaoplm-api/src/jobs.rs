@@ -23,7 +23,7 @@ use crate::art::{ArtLogState, ArtVariants, CoverSearch};
 use crate::events::EventBus;
 use crate::library::Library;
 use crate::phrase::Phrase;
-use crate::plans::{PlanView, StepOp};
+use crate::plans::{PlanNotice, PlanView, StepOp};
 use crate::verify::{
     GameVerification, RedumpResult, UnknownReason, VerificationReport, VerifyStatus,
 };
@@ -99,6 +99,10 @@ pub struct ExecutionReport {
     /// `PlanImport` with `verify`).
     #[serde(default)]
     pub checks: Vec<GameVerification>,
+    /// What the writes found once done, such as a memory card the volume
+    /// could only give in several fragments (VMC-1).
+    #[serde(default)]
+    pub notices: Vec<PlanNotice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -641,6 +645,7 @@ mod tests {
             error: None,
             error_phrase: None,
             journal: None,
+            notices: Vec::new(),
         })
     }
 

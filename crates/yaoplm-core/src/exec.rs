@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use yaoplm_device::copy::BLOCK_SIZE;
 use yaoplm_device::fs::{DeviceFs, PART_SUFFIX, TMP_SUFFIX, write_atomic};
 use yaoplm_device::{CancelToken, CopyError, RelPath, SourceFs, copy_exact};
+use yaoplm_formats::vmc;
 use yaoplm_formats::zso::{self, ZsoError};
 use yaoplm_i18n::Phrase;
 
@@ -79,6 +80,12 @@ pub enum Event<'a> {
         transaction: usize,
         source: usize,
         checked: &'a Checked,
+    },
+    /// Something a step found once done, such as a new VMC the volume could
+    /// only give in several fragments (VMC-1).
+    Notice {
+        transaction: usize,
+        notice: &'a Notice,
     },
 }
 
@@ -170,6 +177,8 @@ pub struct Report {
     pub journal: Option<String>,
     /// Hashes taken while writing, by transaction (GAME-5).
     pub checked: Vec<(usize, Checked)>,
+    /// What steps found once done, by transaction.
+    pub notices: Vec<(usize, Notice)>,
 }
 
 impl Report {
@@ -289,6 +298,15 @@ pub fn undo(step: &Step, plan: &Plan) -> Vec<Step> {
             }
             steps
         }
+        Step::WriteVmc { path, size_mb, .. } => {
+            let mut steps = Vec::new();
+            if let Ok(part) = path.with_suffix(PART_SUFFIX) {
+                steps.push(ours(&part, 0));
+            }
+            // Only a file of exactly the card's size is ours.
+            steps.push(ours(path, u64::from(*size_mb) << 20));
+            steps
+        }
         Step::CopyFile { to, .. } => vec![ours(to, 0)],
         Step::Rename { from, to } => vec![Step::Rename {
             from: to.clone(),
@@ -318,6 +336,8 @@ struct Runner<'a, 'b> {
     taps: Option<Taps>,
     /// Hashes of the source the current transaction wrote whole.
     checked: Option<(usize, Checked)>,
+    /// What the current transaction's steps found.
+    found: Vec<Notice>,
 }
 
 impl Runner<'_, '_> {
@@ -376,6 +396,11 @@ impl Runner<'_, '_> {
                 source,
                 max_len,
             } => self.write_zso(path, *source, *max_len),
+            Step::WriteVmc {
+                path,
+                size_mb,
+                created,
+            } => self.write_vmc(path, *size_mb, *created),
             Step::PutFile {
                 path,
                 content,
@@ -686,6 +711,83 @@ impl Runner<'_, '_> {
         Ok(())
     }
 
+    /// Formats a blank VMC at `path` (VMC-1). The space is reserved before
+    /// the first byte, so the card lands in one run of clusters when the
+    /// volume has one; a card in several fragments is reported, since OPL
+    /// then asks to fall back on the real memory card.
+    fn write_vmc(&mut self, path: &RelPath, size_mb: u32, created: i64) -> Result<(), ExecError> {
+        let fs = self.ctx.fs;
+        let part = part_path(path)?;
+        let layout = vmc::Layout::new(size_mb).map_err(|_| {
+            ExecError::Precondition(Phrase::error("vmcSize").with("size", u64::from(size_mb)))
+        })?;
+        let len = layout.bytes();
+        if let Some(meta) = exists(fs, path)? {
+            if self.mode == Mode::Resume && meta.len == len && exists(fs, &part)?.is_none() {
+                self.done += len;
+                return Ok(());
+            }
+            return Err(ExecError::Precondition(
+                Phrase::error("alreadyExists").with("path", path.to_string()),
+            ));
+        }
+        remove_if_exists(fs, &part)?;
+        let mut file = fs
+            .create(&part)
+            .map_err(ExecError::io(doing("cannotCreate", &part)))?;
+        // Best effort: a refusal only costs contiguity, which is checked below.
+        let _ = file.preallocate(len);
+        let start = self.done;
+        let result = {
+            let events = &mut *self.events;
+            let current = &mut self.current;
+            let cancel = self.ctx.cancel;
+            let mut out = BufWriter::with_capacity(BLOCK_SIZE, &mut *file);
+            let written = vmc::write_blank(
+                &mut out,
+                &layout,
+                vmc::McTime::from_unix(created),
+                &mut |n| {
+                    current.done = start + n;
+                    events(Event::Progress(current));
+                    !cancel.is_cancelled()
+                },
+            );
+            written.and_then(|()| out.flush())
+        };
+        match result {
+            Ok(()) => {}
+            Err(_) if self.ctx.cancel.is_cancelled() => return Err(ExecError::Cancelled),
+            Err(source) => {
+                return Err(ExecError::Io {
+                    action: doing("cannotWrite", &path),
+                    source,
+                });
+            }
+        }
+        file.sync()
+            .map_err(ExecError::io(doing("cannotSync", &part)))?;
+        drop(file);
+        fs.rename(&part, path).map_err(ExecError::io(
+            Phrase::error("cannotRename")
+                .with("from", part.to_string())
+                .with("to", path.to_string()),
+        ))?;
+        fs.sync_dir(&path.parent().unwrap_or_default())
+            .map_err(ExecError::io(doing("cannotSync", &path)))?;
+        self.done = start + len;
+        if let Ok(Some(runs)) = fs.fragments(path)
+            && runs > 1
+        {
+            self.found.push(Notice::warning(
+                Phrase::notice("vmcFragmented")
+                    .with("path", path.to_string())
+                    .with("fragments", u64::from(runs)),
+            ));
+        }
+        Ok(())
+    }
+
     /// Undoes `steps` newest first. Errors are returned after trying all.
     fn rollback(&mut self, steps: &[Step]) -> Result<(), ExecError> {
         let saved = self.mode;
@@ -826,6 +928,7 @@ pub fn execute_with_events(
         error: None,
         journal: None,
         checked: Vec::new(),
+        notices: Vec::new(),
     };
     if let Err(err) = preflight(ctx, plan) {
         report.error = Some(err);
@@ -862,6 +965,7 @@ pub fn execute_with_events(
         stream: None,
         taps: None,
         checked: None,
+        found: Vec::new(),
     };
     runner.current.total = runner.total;
 
@@ -878,6 +982,7 @@ pub fn execute_with_events(
         }
         runner.current.transaction = index;
         runner.checked = None;
+        runner.found.clear();
         runner.current.title = tx.title.clone();
         runner.current.title_phrase = tx.title_phrase.clone();
         runner.report();
@@ -942,6 +1047,13 @@ pub fn execute_with_events(
                         checked: &checked,
                     });
                     report.checked.push((index, checked));
+                }
+                for notice in std::mem::take(&mut runner.found) {
+                    (runner.events)(Event::Notice {
+                        transaction: index,
+                        notice: &notice,
+                    });
+                    report.notices.push((index, notice));
                 }
                 if let Err(err) = journal::save(ctx.fs, &journal) {
                     report.error = Some(ExecError::io(Phrase::error("cannotWriteJournal"))(err));

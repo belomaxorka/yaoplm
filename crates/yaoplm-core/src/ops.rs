@@ -258,14 +258,14 @@ fn renamed_related(path: &RelPath, entry: &DirEntry, old: &str, new: &str) -> io
     join(&path.parent().unwrap_or_default(), &format!("{new}{rest}"))
 }
 
-fn backup_step(backup: &RelPath, path: &RelPath) -> io::Result<Step> {
+pub(crate) fn backup_step(backup: &RelPath, path: &RelPath) -> io::Result<Step> {
     Ok(Step::CopyFile {
         from: path.clone(),
         to: rel(&format!("{}/{}", backup.as_str(), path.as_str()))?,
     })
 }
 
-fn new_backup_dir() -> io::Result<RelPath> {
+pub(crate) fn new_backup_dir() -> io::Result<RelPath> {
     rel(&format!("{BACKUP_DIR}/{}", journal::new_id()))
 }
 
