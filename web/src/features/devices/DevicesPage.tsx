@@ -30,7 +30,7 @@ import { smbStep } from "./smbStep";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
- * (LIB-1), how the PS2 reads it (ADR-0043) and the storage doctor's verdict
+ * (LIB-1), how the PS2 reads it (ADR-0044) and the storage doctor's verdict
  * for both. The server lists its roots.
  */
 export function DevicesPage() {
@@ -114,6 +114,7 @@ export function DevicesPage() {
 
 function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
   const { t } = useTranslation();
+  const { transport } = useApi();
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
   // Simple mode keeps the advice that explains the verdict; what the loader
@@ -124,11 +125,13 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
-  // A folder read over SMB may sit on the system disk (ADR-0043): the badge
+  // A folder read over SMB may sit on the system disk (ADR-0044): the badge
   // is a fact there, not a verdict.
   const smb = device.mode.mode === "smb";
-  // One main button: the folder's next step comes before opening it.
+  // One main button: the folder's next step comes before opening it. A
+  // server's system disk shows no step (its roots are the administrator's).
   const step = smbStep(device);
+  const stepShown = step === "init" || (step === "folder" && transport.kind !== "http");
   return (
     <li
       className={cn("rounded-lg border bg-card p-4", current && "ring-2 ring-ring/40")}
@@ -206,7 +209,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             )}
             {t(`devices.verdict.${verdict ?? "ok"}`)}
           </span>
-          <Button onClick={onOpen} variant={verdict === "error" || step !== null ? "outline" : "default"} data-testid="device-open">
+          <Button onClick={onOpen} variant={verdict === "error" || stepShown ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
         </div>

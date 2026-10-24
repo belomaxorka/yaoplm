@@ -114,8 +114,9 @@ pub(crate) fn scan_error(err: &yaoplm_core::ScanError) -> ApiError {
 fn image_fragments(
     path: &std::path::Path,
     profile: yaoplm_core::LoaderProfile,
+    mode: yaoplm_device::DeviceMode,
 ) -> Option<library::Fragments> {
-    let fs = HostFs::new(path.parent()?).ok()?;
+    let fs = HostFs::new(path.parent()?).ok()?.with_mode(mode);
     if !yaoplm_core::fragments::applies(&fs) {
         return None;
     }
@@ -186,7 +187,7 @@ impl Api {
     }
 
     /// How OPL reads the device at `path`: the mode a front end sends, else
-    /// its place's (ADR-0043).
+    /// its place's (ADR-0044).
     fn mode_at(&self, path: &Path, mode: Option<DeviceMode>) -> yaoplm_device::DeviceMode {
         match mode {
             Some(mode) => mode.into(),
@@ -399,7 +400,8 @@ impl Api {
                     )
                 })?;
                 let mut details = ImageDetails::from(&info);
-                details.fragments = image_fragments(&path, profile.into());
+                let mode = self.mode_at(path.parent().unwrap_or(&path), None);
+                details.fragments = image_fragments(&path, profile.into(), mode);
                 Ok(Response::ImageInfo(Box::new(details)))
             }
             Request::ListDir { path } => {
@@ -566,14 +568,14 @@ impl Api {
                 let plan = ops::plan_move(&fs, &game, media.into()).map_err(op_error)?;
                 Ok(self.store(path, plan))
             }
-            Request::PlanRecovery { root, action } => {
-                let (path, fs) = self.root(&root)?;
+            Request::PlanRecovery { root, action, mode } => {
+                let (path, fs) = self.root_in(&root, mode)?;
                 let action = match action.unwrap_or_default() {
                     RecoveryAction::Rollback => recovery::RecoveryAction::Rollback,
                     RecoveryAction::Resume => recovery::RecoveryAction::Resume,
                 };
                 let plan = recovery::plan_recovery(&fs, action).map_err(io_error)?;
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::ExecutePlan {
                 plan,
@@ -890,8 +892,9 @@ impl Api {
                 set,
                 unset,
                 cards,
+                mode,
             } => {
-                let (path, fs) = self.root(&root)?;
+                let (path, fs) = self.root_in(&root, mode)?;
                 let game = self.game_ref(&path, game)?;
                 let edit = yaoplm_core::settings::SettingsEdit {
                     settings: wanted.as_ref().map(Into::into),
@@ -911,7 +914,7 @@ impl Api {
                     unix_now(),
                 )
                 .map_err(op_error)?;
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::ListVmc { root } => {
                 let (path, fs) = self.root(&root)?;
@@ -923,12 +926,12 @@ impl Api {
                         .collect(),
                 })
             }
-            Request::CreateVmc { root, cards } => {
-                let (path, fs) = self.root(&root)?;
+            Request::CreateVmc { root, cards, mode } => {
+                let (path, fs) = self.root_in(&root, mode)?;
                 let cards: Vec<_> = cards.iter().map(Into::into).collect();
                 let plan =
                     yaoplm_core::settings::plan_cards(&fs, &cards, unix_now()).map_err(op_error)?;
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::DeleteArt {
                 root,

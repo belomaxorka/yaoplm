@@ -511,7 +511,7 @@ impl Profile {
     }
 }
 
-/// How OPL reads the device (ADR-0043).
+/// How OPL reads the device (ADR-0044).
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum ModeArg {
     /// By the device's place: a USB stick or SD card is plugged into the
@@ -819,6 +819,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 } else {
                     RecoveryAction::Rollback
                 }),
+                mode: None,
             };
             plan_and_apply(&api, request, &apply)
         }
@@ -896,6 +897,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 set: (!set.is_empty()).then_some(set),
                 unset: (!unset.is_empty()).then_some(unset),
                 cards: None,
+                mode: None,
             };
             plan_and_apply(&api, request, &apply)
         }
@@ -1131,6 +1133,7 @@ fn vmc(api: &Api, command: VmcCommand) -> anyhow::Result<ExitCode> {
                 None => Request::CreateVmc {
                     root: text(&root),
                     cards: vec![card],
+                    mode: None,
                 },
                 Some(game) => {
                     let game = find_game(api, &root, &game, apply.profile)?;
@@ -1148,6 +1151,7 @@ fn vmc(api: &Api, command: VmcCommand) -> anyhow::Result<ExitCode> {
                         set: None,
                         unset: None,
                         cards: Some(vec![card]),
+                        mode: None,
                     }
                 }
             };

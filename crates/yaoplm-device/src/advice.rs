@@ -12,7 +12,7 @@
 //! - exFAT clusters of 512 KiB and more are reported to cause problems; on
 //!   FAT32 small clusters make every game start walk a longer FAT chain.
 //!
-//! A folder OPL reads over SMB (ADR-0043, research/18) is not mounted by
+//! A folder OPL reads over SMB (ADR-0044, research/18) is not mounted by
 //! BDM: none of the above applies there, only SMB's own limits and the 4 GiB
 //! file size of a FAT volume on the computer.
 
@@ -40,7 +40,7 @@ pub struct DiagnoseOptions {
     /// OPL itself is started from this device through FreeMcBoot 1.966 or
     /// an old uLaunchELF, which read FAT32 only.
     pub boot_from_device: bool,
-    /// How OPL reads the device (ADR-0043).
+    /// How OPL reads the device (ADR-0044).
     pub mode: DeviceMode,
     /// The device is the whole volume (a drive or mount point), not a
     /// folder on it.
@@ -195,7 +195,8 @@ fn diagnose_smb(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     if volume.read_only {
         found.push(Advice::ReadOnly);
     }
-    if volume.system && options.whole_volume {
+    // A disk nothing can be written to gets no folder of its own either.
+    if volume.system && options.whole_volume && !volume.read_only {
         found.push(Advice::SystemRoot(
             volume.root.join(SHARE_FOLDER).display().to_string(),
         ));
@@ -482,6 +483,13 @@ mod tests {
         let found = diagnose(&read_only, &SMB);
         assert_eq!(found[0], Advice::ReadOnly);
         assert_eq!(found[0].level(), Level::Error);
+        // A read-only system disk (macOS's sealed volume) is not offered a
+        // folder of its own.
+        let whole = DiagnoseOptions {
+            whole_volume: true,
+            ..SMB
+        };
+        assert_eq!(codes(&read_only, whole), ["readOnly", "smbRules"]);
     }
 
     #[test]

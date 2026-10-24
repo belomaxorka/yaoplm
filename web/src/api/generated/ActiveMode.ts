@@ -4,7 +4,7 @@ import type { ModeSource } from "./ModeSource";
 import type { Phrase } from "./Phrase";
 
 /**
- * The mode in force for a device and why (ADR-0043).
+ * The mode in force for a device and why (ADR-0044).
  */
 export type ActiveMode = { mode: DeviceMode, source: ModeSource, 
 /**

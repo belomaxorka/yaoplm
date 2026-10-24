@@ -731,7 +731,7 @@ pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
 }
 
 /// Plans a folder `name` at the root with the standard OPL folders in it: a
-/// library of its own, for a whole system disk shared over SMB (ADR-0043).
+/// library of its own, for a whole system disk shared over SMB (ADR-0044).
 /// A folder that exists already only gets the OPL folders it lacks.
 pub fn plan_init_folder(fs: &dyn DeviceFs, name: &str) -> Result<Plan, OpError> {
     let folder = RelPath::root()

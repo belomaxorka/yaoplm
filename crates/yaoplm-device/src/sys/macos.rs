@@ -30,15 +30,21 @@ fn volume(path: &Path) -> io::Result<Volume> {
     let bsize = u64::from(stat.f_bsize);
     let system =
         flags & MNT_ROOTFS != 0 || root == Path::new("/") || root.starts_with("/System/Volumes");
-    // Without DiskArbitration the bus is unknown; a local volume under
-    // `/Volumes` that is not the system's is external media (a stick, an SD
-    // card, a USB disk or a mounted image), which the device's mode needs
-    // (ADR-0043).
+    // Without DiskArbitration the bus is unknown. A FAT, exFAT or NTFS
+    // volume under `/Volumes` is external media (a stick, an SD card, a USB
+    // disk), which the device's mode needs (ADR-0044); APFS and HFS+ there
+    // are the Mac's own disks, Time Machine and images.
+    let fs = FsKind::from_os_name(&fs_name);
     let kind = if flags & MNT_LOCAL == 0 {
         VolumeKind::Remote
     } else if system {
         VolumeKind::Fixed
-    } else if root.starts_with("/Volumes") {
+    } else if root.starts_with("/Volumes")
+        && matches!(
+            fs,
+            FsKind::Fat32 | FsKind::Fat16 | FsKind::ExFat | FsKind::Ntfs
+        )
+    {
         VolumeKind::Removable
     } else {
         VolumeKind::Unknown
@@ -51,7 +57,7 @@ fn volume(path: &Path) -> io::Result<Volume> {
         .map(str::to_owned);
     Ok(Volume {
         label,
-        fs: FsKind::from_os_name(&fs_name),
+        fs,
         fs_name,
         total_bytes: stat.f_blocks.saturating_mul(bsize),
         free_bytes: stat.f_bavail.saturating_mul(bsize),

@@ -39,7 +39,7 @@ profile?: LoaderProfile,
  */
 overrides?: Array<ProfileOverride>, 
 /**
- * Modes chosen per device, by the same key (ADR-0043); every
+ * Modes chosen per device, by the same key (ADR-0044); every
  * other device gets its place's.
  */
 modeOverrides?: Array<ModeOverride>, } | { "type": "InspectDevice", root: string, 
@@ -52,8 +52,9 @@ profile?: LoaderProfile, overrides?: Array<ProfileOverride>,
  */
 bootFromDevice?: boolean, 
 /**
- * A mode forced for this request (the CLI's `--mode`); absent: an
- * override, else the device's place (ADR-0043).
+ * A mode for this request (the CLI's `--mode`); an override for the
+ * device still wins, as with `profile`. Absent: an override, else
+ * the device's place (ADR-0044).
  */
 mode?: DeviceMode, 
 /**
@@ -71,7 +72,7 @@ profile?: LoaderProfile,
 verify?: boolean, 
 /**
  * How OPL reads the device (`DeviceInfo.mode`); absent: by its
- * place. Over SMB the fragment rule does not apply (ADR-0043).
+ * place. Over SMB the fragment rule does not apply (ADR-0044).
  */
 mode?: DeviceMode, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, folder?: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
 /**
@@ -111,7 +112,12 @@ mode?: DeviceMode, } | { "type": "RenameGame", root: string, game: GameRef, titl
  * As in `ScanLibrary`: over SMB a renamed `ul` game needs OPL
  * restarted.
  */
-mode?: DeviceMode, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
+mode?: DeviceMode, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, 
+/**
+ * As in `ScanLibrary`: a resumed copy is checked for fragments on
+ * BDM only.
+ */
+mode?: DeviceMode, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
 /**
  * Defaults to `missing`.
  */
@@ -155,7 +161,15 @@ overwrite?: boolean, } | { "type": "SetArt", root: string, startup: string, inpu
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.
  */
-overwrite?: boolean, } | { "type": "ReadCfg", root: string, game: GameRef, } | { "type": "WriteCfg", root: string, game: GameRef, profile?: LoaderProfile, settings?: GameSettings, set?: Array<CfgPair>, unset?: Array<string>, cards?: Array<NewVmc>, } | { "type": "ListVmc", root: string, } | { "type": "CreateVmc", root: string, cards: Array<NewVmc>, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
+overwrite?: boolean, } | { "type": "ReadCfg", root: string, game: GameRef, } | { "type": "WriteCfg", root: string, game: GameRef, profile?: LoaderProfile, settings?: GameSettings, set?: Array<CfgPair>, unset?: Array<string>, cards?: Array<NewVmc>, 
+/**
+ * As in `ScanLibrary`: on BDM a new card must be one run.
+ */
+mode?: DeviceMode, } | { "type": "ListVmc", root: string, } | { "type": "CreateVmc", root: string, cards: Array<NewVmc>, 
+/**
+ * As in `WriteCfg`.
+ */
+mode?: DeviceMode, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
 /**
  * Only these games; every game when absent.
  */

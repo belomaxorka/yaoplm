@@ -175,7 +175,7 @@ pub struct FsInfo {
     /// Allocation unit; 4 KiB when the OS does not say.
     pub cluster_size: u32,
     /// OPL reads the device over SMB (a network share, or a folder in SMB
-    /// mode, ADR-0043): SMB's limits apply, BDM's fragment rule does not.
+    /// mode, ADR-0044): SMB's limits apply, BDM's fragment rule does not.
     pub smb: bool,
     /// Changes when the stick is swapped or reformatted ([`crate::Volume::fingerprint`]).
     pub fingerprint: String,
@@ -320,7 +320,7 @@ impl HostFs {
         Ok(Self { root, smb: None })
     }
 
-    /// The same root as OPL reads it in `mode` (ADR-0043).
+    /// The same root as OPL reads it in `mode` (ADR-0044).
     #[must_use]
     pub fn with_mode(mut self, mode: DeviceMode) -> Self {
         self.smb = Some(mode == DeviceMode::Smb);

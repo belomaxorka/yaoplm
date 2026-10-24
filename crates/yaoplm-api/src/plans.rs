@@ -358,7 +358,7 @@ pub struct StoredPlan {
     pub plan: core::Plan,
     pub root: PathBuf,
     /// The device's mode the plan was made for; `None`: its place's
-    /// (ADR-0043).
+    /// (ADR-0044).
     pub mode: Option<yaoplm_device::DeviceMode>,
     created: Instant,
 }

@@ -54,8 +54,10 @@ test("a loader's settings file on the device decides the profile", async ({ page
     await page.goto("/library");
     const header = page.getByTestId("loader-profile");
     await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
+    // The fixture is a folder read over SMB: the loader's files there are a
+    // copy of what the console runs (ADR-0044).
     await expect(header.getByTestId("loader-profile-reason")).toHaveText(
-      "— APPS/APP_RIPTOPL/settings_riptopl.cfg, который пишет только RiptOPL",
+      "— APPS/APP_RIPTOPL/settings_riptopl.cfg, который пишет только RiptOPL (копия: по SMB консоль запускает OPL с карты памяти или флешки)",
     );
   } finally {
     // Other specs expect a library without a loader.
@@ -82,25 +84,73 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по носителю)");
 });
 
-test("the question follows the doctor's verdict (ADR-0041)", async ({ page, request }) => {
-  // The fixture library has OPL's folders and no loader. On a system disk
-  // (Windows) the doctor says it does not suit OPL and nothing is asked; on
-  // a plain disk it is asked. The answers: LoaderProfileHint.test.tsx.
+test("a server folder is read over SMB and asked about its OPL (ADR-0044)", async ({ page, request }) => {
+  // The fixture library is a root of the e2e server in a temp folder, on
+  // every OS: the PS2 reads such a folder over the network, so no system
+  // disk verdict, and the version is asked. The answers: LoaderProfileHint.test.tsx.
   await openLibrary(page, request, { language: "en" });
   await page.goto("/devices");
   const card = libraryCard(page);
-  await expect(card.getByTestId("loader-profile")).toBeVisible();
-  const unusable = (await card.getAttribute("data-verdict")) === "error";
-  await expect(card.getByTestId("loader-question")).toHaveCount(unusable ? 0 : 1);
+  const mode = card.getByTestId("device-mode");
+  await expect(mode).toHaveAttribute("data-mode", "smb");
+  await expect(mode).toHaveAttribute("data-source", "detected");
+  await expect(mode.getByTestId("device-mode-reason")).toHaveText("— a folder on the server");
+  await expect(card).not.toHaveAttribute("data-verdict", "error");
+  await expect(card.getByTestId("loader-question")).toContainText("Which OPL reads this folder over the network?");
+
+  // The other roots are empty folders: OPL's folders first, no loader.
+  const sources = page
+    .getByTestId("device-card")
+    .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]sources$/ }) })
+    .first();
+  await expect(sources.getByTestId("smb-init")).toBeVisible();
+  await expect(sources.getByTestId("loader-question")).toBeVisible();
+  await sources.getByTestId("smb-init-button").click();
+  const plan = page.getByTestId("plan-dialog");
+  await expect(plan).toContainText("CD");
+  await page.keyboard.press("Escape");
+  await expect(plan).toHaveCount(0);
+
+  // The library says the same in its header.
   await page.goto("/library");
-  const header = page.getByTestId("loader-profile");
-  await header.getByTestId("loader-profile-change").click();
+  const header = page.getByTestId("device-mode");
+  await expect(header).toHaveAttribute("data-mode", "smb");
+  await expect(page.getByTestId("loader-question")).toBeVisible();
+  const line = page.getByTestId("loader-profile");
+  await line.getByTestId("loader-profile-change").click();
   await page.getByTestId("loader-profile-RiptOpl").click();
-  await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
+  await expect(line.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
   await expect(page.getByTestId("loader-question")).toHaveCount(0);
   await expect(page.getByTestId("loader-conflict")).toHaveCount(0);
-  await header.getByTestId("loader-profile-change").click();
+  await line.getByTestId("loader-profile-change").click();
   await page.getByTestId("loader-profile-auto").click();
+});
+
+test("the mode is switched per device and goes back to auto (ADR-0044)", async ({ page, request }) => {
+  await openLibrary(page, request, { language: "ru" });
+  await page.goto("/devices");
+  const card = libraryCard(page);
+  const mode = card.getByTestId("device-mode");
+  await mode.getByTestId("device-mode-change").click();
+  await page.getByTestId("device-mode-ps2").click();
+  await expect(mode).toHaveAttribute("data-mode", "ps2");
+  await expect(mode).toHaveAttribute("data-source", "override");
+  await expect(mode.getByTestId("device-mode-reason")).toHaveText("— выбрано для этого носителя");
+  // Plugged into the console, the BDM rules apply: on a system disk (the
+  // Windows temp folder) the doctor says it does not suit OPL, and then
+  // nothing is asked; the other roots keep their place's mode.
+  const unusable = (await card.getAttribute("data-verdict")) === "error";
+  await expect(card.getByTestId("loader-question")).toHaveCount(unusable ? 0 : 1);
+  await expect(page.locator('[data-testid="device-mode"][data-mode="smb"]')).toHaveCount(2);
+
+  await page.goto("/library");
+  const header = page.getByTestId("device-mode");
+  await expect(header).toHaveAttribute("data-mode", "ps2");
+  await header.getByTestId("device-mode-change").click();
+  await expect(page.getByTestId("device-mode-auto")).toHaveText("Авто (по месту)");
+  await page.getByTestId("device-mode-auto").click();
+  await expect(header).toHaveAttribute("data-mode", "smb");
+  await expect(header).toHaveAttribute("data-source", "detected");
 });
 
 for (const language of ["en", "ru"] as const) {
@@ -111,6 +161,12 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/devices");
       await expect(libraryCard(page).getByTestId("loader-profile")).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/loader-devices-${language}-${theme}.png` });
+      // How the PS2 reads the folder, and the menu that switches it (ADR-0044).
+      await libraryCard(page).getByTestId("device-mode-change").click();
+      await expect(page.getByTestId("device-mode-ps2")).toBeVisible();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `test-results/screenshots/mode-menu-${language}-${theme}.png` });
+      await page.keyboard.press("Escape");
       await page.goto("/library");
       const header = page.getByTestId("loader-profile");
       await expect(header).toBeVisible();

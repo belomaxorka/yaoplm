@@ -122,7 +122,7 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ProfileOverride>>,
-        /// Modes chosen per device, by the same key (ADR-0043); every
+        /// Modes chosen per device, by the same key (ADR-0044); every
         /// other device gets its place's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -142,8 +142,9 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         boot_from_device: Option<bool>,
-        /// A mode forced for this request (the CLI's `--mode`); absent: an
-        /// override, else the device's place (ADR-0043).
+        /// A mode for this request (the CLI's `--mode`); an override for the
+        /// device still wins, as with `profile`. Absent: an override, else
+        /// the device's place (ADR-0044).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -166,7 +167,7 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
         /// How OPL reads the device (`DeviceInfo.mode`); absent: by its
-        /// place. Over SMB the fragment rule does not apply (ADR-0043).
+        /// place. Over SMB the fragment rule does not apply (ADR-0044).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -189,7 +190,7 @@ pub enum Request {
     },
     /// Plans creating the missing OPL folders (LIB-3). With `folder`, a
     /// folder of that name inside `root` with the OPL folders in it: a
-    /// library of its own for a whole system disk (ADR-0043).
+    /// library of its own for a whole system disk (ADR-0044).
     PlanInit {
         root: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -300,6 +301,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         action: Option<RecoveryAction>,
+        /// As in `ScanLibrary`: a resumed copy is checked for fragments on
+        /// BDM only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Runs a plan. A plan that deletes the user's files also needs
     /// `confirmDelete: true`. Answered with [`Response::Job`].
@@ -439,6 +445,10 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         cards: Option<Vec<NewVmc>>,
+        /// As in `ScanLibrary`: on BDM a new card must be one run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// The memory cards in `VMC/` and the games that use them (VMC-1).
     /// Answered with [`Response::Vmcs`].
@@ -449,6 +459,10 @@ pub enum Request {
     CreateVmc {
         root: String,
         cards: Vec<NewVmc>,
+        /// As in `WriteCfg`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Plans deleting a cover, with a copy in the backup folder.
     DeleteArt {

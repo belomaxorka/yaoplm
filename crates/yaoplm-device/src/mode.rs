@@ -1,4 +1,4 @@
-//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0043,
+//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0044,
 //! research/18).
 //!
 //! A folder on an internal disk can reach a PS2 only over the network, so
@@ -11,7 +11,7 @@ use std::path::Path;
 
 use yaoplm_i18n::Phrase;
 
-use crate::volume::{Volume, VolumeKind};
+use crate::volume::{FsKind, Volume, VolumeKind};
 
 /// How OPL reads the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -39,9 +39,14 @@ pub enum Place {
 
 impl Place {
     /// The place of a device on `volume`; `server` when `yaoplm-server`
-    /// serves it.
+    /// serves it. A FAT or exFAT volume the OS cannot place (a stick passed
+    /// into Docker, where `/sys` is hidden) is removable media too: computers
+    /// keep their own disks on other file systems.
     pub fn of(volume: &Volume, server: bool) -> Self {
-        if volume.is_external() {
+        let unplaced_stick = volume.kind == VolumeKind::Unknown
+            && !volume.system
+            && matches!(volume.fs, FsKind::Fat32 | FsKind::Fat16 | FsKind::ExFat);
+        if volume.is_external() || unplaced_stick {
             Self::Removable
         } else if volume.kind == VolumeKind::Remote {
             Self::NetworkFolder
@@ -90,8 +95,8 @@ mod tests {
         Volume {
             root: PathBuf::from("E:\\"),
             label: None,
-            fs: FsKind::Fat32,
-            fs_name: "FAT32".into(),
+            fs: FsKind::Ntfs,
+            fs_name: "NTFS".into(),
             total_bytes: 8 << 30,
             free_bytes: 8 << 30,
             cluster_size: Some(32 * 1024),
@@ -139,6 +144,14 @@ mod tests {
                 "{kind:?} {bus:?}"
             );
         }
+        // A stick passed into Docker: no bus, but FAT32 or exFAT.
+        let mut stick = volume(VolumeKind::Unknown, None);
+        for fs in [FsKind::Fat32, FsKind::ExFat] {
+            stick.fs = fs;
+            assert_eq!(Place::of(&stick, true), Place::Removable);
+        }
+        stick.system = true;
+        assert_eq!(Place::of(&stick, true), Place::ServerFolder);
         assert_eq!(Place::Removable.mode(), DeviceMode::Ps2);
         for place in [
             Place::ComputerDisk,

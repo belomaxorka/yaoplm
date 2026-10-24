@@ -363,7 +363,7 @@ fn devices_and_device_doctor() {
     let device = run(&["device".as_ref(), s.root.as_os_str()]);
     assert!(device.status.success());
     // The loader profile is read from the device by default (LIB-1); a temp
-    // folder is on the computer, so OPL reads it over SMB (ADR-0043) and
+    // folder is on the computer, so OPL reads it over SMB (ADR-0044) and
     // the question is asked even though it is empty.
     let text = stdout(&device);
     assert!(

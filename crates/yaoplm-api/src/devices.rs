@@ -110,10 +110,10 @@ pub struct DeviceInfo {
     /// The loader profile in force and why (LIB-1); the doctor's verdict
     /// above is for this profile.
     pub loader: ActiveProfile,
-    /// How OPL reads the device and why (ADR-0043); the verdict is for this
+    /// How OPL reads the device and why (ADR-0044); the verdict is for this
     /// mode too.
     pub mode: ActiveMode,
-    /// Ask which OPL the device is for (ADR-0041, ADR-0043): no signs, a
+    /// Ask which OPL the device is for (ADR-0041, ADR-0044): no signs, a
     /// usable device, and either OPL's folders or a folder read over SMB,
     /// where the console leaves no other sign. A whole system disk without
     /// OPL's folders is not asked: its next step is a folder of its own.
@@ -357,9 +357,14 @@ impl ActiveProfile {
         smb: bool,
     ) -> Self {
         let key = Self::key_for(volume, &display_path(root));
+        let mode = if smb {
+            yaoplm_device::DeviceMode::Smb
+        } else {
+            yaoplm_device::DeviceMode::Ps2
+        };
         let detected = yaoplm_device::HostFs::new(root)
             .ok()
-            .and_then(|fs| yaoplm_core::detect::detect_profile(&fs).ok())
+            .and_then(|fs| yaoplm_core::detect::detect_profile(&fs.with_mode(mode)).ok())
             .map(|mut d| {
                 if smb && d.by_loader_files {
                     d.reason =
@@ -388,7 +393,7 @@ impl ActiveProfile {
     }
 }
 
-/// How OPL reads a device (ADR-0043).
+/// How OPL reads a device (ADR-0044).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -440,7 +445,7 @@ pub struct ModeOverride {
     pub mode: DeviceMode,
 }
 
-/// The mode in force for a device and why (ADR-0043).
+/// The mode in force for a device and why (ADR-0044).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]

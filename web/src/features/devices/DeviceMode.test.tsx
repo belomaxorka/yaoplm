@@ -85,7 +85,7 @@ const emptyFolder = (patch: Partial<DeviceInfo> = {}) =>
     ...patch,
   });
 
-describe("how the PS2 reads a device (ADR-0043)", () => {
+describe("how the PS2 reads a device (ADR-0044)", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
   });
@@ -118,10 +118,13 @@ describe("how the PS2 reads a device (ADR-0043)", () => {
     expect(fake.planned).toEqual([{ type: "PlanInit", root: "D:\\Games" }]);
   });
 
-  it("an empty stick for the PS2 or a prepared folder gets nothing here", () => {
+  it("an empty stick for the PS2, a prepared folder or a read-only one gets nothing here", () => {
+    const readOnly = { level: "error", code: "readOnly", message: "The volume is read-only" } as const;
     for (const device of [
       testDevice({ loader: loader({ detected: detected({ library: false }) }) }),
       emptyFolder({ loader: loader() }),
+      emptyFolder({ advice: [readOnly] }),
+      emptyFolder({ root: "/", system: true, advice: [readOnly, systemRoot] }),
     ]) {
       const { container, unmount } = show(<SmbFolderHint device={device} />);
       expect(container).toBeEmptyDOMElement();

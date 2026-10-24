@@ -21,7 +21,7 @@ import { call, RpcError, type Transport } from "@/api/transport";
 
 /**
  * The profiles and modes chosen per device; every other device is read
- * (LIB-1, ADR-0040) and gets its place's mode (ADR-0043).
+ * (LIB-1, ADR-0040) and gets its place's mode (ADR-0044).
  */
 export interface DeviceChoice {
   overrides: ProfileOverride[];

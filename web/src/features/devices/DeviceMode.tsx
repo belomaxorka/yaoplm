@@ -42,7 +42,7 @@ const SHARE_FOLDER = "PS2";
 /**
  * "Connection to the PS2: over the network (SMB) — a folder on the
  * computer's disk", with a menu to choose the mode for this device or go
- * back to auto (ADR-0043). Shown wherever the version question can be.
+ * back to auto (ADR-0044). Shown wherever the version question can be.
  */
 export function DeviceModeLine({ device, className }: { device: DeviceInfo; className?: string }) {
   const { t } = useTranslation();

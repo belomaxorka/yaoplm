@@ -10,7 +10,7 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export type ProfileOverrideValue = LoaderProfile | "unknown";
 /** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
 export const UNKNOWN_RULES: LoaderProfile = "Opl110";
-/** How OPL reads a device (ADR-0043). */
+/** How OPL reads a device (ADR-0044). */
 export const deviceModes = ["ps2", "smb"] as const satisfies readonly DeviceMode[];
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
@@ -46,7 +46,7 @@ export interface Settings {
    */
   profileOverrides: Record<string, ProfileOverrideValue>;
   /**
-   * Modes chosen for single devices, by the same key (ADR-0043). Every other
+   * Modes chosen for single devices, by the same key (ADR-0044). Every other
    * device gets its place's: removable media plugged into the PS2, folders
    * on the computer and network folders read over SMB.
    */

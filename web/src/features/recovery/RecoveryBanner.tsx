@@ -16,6 +16,8 @@ export function RecoveryBanner({ root }: { root: string }) {
   const device = useDevice(root);
   const flow = usePlan();
   const unfinished = device.data?.unfinished ?? [];
+  // A resumed copy is checked as OPL reads the device (ADR-0044).
+  const mode = device.data ? { mode: device.data.mode.mode } : {};
   if (unfinished.length === 0) return null;
 
   return (
@@ -34,14 +36,14 @@ export function RecoveryBanner({ root }: { root: string }) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void flow.request({ type: "PlanRecovery", root, action: "rollback" })}
+              onClick={() => void flow.request({ type: "PlanRecovery", root, action: "rollback", ...mode })}
             >
               {t("recovery.rollback")}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void flow.request({ type: "PlanRecovery", root, action: "resume" })}
+              onClick={() => void flow.request({ type: "PlanRecovery", root, action: "resume", ...mode })}
             >
               {t("recovery.resume")}
             </Button>

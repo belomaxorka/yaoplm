@@ -66,7 +66,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
   const { t } = useTranslation();
   const { transport } = useApi();
   const simple = useSimpleMode();
-  const { profile: loaderProfile } = useLoaderProfile();
+  const { profile: loaderProfile, mode } = useLoaderProfile();
   const ref = gameRef(game);
   const cfg = useQuery({
     queryKey: ["gameCfg", root, gameKey(game), game.startup],
@@ -385,6 +385,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
                 profile: loaderProfile,
                 settings: current,
                 ...(pending.length > 0 ? { cards: pending } : {}),
+                ...(mode ? { mode } : {}),
               })
             }
             data-testid="cfg-save"

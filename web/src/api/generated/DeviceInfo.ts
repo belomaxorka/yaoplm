@@ -37,12 +37,12 @@ unfinished: Array<string>,
  */
 loader: ActiveProfile, 
 /**
- * How OPL reads the device and why (ADR-0043); the verdict is for this
+ * How OPL reads the device and why (ADR-0044); the verdict is for this
  * mode too.
  */
 mode: ActiveMode, 
 /**
- * Ask which OPL the device is for (ADR-0041, ADR-0043): no signs, a
+ * Ask which OPL the device is for (ADR-0041, ADR-0044): no signs, a
  * usable device, and either OPL's folders or a folder read over SMB,
  * where the console leaves no other sign. A whole system disk without
  * OPL's folders is not asked: its next step is a folder of its own.

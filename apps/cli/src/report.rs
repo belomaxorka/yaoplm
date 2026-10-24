@@ -356,7 +356,7 @@ pub fn loader_line(loader: &ActiveProfile) -> String {
     }
 }
 
-/// How OPL reads the device and why (ADR-0043).
+/// How OPL reads the device and why (ADR-0044).
 pub fn mode_line(mode: &ActiveMode) -> String {
     let name = match mode.mode {
         DeviceMode::Ps2 => "plugged into the PS2",
@@ -370,7 +370,7 @@ pub fn mode_line(mode: &ActiveMode) -> String {
 }
 
 /// The question the interface asks when nothing on the device tells the
-/// loader (ADR-0041, ADR-0043).
+/// loader (ADR-0041, ADR-0044).
 const PROFILE_QUESTION: &str = "? Which OPL do you start with this device? Nothing on it tells: \
      pass --profile opl-1.2, opl-1.1 or riptopl (opl-1.1 if you do not know)";
 
