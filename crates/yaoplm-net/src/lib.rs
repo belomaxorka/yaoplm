@@ -11,6 +11,7 @@
 
 pub mod cache;
 pub mod http;
+pub mod loaders;
 pub mod oplm;
 pub mod redump;
 pub mod region;
