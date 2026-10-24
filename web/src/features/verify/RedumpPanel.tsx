@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
+import type { RedumpUpdate } from "@/api/generated/RedumpUpdate";
 import { redumpStatus, updateRedump, waitForJob } from "@/api/rpc";
 import { Button } from "@/components/ui/button";
 import { pickDat } from "@/features/add/desktop";
@@ -25,8 +26,11 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["redump"], queryFn: () => redumpStatus(transport) });
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Kept as data, not text, so a language switch rewords them.
+  const [outcome, setOutcome] = useState<{ update: RedumpUpdate; games: number; nextCheck: number | null } | null>(
+    null,
+  );
+  const [error, setError] = useState<unknown>(null);
   const [browserOpen, setBrowserOpen] = useState(false);
   // When the panel opened: a week is long enough not to tick.
   const [now] = useState(Date.now);
@@ -35,24 +39,19 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
 
   const run = async (file?: string) => {
     setBusy(true);
-    setMessage(null);
+    setOutcome(null);
     setError(null);
     try {
       const job = await updateRedump(transport, file);
       const info = await waitForJob(transport, job);
       if (info.status === "finished" && info.result?.type === "Redump") {
         const { update, dat: stored, nextCheck } = info.result;
-        setMessage(
-          t(`dump.update.${update}`, {
-            games: stored?.games ?? 0,
-            date: nextCheck === null ? "" : formatDate(nextCheck),
-          }),
-        );
+        setOutcome({ update, games: stored?.games ?? 0, nextCheck });
       } else if (info.error) {
-        setError(errorText(info.error));
+        setError(info.error);
       }
     } catch (err) {
-      setError(errorText(err));
+      setError(err);
     } finally {
       setBusy(false);
       await queryClient.invalidateQueries({ queryKey: ["redump"] });
@@ -106,14 +105,17 @@ export function RedumpPanel({ compact = false }: { compact?: boolean }) {
         </Button>
       </div>
       {!compact && <p className="text-xs text-muted-foreground">{t("dump.datHint")}</p>}
-      {message && (
+      {outcome && (
         <p className="text-xs" role="status" data-testid="redump-message">
-          {message}
+          {t(`dump.update.${outcome.update}`, {
+            games: outcome.games,
+            date: outcome.nextCheck === null ? "" : formatDate(outcome.nextCheck),
+          })}
         </p>
       )}
-      {error && (
+      {error !== null && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive" role="alert">
-          {error}
+          {errorText(error)}
         </p>
       )}
       <FolderBrowserDialog

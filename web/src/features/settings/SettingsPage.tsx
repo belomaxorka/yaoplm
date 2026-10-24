@@ -47,7 +47,8 @@ export function SettingsPage() {
   const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport) });
   const cache = useQuery({ queryKey: ["artCache"], queryFn: () => artCache(transport) });
   const [clearing, setClearing] = useState(false);
-  const [clearError, setClearError] = useState<string | null>(null);
+  // The error itself, not its text: a language switch rewords it.
+  const [clearError, setClearError] = useState<unknown>(null);
 
   const versionText =
     version.data?.version ?? (version.isPending ? t("settings.loading") : t("settings.unavailable"));
@@ -59,7 +60,7 @@ export function SettingsPage() {
       await clearArtCache(transport);
     } catch (error) {
       // Part of the cache may be gone even so: the counts below say how much.
-      setClearError(errorText(error));
+      setClearError(error);
     } finally {
       await cache.refetch();
       setClearing(false);
@@ -176,9 +177,9 @@ export function SettingsPage() {
                   {t("settings.clearArtCache")}
                 </Button>
               </SettingRow>
-              {clearError && (
+              {clearError !== null && (
                 <p className="text-xs text-destructive" role="alert" data-testid="clear-art-cache-error">
-                  {t("settings.clearArtCacheFailed", { error: clearError })}
+                  {t("settings.clearArtCacheFailed", { error: errorText(clearError) })}
                 </p>
               )}
             </CardContent>
