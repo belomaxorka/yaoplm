@@ -42,6 +42,8 @@
 
 - **Профиль загрузчика (LIB-1):** признаки и их порядок — модульные тесты `crates/yaoplm-core/src/detect.rs` на `MemFs` (контрольная сумма с подменной таблицей, файлы семейств, `games.bin` обоих поколений, ключи `conf_opl.cfg`, exFAT/ZSO, спорящие загрузчики); переопределение, настройка и ключ носителя — `the_loader_profile_of_a_device` в `crates/yaoplm-api/tests/plans.rs`; вывод CLI — `devices_and_device_doctor`; интерфейс — `web/tests/e2e/loader.spec.ts` (кладёт `settings_riptopl.cfg` в фикстуру на время теста) и `web/tests/unit/settings.test.ts` (перенос старой настройки). Таблица хешей OPL 1.0.0/1.1.0 проверена на настоящем ELF из официального архива (`D:\yaoplm-testdata\downloads\opl-v1.1.0\`).
 
+- **Каталог загрузчиков (LDR-1, ADR-0040):** модульные тесты `crates/yaoplm-core/src/loaders/` — каталог читается, каждый файл `data/loaders/` и `data/loader-hashes/` вшит в программу байт в байт, тексты `summary` и `limits` есть на каждом языке `web/src/locales/*` и следуют типографике, пресеты и каналы соответствуют решениям владельца, испорченные записи и новая схема отвергаются; `crates/yaoplm-api/tests/loaders.rs` и `loader_ls_lists_the_catalogue` в `apps/cli/tests/cli.rs`. Скрипт истории хешей — `python -m unittest discover -s scripts -p "test_*.py"` на консервированных ответах Releases API (в CI — задание `checks`). Факты каталога (раскладка 7z, хеши ELF и архивов, хеш ELF 1.1.0 внутри закреплённого архива) сверены со скачанными релизами в `D:\yaoplm-testdata\loaders\` (research/17 §7.3).
+
 ## Сбои и восстановление
 
 `crates/yaoplm-core/tests/recovery.rs` (ADR-0021):
@@ -77,6 +79,7 @@ D:\yaoplm-testdata\
 ├─ iso\         # собственные дампы пользователя (не скачиваются агентом)
 ├─ homebrew\    # свободные homebrew-ELF/ISO для тестов
 ├─ opl\         # официальные сборки OPL с GitHub releases (1.1.0 и 1.2.0 beta), справочно
+├─ loaders\     # файлы официальных релизов для ручных проверок установщика (LDR-1…LDR-7): <сборка>-<тег>\<ассет>, скачаны с разрешения владельца
 ├─ images\      # образы FAT32/exFAT для интеграционных тестов
 ├─ refs\        # клоны эталонных репозиториев (ADR-0015, research/REFERENCES.md)
 └─ out\         # результаты прогонов
