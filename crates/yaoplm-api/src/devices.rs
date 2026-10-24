@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use yaoplm_device::advice::{self, Advice, DiagnoseOptions};
-use yaoplm_device::{Bus, FsKind, PartitionStyle, Volume, VolumeKind};
+use yaoplm_device::{Bus, FsKind, PartitionStyle, Place, Volume, VolumeKind};
 
 use crate::library::LoaderProfile;
 use crate::paths::display_path;
@@ -110,6 +110,14 @@ pub struct DeviceInfo {
     /// The loader profile in force and why (LIB-1); the doctor's verdict
     /// above is for this profile.
     pub loader: ActiveProfile,
+    /// How OPL reads the device and why (ADR-0043); the verdict is for this
+    /// mode too.
+    pub mode: ActiveMode,
+    /// Ask which OPL the device is for (ADR-0041, ADR-0043): no signs, a
+    /// usable device, and either OPL's folders or a folder read over SMB,
+    /// where the console leaves no other sign. A whole system disk without
+    /// OPL's folders is not asked: its next step is a folder of its own.
+    pub ask_profile: bool,
 }
 
 fn notice(advice: &Advice) -> PlanNotice {
@@ -127,18 +135,32 @@ fn notice(advice: &Advice) -> PlanNotice {
 
 impl DeviceInfo {
     /// The device at `root` (a volume root, or a folder on `volume`), with
-    /// the doctor's verdict for the profile in force there.
+    /// the doctor's verdict for the profile and the mode in force there.
     pub fn new(
         volume: &Volume,
         root: &std::path::Path,
-        choice: ProfileChoice<'_>,
+        choice: DeviceChoice<'_>,
         boot_from_device: bool,
     ) -> Self {
-        let loader = ActiveProfile::resolve(volume, root, choice);
+        let key = ActiveProfile::key_for(volume, &display_path(root));
+        let mode = ActiveMode::resolve(volume, &key, choice.mode);
+        let smb = mode.mode == DeviceMode::Smb;
+        let loader = ActiveProfile::resolve(volume, root, choice.profile, smb);
         let options = DiagnoseOptions {
             profile: loader.profile.into(),
             boot_from_device,
+            mode: mode.mode.into(),
+            whole_volume: volume.is_root(root),
         };
+        let found = advice::diagnose(volume, &options);
+        let usable = found.iter().all(|a| a.level() != advice::Level::Error);
+        let whole_system_disk = found.iter().any(|a| matches!(a, Advice::SystemRoot(_)));
+        let ask_profile = usable
+            && loader.source == ProfileSource::Detected
+            && loader.detected.as_ref().is_some_and(|d| {
+                d.confidence == ProfileConfidence::Default
+                    && (d.library || (smb && !whole_system_disk))
+            });
         Self {
             root: display_path(root),
             label: volume.label.clone(),
@@ -178,13 +200,12 @@ impl DeviceInfo {
                 offset: p.offset,
                 mbr_type: p.mbr_type,
             }),
-            advice: advice::diagnose(volume, &options)
-                .iter()
-                .map(notice)
-                .collect(),
+            advice: found.iter().map(notice).collect(),
             apple_double: None,
             unfinished: Vec::new(),
             loader,
+            mode,
+            ask_profile,
         }
     }
 
@@ -327,13 +348,25 @@ impl ActiveProfile {
 
     /// Reads the device at `root` and applies the front end's choice: an
     /// override for the device, then an explicit profile, then the
-    /// detection.
-    pub fn resolve(volume: &Volume, root: &std::path::Path, choice: ProfileChoice<'_>) -> Self {
+    /// detection. In a folder read over SMB (`smb`) the loader's files are
+    /// copies, and the reason says so (research/18 §3).
+    pub fn resolve(
+        volume: &Volume,
+        root: &std::path::Path,
+        choice: ProfileChoice<'_>,
+        smb: bool,
+    ) -> Self {
         let key = Self::key_for(volume, &display_path(root));
         let detected = yaoplm_device::HostFs::new(root)
             .ok()
             .and_then(|fs| yaoplm_core::detect::detect_profile(&fs).ok())
-            .map(|d| DetectedProfile::from(&d));
+            .map(|mut d| {
+                if smb && d.by_loader_files {
+                    d.reason =
+                        yaoplm_core::Phrase::reason("profileByCopy").with("reason", d.reason);
+                }
+                DetectedProfile::from(&d)
+            });
         let (profile, source) = if let Some(chosen) = choice.overrides.iter().find(|o| o.key == key)
         {
             (chosen.profile, ProfileSource::Override)
@@ -353,4 +386,113 @@ impl ActiveProfile {
             detected,
         }
     }
+}
+
+/// How OPL reads a device (ADR-0043).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceMode {
+    /// Plugged into the console (USB, MX4SIO, i.LINK).
+    #[default]
+    Ps2,
+    /// Read over the network from a shared folder.
+    Smb,
+}
+
+impl From<DeviceMode> for yaoplm_device::DeviceMode {
+    fn from(mode: DeviceMode) -> Self {
+        match mode {
+            DeviceMode::Ps2 => Self::Ps2,
+            DeviceMode::Smb => Self::Smb,
+        }
+    }
+}
+
+impl From<yaoplm_device::DeviceMode> for DeviceMode {
+    fn from(mode: yaoplm_device::DeviceMode) -> Self {
+        match mode {
+            yaoplm_device::DeviceMode::Ps2 => Self::Ps2,
+            yaoplm_device::DeviceMode::Smb => Self::Smb,
+        }
+    }
+}
+
+/// Where the mode in force comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ModeSource {
+    /// Chosen for this device.
+    Override,
+    /// Forced by the request (the CLI's `--mode`).
+    Explicit,
+    /// By the device's place.
+    Detected,
+}
+
+/// A mode chosen for one device, keyed like [`ActiveProfile::key`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ModeOverride {
+    pub key: String,
+    pub mode: DeviceMode,
+}
+
+/// The mode in force for a device and why (ADR-0043).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveMode {
+    pub mode: DeviceMode,
+    pub source: ModeSource,
+    /// The mode the device's place gives.
+    pub detected: DeviceMode,
+    /// The device's place, to follow a dash: a removable device, a folder
+    /// on the computer's disk, a network folder, a folder on the server.
+    pub place: Phrase,
+    /// `place` in English.
+    pub place_text: String,
+}
+
+/// How a front end chooses the mode: `overrides` chosen per device in the
+/// interface, `explicit` forced by the CLI's `--mode` (`None`: by place).
+/// `server`: the device is a root of `yaoplm-server`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ModeChoice<'a> {
+    pub explicit: Option<DeviceMode>,
+    pub overrides: &'a [ModeOverride],
+    pub server: bool,
+}
+
+impl ActiveMode {
+    /// The device's place, then the front end's choice: an override for the
+    /// device (`key`), then an explicit mode.
+    pub fn resolve(volume: &Volume, key: &str, choice: ModeChoice<'_>) -> Self {
+        let place = Place::of(volume, choice.server);
+        let detected = DeviceMode::from(place.mode());
+        let (mode, source) = if let Some(chosen) = choice.overrides.iter().find(|o| o.key == key) {
+            (chosen.mode, ModeSource::Override)
+        } else if let Some(explicit) = choice.explicit {
+            (explicit, ModeSource::Explicit)
+        } else {
+            (detected, ModeSource::Detected)
+        };
+        let phrase = place.phrase();
+        Self {
+            mode,
+            source,
+            detected,
+            place_text: phrase.english(),
+            place: Phrase::from(&phrase),
+        }
+    }
+}
+
+/// Everything a front end chooses about the devices it lists or inspects.
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceChoice<'a> {
+    pub profile: ProfileChoice<'a>,
+    pub mode: ModeChoice<'a>,
 }

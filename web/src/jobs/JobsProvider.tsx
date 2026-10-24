@@ -95,6 +95,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       void queryClient.invalidateQueries({ queryKey: ["library"] });
       if (finished.kind === "executePlan") {
         void queryClient.invalidateQueries({ queryKey: ["device"] });
+        // The device list says which folders are prepared for OPL.
+        void queryClient.invalidateQueries({ queryKey: ["devices"] });
         // A game's settings and the memory cards (CFG-2, VMC-1).
         void queryClient.invalidateQueries({ queryKey: ["gameCfg"] });
         void queryClient.invalidateQueries({ queryKey: ["vmcs"] });

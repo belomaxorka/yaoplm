@@ -127,15 +127,17 @@
     "relatedKept": "CFG, art and cheat files of {{startup}} stay on the device ({{files}})",
     "relatedMoved": "The game ID changes from {{old}} to {{new}}: its CFG, art and cheat files ({{files}}) move with it (VMC cards keep their names)",
     "relatedShared": "CFG, art and cheats stay: another game also uses {{startup}}",
-    "remoteShare": "Network share: OPL speaks SMBv1 only, opens names up to 159 bytes and at most 10 ul parts",
     "restartOpl": "Restart OPL to see the new name: it notices ul.cfg changes by size only",
     "sectorSize": "Logical sectors are {{size}} bytes; OPL reads 512-byte sectors only (often a USB adapter issue)",
     "smbNameTooLong": "The file name is {{length}} bytes; over SMB OPL opens at most 159",
+    "smbRules": "OPL reads this folder over SMB: SMBv1 only, image names up to 159 bytes, at most 10 ul parts",
+    "smbRulesSmb2": "RiptOPL reads this folder over SMB: SMBv1, or SMB2 if it is chosen in RiptOPL’s network settings; image names up to 159 bytes, at most 10 ul parts",
     "sourceArchiveKept": "The game comes from an archive: the archive is not deleted",
     "sourceMissing": "Nothing exists at this path",
     "sourcesDeleted": "The source files are deleted after each game is copied",
     "staleCache": "games.bin still lists this file as {{cached}}, but the image is {{image}}; OPL shows {{cached}} until games.bin is deleted",
     "storedAsUl": "FAT32 holds files up to 4 GiB: the game is stored as 1 GiB ul chunks ({{parts}})",
+    "systemRoot": "The whole system disk is open: for sharing over the network, a separate folder such as {{folder}} is better",
     "systemVolume": "This volume holds the operating system",
     "titleFromDatabase": "The bundled database calls {{startup}} “{{title}}”",
     "titleShortened": "The title was shortened to fit OPL’s limits: {{title}}",
@@ -562,6 +564,8 @@
     "unknown": "I don’t know (rules for any OPL)",
     "question": "Which OPL do you start with this device?",
     "questionHint": "The device has OPL’s folders but no loader and no sign of one: OPL probably starts from the memory card. The version decides the rules for ZSO, exFAT, pictures and games in several pieces.",
+    "questionSmb": "Which OPL reads this folder over the network?",
+    "questionHintSmb": "OPL starts from the memory card or a stick and leaves no sign of its version in a shared folder until the console lists it. The version decides whether ZSO images and JPG pictures can be used.",
     "answers": {
       "Opl120Beta": "OPL 1.2 or YAOPL",
       "Opl110": "OPL 1.1.0",
@@ -615,7 +619,28 @@
       "error": "Not usable for OPL"
     },
     "open": "Open library",
-    "changeDevice": "Change device"
+    "changeDevice": "Change device",
+    "connection": "Connection to the PS2",
+    "modes": {
+      "ps2": "plugged into the console",
+      "smb": "over the network (SMB)"
+    },
+    "modeOptions": {
+      "ps2": "Plugged into the console",
+      "smb": "Over the network (SMB)"
+    },
+    "modeAuto": "Auto (by place)",
+    "modeForThisDevice": "Connection of this device",
+    "modeByOverride": "chosen for this device",
+    "modeByExplicit": "chosen for every device",
+    "smbInitHint": "OPL’s folders are not here yet. Create them and add games: the console reads this folder over the network.",
+    "createOplFolders": "Create OPL folders",
+    "smbFolderHint": "Create a library folder on this disk: YAOPLM opens it, and you share it with the console.",
+    "createFolder": "Create folder…",
+    "folderDialogTitle": "Library folder",
+    "folderDialogDescription": "A folder at the root of {{root}} with OPL’s folders in it. Share it over the network so the console can read it.",
+    "folderName": "Folder name",
+    "folderSubmit": "Preview plan"
   },
   "settings": {
     "library": "Library",
@@ -809,6 +834,7 @@
     "splitGame_one": "Split {{name}} into {{count}} ul chunk",
     "splitGame_other": "Split {{name}} into {{count}} ul chunks",
     "createFolders": "Create the OPL folders",
+    "createLibraryFolder": "Create folder {{folder}} with OPL’s folders",
     "writeCovers_one": "Write {{count}} cover",
     "writeCovers_other": "Write {{count}} covers",
     "noArtToWrite": "No picture to write",
@@ -1035,7 +1061,12 @@
     "profileByNewGamesBin": "{{file}} was last written by a beta from build 2017 on or a fork of OPL 1.2",
     "profileByExfat": "the device is exFAT, which OPL 1.1.0 cannot read",
     "profileByZso": "ZSO images ({{images}}), which OPL 1.1.0 does not show",
-    "profileNoSigns": "no signs of a loader on the device"
+    "profileNoSigns": "no signs of a loader on the device",
+    "profileByCopy": "{{reason}} (a copy: over SMB the console starts OPL from a memory card or stick)",
+    "placeRemovable": "a removable device",
+    "placeComputerDisk": "a folder on the computer’s disk",
+    "placeNetworkFolder": "a network folder",
+    "placeServerFolder": "a folder on the server"
   },
   "cfg": {
     "heading": "Game settings",

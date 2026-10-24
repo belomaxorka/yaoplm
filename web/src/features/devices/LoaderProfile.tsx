@@ -3,6 +3,7 @@ import { ChevronDown, CircleHelp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ActiveProfile } from "@/api/generated/ActiveProfile";
+import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { worstLevel } from "@/lib/notices";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 import { type ProfileOverrideValue, profiles } from "@/settings/settings";
@@ -89,40 +91,36 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
 }
 
 /**
- * What the loader line cannot say in a few words (ADR-0041):
- * - a device prepared for OPL that shows no sign of its loader (OPL starts
- *   from the memory card, the console has not listed the device yet) asks
- *   which OPL it is for. An empty or foreign device does not: it gets OPL
- *   installed first, which settles the question;
+ * What the loader line cannot say in a few words (ADR-0041, ADR-0043):
+ * - a device with no sign of its loader asks which OPL it is for, when the
+ *   core says so (`askProfile`): prepared for OPL (OPL starts from the
+ *   memory card, the console has not listed the device yet), or a folder
+ *   read over SMB, where the console leaves no other sign. An empty or
+ *   foreign device plugged into the PS2 does not: it gets OPL installed
+ *   first, which settles the question;
  * - a profile chosen for the device (or "I don't know") that its files now
  *   contradict offers to go back to auto.
  *
- * Neither shows on a device the storage doctor finds unusable for OPL
- * (`usable` false): which OPL reads it does not matter there.
+ * Neither shows on a device the storage doctor finds unusable for OPL:
+ * which OPL reads it does not matter there.
  */
-export function LoaderProfileHint({
-  loader,
-  usable,
-  className,
-}: {
-  loader: ActiveProfile;
-  usable: boolean;
-  className?: string;
-}) {
+export function LoaderProfileHint({ device, className }: { device: DeviceInfo; className?: string }) {
   const { t } = useTranslation();
+  const loader = device.loader;
   const { choose } = useChoice(loader);
   const detected = loader.detected;
   const box = cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className);
-  if (!usable) return null;
+  if (worstLevel(device.advice) === "error") return null;
 
-  if (loader.source === "detected" && detected?.confidence === "default" && detected.library) {
+  if (device.askProfile) {
+    const smb = device.mode.mode === "smb";
     return (
       <div className={box} role="group" aria-labelledby={`loader-question-${loader.key}`} data-testid="loader-question">
         <div className="flex items-center gap-2 font-medium" id={`loader-question-${loader.key}`}>
           <CircleHelp className="size-4 text-muted-foreground" aria-hidden />
-          {t("loader.question")}
+          {t(smb ? "loader.questionSmb" : "loader.question")}
         </div>
-        <p className="text-muted-foreground">{t("loader.questionHint")}</p>
+        <p className="text-muted-foreground">{t(smb ? "loader.questionHintSmb" : "loader.questionHint")}</p>
         <div className="flex flex-wrap gap-2">
           {profiles.map((profile) => (
             <Button key={profile} size="sm" variant="outline" onClick={() => choose(profile)} data-testid={`loader-answer-${profile}`}>

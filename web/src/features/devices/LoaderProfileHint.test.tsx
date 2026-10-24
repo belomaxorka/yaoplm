@@ -2,67 +2,54 @@ import "@/i18n";
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { ActiveProfile } from "@/api/generated/ActiveProfile";
-import type { DetectedProfile } from "@/api/generated/DetectedProfile";
+import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import i18n from "@/i18n";
 import { SettingsProvider } from "@/settings/SettingsProvider";
 import { readSettings } from "@/settings/settings";
 
 import { LoaderProfileHint } from "./LoaderProfile";
+import { detected, KEY, loader, smbMode, testDevice } from "./testDevice";
 
-const KEY = "serial:7E1CD2C5";
-
-function detected(patch: Partial<DetectedProfile> = {}): DetectedProfile {
-  return {
-    profile: "Opl120Beta",
-    confidence: "default",
-    reason: { key: "reasons.profileNoSigns", params: {} },
-    reasonText: "no signs of a loader on the device",
-    loaders: [],
-    notices: [],
-    library: true,
-    ...patch,
-  };
-}
-
-function loader(patch: Partial<ActiveProfile> = {}): ActiveProfile {
-  return { profile: "Opl120Beta", source: "detected", key: KEY, detected: detected(), ...patch };
-}
-
-function show(active: ActiveProfile, usable = true) {
+function show(device: DeviceInfo) {
   return render(
     <SettingsProvider>
-      <LoaderProfileHint loader={active} usable={usable} />
+      <LoaderProfileHint device={device} />
     </SettingsProvider>,
   );
 }
 
-describe("the loader profile question (ADR-0041)", () => {
+describe("the loader profile question (ADR-0041, ADR-0043)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
   afterEach(() => window.localStorage.clear());
 
-  it("asks on a prepared device without signs and remembers the answer", async () => {
-    show(loader());
-    expect(screen.getByTestId("loader-question")).toBeVisible();
+  it("asks when the core says so and remembers the answer", async () => {
+    show(testDevice());
+    expect(screen.getByTestId("loader-question")).toHaveTextContent("Which OPL do you start with this device?");
     await userEvent.click(screen.getByTestId("loader-answer-unknown"));
     expect(readSettings().profileOverrides).toEqual({ [KEY]: "unknown" });
   });
 
   it("an answer is a profile for this device", async () => {
-    show(loader());
+    show(testDevice());
     await userEvent.click(screen.getByTestId("loader-answer-RiptOpl"));
     expect(readSettings().profileOverrides).toEqual({ [KEY]: "RiptOpl" });
   });
 
-  it("does not ask an empty or foreign device, one with signs, or one unusable for OPL", () => {
-    const cases: [ActiveProfile, boolean][] = [
-      [loader({ detected: detected({ library: false }) }), true],
-      [loader({ detected: detected({ confidence: "indirect" }) }), true],
-      [loader({ detected: null }), true],
-      [loader(), false],
-    ];
-    for (const [active, usable] of cases) {
-      const { container, unmount } = show(active, usable);
+  it("asks an empty folder read over SMB about the OPL on the console", () => {
+    show(testDevice({ mode: smbMode, loader: loader({ detected: detected({ library: false }) }) }));
+    const question = screen.getByTestId("loader-question");
+    expect(question).toHaveTextContent("Which OPL reads this folder over the network?");
+    expect(question).toHaveTextContent("ZSO images and JPG pictures");
+  });
+
+  it("does not ask when the core does not, or on a device unusable for OPL", () => {
+    const error = { level: "error", code: "fsUnreadable", message: "OPL cannot read NTFS" } as const;
+    for (const device of [testDevice({ askProfile: false }), testDevice({ advice: [error] })]) {
+      const { container, unmount } = show(device);
       expect(container).toBeEmptyDOMElement();
       unmount();
     }
@@ -71,14 +58,17 @@ describe("the loader profile question (ADR-0041)", () => {
   it("offers auto again when the device's files contradict the choice", async () => {
     window.localStorage.setItem("yaoplm.settings", JSON.stringify({ profileOverrides: { [KEY]: "Opl110" } }));
     show(
-      loader({
-        profile: "Opl110",
-        source: "override",
-        detected: detected({
-          profile: "RiptOpl",
-          confidence: "indirect",
-          reasonText: "APPS/APP_RIPTOPL/settings_riptopl.cfg, which only RiptOPL writes",
-          reason: { key: "", params: {} },
+      testDevice({
+        askProfile: false,
+        loader: loader({
+          profile: "Opl110",
+          source: "override",
+          detected: detected({
+            profile: "RiptOpl",
+            confidence: "indirect",
+            reasonText: "APPS/APP_RIPTOPL/settings_riptopl.cfg, which only RiptOPL writes",
+            reason: { key: "", params: {} },
+          }),
         }),
       }),
     );
@@ -89,7 +79,10 @@ describe("the loader profile question (ADR-0041)", () => {
 
   it("stays quiet when the choice agrees with the files", () => {
     const { container } = show(
-      loader({ profile: "Opl110", source: "override", detected: detected({ profile: "Opl110", confidence: "exact" }) }),
+      testDevice({
+        askProfile: false,
+        loader: loader({ profile: "Opl110", source: "override", detected: detected({ profile: "Opl110", confidence: "exact" }) }),
+      }),
     );
     expect(container).toBeEmptyDOMElement();
   });

@@ -7,8 +7,9 @@
 //! the limit per part only, so a game over it in total is not refused
 //! cleanly; YAOPLM holds the total to it. OPL 1.1.0 wants every file in
 //! one run, and a VMC must be one run on any build (research/02 §4.7, §9;
-//! research/06 §1.11). Shares and MMCE cards have no such limit: the check
-//! runs only on local FAT32 and exFAT volumes.
+//! research/06 §1.11). SMB and MMCE cards have no such limit: the check
+//! runs only on FAT32 and exFAT volumes OPL reads over BDM, never in SMB
+//! mode (research/18 §4, ADR-0043).
 //!
 //! The counts come from the OS ([`DeviceFs::fragments`]); where it cannot
 //! tell, a game is [`Fragments::Unknown`] and gets no warning.
@@ -26,7 +27,7 @@ use crate::plan::Notice;
 /// Whether OPL reads this device over BDM, where the limits apply.
 pub fn applies(fs: &dyn DeviceFs) -> bool {
     fs.info()
-        .is_ok_and(|info| !info.remote && matches!(info.kind, FsKind::Fat32 | FsKind::ExFat))
+        .is_ok_and(|info| !info.smb && matches!(info.kind, FsKind::Fat32 | FsKind::ExFat))
 }
 
 /// Runs of clusters of each file; unknown as soon as one file's count is.

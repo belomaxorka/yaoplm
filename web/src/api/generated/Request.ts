@@ -5,6 +5,7 @@ import type { ArtSourceSetting } from "./ArtSourceSetting";
 import type { ArtType } from "./ArtType";
 import type { CfgPair } from "./CfgPair";
 import type { ConvertTarget } from "./ConvertTarget";
+import type { DeviceMode } from "./DeviceMode";
 import type { GameRef } from "./GameRef";
 import type { GameSettings } from "./GameSettings";
 import type { ImportOverride } from "./ImportOverride";
@@ -12,6 +13,7 @@ import type { JobId } from "./JobId";
 import type { Layout } from "./Layout";
 import type { LoaderProfile } from "./LoaderProfile";
 import type { Media } from "./Media";
+import type { ModeOverride } from "./ModeOverride";
 import type { NameStyle } from "./NameStyle";
 import type { NewVmc } from "./NewVmc";
 import type { ProfileOverride } from "./ProfileOverride";
@@ -35,7 +37,12 @@ profile?: LoaderProfile,
 /**
  * Profiles chosen per device (`ActiveProfile::key`).
  */
-overrides?: Array<ProfileOverride>, } | { "type": "InspectDevice", root: string, 
+overrides?: Array<ProfileOverride>, 
+/**
+ * Modes chosen per device, by the same key (ADR-0043); every
+ * other device gets its place's.
+ */
+modeOverrides?: Array<ModeOverride>, } | { "type": "InspectDevice", root: string, 
 /**
  * As in `ListDevices`.
  */
@@ -43,7 +50,16 @@ profile?: LoaderProfile, overrides?: Array<ProfileOverride>,
 /**
  * OPL is started from this device by FreeMcBoot or old uLaunchELF.
  */
-bootFromDevice?: boolean, } | { "type": "ScanLibrary", root: string, 
+bootFromDevice?: boolean, 
+/**
+ * A mode forced for this request (the CLI's `--mode`); absent: an
+ * override, else the device's place (ADR-0043).
+ */
+mode?: DeviceMode, 
+/**
+ * As in `ListDevices`.
+ */
+modeOverrides?: Array<ModeOverride>, } | { "type": "ScanLibrary", root: string, 
 /**
  * Defaults to OPL 1.2.0 beta.
  */
@@ -52,7 +68,12 @@ profile?: LoaderProfile,
  * Also read images whose ID OPL takes from the name or
  * `games.bin`, to catch mismatches. Defaults to true.
  */
-verify?: boolean, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
+verify?: boolean, 
+/**
+ * How OPL reads the device (`DeviceInfo.mode`); absent: by its
+ * place. Over SMB the fragment rule does not apply (ADR-0043).
+ */
+mode?: DeviceMode, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, folder?: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
 /**
  * Store images as ZSO (OPL 1.2.0 beta; never for `ul`).
  */
@@ -73,11 +94,24 @@ databaseTitles?: boolean,
  * A cover set from `FetchArt` with `import` (ART-8): every game
  * gets its cover written right after it, in the same plan.
  */
-covers?: string, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
+covers?: string, 
+/**
+ * As in `ScanLibrary`: SMB's limits or BDM's fragment rule.
+ */
+mode?: DeviceMode, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 
 /**
  * How images made from `ul` chunks are named.
  */
-nameStyle?: NameStyle, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
+nameStyle?: NameStyle, 
+/**
+ * As in `ScanLibrary`.
+ */
+mode?: DeviceMode, } | { "type": "RenameGame", root: string, game: GameRef, title: string, startup?: string, nameStyle?: NameStyle, 
+/**
+ * As in `ScanLibrary`: over SMB a renamed `ul` game needs OPL
+ * restarted.
+ */
+mode?: DeviceMode, } | { "type": "DeleteGame", root: string, game: GameRef, related?: boolean, } | { "type": "MoveGame", root: string, game: GameRef, media: Media, } | { "type": "PlanRecovery", root: string, action?: RecoveryAction, } | { "type": "ExecutePlan", plan: string, confirmDelete?: boolean, } | { "type": "DiscardPlan", plan: string, } | { "type": "GetJob", job: JobId, } | { "type": "ListJobs" } | { "type": "CancelJob", job: JobId, } | { "type": "FetchArt", root: string, profile?: LoaderProfile, 
 /**
  * Defaults to `missing`.
  */

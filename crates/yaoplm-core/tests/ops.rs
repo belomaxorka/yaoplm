@@ -9,7 +9,8 @@ use common::{files, run};
 use yaoplm_core::Media;
 use yaoplm_core::exec::Outcome;
 use yaoplm_core::ops::{
-    DeleteOptions, GameRef, OpError, RenameOptions, plan_delete, plan_init, plan_move, plan_rename,
+    DeleteOptions, GameRef, OpError, RenameOptions, plan_delete, plan_init, plan_init_folder,
+    plan_move, plan_rename,
 };
 use yaoplm_core::plan::Step;
 use yaoplm_device::{FsKind, RelPath};
@@ -378,4 +379,47 @@ fn init_creates_the_missing_folders() {
     );
     assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
     assert!(plan_init(&fs).unwrap().transactions.is_empty());
+}
+
+#[test]
+fn init_folder_makes_a_library_inside_the_root() {
+    // A whole system disk shared over SMB gets a folder of its own (ADR-0043).
+    let fs = MemFs::new(FsKind::Ntfs);
+    fs.insert_file("Windows/explorer.exe", b"x");
+    let plan = plan_init_folder(&fs, " PS2 ").unwrap();
+    let steps = &plan.transactions[0].steps;
+    assert_eq!(steps.len(), 10, "the folder and the nine OPL folders");
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    for name in ["PS2/CD", "PS2/DVD", "PS2/APPS", "PS2/VMC"] {
+        assert!(fs.exists(name), "{name}");
+    }
+    assert!(!fs.exists("CD"), "nothing at the root itself");
+    assert!(
+        plan_init_folder(&fs, "PS2")
+            .unwrap()
+            .transactions
+            .is_empty()
+    );
+
+    // An existing folder only gets what it lacks; a file or a path is refused.
+    fs.insert_file("Games/dvd/x.iso", b"x");
+    assert_eq!(
+        plan_init_folder(&fs, "Games").unwrap().transactions[0]
+            .steps
+            .len(),
+        8
+    );
+    assert!(matches!(
+        plan_init_folder(&fs, "Windows/explorer.exe"),
+        Err(OpError::Invalid(_))
+    ));
+    fs.insert_file("notes.txt", b"x");
+    assert!(matches!(
+        plan_init_folder(&fs, "notes.txt"),
+        Err(OpError::Conflict(_))
+    ));
+    assert!(matches!(
+        plan_init_folder(&fs, ".."),
+        Err(OpError::Invalid(_))
+    ));
 }

@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 use crate::ApiError;
 use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, ArtType, Attribution};
-use crate::devices::{DeviceInfo, ProfileOverride};
+use crate::devices::{DeviceInfo, DeviceMode, ModeOverride, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
@@ -122,6 +122,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ProfileOverride>>,
+        /// Modes chosen per device, by the same key (ADR-0043); every
+        /// other device gets its place's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode_overrides: Option<Vec<ModeOverride>>,
     },
     /// One volume or folder in detail (DEV-2).
     InspectDevice {
@@ -137,6 +142,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         boot_from_device: Option<bool>,
+        /// A mode forced for this request (the CLI's `--mode`); absent: an
+        /// override, else the device's place (ADR-0043).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
+        /// As in `ListDevices`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode_overrides: Option<Vec<ModeOverride>>,
     },
     /// Lists a device root (or its `usb_prefix` folder) as OPL would. A
     /// job: answered with [`Response::Job`]; the library is its result.
@@ -151,6 +165,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
+        /// How OPL reads the device (`DeviceInfo.mode`); absent: by its
+        /// place. Over SMB the fragment rule does not apply (ADR-0043).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Details of one ISO or ZSO file. Answered with [`Response::ImageInfo`].
     ImageInfo {
@@ -168,9 +187,14 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         path: Option<String>,
     },
-    /// Plans creating the missing OPL folders (LIB-3).
+    /// Plans creating the missing OPL folders (LIB-3). With `folder`, a
+    /// folder of that name inside `root` with the OPL folders in it: a
+    /// library of its own for a whole system disk (ADR-0043).
     PlanInit {
         root: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        folder: Option<String>,
     },
     /// Plans copying ISO, ZSO, BIN/CUE and CHD images, also from zip and 7z
     /// archives, or folders of them, to a device (IMP-1 to IMP-11, IMP-1b).
@@ -213,6 +237,10 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         covers: Option<String>,
+        /// As in `ScanLibrary`: SMB's limits or BDM's fragment rule.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Plans converting games between ISO, ZSO and `ul` (GAME-4). The old
     /// form is deleted after the new one is complete, so executing needs
@@ -228,6 +256,10 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         name_style: Option<NameStyle>,
+        /// As in `ScanLibrary`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Plans a rename (GAME-1). A new `startup` also moves CFG, art and
     /// cheats.
@@ -241,6 +273,11 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         name_style: Option<NameStyle>,
+        /// As in `ScanLibrary`: over SMB a renamed `ul` game needs OPL
+        /// restarted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
     },
     /// Plans deleting a game (GAME-2); `related` also deletes its CFG, art
     /// and cheats when no other game uses the ID.

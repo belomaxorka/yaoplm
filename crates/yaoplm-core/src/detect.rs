@@ -209,6 +209,11 @@ pub struct Detection {
     /// about; an empty or foreign device gets a loader installed first
     /// (SPEC §5.11.2).
     pub library: bool,
+    /// The profile comes from the loader's own files (its ELF, `title.cfg`,
+    /// settings), not from `games.bin` or the images. In a folder read over
+    /// SMB those files are only copies: the console runs the OPL on its
+    /// memory card or stick (research/18 §3, ADR-0043).
+    pub by_loader_files: bool,
 }
 
 /// Strength of a sign, strongest first.
@@ -707,6 +712,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         }
     }
 
+    let by_loader_files = chosen.is_some_and(|(level, _)| level != Level::GamesBin);
     let (profile, confidence, reason) = match chosen {
         Some((level, sign)) => (
             sign.profile,
@@ -829,6 +835,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         loaders,
         notices,
         library,
+        by_loader_files,
     })
 }
 
@@ -995,6 +1002,26 @@ mod tests {
         let fs = MemFs::new(FsKind::Fat32);
         fs.insert_file("CD/games.bin", &games_bin(188));
         assert_eq!(reason(&detect(&fs)), "profileByNewGamesBin");
+    }
+
+    #[test]
+    fn what_the_console_wrote_and_what_was_copied() {
+        // OPL writes games.bin while it lists a share; settings and ELFs in
+        // a folder read over SMB were copied there (research/18 §3).
+        let fs = MemFs::new(FsKind::Ntfs);
+        assert!(!detect(&fs).by_loader_files);
+        fs.insert_file("CD/games.bin", &games_bin(188));
+        assert!(!detect(&fs).by_loader_files);
+
+        let fs = MemFs::new(FsKind::Ntfs);
+        fs.insert_file("conf_opl.cfg", b"usb_mode=0\r\nenable_bgm=1\r\n");
+        assert!(detect(&fs).by_loader_files);
+        fs.insert_file("APPS/APP_RIPTOPL/settings_riptopl.cfg", b"enable_usb=1\r\n");
+        assert!(detect(&fs).by_loader_files);
+
+        let fs = MemFs::new(FsKind::Ntfs);
+        fs.insert_file("CD/Game.zso", b"x");
+        assert!(!detect(&fs).by_loader_files);
     }
 
     #[test]

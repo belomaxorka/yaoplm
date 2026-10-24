@@ -362,23 +362,68 @@ fn devices_and_device_doctor() {
     assert!(!stdout(&all).is_empty());
     let device = run(&["device".as_ref(), s.root.as_os_str()]);
     assert!(device.status.success());
-    // The loader profile is read from the device by default (LIB-1).
+    // The loader profile is read from the device by default (LIB-1); a temp
+    // folder is on the computer, so OPL reads it over SMB (ADR-0043) and
+    // the question is asked even though it is empty.
+    let text = stdout(&device);
     assert!(
-        stdout(&device)
-            .contains("Loader:     OPL 1.2.0 beta: no signs of a loader on the device (auto)"),
-        "{}",
-        stdout(&device)
+        text.contains("Loader:     OPL 1.2.0 beta: no signs of a loader on the device (auto)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Mode:       over the network (SMB): a folder on the computer’s disk (auto)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("? Which OPL do you start with this device?"),
+        "{text}"
     );
     let json = run(&["device".as_ref(), s.root.as_os_str(), "--json".as_ref()]);
     let answer: serde_json::Value = serde_json::from_str(stdout(&json)).unwrap();
     assert_eq!(answer["type"], "Device");
     assert_eq!(answer["loader"]["source"], "detected");
+    assert_eq!(answer["mode"]["mode"], "smb");
 
-    // RiptOPL's app on the stick; `--profile` still decides when given.
+    // As a stick plugged into the console: no question for an empty one.
+    let ps2 = run(&[
+        "device".as_ref(),
+        s.root.as_os_str(),
+        "--mode".as_ref(),
+        "ps2".as_ref(),
+    ]);
+    let text = stdout(&ps2);
+    assert!(
+        text.contains("Mode:       plugged into the PS2 (--mode)"),
+        "{text}"
+    );
+    assert!(!text.contains("? Which OPL"), "{text}");
+    let scan = run(&[
+        "scan".as_ref(),
+        s.root.as_os_str(),
+        "--mode".as_ref(),
+        "ps2".as_ref(),
+    ]);
+    assert!(stdout(&scan).contains("Mode: plugged into the PS2 (--mode)"));
+
+    // RiptOPL's app on the stick; `--profile` still decides when given. In
+    // a folder read over SMB the ELF is a copy.
     let app = s.root.join("APPS").join("APP_RIPTOPL");
     std::fs::create_dir_all(&app).unwrap();
     std::fs::write(app.join("RIPTOPL.ELF"), b"elf").unwrap();
     let device = run(&["device".as_ref(), s.root.as_os_str()]);
+    let text = stdout(&device);
+    assert!(
+        text.contains(
+            "Loader:     RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (a copy: over SMB the console starts OPL from a memory card or stick) (auto)"
+        ),
+        "{text}"
+    );
+    let device = run(&[
+        "device".as_ref(),
+        s.root.as_os_str(),
+        "--mode".as_ref(),
+        "ps2".as_ref(),
+    ]);
     let text = stdout(&device);
     assert!(
         text.contains("Loader:     RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (auto)"),

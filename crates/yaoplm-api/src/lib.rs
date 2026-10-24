@@ -43,7 +43,7 @@ pub use protocol::{
 };
 
 use art::Net;
-use devices::{DeviceInfo, ProfileChoice};
+use devices::{DeviceChoice, DeviceInfo, DeviceMode, ModeChoice, ProfileChoice};
 use jobs::{
     ExecutionReport, JobKind, JobLogEntry, JobManager, JobResult, Queue, StepLogState, TxLogState,
     TxOutcome, now_ms,
@@ -180,7 +180,29 @@ impl Api {
         &self.jobs
     }
 
+    /// `yaoplm-server`: only paths inside its roots.
+    fn server(&self) -> bool {
+        matches!(self.paths, PathPolicy::Within(_))
+    }
+
+    /// How OPL reads the device at `path`: the mode a front end sends, else
+    /// its place's (ADR-0043).
+    fn mode_at(&self, path: &Path, mode: Option<DeviceMode>) -> yaoplm_device::DeviceMode {
+        match mode {
+            Some(mode) => mode.into(),
+            None => yaoplm_device::volume_for_path(path)
+                .map(|volume| yaoplm_device::Place::of(&volume, self.server()).mode())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The device at `raw` as OPL reads it in its place's mode.
     fn root(&self, raw: &str) -> Result<(PathBuf, HostFs), ApiError> {
+        self.root_in(raw, None)
+    }
+
+    /// The device at `raw` as OPL reads it in `mode` (absent: by place).
+    fn root_in(&self, raw: &str, mode: Option<DeviceMode>) -> Result<(PathBuf, HostFs), ApiError> {
         let path = self.paths.resolve(raw)?;
         if !path.is_dir() {
             return Err(ApiError::phrased(
@@ -188,7 +210,9 @@ impl Api {
                 &Said::error("notAFolder").with("path", display_path(&path)),
             ));
         }
-        let fs = HostFs::new(&path).map_err(io_error)?;
+        let fs = HostFs::new(&path)
+            .map_err(io_error)?
+            .with_mode(self.mode_at(&path, mode));
         Ok((path, fs))
     }
 
@@ -233,6 +257,12 @@ impl Api {
         Response::Plan(Box::new(self.plans.insert(root, plan)))
     }
 
+    /// A plan made for the device in `mode`: it runs in the same one.
+    fn store_in(&self, root: PathBuf, mode: Option<DeviceMode>, plan: Plan) -> Response {
+        let mode = mode.map(Into::into);
+        Response::Plan(Box::new(self.plans.insert_in(root, mode, plan)))
+    }
+
     pub fn dispatch(&self, request: Request) -> Result<Response, ApiError> {
         match request {
             Request::Ping => Ok(Response::Pong),
@@ -240,10 +270,21 @@ impl Api {
                 name: NAME.to_owned(),
                 version: VERSION.to_owned(),
             }),
-            Request::ListDevices { profile, overrides } => {
-                let choice = ProfileChoice {
-                    explicit: profile,
-                    overrides: overrides.as_deref().unwrap_or_default(),
+            Request::ListDevices {
+                profile,
+                overrides,
+                mode_overrides,
+            } => {
+                let choice = DeviceChoice {
+                    profile: ProfileChoice {
+                        explicit: profile,
+                        overrides: overrides.as_deref().unwrap_or_default(),
+                    },
+                    mode: ModeChoice {
+                        explicit: None,
+                        overrides: mode_overrides.as_deref().unwrap_or_default(),
+                        server: self.server(),
+                    },
                 };
                 let devices = match &self.paths {
                     PathPolicy::Any => yaoplm_device::list_volumes()
@@ -266,12 +307,21 @@ impl Api {
                 profile,
                 overrides,
                 boot_from_device,
+                mode,
+                mode_overrides,
             } => {
                 let (path, fs) = self.root(&root)?;
                 let volume = yaoplm_device::volume_for_path(&path).map_err(io_error)?;
-                let choice = ProfileChoice {
-                    explicit: profile,
-                    overrides: overrides.as_deref().unwrap_or_default(),
+                let choice = DeviceChoice {
+                    profile: ProfileChoice {
+                        explicit: profile,
+                        overrides: overrides.as_deref().unwrap_or_default(),
+                    },
+                    mode: ModeChoice {
+                        explicit: mode,
+                        overrides: mode_overrides.as_deref().unwrap_or_default(),
+                        server: self.server(),
+                    },
                 };
                 let mut info =
                     DeviceInfo::new(&volume, &path, choice, boot_from_device.unwrap_or(false));
@@ -289,8 +339,10 @@ impl Api {
                 root,
                 profile,
                 verify,
+                mode,
             } => {
                 let path = self.paths.resolve(&root)?;
+                let mode = self.mode_at(&path, mode);
                 let profile = profile.unwrap_or_default();
                 let options = yaoplm_core::ScanOptions {
                     profile: profile.into(),
@@ -311,8 +363,9 @@ impl Api {
                                 !ctx.is_cancelled()
                             })
                             .map_err(|err| scan_error(&err))?;
-                        // Off a FAT32 or exFAT volume the check does nothing.
-                        if let Ok(fs) = HostFs::new(&path) {
+                        // Off BDM (not FAT32 or exFAT, or read over SMB)
+                        // the check does nothing.
+                        if let Ok(fs) = HostFs::new(&path).map(|fs| fs.with_mode(mode)) {
                             yaoplm_core::fragments::check_library(
                                 &fs,
                                 &mut library,
@@ -356,9 +409,12 @@ impl Api {
                 };
                 Ok(Response::Dir(Box::new(listing)))
             }
-            Request::PlanInit { root } => {
+            Request::PlanInit { root, folder } => {
                 let (path, fs) = self.root(&root)?;
-                let plan = ops::plan_init(&fs).map_err(io_error)?;
+                let plan = match folder {
+                    Some(folder) => ops::plan_init_folder(&fs, &folder).map_err(op_error)?,
+                    None => ops::plan_init(&fs).map_err(io_error)?,
+                };
                 Ok(self.store(path, plan))
             }
             Request::PlanImport {
@@ -373,8 +429,9 @@ impl Api {
                 verify,
                 database_titles,
                 covers,
+                mode,
             } => {
-                let (path, fs) = self.root(&root)?;
+                let (path, fs) = self.root_in(&root, mode)?;
                 let covers = match covers {
                     Some(id) => Some(
                         self.plans
@@ -444,7 +501,7 @@ impl Api {
                             .map(|(_, skipped)| skipped),
                     );
                 }
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::ConvertGames {
                 root,
@@ -452,8 +509,9 @@ impl Api {
                 target,
                 profile,
                 name_style: style,
+                mode,
             } => {
-                let (path, fs) = self.root(&root)?;
+                let (path, fs) = self.root_in(&root, mode)?;
                 let games = games
                     .into_iter()
                     .map(|g| self.game_ref(&path, g))
@@ -469,7 +527,7 @@ impl Api {
                 };
                 let plan =
                     convert::plan_convert(&fs, &games, target, &options).map_err(op_error)?;
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::RenameGame {
                 root,
@@ -477,8 +535,9 @@ impl Api {
                 title,
                 startup,
                 name_style: style,
+                mode,
             } => {
-                let (path, fs) = self.root(&root)?;
+                let (path, fs) = self.root_in(&root, mode)?;
                 let game = self.game_ref(&path, game)?;
                 let options = RenameOptions {
                     title,
@@ -486,7 +545,7 @@ impl Api {
                     name_style: name_style(style),
                 };
                 let plan = ops::plan_rename(&fs, &game, &options).map_err(op_error)?;
-                Ok(self.store(path, plan))
+                Ok(self.store_in(path, mode, plan))
             }
             Request::DeleteGame {
                 root,
@@ -550,13 +609,16 @@ impl Api {
                     .unwrap_or_else(|| Said::title("plan").with("title", &stored.plan.title));
                 let root = display_path(&stored.root);
                 let net = Arc::clone(&self.net);
+                let mode = stored
+                    .mode
+                    .unwrap_or_else(|| self.mode_at(&stored.root, None));
                 let job = self.jobs.spawn(
                     JobKind::ExecutePlan,
                     &title,
                     Some(root),
                     Queue::Write,
                     move |ctx| {
-                        let fs = HostFs::new(&stored.root).map_err(io_error)?;
+                        let fs = HostFs::new(&stored.root).map_err(io_error)?.with_mode(mode);
                         let sources = ArchiveSources::new(&HostSources);
                         let plan = &stored.plan;
                         let mut recorder = verify::Recorder::new(&net, &fs, plan);

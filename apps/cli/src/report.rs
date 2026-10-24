@@ -5,7 +5,8 @@ use std::path::Path;
 
 use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{
-    ActiveProfile, DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable, ProfileSource,
+    ActiveMode, ActiveProfile, DeviceInfo, DeviceMode, DriveBus, DriveKind, FileSystem, ModeSource,
+    PartitionTable, ProfileSource,
 };
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
@@ -355,6 +356,24 @@ pub fn loader_line(loader: &ActiveProfile) -> String {
     }
 }
 
+/// How OPL reads the device and why (ADR-0043).
+pub fn mode_line(mode: &ActiveMode) -> String {
+    let name = match mode.mode {
+        DeviceMode::Ps2 => "plugged into the PS2",
+        DeviceMode::Smb => "over the network (SMB)",
+    };
+    match mode.source {
+        ModeSource::Override => format!("{name} (chosen for this device)"),
+        ModeSource::Explicit => format!("{name} (--mode)"),
+        ModeSource::Detected => format!("{name}: {} (auto)", mode.place_text),
+    }
+}
+
+/// The question the interface asks when nothing on the device tells the
+/// loader (ADR-0041, ADR-0043).
+const PROFILE_QUESTION: &str = "? Which OPL do you start with this device? Nothing on it tells: \
+     pass --profile opl-1.2, opl-1.1 or riptopl (opl-1.1 if you do not know)";
+
 pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     let mut out = String::new();
     if devices.is_empty() {
@@ -370,6 +389,7 @@ pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
         if let Some(model) = &device.model {
             let _ = writeln!(out, "    {model}");
         }
+        let _ = writeln!(out, "    Mode: {}", mode_line(&device.mode));
         plan_notices(&mut out, "    ", &device.advice);
     }
     out
@@ -397,6 +417,7 @@ pub fn device(device: &DeviceInfo) -> String {
         }
         let _ = writeln!(out, "Partition:  {line}");
     }
+    let _ = writeln!(out, "Mode:       {}", mode_line(&device.mode));
     let _ = writeln!(out, "Loader:     {}", loader_line(&device.loader));
     if let Some(detected) = &device.loader.detected {
         for loader in &detected.loaders {
@@ -410,6 +431,9 @@ pub fn device(device: &DeviceInfo) -> String {
             let _ = writeln!(out, "Found:      {found} at {}", loader.path);
         }
         plan_notices(&mut out, "", &detected.notices);
+    }
+    if device.ask_profile {
+        let _ = writeln!(out, "{PROFILE_QUESTION}");
     }
     for id in &device.unfinished {
         let _ = writeln!(out, "x unfinished operation {id}: run `yaoplm recover`");

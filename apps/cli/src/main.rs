@@ -16,6 +16,7 @@ use clap::builder::TypedValueParser as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting, ArtType};
+use yaoplm_api::devices::DeviceMode;
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
@@ -63,6 +64,8 @@ enum Command {
         /// OPL itself is started from this device (FreeMcBoot, old uLaunchELF).
         #[arg(long)]
         boot_from_device: bool,
+        #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
+        mode: ModeArg,
         #[command(flatten)]
         common: Common,
     },
@@ -74,6 +77,8 @@ enum Command {
         /// opening those images (faster, misses mismatches).
         #[arg(long)]
         no_verify: bool,
+        #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
+        mode: ModeArg,
         #[command(flatten)]
         common: Common,
     },
@@ -86,6 +91,10 @@ enum Command {
     /// Create the OPL folders (CD DVD CFG CHT VMC ART THM LNG APPS).
     Init {
         root: PathBuf,
+        /// Create this folder inside ROOT and the OPL folders in it, e.g. to
+        /// share a folder rather than a whole system disk over SMB.
+        #[arg(long)]
+        folder: Option<String>,
         #[command(flatten)]
         apply: Apply,
     },
@@ -492,11 +501,36 @@ impl Profile {
                 profile: None,
                 overrides: None,
                 boot_from_device: None,
+                mode: None,
+                mode_overrides: None,
             }) {
                 Ok(Response::Device(device)) => device.loader.profile,
                 _ => LoaderProfile::default(),
             }
         })
+    }
+}
+
+/// How OPL reads the device (ADR-0043).
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ModeArg {
+    /// By the device's place: a USB stick or SD card is plugged into the
+    /// PS2, a folder on the computer or a network folder is read over SMB.
+    Auto,
+    /// Plugged into the PS2 (USB, MX4SIO, i.LINK).
+    Ps2,
+    /// Read by OPL over the network.
+    Smb,
+}
+
+impl ModeArg {
+    /// The mode given on the command line; `None` for `auto`.
+    fn explicit(self) -> Option<DeviceMode> {
+        match self {
+            Self::Auto => None,
+            Self::Ps2 => Some(DeviceMode::Ps2),
+            Self::Smb => Some(DeviceMode::Smb),
+        }
     }
 }
 
@@ -562,6 +596,7 @@ fn main() -> anyhow::Result<ExitCode> {
             let response = api.dispatch(Request::ListDevices {
                 profile: common.profile.explicit(),
                 overrides: None,
+                mode_overrides: None,
             });
             show(response, common.json, |response| match response {
                 Response::Devices { devices } => {
@@ -578,6 +613,7 @@ fn main() -> anyhow::Result<ExitCode> {
         Command::Device {
             root,
             boot_from_device,
+            mode,
             common,
         } => {
             let response = api.dispatch(Request::InspectDevice {
@@ -585,6 +621,8 @@ fn main() -> anyhow::Result<ExitCode> {
                 profile: common.profile.explicit(),
                 overrides: None,
                 boot_from_device: Some(boot_from_device),
+                mode: mode.explicit(),
+                mode_overrides: None,
             });
             show(response, common.json, |response| match response {
                 Response::Device(device) => print!("{}", report::device(device)),
@@ -594,24 +632,28 @@ fn main() -> anyhow::Result<ExitCode> {
         Command::Scan {
             root,
             no_verify,
+            mode,
             common,
         } => {
-            let library = match scan(&api, &root, common.profile, !no_verify) {
+            let library = match scan(&api, &root, common.profile, mode.explicit(), !no_verify) {
                 Ok(library) => library,
                 Err(err) => return fail(&err, common.json),
             };
             if common.json {
                 print_json(&JobResult::Library(Box::new(library)), true);
             } else {
-                if common.profile.explicit().is_none()
-                    && let Ok(Response::Device(device)) = api.dispatch(Request::InspectDevice {
-                        root: text(&root),
-                        profile: None,
-                        overrides: None,
-                        boot_from_device: None,
-                    })
-                {
-                    println!("Profile: {}", report::loader_line(&device.loader));
+                if let Ok(Response::Device(device)) = api.dispatch(Request::InspectDevice {
+                    root: text(&root),
+                    profile: common.profile.explicit(),
+                    overrides: None,
+                    boot_from_device: None,
+                    mode: mode.explicit(),
+                    mode_overrides: None,
+                }) {
+                    if common.profile.explicit().is_none() {
+                        println!("Profile: {}", report::loader_line(&device.loader));
+                    }
+                    println!("Mode: {}", report::mode_line(&device.mode));
                 }
                 print!("{}", report::library(&library));
             }
@@ -628,9 +670,18 @@ fn main() -> anyhow::Result<ExitCode> {
                 other => print_json(other, true),
             })
         }
-        Command::Init { root, apply } => {
-            plan_and_apply(&api, Request::PlanInit { root: text(&root) }, &apply)
-        }
+        Command::Init {
+            root,
+            folder,
+            apply,
+        } => plan_and_apply(
+            &api,
+            Request::PlanInit {
+                root: text(&root),
+                folder,
+            },
+            &apply,
+        ),
         Command::Add {
             root,
             sources,
@@ -676,6 +727,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 verify: Some(!no_verify),
                 database_titles: Some(db_titles),
                 covers: None,
+                mode: None,
             };
             if covers {
                 let found = match find_import_covers(
@@ -704,6 +756,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 target: to.into(),
                 profile: Some(apply.profile.at(&api, &root)),
                 name_style: name_style.map(Into::into),
+                mode: None,
             };
             plan_and_apply(&api, request, &apply)
         }
@@ -722,6 +775,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 title,
                 startup,
                 name_style: name_style.map(Into::into),
+                mode: None,
             };
             plan_and_apply(&api, request, &apply)
         }
@@ -1281,7 +1335,7 @@ fn find_startup(api: &Api, root: &Path, query: &str, profile: Profile) -> anyhow
         GameRef::Ul { startup, .. } => startup,
         GameRef::Image { path } => {
             let library =
-                scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+                scan(api, root, profile, None, false).map_err(|e| anyhow::anyhow!(e.message))?;
             library
                 .games
                 .iter()
@@ -1388,12 +1442,14 @@ fn scan(
     api: &Api,
     root: &Path,
     profile: Profile,
+    mode: Option<DeviceMode>,
     verify: bool,
 ) -> Result<Library, yaoplm_api::ApiError> {
     let Response::Job { job } = api.dispatch(Request::ScanLibrary {
         root: text(root),
         profile: Some(profile.at(api, root)),
         verify: Some(verify),
+        mode,
     })?
     else {
         return Err(yaoplm_api::ApiError::internal(
@@ -1424,7 +1480,7 @@ fn game_ref(game: &Game) -> GameRef {
 
 /// Finds a game by ID, title, file name, path or `ul:<index>`.
 fn find_game(api: &Api, root: &Path, query: &str, profile: Profile) -> anyhow::Result<GameRef> {
-    let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    let library = scan(api, root, profile, None, false).map_err(|e| anyhow::anyhow!(e.message))?;
     match_game(&library, query)
 }
 
@@ -1435,7 +1491,7 @@ fn find_games(
     queries: &[String],
     profile: Profile,
 ) -> anyhow::Result<Vec<GameRef>> {
-    let library = scan(api, root, profile, false).map_err(|e| anyhow::anyhow!(e.message))?;
+    let library = scan(api, root, profile, None, false).map_err(|e| anyhow::anyhow!(e.message))?;
     queries.iter().map(|q| match_game(&library, q)).collect()
 }
 

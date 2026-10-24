@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { profileChoice, readSettings } from "@/settings/settings";
+import { deviceChoice, readSettings } from "@/settings/settings";
 
 const save = (value: object) => window.localStorage.setItem("yaoplm.settings", JSON.stringify(value));
 
@@ -29,15 +29,35 @@ describe("the loader profile per device (LIB-1, ADR-0040)", () => {
   it("keeps \"I don't know\" and sends it as the rules every OPL reads (ADR-0041)", () => {
     save({ profileOverrides: { "serial:A": "unknown" } });
     expect(readSettings().profileOverrides).toEqual({ "serial:A": "unknown" });
-    expect(profileChoice({ profileOverrides: { "serial:A": "unknown" } })).toEqual({
+    expect(deviceChoice({ profileOverrides: { "serial:A": "unknown" }, modeOverrides: {} })).toEqual({
       overrides: [{ key: "serial:A", profile: "Opl110" }],
+      modeOverrides: [],
     });
   });
 
   it("asks the core with the overrides only, never a profile for every device", () => {
-    expect(profileChoice({ profileOverrides: { "serial:A": "RiptOpl" } })).toEqual({
+    expect(deviceChoice({ profileOverrides: { "serial:A": "RiptOpl" }, modeOverrides: {} })).toEqual({
       overrides: [{ key: "serial:A", profile: "RiptOpl" }],
+      modeOverrides: [],
     });
-    expect(profileChoice({ profileOverrides: {} })).toEqual({ overrides: [] });
+    expect(deviceChoice({ profileOverrides: {}, modeOverrides: {} })).toEqual({ overrides: [], modeOverrides: [] });
+  });
+});
+
+describe("the mode per device (ADR-0043)", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("reads old settings without modes and keeps only valid ones", () => {
+    save({ profileOverrides: {} });
+    expect(readSettings().modeOverrides).toEqual({});
+    save({ modeOverrides: { "path:/srv/ps2": "ps2", "serial:A": "usb", "serial:B": 1 } });
+    expect(readSettings().modeOverrides).toEqual({ "path:/srv/ps2": "ps2" });
+  });
+
+  it("sends the modes chosen per device by the same key", () => {
+    expect(deviceChoice({ profileOverrides: {}, modeOverrides: { "serial:A": "smb" } })).toEqual({
+      overrides: [],
+      modeOverrides: [{ key: "serial:A", mode: "smb" }],
+    });
   });
 });

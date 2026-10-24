@@ -4,20 +4,27 @@ import { useCallback, useEffect } from "react";
 import { useApi } from "@/api/context";
 import { scanLibrary } from "@/api/rpc";
 import type { Transport } from "@/api/transport";
+import type { DeviceMode } from "@/api/generated/DeviceMode";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import { allowArt } from "@/features/add/desktop";
 import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 import { useSettings } from "@/settings/context";
 
 /**
- * The scan of `root` under the device's loader profile (LIB-1). It waits
- * for the profile, so a device read as OPL 1.1.0 is never scanned as 1.2.
+ * The scan of `root` under the device's loader profile (LIB-1) and mode
+ * (ADR-0043: no fragment rule over SMB). It waits for both, so a device read
+ * as OPL 1.1.0 is never scanned as 1.2.
  */
-function libraryQuery(transport: Transport, root: string | null, verify: boolean, loader: { profile: LoaderProfile; ready: boolean }) {
-  const { profile } = loader;
+function libraryQuery(
+  transport: Transport,
+  root: string | null,
+  verify: boolean,
+  loader: { profile: LoaderProfile; mode: DeviceMode | null; ready: boolean },
+) {
+  const { profile, mode } = loader;
   return {
-    queryKey: ["library", root, profile, verify],
-    queryFn: ({ signal }: { signal: AbortSignal }) => scanLibrary(transport, root ?? "", profile, verify, signal),
+    queryKey: ["library", root, profile, mode, verify],
+    queryFn: ({ signal }: { signal: AbortSignal }) => scanLibrary(transport, root ?? "", profile, mode, verify, signal),
     enabled: root !== null && loader.ready,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,

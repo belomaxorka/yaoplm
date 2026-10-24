@@ -30,10 +30,16 @@ fn volume(path: &Path) -> io::Result<Volume> {
     let bsize = u64::from(stat.f_bsize);
     let system =
         flags & MNT_ROOTFS != 0 || root == Path::new("/") || root.starts_with("/System/Volumes");
+    // Without DiskArbitration the bus is unknown; a local volume under
+    // `/Volumes` that is not the system's is external media (a stick, an SD
+    // card, a USB disk or a mounted image), which the device's mode needs
+    // (ADR-0043).
     let kind = if flags & MNT_LOCAL == 0 {
         VolumeKind::Remote
     } else if system {
         VolumeKind::Fixed
+    } else if root.starts_with("/Volumes") {
+        VolumeKind::Removable
     } else {
         VolumeKind::Unknown
     };
