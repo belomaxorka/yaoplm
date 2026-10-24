@@ -72,7 +72,30 @@ pub struct Game {
     pub cfg: Option<CfgSummary>,
     pub art: Vec<ArtFile>,
     pub cheats: Option<CheatSummary>,
+    /// How the game lies on a BDM device; `None` when not checked (a
+    /// share, an NTFS folder, or no check asked for).
+    pub fragments: Option<Fragments>,
     pub warnings: Vec<Warning>,
+}
+
+/// Runs of clusters a game's files occupy (IMP-7b).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fragments {
+    /// One count per file, in part order.
+    Known(Vec<u32>),
+    /// The OS does not say where files lie: Linux without root, or a
+    /// macOS driver without a block map.
+    Unknown,
+}
+
+impl Fragments {
+    /// All runs together, when known.
+    pub fn total(&self) -> Option<u32> {
+        match self {
+            Self::Known(runs) => Some(runs.iter().fold(0u32, |sum, &n| sum.saturating_add(n))),
+            Self::Unknown => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,6 +254,21 @@ pub enum Warning {
     AppBootMissing(String),
     /// A YAOPLM operation did not finish; its journal is still on the device.
     UnfinishedOperation(String),
+    /// More runs of clusters in total than OPL's BDM table holds (IMP-7b).
+    Fragmented {
+        fragments: u32,
+        limit: u32,
+    },
+    /// A file of the game in several runs: OPL 1.1.0 refuses it on BDM.
+    FragmentedForOpl110 {
+        fragments: u32,
+    },
+    /// The VMC in a slot is not one run: OPL offers the real card instead.
+    VmcFragmented {
+        slot: u8,
+        name: String,
+        fragments: u32,
+    },
 }
 
 impl Warning {
@@ -262,6 +300,9 @@ impl Warning {
             Self::UlCfgTrailingBytes(_) => "ulCfgTrailingBytes",
             Self::AppBootMissing(_) => "appBootMissing",
             Self::UnfinishedOperation(_) => "unfinishedOperation",
+            Self::Fragmented { .. } => "gameFragmented",
+            Self::FragmentedForOpl110 { .. } => "gameFragmentedOpl110",
+            Self::VmcFragmented { .. } => "vmcSlotFragmented",
         }
     }
 }
@@ -320,6 +361,18 @@ impl Warning {
             Self::UlCfgTrailingBytes(extra) => phrase.with("extra", *extra),
             Self::AppBootMissing(boot) => phrase.with("boot", boot),
             Self::UnfinishedOperation(id) => phrase.with("id", id),
+            Self::Fragmented { fragments, limit } => {
+                phrase.with("fragments", *fragments).with("limit", *limit)
+            }
+            Self::FragmentedForOpl110 { fragments } => phrase.with("fragments", *fragments),
+            Self::VmcFragmented {
+                slot,
+                name,
+                fragments,
+            } => phrase
+                .with("slot", *slot + 1)
+                .with("name", name)
+                .with("fragments", *fragments),
         }
     }
 }

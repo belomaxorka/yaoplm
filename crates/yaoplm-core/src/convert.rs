@@ -677,7 +677,8 @@ pub fn plan_convert(
             .count(count)
             .with("format", target.label())
     };
-    let plan = new_plan(PlanKind::Convert, title(games.len()), &state);
+    let mut plan = new_plan(PlanKind::Convert, title(games.len()), &state);
+    plan.profile = Some(options.profile);
     let mut planner = Planner {
         fs,
         state,

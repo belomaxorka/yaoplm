@@ -15,9 +15,10 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use common::{GIB, big_iso, run, src};
+use yaoplm_core::fragments::check_library;
 use yaoplm_core::import::{ImportOptions, plan_import};
 use yaoplm_core::ops::{DeleteOptions, GameRef, RenameOptions, plan_delete, plan_rename};
-use yaoplm_core::{GameFormat, ScanOptions, scan_library};
+use yaoplm_core::{Fragments, GameFormat, LoaderProfile, ScanOptions, scan_library};
 use yaoplm_device::fs::DeviceFs;
 use yaoplm_device::{FsKind, HostFs};
 use yaoplm_formats::ul_cfg::CHUNK_SIZE;
@@ -58,9 +59,23 @@ fn check(dir: &str, kind: FsKind) {
     let report = run(&plan, &fs, &sources);
     assert!(report.succeeded(), "{:?}", report.error);
 
+    // A fresh volume written in one pass: no game in pieces (IMP-7b).
+    assert!(report.notices.is_empty(), "{:?}", report.notices);
     let root = fs.root();
-    let library = scan_library(root, &ScanOptions::default()).unwrap();
+    let mut library = scan_library(root, &ScanOptions::default()).unwrap();
     assert_eq!(library.games.len(), 2, "{library:?}");
+    check_library(&fs, &mut library, LoaderProfile::Opl120Beta, &|| false);
+    for game in &library.games {
+        println!("{dir}: {} lies in {:?}", game.title, game.fragments);
+        match game.fragments.as_ref().unwrap() {
+            Fragments::Known(runs) => assert!(runs.iter().sum::<u32>() <= 64, "{runs:?}"),
+            Fragments::Unknown => assert_ne!(
+                std::env::var("YAOPLM_FRAGMENTS_KNOWN").as_deref(),
+                Ok("1"),
+                "{dir}: the OS should tell"
+            ),
+        }
+    }
     for game in &library.games {
         assert!(
             game.warnings.is_empty(),

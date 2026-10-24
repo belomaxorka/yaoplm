@@ -234,6 +234,17 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                   {game.layer1Start !== null && (
                     <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
                   )}
+                  {game.fragments !== null && (
+                    <Fact label={t("game.fragments")}>
+                      <span data-testid="game-fragments">
+                        {game.fragments.kind === "unknown"
+                          ? t("game.fragmentsUnknown")
+                          : game.fragments.limit === null
+                            ? t("game.fragmentsOnePerFile", { pieces: game.fragments.total })
+                            : t("game.fragmentsOf", { pieces: game.fragments.total, limit: game.fragments.limit })}
+                      </span>
+                    </Fact>
+                  )}
                 </>
               )}
             </dl>

@@ -17,6 +17,7 @@ pub mod checks;
 pub mod convert;
 pub mod device;
 pub mod exec;
+pub mod fragments;
 mod fsutil;
 pub mod import;
 mod info;
@@ -35,8 +36,8 @@ pub mod verify;
 
 pub use info::{ImageInfo, InfoError, Platform, image_info};
 pub use model::{
-    App, ArtFile, CfgSummary, CheatSummary, Game, GameFormat, GameLocation, Library, SkipReason,
-    Skipped, UlPart, Warning,
+    App, ArtFile, CfgSummary, CheatSummary, Fragments, Game, GameFormat, GameLocation, Library,
+    SkipReason, Skipped, UlPart, Warning,
 };
 pub use scan::{
     CD_MAX_BYTES, OPL_FOLDERS, ScanError, ScanOptions, scan_library, scan_library_with,

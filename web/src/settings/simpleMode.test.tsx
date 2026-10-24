@@ -33,6 +33,7 @@ const game: Game = {
   warnings: [{ code: "test", message: "A warning" }],
   knownTitle: null,
   dump: null,
+  fragments: { kind: "known", total: 1, files: [1], limit: 64 },
 };
 
 /** A core with one scanned game; anything else is not there. */
@@ -159,6 +160,7 @@ describe("simple mode (UI-4)", () => {
         screen.queryByTestId("game-convert"),
         screen.queryByTestId("game-verify"),
         screen.queryByText(game.path),
+        screen.queryByTestId("game-fragments"),
         screen.queryByTestId("cfg-vmc-1"),
         screen.queryByTestId("cfg-gsm"),
         screen.queryByTestId("cfg-cheats"),

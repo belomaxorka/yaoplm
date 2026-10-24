@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use yaoplm_device::RelPath;
-use yaoplm_formats::Media;
+use yaoplm_formats::{LoaderProfile, Media};
 use yaoplm_i18n::Phrase;
 
 /// How a source turns into image bytes.
@@ -280,6 +280,40 @@ mod media_name {
     }
 }
 
+/// `LoaderProfile` by the names the CLI uses; a name this build does not
+/// know reads as absent.
+mod profile_name {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use yaoplm_formats::LoaderProfile;
+
+    fn name(profile: LoaderProfile) -> &'static str {
+        match profile {
+            LoaderProfile::Opl120Beta => "opl-1.2",
+            LoaderProfile::Opl110 => "opl-1.1",
+            LoaderProfile::RiptOpl => "riptopl",
+        }
+    }
+
+    pub fn serialize<S: Serializer>(
+        profile: &Option<LoaderProfile>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        match profile {
+            Some(profile) => s.serialize_some(name(*profile)),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<LoaderProfile>, D::Error> {
+        let text = Option::<String>::deserialize(d)?;
+        Ok(text.and_then(|text| {
+            LoaderProfile::ALL
+                .into_iter()
+                .find(|profile| name(*profile) == text)
+        }))
+    }
+}
+
 /// A key a transaction changes in a CFG, for the plan view (CFG-2):
 /// `None` is absent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -448,6 +482,15 @@ pub struct Plan {
     /// Plan-wide notices. Any [`Level::Error`] here blocks execution.
     pub notices: Vec<Notice>,
     pub free_bytes: u64,
+    /// The loader the plan was made for, when it matters: the executor
+    /// checks the games it writes against its fragment rule (IMP-7b).
+    /// Absent: OPL 1.2.0 beta.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "profile_name"
+    )]
+    pub profile: Option<LoaderProfile>,
 }
 
 impl Plan {
@@ -467,6 +510,7 @@ impl Plan {
             skipped: Vec::new(),
             notices: Vec::new(),
             free_bytes,
+            profile: None,
         }
     }
 

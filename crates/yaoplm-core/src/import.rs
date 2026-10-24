@@ -680,6 +680,7 @@ pub fn plan_import(
         state.info.fingerprint.clone(),
         state.info.free_bytes,
     );
+    plan.profile = Some(options.profile);
     let mut startups = HashSet::new();
     for entry in state.cd.iter().chain(&state.dvd) {
         if let Ok(name) = iso_name::classify(&entry.name)
