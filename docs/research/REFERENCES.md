@@ -222,6 +222,7 @@ psx-place.com sits behind a Cloudflare bot check: automated fetches get 403. Do 
   - PyOPLM: `common.py:141`
   - libopl: `common.py:98`
   - iso2opl: `iso2opl.c:48`
+- **Upstream OPL history was rewritten after v1.1.0** (found 2026-10-24, research/16 §1.1): the tags `v1.0.0` and `v1.1.0` are not ancestors of `master` (GitHub: "No common ancestor"). Their trees reappear as `1f2f266a` and `5db29c2b` without `modules/usbhdfsd/`. Use `5db29c2b..HEAD` for ranges since 1.1.0; `v1.1.0..HEAD` walks all history since 2009.
 - **Repo moves and renames:**
   - Neutrino moved to the `ps2max32` org.
   - Veritas83/PS2-OPL-CFG is now VTSTech/PS2-OPL-CFG.
