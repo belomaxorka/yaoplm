@@ -255,6 +255,7 @@ Sources: config keys in each `include/config.h`, `src/*support.c` file lists, RE
      - `nhddl/` → NHDDL;
      - `mmce_*` keys in `conf_opl.cfg` → MMCE fork.
   6. Later and optional: unpack the ps2-packer LZMA payload and grep `v\d+\.\d+\.\d+-\w+-\d+(-[0-9a-f]{7})?`. The packed layout has not been examined [D].
+- **Superseded in part by research/16 (2026-10-24):** `mmce_*` keys are YAOPL's too; the absence of the keys every beta from build 1871 writes is the stronger `conf_opl.cfg` sign; `CD/`/`DVD/games.bin` record sizes (92 vs 188 bytes) tell the generation that last listed the games; `nhddl/` alone is not NHDDL. The order YAOPLM implements is ADR-0039.
 
 ### 1.10 GitHub `digest` observations
 
