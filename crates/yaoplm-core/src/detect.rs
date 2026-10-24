@@ -237,6 +237,24 @@ struct KnownElf {
     sha256: String,
 }
 
+/// The family a loader program names through the settings files it opens,
+/// whatever its file is called (ADR-0041).
+pub fn program_family(program: &ps2_elf::Program<'_>) -> Option<Family> {
+    PROGRAM_MARKERS
+        .iter()
+        .find(|(marker, _)| program.contains(marker))
+        .map(|&(_, family)| family)
+}
+
+/// The frozen upstream release an ELF's SHA-256 belongs to
+/// (`data/loader-hashes/opl-stable.txt`): `v1.1.0`, `v0.9.3`.
+pub fn stable_version(sha256: &str) -> Option<&'static str> {
+    known_elfs()
+        .iter()
+        .find(|k| k.sha256.eq_ignore_ascii_case(sha256))
+        .map(|k| k.version.as_str())
+}
+
 fn known_elfs() -> &'static [KnownElf] {
     static KNOWN: OnceLock<Vec<KnownElf>> = OnceLock::new();
     KNOWN.get_or_init(|| parse_known(OPL_STABLE))
@@ -389,14 +407,7 @@ impl Scan<'_> {
         let parsed = whole.then(|| ps2_elf::program(&bytes));
         let not_ps2 = matches!(parsed, Some(Err(_)));
         let program = parsed.and_then(Result::ok);
-        let family = program
-            .as_ref()
-            .and_then(|p| {
-                PROGRAM_MARKERS
-                    .iter()
-                    .find(|(marker, _)| p.contains(marker))
-            })
-            .map_or(named, |&(_, family)| family);
+        let family = program.as_ref().and_then(program_family).unwrap_or(named);
         let mut found = FoundLoader {
             family,
             version: None,

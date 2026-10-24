@@ -893,7 +893,11 @@
     "importRedump": "Импорт DAT Redump",
     "gameSettings": "Настройки игры {{title}}",
     "createVmc": "Создать VMC {{name}}",
-    "createVmcs": "Создать карты VMC: {{count}}"
+    "createVmcs": "Создать карты VMC: {{count}}",
+    "updateLoaderCatalog": "Обновление каталога загрузчиков",
+    "loaderRelease": "Сведения о релизе {{build}}",
+    "downloadLoader": "Загрузка {{build}}",
+    "importLoader": "Файл загрузчика {{file}}"
   },
   "errors": {
     "planBlocked": "План нельзя выполнить. {{reason}}",
@@ -981,7 +985,26 @@
     "vmcSize": "Размер VMC — 8, 16, 32 или 64 МиБ, а не {{size}} МиБ",
     "vmcTwice": "VMC {{name}} указана дважды",
     "vmcNameInvalid": "Такое имя VMC не подходит: {{reason}}",
-    "settingsInvalid": "OPL не сможет использовать эту настройку: {{reason}}"
+    "settingsInvalid": "OPL не сможет использовать эту настройку: {{reason}}",
+    "loaderUnknownBuild": "В каталоге загрузчиков нет сборки {{build}}",
+    "loaderTagNotInChannel": "Релиз {{tag}} не относится к сборке {{build}}",
+    "loaderReleaseUnreadable": "Описание релиза на GitHub не удалось прочитать: {{error}}",
+    "loaderReleaseNoVersion": "В релизе {{tag}} нет строки версии, которую знает каталог",
+    "loaderReleaseOtherChannel": "Версия релиза {{version}} — не сборка {{build}}",
+    "loaderAssetMissing": "В релизе {{tag}} нет файла {{asset}}",
+    "loaderAssetUrl": "{{asset}} лежит не в релизах проекта на GitHub, поэтому он не скачивается",
+    "loaderChecksumsDisagree": "Контрольные суммы {{asset}} не совпадают между собой; ничего не скачано",
+    "loaderReleaseChanged": "Сборку {{build}} пересобрали, пока были открыты её сведения; посмотрите новую сборку и скачайте её",
+    "loaderDownloadSize": "{{asset}} весит {{actual, bytes}}, а по релизу должен {{expected, bytes}}; файл не сохранён",
+    "loaderDownloadChecksum": "{{asset}} не совпадает со своей SHA-256; файл не сохранён",
+    "loaderArchiveUnreadable": "Не удалось прочитать {{archive}}: {{error}}",
+    "loaderArchiveMember": "В {{archive}} нет {{member}}",
+    "loaderFileTooLarge": "{{file}} слишком велик для загрузчика",
+    "loaderNotPs2Elf": "{{file}} — не программа PS2",
+    "loaderVersionMismatch": "Внутри {{file}} версия {{found}}, а по релизу должна быть {{expected}}; файл не сохранён",
+    "loaderFileNoElf": "В {{file}} нет ELF загрузчика",
+    "loaderFileSeveralElfs": "В {{file}} несколько ELF загрузчиков ({{count}}); распакуйте тот, который нужно установить",
+    "loaderCatalogInvalid": "Каталог загрузчиков из main не подходит, остаётся тот, что есть в программе: {{error}}"
   },
   "reasons": {
     "appBadBoot": "в boot должно быть просто имя ELF-файла, а не {{boot}}",

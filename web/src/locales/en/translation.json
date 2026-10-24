@@ -845,7 +845,11 @@
     "importRedump": "Redump DAT import",
     "gameSettings": "Settings of {{title}}",
     "createVmc": "Create VMC {{name}}",
-    "createVmcs": "Create VMCs: {{count}}"
+    "createVmcs": "Create VMCs: {{count}}",
+    "updateLoaderCatalog": "Loader catalogue update",
+    "loaderRelease": "Release details of {{build}}",
+    "downloadLoader": "Download of {{build}}",
+    "importLoader": "Loader file {{file}}"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
@@ -933,7 +937,26 @@
     "vmcSize": "A VMC is 8, 16, 32 or 64 MiB, not {{size}} MiB",
     "vmcTwice": "VMC {{name}} is listed twice",
     "vmcNameInvalid": "This VMC name does not work: {{reason}}",
-    "settingsInvalid": "OPL cannot use this setting: {{reason}}"
+    "settingsInvalid": "OPL cannot use this setting: {{reason}}",
+    "loaderUnknownBuild": "No build {{build}} in the loader catalogue",
+    "loaderTagNotInChannel": "Release {{tag}} is not a release of {{build}}",
+    "loaderReleaseUnreadable": "GitHub’s description of the release cannot be read: {{error}}",
+    "loaderReleaseNoVersion": "Release {{tag}} carries no version string the catalogue recognises",
+    "loaderReleaseOtherChannel": "Release version {{version}} is not a build of {{build}}",
+    "loaderAssetMissing": "Release {{tag}} has no file {{asset}}",
+    "loaderAssetUrl": "{{asset}} is not served from the project’s GitHub releases, so it is not downloaded",
+    "loaderChecksumsDisagree": "The checksums of {{asset}} disagree; nothing was downloaded",
+    "loaderReleaseChanged": "{{build}} was rebuilt since its details were shown; look at the new build before downloading it",
+    "loaderDownloadSize": "{{asset}} is {{actual, bytes}}, the release says {{expected, bytes}}; it was not stored",
+    "loaderDownloadChecksum": "{{asset}} does not match its SHA-256; it was not stored",
+    "loaderArchiveUnreadable": "{{archive}} cannot be read: {{error}}",
+    "loaderArchiveMember": "{{archive}} holds no {{member}}",
+    "loaderFileTooLarge": "{{file}} is far too large for a loader",
+    "loaderNotPs2Elf": "{{file}} is not a PS2 program",
+    "loaderVersionMismatch": "{{file}} says it is {{found}}, the release says {{expected}}; it was not stored",
+    "loaderFileNoElf": "{{file}} holds no loader ELF",
+    "loaderFileSeveralElfs": "{{file}} holds several loader ELFs ({{count}}); unpack the one to install",
+    "loaderCatalogInvalid": "The loader catalogue on main cannot be used, the one this program has stays: {{error}}"
   },
   "reasons": {
     "appBadBoot": "boot must be a plain ELF file name, not {{boot}}",

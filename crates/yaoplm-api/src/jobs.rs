@@ -22,6 +22,7 @@ use yaoplm_device::CancelToken;
 use crate::art::{ArtLogState, ArtVariants, CoverSearch};
 use crate::events::EventBus;
 use crate::library::Library;
+use crate::loaders::{LoaderCatalog, LoaderFile, LoaderOffer};
 use crate::phrase::Phrase;
 use crate::plans::{PlanNotice, PlanView, StepOp};
 use crate::verify::{
@@ -50,6 +51,14 @@ pub enum JobKind {
     UpdateRedump,
     /// Reads picture sets and ends with a plan to write them (ART-5).
     ImportArt,
+    /// Reads the loader catalogue on `main` (LDR-1).
+    UpdateLoaderCatalog,
+    /// Says what a download of a loader build would be (LDR-2).
+    LoaderRelease,
+    /// Downloads a loader build and keeps its ELF (LDR-2).
+    DownloadLoader,
+    /// Reads the user's own loader file and keeps its ELF (LDR-2).
+    ImportLoader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +128,9 @@ pub enum JobResult {
     ArtVariants(Box<ArtVariants>),
     Verification(Box<VerificationReport>),
     Redump(Box<RedumpResult>),
+    LoaderCatalog(Box<LoaderCatalog>),
+    LoaderOffer(Box<LoaderOffer>),
+    LoaderFile(Box<LoaderFile>),
 }
 
 /// The state of a transaction in the live log.
