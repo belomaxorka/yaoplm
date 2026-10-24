@@ -10,6 +10,10 @@
 //! Release facts the entries rely on are in research/17 §6–§7.
 
 pub mod catalog;
+pub mod download;
+pub mod local;
+pub mod notes;
+pub mod release;
 pub mod version;
 
 use std::sync::OnceLock;
@@ -19,6 +23,8 @@ pub use catalog::{
     Publisher, SettingsLocation, Target, VersionRule,
 };
 pub use version::BuildVersion;
+
+use yaoplm_i18n::Phrase;
 
 /// The newest catalogue schema this program reads.
 pub const SCHEMA: u32 = 1;
@@ -38,6 +44,20 @@ impl CatalogError {
             file: file.to_owned(),
             message: message.into(),
         }
+    }
+}
+
+/// Why a release, a download or a user's file cannot be used, said to the
+/// user (`errors.loader*`, ADR-0029).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{}", .phrase.english())]
+pub struct LoaderError {
+    pub phrase: Phrase,
+}
+
+impl LoaderError {
+    pub(crate) fn new(phrase: Phrase) -> Self {
+        Self { phrase }
     }
 }
 
