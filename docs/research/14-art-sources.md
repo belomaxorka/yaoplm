@@ -156,3 +156,4 @@ EU `SCES-50003` ("Dead or Alive 2 (Europe) (En,Fr,De,Es,It)"; PCSX2 wrongly titl
 - archive.org's current Terms of Use wording on automated access.
 - Whether OPL Manager's COV2 for Japanese DOA2 is the Japanese back cover (not viewed).
 - Byte identity catches only copies: a wrong-region picture that is not byte-identical to another ID's is not caught.
+- **Serial-keyed sources can be wrong too** (walkthrough of 2026-10-24) **[verified]**: xlenore's `covers/default/SLES-50630.jpg` (Dragon Rage, PAL) is the US cover with the ESRB "T" badge, the same release OPL Manager's backup files under that ID. The policy trusts an ID or serial match, so it takes it; only looking at the picture would tell. A possible hint: when OPL Manager's copy of a cover is flagged as another region's, the other sources' cover for that ID is suspect as well.

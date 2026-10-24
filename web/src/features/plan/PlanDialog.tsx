@@ -45,7 +45,7 @@ export function PlanDialog({ flow, description }: { flow: PlanFlow; description?
           <DialogTitle>{plan ? phraseText(plan.titlePhrase, plan.title) : t("plan.title")}</DialogTitle>
           <DialogDescription>{description ?? (plan ? t("plan.on", { root: plan.root }) : t("plan.building"))}</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto pr-1">
+        <div className="relative min-h-0 flex-1 overflow-auto pr-1">
           {flow.pending && (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground" role="status">
               <Loader2 className="size-4 animate-spin" aria-hidden />

@@ -299,7 +299,7 @@ function FetchBody({
             </p>
           )}
           {job.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("art.cancelled")}</p>}
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="flex min-h-0 flex-1 flex-col">
             <JobLog entries={job.log} />
           </div>
         </div>
@@ -445,7 +445,7 @@ function QuickBody({
           {job?.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("art.cancelled")}</p>}
           {/* The per-game log is a detail for the advanced mode. */}
           {job && !simple && (
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="flex min-h-0 flex-1 flex-col">
               <JobLog entries={job.log} />
             </div>
           )}

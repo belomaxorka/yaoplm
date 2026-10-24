@@ -649,6 +649,7 @@
     "artCacheState_many": "{{count}} объектов, {{size}} в {{path}}",
     "artCacheState_other": "{{count}} объектов, {{size}} в {{path}}",
     "clearArtCache": "Очистить кэш",
+    "clearArtCacheFailed": "Кэш удалось очистить не полностью: {{error}}",
     "interface": "Интерфейс",
     "simpleMode": "Простой режим",
     "simpleModeHint": "Прячет сортировку, счётчики, конвертацию, импорт наборов картинок, страницу заданий и технические подробности. Выключите, чтобы видеть всё.",

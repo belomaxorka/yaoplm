@@ -67,9 +67,7 @@ export function CoverSearchPanel({
         </p>
       )}
       {!simple && job && job.log.length > 0 && (
-        <div className="max-h-48 overflow-auto">
-          <JobLog entries={job.log} />
-        </div>
+        <JobLog entries={job.log} height="max-h-48" />
       )}
     </div>
   );

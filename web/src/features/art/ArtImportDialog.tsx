@@ -189,7 +189,7 @@ function ImportBody({
   return (
     <>
       {showForm && (
-        <div className="flex min-h-0 flex-col gap-4 overflow-auto">
+        <div className="relative flex min-h-0 flex-col gap-4 overflow-auto">
           <section className="flex flex-col gap-2" aria-labelledby={`${ids}-sets`}>
             <h3 id={`${ids}-sets`} className="text-sm font-medium">
               {t("artImport.sets")}
@@ -199,7 +199,7 @@ function ImportBody({
                 {desktop ? t("artImport.noSetsDesktop") : t("artImport.noSets")}
               </p>
             ) : (
-              <ul className="max-h-40 overflow-auto rounded-md border" data-testid="art-import-sets">
+              <ul className="relative max-h-40 overflow-auto rounded-md border" data-testid="art-import-sets">
                 {sets.map((path) => (
                   <li key={path} className="flex items-center gap-2 border-b px-2 py-1 text-sm last:border-0">
                     <SetIcon path={path} />
@@ -293,7 +293,7 @@ function ImportBody({
             </p>
           )}
           {job.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("artImport.cancelled")}</p>}
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="flex min-h-0 flex-1 flex-col">
             <JobLog entries={job.log} />
           </div>
         </div>

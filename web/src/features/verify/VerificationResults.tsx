@@ -38,7 +38,7 @@ export function VerificationResults({
       {report.dat && (
         <p className="text-xs text-muted-foreground">{t("dump.comparedWith", { version: report.dat.version, games: report.dat.games })}</p>
       )}
-      <ul className="min-h-0 flex-1 overflow-auto rounded-md border text-sm">
+      <ul className="relative min-h-0 flex-1 overflow-auto rounded-md border text-sm">
         {sorted.map((game) => (
           <ResultRow key={`${game.path}:${game.ulIndex ?? ""}`} game={game} />
         ))}

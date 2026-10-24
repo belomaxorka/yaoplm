@@ -27,6 +27,16 @@ import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
+/** The file name at the end of a URL or a path, with `%20` and the like decoded. */
+function fileName(origin: string): string {
+  const name = origin.replace(/^.*[\\/]/, "");
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
 /**
  * "Download" on a picture slot (ART-2, SPEC §5.4.1): every picture of the
  * type the sources have for the game, already resized, to pick from; the
@@ -155,7 +165,7 @@ function VariantsBody({
           value={String(chosen)}
           onValueChange={(value) => setChosen(Number(value))}
           aria-label={t(`art.kinds.${kind}`)}
-          className="min-h-0 grid-cols-2 gap-3 overflow-auto p-1 sm:grid-cols-3"
+          className="relative min-h-0 grid-cols-2 gap-3 overflow-auto p-1 sm:grid-cols-3"
         >
           {variants.map((variant, index) => (
             <RadioGroupPrimitive.Item
@@ -178,7 +188,7 @@ function VariantsBody({
                 {index === chosen && <Check className="size-3" aria-hidden />}
                 {variant.source}
               </span>
-              <span className="truncate font-mono text-[0.65rem] text-muted-foreground">{variant.origin.replace(/^.*[\\/]/, "")}</span>
+              <span className="truncate font-mono text-[0.65rem] text-muted-foreground">{fileName(variant.origin)}</span>
             </RadioGroupPrimitive.Item>
           ))}
         </RadioGroup>

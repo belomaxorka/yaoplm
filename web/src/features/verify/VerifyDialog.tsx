@@ -135,7 +135,7 @@ function VerifyBody({
   return (
     <>
       {showForm && (
-        <div className="flex min-h-0 flex-col gap-4 overflow-auto">
+        <div className="relative flex min-h-0 flex-col gap-4 overflow-auto">
           <RedumpPanel compact />
           {!only && (
             <fieldset>
@@ -190,7 +190,7 @@ function VerifyBody({
             </p>
           )}
           {job.status === "cancelled" && <p className="text-sm text-muted-foreground">{t("dump.cancelled")}</p>}
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="flex min-h-0 flex-1 flex-col">
             <JobLog entries={job.log} />
           </div>
         </div>

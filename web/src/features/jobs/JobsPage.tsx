@@ -106,7 +106,10 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
   const value = percent(job.done, job.total);
   const bytes = job.kind === "executePlan" || job.kind === "verifyGames";
-  const eta = formatEta(job.done, job.total, job.rate);
+  // Speed, time left and the item being worked on mean nothing once the
+  // job has ended: the last item would read as still in progress.
+  const active = job.status === "queued" || job.status === "running";
+  const eta = active ? formatEta(job.done, job.total, job.rate) : null;
   return (
     <div className="flex flex-col gap-1">
       <Progress
@@ -120,9 +123,9 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
           {job.total !== null && ` / ${bytes ? formatBytes(job.total) : job.total}`}
           {value !== null && ` (${value}%)`}
         </span>
-        {job.rate !== null && <span>{formatRate(job.rate)}</span>}
+        {active && job.rate !== null && <span>{formatRate(job.rate)}</span>}
         {eta && <span>{t("jobs.eta", { time: eta })}</span>}
-        {job.item && (
+        {active && job.item && (
           <span className="truncate" title={phraseText(job.itemPhrase, job.item)}>
             {phraseText(job.itemPhrase, job.item)}
           </span>
@@ -345,14 +348,21 @@ const artStateColours = {
   failed: "text-destructive",
 } as const;
 
-export function JobLog({ entries: all }: { entries: readonly JobLogEntry[] }) {
+/**
+ * A job's log, scrolling by itself: wrap it without `overflow`, or the
+ * page shows two scrollbars. `height` caps it (`max-h-72` by default).
+ */
+export function JobLog({ entries: all, height }: { entries: readonly JobLogEntry[]; height?: string }) {
   const { t } = useTranslation();
   const simple = useSimpleMode();
   // Each step of a write (started, done) is a detail: simple mode shows what happened to each game.
   const entries = simple ? all.filter((entry) => entry.kind !== "step") : all;
   if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
   return (
-    <ol className="mt-1 max-h-72 overflow-auto rounded-md border bg-background p-2 font-mono text-xs" data-testid="job-log">
+    <ol
+      className={cn("relative mt-1 min-h-0 overflow-auto rounded-md border bg-background p-2 font-mono text-xs", height ?? "max-h-72")}
+      data-testid="job-log"
+    >
       {entries.map((entry, index) => (
         <li
           key={index}

@@ -139,6 +139,9 @@ test("games are added with their covers and checked as they are written", async 
     "Pictures found: 1, not found: 13, on the device already: 2.",
   );
   await expect(search.getByTestId("job-log")).toContainText("SLUS_299.99 New Game: found at xlenore");
+  // A long plan scrolls inside the page, never the window as well (the
+  // second scrollbar of the 2026-10-24 walkthrough).
+  expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
   // The plan comes back with the cover right after its game.
   const steps = plan.getByTestId("plan-transaction");
   await expect(steps).toHaveCount(3);

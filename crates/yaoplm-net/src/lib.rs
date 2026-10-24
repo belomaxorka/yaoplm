@@ -383,12 +383,19 @@ impl ArtService {
     /// Every picture the sources have for the request, in source order,
     /// with the alternatives (3-D covers, more screenshots): what a user
     /// picks from (SPEC §5.4.1). Pictures that may show another market's
-    /// release come last. A source answers once per place, a second apart.
+    /// release come last. The game's other releases are asked only when its
+    /// own serial has nothing, as in [`Self::fetch_cover`]: each of their
+    /// pictures is another request to wait for. A source answers once per
+    /// place, a second apart.
     pub async fn find_variants(&self, request: &CoverRequest<'_>) -> (Vec<Cover>, Vec<Attempt>) {
         let mut attempts = Vec::new();
         let mut found: Vec<Cover> = Vec::new();
         let mut last: Vec<Cover> = Vec::new();
-        for (request, config) in Self::plan(request) {
+        let own = sources::ordered(request.sources, request.kind, request.size).len();
+        for (index, (request, config)) in Self::plan(request).into_iter().enumerate() {
+            if index == own && !(found.is_empty() && last.is_empty()) {
+                break;
+            }
             for picture in self.ask_source(config, &request, true, &mut attempts).await {
                 // Several Redump names often lead to the same file.
                 let seen = found
@@ -444,7 +451,7 @@ impl ArtService {
         let info = source.info();
         let stored = self.cache.put(
             source.as_str(),
-            &candidate.key,
+            &mirror_key(dir, &candidate.key),
             &Download {
                 url: &target,
                 bytes: &bytes,
@@ -919,6 +926,15 @@ impl ArtService {
     }
 }
 
+/// The cache key of a picture read from the mirror in `dir`: apart from
+/// the key the network uses, so a mirror's file (a test fixture, a local
+/// copy) never answers for the source on the network, and two mirrors never
+/// answer for each other.
+fn mirror_key(dir: &Path, key: &str) -> String {
+    let folder = cache::sha256_hex(dir.to_string_lossy().as_bytes());
+    format!("mirror/{}/{key}", &folder[..12])
+}
+
 /// `text` with ScreenScraper credentials removed from any URL in it.
 fn redact_all(text: &str) -> String {
     screenscraper::redact_text(text)
@@ -1301,6 +1317,58 @@ mod tests {
         );
     }
 
+    /// The walkthrough of 2026-10-24: a cover once read from a test mirror
+    /// was served from the cache as xlenore's cover on the network.
+    #[tokio::test]
+    async fn a_mirror_never_answers_for_the_network() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "/covers/default/SLUS-20062.jpg".to_owned(),
+            Reply::ok("image/jpeg", jpeg(300, 420)),
+        );
+        let (base, seen) = serve(routes).await;
+        let (_dir, service) = service();
+        let mirror = tempfile::tempdir().unwrap();
+        let covers = mirror.path().join("covers").join("default");
+        std::fs::create_dir_all(&covers).unwrap();
+        std::fs::write(covers.join("SLUS-20062.jpg"), jpeg(200, 300)).unwrap();
+        let sources = [SourceConfig::mirror(SourceId::Xlenore, mirror.path())];
+        let from_mirror = service
+            .fetch_cover(&CoverRequest {
+                kind: ArtKind::Cov,
+                serial: "SLUS-20062",
+                redump_names: &[],
+                size: SIZE,
+                sources: &sources,
+                revalidate: false,
+                others: &[],
+            })
+            .await
+            .cover
+            .unwrap();
+        assert!(
+            from_mirror.key.starts_with("mirror/"),
+            "{}",
+            from_mirror.key
+        );
+        // The same cover on the network is asked for, not taken from the
+        // mirror's copy in the cache.
+        let (cover, attempts) = fetch_url(
+            &service,
+            SourceId::Xlenore,
+            "SLUS-20062",
+            vec![format!("{base}/covers/default/SLUS-20062.jpg")],
+            false,
+        )
+        .await;
+        assert_eq!(attempts.last().unwrap().result, AttemptResult::Downloaded);
+        assert_ne!(
+            std::fs::read(cover.unwrap().png).unwrap(),
+            std::fs::read(&from_mirror.png).unwrap()
+        );
+        assert_eq!(seen.lock().unwrap().requests.len(), 1);
+    }
+
     #[tokio::test]
     async fn variants_and_kinds_from_mirrors() {
         let (_dir, service) = service();
@@ -1434,5 +1502,21 @@ mod tests {
         let cover = service.fetch_cover(&request(ArtKind::Cov)).await;
         assert!(cover.cover.is_none());
         assert!(cover.attempts.iter().all(|a| !a.target.contains("Europe")));
+        // To pick from, too, the other release stands in only for nothing.
+        let (variants, _) = service.find_variants(&request(ArtKind::Scr)).await;
+        assert_eq!(variants.len(), 1);
+        assert!(variants[0].origin.ends_with("Game (Europe).png"));
+        std::fs::write(
+            thumbs.path().join("Named_Snaps").join("Game (Japan).png"),
+            png(48, 64),
+        )
+        .unwrap();
+        let (variants, attempts) = service.find_variants(&request(ArtKind::Scr)).await;
+        assert_eq!(variants.len(), 1);
+        assert!(variants[0].origin.ends_with("Game (Japan).png"));
+        assert!(
+            attempts.iter().all(|a| !a.target.contains("Europe")),
+            "{attempts:?}"
+        );
     }
 }
