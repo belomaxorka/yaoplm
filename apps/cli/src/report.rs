@@ -10,6 +10,7 @@ use yaoplm_api::library::{
     GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice, Platform,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
+use yaoplm_api::settings::{CfgView, VmcCard};
 use yaoplm_api::verify::{
     GameVerification, RedumpInfo, UnknownReason, VerificationReport, VerifyStatus,
 };
@@ -369,6 +370,7 @@ fn step_line(step: &PlanStep) -> String {
                 .unwrap_or_default();
             format!("+ compress to {}{at_most}{from}", step.path)
         }
+        StepOp::WriteVmc => format!("+ format memory card {}{bytes}", step.path),
         StepOp::PutFile => format!("~ update {}{bytes}", step.path),
         StepOp::CopyFile => format!("+ copy {} to {to}", step.path),
         StepOp::Rename => format!("~ rename {} to {to}", step.path),
@@ -411,6 +413,15 @@ pub fn plan(plan: &PlanView) -> String {
         for step in &tx.steps {
             let _ = writeln!(out, "     {}", step_line(step));
         }
+        for change in &tx.cfg_changes {
+            let _ = writeln!(
+                out,
+                "     {}: {} -> {}",
+                change.key,
+                change.before.as_deref().unwrap_or("(none)"),
+                change.after.as_deref().unwrap_or("(removed)")
+            );
+        }
         plan_notices(&mut out, "     ", &tx.notices);
     }
     if !plan.skipped.is_empty() {
@@ -444,6 +455,7 @@ pub fn execution(plan: &PlanView, report: &ExecutionReport) -> String {
     if let Some(error) = &report.error {
         let _ = writeln!(out, "Error: {error}");
     }
+    plan_notices(&mut out, "", &report.notices);
     if let Some(journal) = &report.journal {
         let _ = writeln!(
             out,
@@ -456,6 +468,143 @@ pub fn execution(plan: &PlanView, report: &ExecutionReport) -> String {
             verification_game(&mut out, game);
         }
         verification_counts(&mut out, &report.checks);
+    }
+    out
+}
+
+/// OPL's compatibility modes by bit (research/02 §6.3; RiptOPL adds 7, 8).
+const MODES: [&str; 8] = [
+    "accurate reads",
+    "synchronous mode",
+    "unhook syscalls",
+    "skip videos",
+    "emulate DVD-DL",
+    "disable IGR",
+    "RiptOPL: Neutrino buffer fix",
+    "RiptOPL: slow reads",
+];
+
+fn on_off(on: bool) -> &'static str {
+    if on { "on" } else { "off" }
+}
+
+/// `yaoplm cfg <root> <game>`.
+pub fn cfg(view: &CfgView) -> String {
+    let mut out = String::new();
+    let state = match (view.exists, view.editable) {
+        (false, _) => " (not there yet: OPL uses its defaults)",
+        (true, false) => " (wOPL libconfig: shown only, never rewritten)",
+        (true, true) => "",
+    };
+    let _ = writeln!(out, "{}  {}{state}", view.startup, view.path);
+    let s = &view.settings;
+    let modes: Vec<String> = (0..8)
+        .filter(|bit| s.compatibility & (1 << bit) != 0)
+        .map(|bit| format!("{} ({})", bit + 1, MODES[bit as usize]))
+        .collect();
+    let _ = writeln!(
+        out,
+        "Modes:        {}",
+        if modes.is_empty() {
+            "none".to_owned()
+        } else {
+            modes.join(", ")
+        }
+    );
+    for (slot, name) in s.vmc.iter().enumerate() {
+        let shown = if name.is_empty() { "-" } else { name.as_str() };
+        let _ = writeln!(out, "VMC slot {}:   {shown}", slot + 1);
+    }
+    if !s.alt_startup.is_empty() {
+        let _ = writeln!(out, "Alt. startup: {}", s.alt_startup);
+    }
+    if let Some(dma) = s.dma {
+        let _ = writeln!(out, "DMA:          {dma} (HDD)");
+    }
+    let gsm = &s.gsm;
+    let _ = writeln!(
+        out,
+        "GSM:          {}",
+        if gsm.per_game {
+            format!(
+                "{} mode {}, offsets {}/{}, field fix {}",
+                on_off(gsm.enabled),
+                gsm.vmode,
+                gsm.x_offset,
+                gsm.y_offset,
+                on_off(gsm.field_fix)
+            )
+        } else {
+            "global".to_owned()
+        }
+    );
+    let cheats = &s.cheats;
+    let _ = writeln!(
+        out,
+        "Cheats:       {}",
+        if cheats.per_game {
+            format!(
+                "{}, {}",
+                on_off(cheats.enabled),
+                if cheats.mode == 0 {
+                    "all codes"
+                } else {
+                    "pick at launch"
+                }
+            )
+        } else {
+            "global".to_owned()
+        }
+    );
+    let pad = &s.pad_emu;
+    let _ = writeln!(
+        out,
+        "PADEMU:       {}",
+        if pad.per_game {
+            format!("{}, settings 0x{:08X}", on_off(pad.enabled), pad.settings)
+        } else {
+            "global".to_owned()
+        }
+    );
+    if !view.entries.is_empty() {
+        let _ = writeln!(out, "Keys:");
+        for entry in &view.entries {
+            let _ = writeln!(out, "  {}={}", entry.key, entry.value);
+        }
+    }
+    out
+}
+
+/// `yaoplm vmc ls <root>`.
+pub fn vmcs(cards: &[VmcCard]) -> String {
+    let mut out = String::new();
+    if cards.is_empty() {
+        let _ = writeln!(out, "No memory cards in VMC/.");
+        return out;
+    }
+    for card in cards {
+        let state = match (card.size_mb, &card.problem) {
+            (Some(mb), _) => {
+                let saves = card
+                    .saves
+                    .map(|n| format!(", {n} saves"))
+                    .unwrap_or_default();
+                format!("{mb} MiB{saves}")
+            }
+            (None, Some(problem)) => format!("{}: OPL refuses it: {problem}", size(card.size)),
+            (None, None) => size(card.size),
+        };
+        let users: Vec<String> = card
+            .used_by
+            .iter()
+            .map(|u| format!("{} slot {}", u.startup, u.slot + 1))
+            .collect();
+        let used = if users.is_empty() {
+            String::new()
+        } else {
+            format!("  used by {}", users.join(", "))
+        };
+        let _ = writeln!(out, "{}  {state}{used}", card.name);
     }
     out
 }

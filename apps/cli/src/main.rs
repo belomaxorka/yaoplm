@@ -12,12 +12,14 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, bail};
+use clap::builder::TypedValueParser as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use yaoplm_api::art::{ArtInput, ArtScope, ArtSourceSetting, ArtType};
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
+use yaoplm_api::settings::{CfgPair, CfgView, NewVmc};
 use yaoplm_api::verify::{RedumpUpdate, VerifyStatus};
 use yaoplm_api::{
     Api, ConvertTarget, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request,
@@ -197,6 +199,47 @@ enum Command {
         #[command(flatten)]
         apply: Apply,
     },
+    /// Show a game's settings (its CFG/<ID>.cfg), or change them: OPL's
+    /// compatibility modes, VMC slots, the alternative startup, any key.
+    ///
+    /// Changes follow OPL's own game menu: a setting back at its default
+    /// loses its key, every other key and line stays as it is. The plan
+    /// lists each key before and after; the old CFG is kept in
+    /// .yaoplm/backup/.
+    Cfg {
+        root: PathBuf,
+        /// ID, title, file name, path or ul:<index>.
+        game: String,
+        /// Turn compatibility mode N on: 1 to 6 (7 and 8 only with
+        /// --profile riptopl). Repeatable.
+        #[arg(long = "mode", value_name = "N")]
+        modes: Vec<u8>,
+        /// Turn compatibility mode N off. Repeatable.
+        #[arg(long = "no-mode", value_name = "N")]
+        no_modes: Vec<u8>,
+        /// Put VMC/<NAME>.bin in slot 0 ($VMC_0, OPL's "VMC Slot 1") or 1;
+        /// an empty NAME empties the slot. Repeatable.
+        #[arg(long = "vmc", value_name = "SLOT=NAME")]
+        vmc: Vec<String>,
+        /// Boot this ELF on the disc instead of the one SYSTEM.CNF names,
+        /// e.g. SLUS_200.63; "" removes it.
+        #[arg(long)]
+        alt_startup: Option<String>,
+        /// Set a key to a value as given. Repeatable.
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// Remove a key. Repeatable.
+        #[arg(long = "unset", value_name = "KEY")]
+        unset: Vec<String>,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Memory cards (VMC): list them, or create blank ones formatted the
+    /// way OPL formats them.
+    Vmc {
+        #[command(subcommand)]
+        command: VmcCommand,
+    },
     /// Covers: download them, set one from a file, remove one.
     Art {
         #[command(subcommand)]
@@ -241,6 +284,40 @@ enum Command {
         /// Print the answer as JSON.
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum VmcCommand {
+    /// List VMC/: size, whether OPL takes each card, its saves, and the
+    /// games whose CFG names it.
+    Ls {
+        root: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Create a blank card, formatted like OPL's own (no ECC, exactly the
+    /// size), as one file whose space is reserved first.
+    Create {
+        root: PathBuf,
+        /// VMC/<NAME>.bin; at most 31 characters. OPL suggests <ID>_0 and
+        /// <ID>_1, or generic_0 and generic_1 for a card games share.
+        name: String,
+        /// MiB: 8, 16, 32 or 64.
+        #[arg(long, default_value_t = 8, value_parser = clap::builder::PossibleValuesParser::new(["8", "16", "32", "64"]).map(|s| s.parse::<u32>().unwrap_or(8)))]
+        size: u32,
+        /// Also put the card in this game's slot.
+        #[arg(long)]
+        game: Option<String>,
+        /// The slot for --game: 0 ($VMC_0, OPL's "VMC Slot 1") or 1.
+        #[arg(long, default_value_t = 0, requires = "game", value_parser = clap::value_parser!(u8).range(0..=1))]
+        slot: u8,
+        /// Replace a card with that name: it moves to .yaoplm/backup/ with
+        /// its saves.
+        #[arg(long)]
+        replace: bool,
+        #[command(flatten)]
+        apply: Apply,
     },
 }
 
@@ -639,6 +716,84 @@ fn main() -> anyhow::Result<ExitCode> {
             };
             plan_and_apply(&api, request, &apply)
         }
+        Command::Cfg {
+            root,
+            game,
+            modes,
+            no_modes,
+            vmc,
+            alt_startup,
+            set,
+            unset,
+            apply,
+        } => {
+            let game = find_game(&api, &root, &game, apply.profile)?;
+            let view = match read_cfg(&api, &root, &game) {
+                Ok(view) => view,
+                Err(error) => return fail(&error, apply.json),
+            };
+            let structured = !(modes.is_empty() && no_modes.is_empty() && vmc.is_empty())
+                || alt_startup.is_some();
+            if !structured && set.is_empty() && unset.is_empty() {
+                if apply.json {
+                    print_json(&view, true);
+                } else {
+                    print!("{}", report::cfg(&view));
+                }
+                return Ok(ExitCode::SUCCESS);
+            }
+            let mut settings = view.settings.clone();
+            for (on, list) in [(true, &modes), (false, &no_modes)] {
+                for &mode in list {
+                    if !(1..=8).contains(&mode) {
+                        bail!("compatibility modes are 1 to 8, not {mode}");
+                    }
+                    let bit = 1u32 << (mode - 1);
+                    if on {
+                        settings.compatibility |= bit;
+                    } else {
+                        settings.compatibility &= !bit;
+                    }
+                }
+            }
+            for slot_name in &vmc {
+                let (slot, name) = slot_name
+                    .split_once('=')
+                    .with_context(|| format!("--vmc takes SLOT=NAME, got {slot_name:?}"))?;
+                let slot: usize = match slot {
+                    "0" => 0,
+                    "1" => 1,
+                    _ => bail!("VMC slots are 0 and 1, not {slot:?}"),
+                };
+                settings.vmc[slot] = name.to_owned();
+            }
+            if let Some(alt) = alt_startup {
+                settings.alt_startup = alt;
+            }
+            let set = set
+                .iter()
+                .map(|pair| {
+                    let (key, value) = pair
+                        .split_once('=')
+                        .with_context(|| format!("--set takes KEY=VALUE, got {pair:?}"))?;
+                    Ok(CfgPair {
+                        key: key.to_owned(),
+                        value: value.to_owned(),
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let request = Request::WriteCfg {
+                root: text(&root),
+                game,
+                profile: Some(apply.profile.into()),
+                settings: structured.then_some(settings),
+                set: (!set.is_empty()).then_some(set),
+                unset: (!unset.is_empty()).then_some(unset),
+                cards: None,
+            };
+            plan_and_apply(&api, request, &apply)
+        }
+        Command::Vmc { command } => vmc(&api, command),
         Command::Art { command } => art(&api, command),
         Command::Verify {
             root,
@@ -820,6 +975,70 @@ fn find_import_covers(
     };
     let _ = api.dispatch(Request::DiscardPlan { plan: plan.id });
     Ok(Ok(found))
+}
+
+fn read_cfg(api: &Api, root: &Path, game: &GameRef) -> Result<Box<CfgView>, yaoplm_api::ApiError> {
+    match api.dispatch(Request::ReadCfg {
+        root: text(root),
+        game: game.clone(),
+    })? {
+        Response::Cfg(view) => Ok(view),
+        other => Err(yaoplm_api::ApiError::internal(format!(
+            "unexpected answer {other:?}"
+        ))),
+    }
+}
+
+fn vmc(api: &Api, command: VmcCommand) -> anyhow::Result<ExitCode> {
+    match command {
+        VmcCommand::Ls { root, common } => {
+            let response = api.dispatch(Request::ListVmc { root: text(&root) });
+            show(response, common.json, |response| match response {
+                Response::Vmcs { cards } => print!("{}", report::vmcs(cards)),
+                other => print_json(other, true),
+            })
+        }
+        VmcCommand::Create {
+            root,
+            name,
+            size,
+            game,
+            slot,
+            replace,
+            apply,
+        } => {
+            let card = NewVmc {
+                name: name.clone(),
+                size_mb: size,
+                replace: replace.then_some(true),
+            };
+            let request = match game {
+                None => Request::CreateVmc {
+                    root: text(&root),
+                    cards: vec![card],
+                },
+                Some(game) => {
+                    let game = find_game(api, &root, &game, apply.profile)?;
+                    let view = match read_cfg(api, &root, &game) {
+                        Ok(view) => view,
+                        Err(error) => return fail(&error, apply.json),
+                    };
+                    let mut settings = view.settings.clone();
+                    settings.vmc[usize::from(slot)] = name;
+                    Request::WriteCfg {
+                        root: text(&root),
+                        game,
+                        profile: Some(apply.profile.into()),
+                        settings: Some(settings),
+                        set: None,
+                        unset: None,
+                        cards: Some(vec![card]),
+                    }
+                }
+            };
+            plan_and_apply(api, request, &apply)
+        }
+    }
 }
 
 /// `xlenore=DIR` and `--skip-source` flags as the API wants them.
