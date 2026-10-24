@@ -1,46 +1,68 @@
-//! Where pictures come from (ART-1, ART-2, ADR-0007, research/03 §2.2-2.3,
-//! SPEC §5.4.1).
+//! Where pictures come from (ART-1, ART-2, ADR-0007, ADR-0034, research/03
+//! §2, research/14, SPEC §5.4.1).
 //!
-//! Two sources, tried in order:
+//! Four sources:
 //! 1. `xlenore/ps2-covers`: front covers (COV) by serial,
 //!    `covers/default/<SERIAL>.jpg`, the URL template PCSX2's own cover
 //!    downloader uses, and 3-D renders in `covers/3d/<SERIAL>.png`,
 //!    offered as another COV to choose from. No licence file, so it is
 //!    fetched only when the user asks and never bundled.
-//! 2. `libretro-thumbnails/Sony_-_PlayStation_2`: `<folder>/<Redump
+//! 2. OPL Manager's art backup `OPLM_ART_2024_09` on archive.org: every
+//!    type, by OPL ID, read member by member ([`crate::oplm`]). The only
+//!    keyless source of icons, back covers, spines and backgrounds.
+//! 3. `libretro-thumbnails/Sony_-_PlayStation_2`: `<folder>/<Redump
 //!    name>.png`, served by `thumbnails.libretro.com` with the raw GitHub
-//!    URL as a fallback: `Named_Boxarts` (COV), `Named_Snaps` (SCR),
-//!    `Named_Titles` (SCR2), `Named_Logos` (LGO). The names come from the
-//!    bundled DAT (META-1).
+//!    URL as a fallback: `Named_Boxarts` (COV), `Named_Snaps` (SCR, and BG
+//!    when nothing else has one), `Named_Titles` (SCR2), `Named_Logos`
+//!    (LGO). The names come from the bundled DAT (META-1).
+//! 4. ScreenScraper: every type by serial, with the market of each
+//!    picture, once a developer key is set up ([`crate::screenscraper`]).
 //!
-//! ICO, COV2, LAB and BG have no open source: art packs and the user's own
-//! files fill them (ART-3, ART-5).
+//! The user does not pick a source: each type has its own order
+//! ([`order`]), and the first source with a fitting picture wins. Packaging
+//! (COV, COV2, LAB, ICO) only comes from a match on the game's ID or
+//! serial, or on a name tagged with its market ([`crate::region`]).
 //!
-//! Neither goes through the GitHub API (60 requests per hour unauthenticated,
+//! None goes through the GitHub API (60 requests per hour unauthenticated,
 //! which is where OrbitPS2 Manager's bulk downloads stall, research/11).
-//! Each source can instead read a local mirror: a clone of the repository,
-//! or any folder with the same layout. The mirror is also what the tests
-//! and the e2e fixture use, so CI never touches the network.
+//! Each source but ScreenScraper can instead read a local mirror: a clone
+//! of the repository, or any folder with the same layout. The mirror is
+//! also what the tests and the e2e fixture use, so CI never touches the
+//! network.
 
 use std::path::{Path, PathBuf};
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use yaoplm_formats::art::ArtKind;
+use yaoplm_formats::art::{ArtKind, ArtSize, ArtSubject, recommended_size};
+use yaoplm_formats::profile::LoaderProfile;
+use yaoplm_formats::serial;
+
+use crate::region;
+use crate::screenscraper::Account;
 
 /// A source id, stable on the wire and in the cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceId {
     Xlenore,
+    Oplm,
     Libretro,
+    ScreenScraper,
 }
 
 impl SourceId {
-    pub const ALL: [Self; 2] = [Self::Xlenore, Self::Libretro];
+    pub const ALL: [Self; 4] = [
+        Self::Xlenore,
+        Self::Oplm,
+        Self::Libretro,
+        Self::ScreenScraper,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Xlenore => "xlenore",
+            Self::Oplm => "oplm",
             Self::Libretro => "libretro",
+            Self::ScreenScraper => "screenscraper",
         }
     }
 
@@ -52,8 +74,33 @@ impl SourceId {
     pub fn kinds(self) -> &'static [ArtKind] {
         match self {
             Self::Xlenore => &[ArtKind::Cov],
-            Self::Libretro => &[ArtKind::Cov, ArtKind::Scr, ArtKind::Scr2, ArtKind::Lgo],
+            Self::Libretro => &[
+                ArtKind::Cov,
+                ArtKind::Scr,
+                ArtKind::Scr2,
+                ArtKind::Lgo,
+                ArtKind::Bg,
+            ],
+            Self::Oplm | Self::ScreenScraper => &ArtKind::ALL,
         }
+    }
+
+    /// Finds pictures by the Redump names of the bundled database, so a
+    /// game without one is not looked up there.
+    pub fn needs_redump_name(self) -> bool {
+        self == Self::Libretro
+    }
+
+    /// The size of the source's pictures of `kind`, when they all have
+    /// one: OPL Manager's backup holds them at OPL's sizes.
+    pub fn native_size(self, kind: ArtKind) -> Option<ArtSize> {
+        (self == Self::Oplm).then(|| {
+            recommended_size(
+                LoaderProfile::Opl120Beta,
+                ArtSubject::Game { startup: "" },
+                kind,
+            )
+        })
     }
 
     pub fn info(self) -> SourceInfo {
@@ -72,8 +119,61 @@ impl SourceId {
                 license_tag: "unlicensed",
                 attribution: "libretro-thumbnails contributors",
             },
+            Self::Oplm => SourceInfo {
+                id: self,
+                name: "OPL Manager art backup (archive.org)",
+                url: "https://archive.org/details/OPLM_ART_2024_09",
+                license_tag: "unlicensed",
+                attribution: "OPL Manager ART database users, backup OPLM_ART_2024_09 by danielb",
+            },
+            Self::ScreenScraper => SourceInfo {
+                id: self,
+                name: "ScreenScraper",
+                url: "https://www.screenscraper.fr",
+                license_tag: "CC BY-NC-SA 4.0",
+                attribution: "ScreenScraper.fr contributors",
+            },
         }
     }
+}
+
+/// The sources for `kind`, best first (ADR-0034, research/14 §5):
+///
+/// | Type | Order |
+/// |---|---|
+/// | COV | xlenore, OPL Manager, libretro, ScreenScraper |
+/// | ICO, COV2, LAB | OPL Manager, ScreenScraper |
+/// | BG | OPL Manager, ScreenScraper, libretro (a screenshot) |
+/// | SCR, SCR2, LGO | libretro, OPL Manager, ScreenScraper |
+///
+/// A source whose pictures are smaller than the slot goes after the
+/// others: OPL Manager's 140x200 covers and 64x64 icons come last for
+/// RiptOPL's 280x400 and 128x128.
+pub fn order(kind: ArtKind, size: ArtSize) -> Vec<SourceId> {
+    use SourceId::{Libretro, Oplm, ScreenScraper, Xlenore};
+    let base: &[SourceId] = match kind {
+        ArtKind::Cov => &[Xlenore, Oplm, Libretro, ScreenScraper],
+        ArtKind::Ico | ArtKind::Cov2 | ArtKind::Lab => &[Oplm, ScreenScraper],
+        ArtKind::Bg => &[Oplm, ScreenScraper, Libretro],
+        ArtKind::Scr | ArtKind::Scr2 | ArtKind::Lgo => &[Libretro, Oplm, ScreenScraper],
+    };
+    let small = |source: &SourceId| {
+        source
+            .native_size(kind)
+            .is_some_and(|n| n.width < size.width || n.height < size.height)
+    };
+    let (mut out, smaller): (Vec<SourceId>, Vec<SourceId>) =
+        base.iter().copied().partition(|s| !small(s));
+    out.extend(smaller);
+    out
+}
+
+/// The configured sources that have `kind`, in the order of [`order`].
+pub fn ordered(configs: &[SourceConfig], kind: ArtKind, size: ArtSize) -> Vec<&SourceConfig> {
+    order(kind, size)
+        .into_iter()
+        .filter_map(|id| configs.iter().find(|c| c.id == id))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +199,8 @@ pub enum Location {
 pub struct SourceConfig {
     pub id: SourceId,
     pub location: Location,
+    /// The user's ScreenScraper account, if they have one.
+    pub account: Option<Account>,
 }
 
 impl SourceConfig {
@@ -106,6 +208,7 @@ impl SourceConfig {
         Self {
             id,
             location: Location::Remote,
+            account: None,
         }
     }
 
@@ -113,6 +216,7 @@ impl SourceConfig {
         Self {
             id,
             location: Location::Mirror(dir.into()),
+            account: None,
         }
     }
 }
@@ -154,9 +258,12 @@ fn xlenore(path: String, key: String) -> Candidate {
     }
 }
 
-/// Where `source` keeps pictures of `kind` for a game, best first. With
-/// `variants`, also the alternatives a user may pick from instead (the
-/// 3-D covers).
+/// Where `source` keeps pictures of `kind` for a game, best first, in a
+/// repository's layout. With `variants`, also the alternatives a user may
+/// pick from instead (the 3-D covers). For packaging, libretro is asked
+/// only for names tagged with the game's market ([`region::name_fits`]).
+/// OPL Manager's backup is listed by its mirror layout; read remotely, its
+/// index decides ([`crate::oplm`]). ScreenScraper has no fixed layout.
 pub fn candidates(
     source: SourceId,
     kind: ArtKind,
@@ -177,10 +284,25 @@ pub fn candidates(
             }
             out
         }
-        SourceId::Xlenore => Vec::new(),
-        SourceId::Libretro => libretro_folder(kind)
-            .map(|folder| libretro_candidates_in(folder, redump_names))
-            .unwrap_or_default(),
+        SourceId::Xlenore | SourceId::ScreenScraper => Vec::new(),
+        SourceId::Libretro => {
+            let names: Vec<String> = redump_names
+                .iter()
+                .filter(|name| region::name_fits(kind, serial, name))
+                .cloned()
+                .collect();
+            libretro_folder(kind)
+                .map(|folder| libretro_candidates_in(folder, &names))
+                .unwrap_or_default()
+        }
+        SourceId::Oplm => crate::oplm::mirror_paths(&serial::serial_to_opl(serial), kind)
+            .into_iter()
+            .map(|(path, key)| Candidate {
+                key,
+                path,
+                urls: Vec::new(),
+            })
+            .collect(),
     }
 }
 
@@ -188,7 +310,8 @@ pub fn candidates(
 fn libretro_folder(kind: ArtKind) -> Option<&'static str> {
     match kind {
         ArtKind::Cov => Some("Named_Boxarts"),
-        ArtKind::Scr => Some("Named_Snaps"),
+        // A gameplay frame stands in for a background no source has.
+        ArtKind::Scr | ArtKind::Bg => Some("Named_Snaps"),
         ArtKind::Scr2 => Some("Named_Titles"),
         ArtKind::Lgo => Some("Named_Logos"),
         _ => None,
@@ -282,7 +405,8 @@ mod tests {
         );
         assert!(c[0].urls[1].starts_with("https://raw.githubusercontent.com/libretro-thumbnails/Sony_-_PlayStation_2/master/Named_Boxarts/"));
         assert_eq!(SourceId::parse("libretro"), Some(SourceId::Libretro));
-        assert_eq!(SourceId::parse("oplm"), None);
+        assert_eq!(SourceId::parse("oplm"), Some(SourceId::Oplm));
+        assert_eq!(SourceId::parse("launchbox"), None);
     }
 
     #[test]
@@ -315,14 +439,101 @@ mod tests {
             candidates(SourceId::Xlenore, ArtKind::Cov, "SCUS-97113", &names, false).len(),
             1
         );
-        for kind in [ArtKind::Ico, ArtKind::Cov2, ArtKind::Lab, ArtKind::Bg] {
-            for source in SourceId::ALL {
+        // Packaging beyond the front cover: OPL Manager's backup only (and
+        // ScreenScraper, which has no fixed layout).
+        for kind in [ArtKind::Ico, ArtKind::Cov2, ArtKind::Lab] {
+            for source in [SourceId::Xlenore, SourceId::Libretro] {
                 assert!(
-                    candidates(source, kind, "X", &names, true).is_empty(),
+                    candidates(source, kind, "SCUS-97113", &names, true).is_empty(),
                     "{kind}"
                 );
                 assert!(!source.kinds().contains(&kind));
             }
+            assert!(SourceId::Oplm.kinds().contains(&kind));
+            assert!(SourceId::ScreenScraper.kinds().contains(&kind));
         }
+        // A background no one has: a gameplay frame.
+        let bg = candidates(SourceId::Libretro, ArtKind::Bg, "SCUS-97113", &names, false);
+        assert_eq!(bg[0].key, "Named_Snaps/Ico (USA)");
+        let lab = candidates(SourceId::Oplm, ArtKind::Lab, "SCUS-97113", &names, false);
+        assert_eq!(lab[0].path, "PS2/SCUS_971.13/SCUS_971.13_LAB.png");
+        assert_eq!(lab[1].path, "PS2/SCUS_971.13/SCUS_971.13_LAB.jpg");
+        assert_eq!(lab[0].key, "SCUS_971.13_LAB");
+        assert!(SourceId::Libretro.needs_redump_name() && !SourceId::Oplm.needs_redump_name());
+    }
+
+    #[test]
+    fn packaging_names_keep_to_the_games_market() {
+        let names = [
+            "Dead or Alive 2 (Japan)".to_owned(),
+            "Dead or Alive 2 (Europe) (En,Fr,De,Es,It)".to_owned(),
+        ];
+        let paths = |kind, serial| -> Vec<String> {
+            candidates(SourceId::Libretro, kind, serial, &names, false)
+                .into_iter()
+                .map(|c| c.path)
+                .collect()
+        };
+        assert_eq!(
+            paths(ArtKind::Cov, "SLPS-25002"),
+            ["Named_Boxarts/Dead or Alive 2 (Japan).png"]
+        );
+        assert_eq!(
+            paths(ArtKind::Cov, "SCES-50003"),
+            ["Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"]
+        );
+        assert!(paths(ArtKind::Cov, "SLUS-20071").is_empty());
+        // Screenshots are the same game everywhere.
+        assert_eq!(paths(ArtKind::Scr, "SLUS-20071").len(), 2);
+    }
+
+    #[test]
+    fn order_per_kind_and_size() {
+        let size = |w, h| ArtSize {
+            width: w,
+            height: h,
+        };
+        use SourceId::{Libretro, Oplm, ScreenScraper, Xlenore};
+        assert_eq!(
+            order(ArtKind::Cov, size(140, 200)),
+            [Xlenore, Oplm, Libretro, ScreenScraper]
+        );
+        // RiptOPL's covers are twice OPL Manager's.
+        assert_eq!(
+            order(ArtKind::Cov, size(280, 400)),
+            [Xlenore, Libretro, ScreenScraper, Oplm]
+        );
+        assert_eq!(order(ArtKind::Ico, size(64, 64)), [Oplm, ScreenScraper]);
+        assert_eq!(order(ArtKind::Ico, size(128, 128)), [ScreenScraper, Oplm]);
+        assert_eq!(order(ArtKind::Lab, size(18, 240)), [Oplm, ScreenScraper]);
+        assert_eq!(
+            order(ArtKind::Bg, size(640, 480)),
+            [Oplm, ScreenScraper, Libretro]
+        );
+        assert_eq!(
+            order(ArtKind::Scr2, size(250, 188)),
+            [Libretro, Oplm, ScreenScraper]
+        );
+        // Every source of a type is in its order, and nothing else.
+        for kind in ArtKind::ALL {
+            let mut listed = order(kind, size(1, 1));
+            listed.sort_by_key(|s| s.as_str());
+            let mut having: Vec<SourceId> = SourceId::ALL
+                .into_iter()
+                .filter(|s| s.kinds().contains(&kind))
+                .collect();
+            having.sort_by_key(|s| s.as_str());
+            assert_eq!(listed, having, "{kind}");
+        }
+        let configs = [
+            SourceConfig::remote(Libretro),
+            SourceConfig::mirror(Oplm, "m"),
+            SourceConfig::remote(Xlenore),
+        ];
+        let ids: Vec<SourceId> = ordered(&configs, ArtKind::Scr, size(250, 188))
+            .iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(ids, [Libretro, Oplm]);
     }
 }

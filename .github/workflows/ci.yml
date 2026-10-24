@@ -18,6 +18,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Tests use mirrors and local servers; any other host is refused.
+  YAOPLM_OFFLINE: 1
   COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
   NODE_VERSION: 26
   COREPACK_VERSION: 0.36.0

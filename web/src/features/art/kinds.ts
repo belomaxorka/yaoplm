@@ -38,15 +38,16 @@ export interface FetchableTypes {
 }
 
 /**
- * The types the enabled cover sources have (the core lists them per
- * source in the About data); the rest come from files and picture sets.
+ * The types the enabled picture sources have (the core lists them per
+ * source in the About data, with whether this build can ask it); the rest
+ * come from files and picture sets.
  */
 export function useFetchableTypes(): FetchableTypes {
   const { t } = useTranslation();
   const { transport } = useApi();
   const { settings } = useSettings();
   const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport), staleTime: Infinity });
-  if (enabledSources(settings).length === 0) {
+  if (enabledSources(settings, about.data?.art).length === 0) {
     return { types: new Set(), blocked: { why: "noSources", text: t("art.noSources") } };
   }
   if (about.isPending) return { types: new Set(), blocked: { why: "loading", text: t("art.sourcesLoading") } };
@@ -56,7 +57,7 @@ export function useFetchableTypes(): FetchableTypes {
   const types = new Set<ArtType>();
   for (const source of about.data.art) {
     const enabled = settings.artSources[source.id as keyof typeof settings.artSources]?.enabled ?? false;
-    if (enabled) for (const kind of source.kinds) types.add(kind);
+    if (enabled && source.available) for (const kind of source.kinds) types.add(kind);
   }
   return { types, blocked: null };
 }

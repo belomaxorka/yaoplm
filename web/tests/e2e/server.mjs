@@ -42,7 +42,9 @@ const server = spawn(
     "--data-dir",
     path.join(dir, "data"),
   ],
-  { cwd: repo, stdio: "inherit" },
+  // A source the settings forget to point at a mirror fails instead of
+  // going to the network.
+  { cwd: repo, stdio: "inherit", env: { ...process.env, YAOPLM_OFFLINE: "1" } },
 );
 
 const stop = () => server.kill();

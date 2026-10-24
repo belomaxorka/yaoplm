@@ -95,6 +95,7 @@ pub(crate) fn net_error(code: ErrorCode, err: &yaoplm_net::NetError) -> ApiError
     use yaoplm_net::NetError;
     let phrase = match err {
         NetError::Http(error) => Phrase::error("network").with("error", error),
+        NetError::Zip(error) => Phrase::error("network").with("error", format!("zip: {error}")),
         NetError::Status { url, status } => Phrase::error("httpStatus")
             .with("url", url)
             .with("status", u64::from(*status)),

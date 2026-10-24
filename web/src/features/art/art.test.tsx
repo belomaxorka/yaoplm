@@ -147,7 +147,7 @@ const artPlan: JobResult = {
   notices: [],
 };
 
-/** Sources that have covers and screenshots. */
+/** Sources that have covers and screenshots, and one this build cannot ask. */
 const about = (): Promise<Response> =>
   Promise.resolve({
     type: "Attribution",
@@ -167,6 +167,19 @@ const about = (): Promise<Response> =>
         fields: null,
         use: "",
         kinds: ["COV", "SCR"],
+        available: true,
+      },
+      {
+        id: "screenscraper",
+        name: "ScreenScraper",
+        url: "https://example.invalid",
+        license: "CC BY-NC-SA 4.0",
+        licenseUrl: null,
+        credits: "",
+        fields: null,
+        use: "",
+        kinds: ["COV", "ICO", "COV2", "LAB", "BG", "SCR", "SCR2", "LGO"],
+        available: false,
       },
     ],
     titles: { built: "2026-10-01", libretroVersion: "1", entries: 1 },
@@ -368,7 +381,12 @@ describe("useFetchableTypes", () => {
     );
 
     storeSettings({
-      artSources: { xlenore: { enabled: false, mirror: "" }, libretro: { enabled: false, mirror: "" } },
+      artSources: {
+        xlenore: { enabled: false, mirror: "" },
+        oplm: { enabled: false, mirror: "" },
+        libretro: { enabled: false, mirror: "" },
+        screenscraper: { enabled: false, mirror: "" },
+      },
     });
     const off = hook(about);
     expect(off.result.current.blocked).toEqual({ why: "noSources", text: "Every source is switched off." });

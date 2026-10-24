@@ -6477,6 +6477,7 @@ dependencies = [
  "flate2",
  "image",
  "percent-encoding",
+ "quick-xml 0.42.0",
  "reqwest",
  "rusqlite",
  "serde",

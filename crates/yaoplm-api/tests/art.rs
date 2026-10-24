@@ -34,7 +34,8 @@ struct Setup {
 
 /// A device with three games: the Retail one already has a cover; the
 /// xlenore mirror has Retail (SLUS-20062), the libretro mirror has Dead or
-/// Alive 2 (SCES-50003) by its Redump name; the DVD-9 one is nowhere.
+/// Alive 2 (SCES-50003) by its Redump name; the DVD-9 one is nowhere. The
+/// mirror of OPL Manager's backup starts empty.
 fn setup() -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let device = dir.path().join("stick");
@@ -78,6 +79,8 @@ fn setup() -> Setup {
     )
     .unwrap();
 
+    fs::create_dir_all(mirror.join("oplm/PS2")).unwrap();
+
     let api = Api::new().with_data_dir(dir.path().join("data"));
     Setup {
         api,
@@ -92,10 +95,23 @@ fn call(api: &Api, request: Value) -> Result<Value, yaoplm_api::ApiError> {
         .map(|r| serde_json::to_value(r).unwrap())
 }
 
+/// Every source from the mirrors, ScreenScraper off: no test goes out.
 fn sources(mirror: &Path) -> Value {
     json!([
         {"id": "xlenore", "mirror": mirror.join("xlenore").to_string_lossy()},
+        {"id": "oplm", "mirror": mirror.join("oplm").to_string_lossy()},
         {"id": "libretro", "mirror": mirror.join("libretro").to_string_lossy()},
+        {"id": "screenscraper", "enabled": false},
+    ])
+}
+
+/// Every source off.
+fn no_sources() -> Value {
+    json!([
+        {"id": "xlenore", "enabled": false},
+        {"id": "oplm", "enabled": false},
+        {"id": "libretro", "enabled": false},
+        {"id": "screenscraper", "enabled": false},
     ])
 }
 
@@ -433,14 +449,12 @@ fn set_art_from_a_file_and_from_bytes_delete_art() {
 #[test]
 fn source_settings_cache_and_attribution() {
     let s = setup();
-    // A disabled xlenore and no libretro mirror: nothing is found offline
-    // (the libretro source would go to the network, which the test must
-    // not do, so it is disabled too).
+    // Every source off: nothing is found, and nothing goes out.
     let started = call(
         &s.api,
         json!({
             "type": "FetchArt", "root": s.device, "games": ["SLUS_200.62"], "scope": "all",
-            "sources": [{"id": "xlenore", "enabled": false}, {"id": "libretro", "enabled": false}]
+            "sources": no_sources()
         }),
     )
     .unwrap();
@@ -501,9 +515,18 @@ fn source_settings_cache_and_attribution() {
         art.iter()
             .map(|a| a["id"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["xlenore", "libretro"]
+        ["xlenore", "oplm", "libretro", "screenscraper"]
     );
     assert!(art[0]["license"].is_null());
+    // Every type has a source; ScreenScraper needs this build's key.
+    assert_eq!(art[0]["kinds"], json!(["COV"]));
+    assert_eq!(art[1]["kinds"].as_array().unwrap().len(), 8);
+    assert_eq!(art[3]["license"], "CC BY-NC-SA 4.0");
+    assert_eq!(art[1]["available"], true);
+    assert_eq!(
+        art[3]["available"],
+        std::env::var_os("YAOPLM_SCREENSCRAPER_DEVID").is_some()
+    );
     assert!(about["titles"]["entries"].as_u64().unwrap() > 12_000);
     assert!(about["titles"]["built"].as_str().unwrap().starts_with("20"));
 }
@@ -669,6 +692,14 @@ fn other_picture_types_and_variants() {
         image_bytes(250, 300, image::ImageFormat::Png),
     )
     .unwrap();
+    // OPL Manager's backup has Dead or Alive 2's disc icon.
+    let oplm = s.mirror.join("oplm/PS2/SCES_500.03");
+    fs::create_dir_all(&oplm).unwrap();
+    fs::write(
+        oplm.join("SCES_500.03_ICO.png"),
+        image_bytes(64, 64, image::ImageFormat::Png),
+    )
+    .unwrap();
 
     // Screenshots, logos and icons for every game in one run; a type named
     // twice is searched once.
@@ -701,11 +732,16 @@ fn other_picture_types_and_variants() {
         .collect();
     assert_eq!(
         writes,
-        ["ART/SCES_500.03_SCR.png", "ART/SCES_500.03_LGO.png"],
+        [
+            "ART/SCES_500.03_SCR.png",
+            "ART/SCES_500.03_LGO.png",
+            "ART/SCES_500.03_ICO.png"
+        ],
         "{plan:#?}"
     );
-    assert_eq!(plan.title, "Write 2 pictures");
-    // One log line per game and type; icons have no source at all.
+    assert_eq!(plan.title, "Write 3 pictures");
+    // One log line per game and type; the other icons are not in the
+    // backup.
     let lines: Vec<(String, String)> = info
         .log
         .iter()
@@ -724,7 +760,7 @@ fn other_picture_types_and_variants() {
         .collect();
     assert_eq!(lines.len(), 9, "{lines:?}");
     let icon = lines.iter().find(|(k, _)| k == "SLUS_200.62 ICO").unwrap();
-    assert!(icon.1.contains("No open source"), "{icon:?}");
+    assert!(icon.1.contains("Not found in oplm"), "{icon:?}");
     assert!(
         plan.skipped.iter().any(|s| s.path.contains("(ICO)")),
         "{:?}",
@@ -779,10 +815,13 @@ fn other_picture_types_and_variants() {
         plan["notices"].to_string().contains("xlenore 3D")
             || plan["transactions"].to_string().contains("xlenore 3D")
     );
-    // An icon nobody has: no variant, and the log says why.
+    // An icon no mirror has: no variant, and the log says why.
     let started = call(
         &s.api,
-        json!({"type": "FindArt", "root": s.device, "startup": "SLUS_200.62", "kind": "ICO"}),
+        json!({
+            "type": "FindArt", "root": s.device, "startup": "SLUS_200.62", "kind": "ICO",
+            "sources": sources(&s.mirror),
+        }),
     )
     .unwrap();
     let info = wait(&s.api, &started);
@@ -1297,7 +1336,9 @@ fn a_game_without_a_redump_name_says_why_nothing_was_found() {
     .unwrap();
     let libretro_only = json!([
         {"id": "xlenore", "enabled": false},
+        {"id": "oplm", "enabled": false},
         {"id": "libretro", "mirror": s.mirror.join("libretro").to_string_lossy()},
+        {"id": "screenscraper", "enabled": false},
     ]);
     let started = call(
         &s.api,
@@ -1353,7 +1394,7 @@ fn a_game_without_a_redump_name_says_why_nothing_was_found() {
             "root": s.device,
             "games": ["SLPM_999.99"],
             "kinds": ["SCR"],
-            "sources": [{"id": "xlenore", "enabled": false}, {"id": "libretro", "enabled": false}],
+            "sources": no_sources(),
         }),
     )
     .unwrap();

@@ -12,4 +12,9 @@ license: string | null, licenseUrl: string | null, credits: string, fields: stri
 /**
  * The picture types a cover source has (ART-2); empty for data.
  */
-kinds: Array<ArtType>, };
+kinds: Array<ArtType>, 
+/**
+ * Whether the source can be asked here: ScreenScraper needs a build
+ * or an environment with its developer key.
+ */
+available: boolean, };

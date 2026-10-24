@@ -4,7 +4,10 @@
 //! - at most one request per second per source (a token bucket of one);
 //! - conditional requests with `If-None-Match` / `If-Modified-Since`;
 //! - exponential back-off on 429 and 5xx, honouring `Retry-After`;
-//! - a size cap, so a wrong URL cannot pull gigabytes into memory.
+//! - a size cap, so a wrong URL cannot pull gigabytes into memory;
+//! - range requests, to read single members of a zip on archive.org;
+//! - `YAOPLM_OFFLINE=1` refuses every host but this machine's, which CI
+//!   sets so that a test that forgets a mirror fails instead of going out.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -53,6 +56,26 @@ pub enum Fetched {
     NotModified,
     /// 404 or 410.
     NotFound,
+}
+
+/// Which bytes of a file to ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByteRange {
+    /// `len` bytes from `start`.
+    Span { start: u64, len: u64 },
+    /// The last `len` bytes.
+    Suffix(u64),
+}
+
+/// Part of a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ranged {
+    pub bytes: Vec<u8>,
+    /// Where `bytes` start in the file.
+    pub start: u64,
+    /// The size of the whole file.
+    pub total: u64,
+    pub etag: Option<String>,
 }
 
 /// A shared client with a per-source request limiter.
@@ -132,18 +155,104 @@ impl Http {
         {
             headers.insert(header::IF_MODIFIED_SINCE, value);
         }
+        let Some(response) = self.send(limiter, url, headers, None).await? else {
+            return Ok(Fetched::NotFound);
+        };
+        if response.status() == StatusCode::NOT_MODIFIED {
+            return Ok(Fetched::NotModified);
+        }
+        read_body(response, max_body).await.map(Fetched::Ok)
+    }
 
+    /// GETs part of `url` (ADR-0034): `None` for 404 or 410. A server that
+    /// answers a range request with the whole file is accepted only while
+    /// the file fits in `max_body`, and the range is cut out of it.
+    pub async fn get_range(
+        &self,
+        limiter: &str,
+        url: &str,
+        range: ByteRange,
+        max_body: u64,
+        timeout: Option<Duration>,
+    ) -> Result<Option<Ranged>, NetError> {
+        let value = match range {
+            ByteRange::Span { start, len } => {
+                format!("bytes={start}-{}", start + len.max(1) - 1)
+            }
+            ByteRange::Suffix(len) => format!("bytes=-{}", len.max(1)),
+        };
+        let mut headers = HeaderMap::new();
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            headers.insert(header::RANGE, value);
+        }
+        let Some(response) = self.send(limiter, url, headers, timeout).await? else {
+            return Ok(None);
+        };
+        let status = response.status();
+        let content_range = header_string(response.headers(), header::CONTENT_RANGE);
+        let body = read_body(response, max_body).await?;
+        if status == StatusCode::PARTIAL_CONTENT {
+            let (start, total) = content_range
+                .as_deref()
+                .and_then(parse_content_range)
+                .ok_or_else(|| {
+                    NetError::Http(format!(
+                        "{url}: a partial answer without a usable Content-Range"
+                    ))
+                })?;
+            return Ok(Some(Ranged {
+                bytes: body.bytes,
+                start,
+                total,
+                etag: body.etag,
+            }));
+        }
+        // 200: the whole file.
+        let total = body.bytes.len() as u64;
+        let (start, len) = match range {
+            ByteRange::Span { start, len } => (start.min(total), len),
+            ByteRange::Suffix(len) => (total.saturating_sub(len), len),
+        };
+        let end = start.saturating_add(len).min(total);
+        let bytes = body.bytes[start as usize..end as usize].to_vec();
+        Ok(Some(Ranged {
+            bytes,
+            start,
+            total,
+            etag: body.etag,
+        }))
+    }
+
+    /// Sends a GET, waiting for the limiter of `limiter` before each try
+    /// and retrying on 429 and 5xx with back-off. `None` for 404 and 410;
+    /// any other status that is neither a success nor 304 is an error.
+    async fn send(
+        &self,
+        limiter: &str,
+        url: &str,
+        headers: HeaderMap,
+        timeout: Option<Duration>,
+    ) -> Result<Option<reqwest::Response>, NetError> {
+        if offline() && !is_loopback(url) {
+            return Err(NetError::Http(format!(
+                "{url}: network access is off (YAOPLM_OFFLINE)"
+            )));
+        }
         let mut attempt = 0u32;
         loop {
             self.throttle(limiter).await;
-            let outcome = self.client.get(url).headers(headers.clone()).send().await;
-            let retry_after = match outcome {
+            let mut request = self.client.get(url).headers(headers.clone());
+            if let Some(timeout) = timeout {
+                request = request.timeout(timeout);
+            }
+            let retry_after = match request.send().await {
                 Ok(response) => {
                     let status = response.status();
                     match status {
-                        StatusCode::NOT_MODIFIED => return Ok(Fetched::NotModified),
-                        StatusCode::NOT_FOUND | StatusCode::GONE => return Ok(Fetched::NotFound),
-                        s if s.is_success() => return read_body(response, max_body).await,
+                        StatusCode::NOT_FOUND | StatusCode::GONE => return Ok(None),
+                        s if s.is_success() || s == StatusCode::NOT_MODIFIED => {
+                            return Ok(Some(response));
+                        }
                         s if s == StatusCode::TOO_MANY_REQUESTS || s.is_server_error() => {
                             retry_after_header(response.headers())
                         }
@@ -173,6 +282,38 @@ impl Http {
             attempt += 1;
         }
     }
+}
+
+/// `YAOPLM_OFFLINE` is set to anything but `0` or nothing.
+fn offline() -> bool {
+    std::env::var("YAOPLM_OFFLINE").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// A URL of this machine: the local servers of tests and the e2e run.
+fn is_loopback(url: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let host = url.host_str().unwrap_or("");
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// `bytes 100-199/5539563942`: the first byte and the size of the file.
+fn parse_content_range(value: &str) -> Option<(u64, u64)> {
+    let rest = value.trim().strip_prefix("bytes")?.trim_start();
+    let (span, total) = rest.split_once('/')?;
+    let (start, end) = span.split_once('-')?;
+    let (start, end, total) = (
+        start.trim().parse::<u64>().ok()?,
+        end.trim().parse::<u64>().ok()?,
+        total.trim().parse::<u64>().ok()?,
+    );
+    (start <= end && end < total).then_some((start, total))
 }
 
 fn retry_after_header(headers: &HeaderMap) -> Option<Duration> {
@@ -206,7 +347,7 @@ fn disposition_file_name(headers: &HeaderMap) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-async fn read_body(mut response: reqwest::Response, max_body: u64) -> Result<Fetched, NetError> {
+async fn read_body(mut response: reqwest::Response, max_body: u64) -> Result<Body, NetError> {
     let url = response.url().to_string();
     if response.content_length().is_some_and(|len| len > max_body) {
         return Err(NetError::TooLarge(url));
@@ -225,13 +366,13 @@ async fn read_body(mut response: reqwest::Response, max_body: u64) -> Result<Fet
         }
         bytes.extend_from_slice(&chunk);
     }
-    Ok(Fetched::Ok(Body {
+    Ok(Body {
         bytes,
         content_type: header_string(&headers, header::CONTENT_TYPE),
         etag: header_string(&headers, header::ETAG),
         last_modified: header_string(&headers, header::LAST_MODIFIED),
         file_name: disposition_file_name(&headers),
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -262,5 +403,27 @@ mod tests {
             Some("x.zip")
         );
         assert_eq!(name("inline"), None);
+    }
+
+    #[test]
+    fn loopback_hosts() {
+        assert!(is_loopback("http://127.0.0.1:7879/x"));
+        assert!(is_loopback("http://localhost/x"));
+        assert!(is_loopback("http://[::1]:80/x"));
+        assert!(!is_loopback("https://archive.org/download/x"));
+        assert!(!is_loopback("not a url"));
+    }
+
+    #[test]
+    fn content_ranges() {
+        assert_eq!(
+            parse_content_range("bytes 100-199/5539563942"),
+            Some((100, 5_539_563_942))
+        );
+        assert_eq!(parse_content_range("bytes 0-0/1"), Some((0, 1)));
+        assert_eq!(parse_content_range("bytes 0-9/*"), None);
+        assert_eq!(parse_content_range("bytes 9-0/10"), None);
+        assert_eq!(parse_content_range("bytes 0-10/10"), None);
+        assert_eq!(parse_content_range("items 0-1/2"), None);
     }
 }

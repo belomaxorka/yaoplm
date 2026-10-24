@@ -426,6 +426,10 @@ fn art_fetch_set_and_remove_from_mirrors() {
         mirror_arg.as_ref(),
         "--skip-source".as_ref(),
         "libretro".as_ref(),
+        "--skip-source".as_ref(),
+        "oplm".as_ref(),
+        "--skip-source".as_ref(),
+        "screenscraper".as_ref(),
     ]);
     assert!(
         dry.status.success(),
@@ -448,6 +452,10 @@ fn art_fetch_set_and_remove_from_mirrors() {
         mirror_arg.as_ref(),
         "--skip-source".as_ref(),
         "libretro".as_ref(),
+        "--skip-source".as_ref(),
+        "oplm".as_ref(),
+        "--skip-source".as_ref(),
+        "screenscraper".as_ref(),
         "--yes".as_ref(),
     ]);
     assert!(
@@ -475,6 +483,10 @@ fn art_fetch_set_and_remove_from_mirrors() {
         mirror_arg.as_ref(),
         "--skip-source".as_ref(),
         "libretro".as_ref(),
+        "--skip-source".as_ref(),
+        "oplm".as_ref(),
+        "--skip-source".as_ref(),
+        "screenscraper".as_ref(),
         "--yes".as_ref(),
     ]);
     assert_eq!(again.status.code(), Some(1));
@@ -706,6 +718,10 @@ fn add_with_covers_and_dump_checks() {
         mirror_arg.as_ref(),
         "--skip-source".as_ref(),
         "libretro".as_ref(),
+        "--skip-source".as_ref(),
+        "oplm".as_ref(),
+        "--skip-source".as_ref(),
+        "screenscraper".as_ref(),
         "--yes".as_ref(),
     ]);
     let text = stdout(&done);
@@ -826,6 +842,10 @@ fn art_kinds_from_the_command_line() {
         mirror_arg.as_ref(),
         "--skip-source".as_ref(),
         "xlenore".as_ref(),
+        "--skip-source".as_ref(),
+        "oplm".as_ref(),
+        "--skip-source".as_ref(),
+        "screenscraper".as_ref(),
         "--yes".as_ref(),
     ]);
     let text = stdout(&fetched);

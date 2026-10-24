@@ -31,12 +31,29 @@
       "use": "front covers by serial (COV)"
     },
     {
+      "id": "oplm",
+      "name": "OPL Manager art backup OPLM_ART_2024_09 (archive.org)",
+      "url": "https://archive.org/details/OPLM_ART_2024_09",
+      "license": null,
+      "credits": "OPL Manager ART database contributors; backup published by danielb (OPL Manager)",
+      "use": "every picture type by game ID, one picture at a time from the backup"
+    },
+    {
       "id": "libretro",
       "name": "libretro-thumbnails, Sony - PlayStation 2",
       "url": "https://github.com/libretro-thumbnails/Sony_-_PlayStation_2",
       "license": null,
       "credits": "libretro-thumbnails contributors",
-      "use": "front covers by Redump name (COV)"
+      "use": "covers, screenshots, title screens and logos by Redump name"
+    },
+    {
+      "id": "screenscraper",
+      "name": "ScreenScraper",
+      "url": "https://www.screenscraper.fr",
+      "license": "CC BY-NC-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+      "credits": "ScreenScraper.fr and its contributors",
+      "use": "every picture type by serial and region, in builds with a developer key"
     }
   ]
 }

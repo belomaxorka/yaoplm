@@ -21,8 +21,9 @@ use yaoplm_device::{HostFs, HostSources};
 use yaoplm_formats::art::{ArtKind, ArtSubject, recommended_size};
 use yaoplm_formats::serial;
 use yaoplm_hash::RedumpIndex;
+use yaoplm_net::screenscraper::{self, Account};
 use yaoplm_net::sources::{SourceConfig, SourceId};
-use yaoplm_net::{ArtService, AttemptResult, CoverRequest};
+use yaoplm_net::{ArtService, AttemptResult, CoverRequest, OtherRelease, region};
 
 use crate::jobs::{JobContext, JobLogEntry, JobResult, now_ms};
 use crate::library::LoaderProfile as WireProfile;
@@ -44,20 +45,41 @@ pub enum ArtScope {
 }
 
 /// How one source is used for a request. Sources not listed keep their
-/// defaults: enabled, remote.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// defaults: enabled, remote. ScreenScraper is on only in a build or an
+/// environment with its developer key (ADR-0034).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ArtSourceSetting {
-    /// `xlenore` or `libretro`.
+    /// `xlenore`, `oplm`, `libretro` or `screenscraper`.
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub enabled: Option<bool>,
-    /// A folder with the repository's layout, read instead of the network.
+    /// A folder with the repository's layout, read instead of the network
+    /// (for OPL Manager's backup: `PS2/<ID>/<ID>_<TYPE>.png`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub mirror: Option<String>,
+    /// A ScreenScraper account, for a larger daily quota.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub password: Option<String>,
+}
+
+/// Without the password: requests end up in debug logs.
+impl std::fmt::Debug for ArtSourceSetting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArtSourceSetting")
+            .field("id", &self.id)
+            .field("enabled", &self.enabled)
+            .field("mirror", &self.mirror)
+            .field("user", &self.user)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A cover the user supplies (ART-3).
@@ -125,6 +147,14 @@ pub struct SourceEntry {
     /// The picture types a cover source has (ART-2); empty for data.
     #[serde(default)]
     pub kinds: Vec<ArtType>,
+    /// Whether the source can be asked here: ScreenScraper needs a build
+    /// or an environment with its developer key.
+    #[serde(default = "available")]
+    pub available: bool,
+}
+
+fn available() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,9 +203,12 @@ pub fn attribution() -> Result<Attribution, ApiError> {
             .art
             .into_iter()
             .map(|mut entry| {
-                entry.kinds = SourceId::parse(&entry.id)
+                let source = SourceId::parse(&entry.id);
+                entry.kinds = source
                     .map(|s| s.kinds().iter().copied().map(ArtType::from).collect())
                     .unwrap_or_default();
+                entry.available = source != Some(SourceId::ScreenScraper)
+                    || screenscraper::dev_credentials().is_some();
                 entry
             })
             .collect(),
@@ -303,8 +336,9 @@ impl Net {
     }
 }
 
-/// Source settings from a request, in priority order, with mirrors checked
-/// against the path policy.
+/// The sources that are on for a request, with mirrors checked against
+/// the path policy. The order of each picture type is the net crate's
+/// (`sources::order`), not this one.
 pub(crate) fn source_configs(
     policy: &PathPolicy,
     settings: &[ArtSourceSetting],
@@ -313,6 +347,23 @@ pub(crate) fn source_configs(
     for id in SourceId::ALL {
         let setting = settings.iter().find(|s| s.id == id.as_str());
         if setting.is_some_and(|s| s.enabled == Some(false)) {
+            continue;
+        }
+        if id == SourceId::ScreenScraper {
+            // Off without a developer key; it has no mirror.
+            if screenscraper::dev_credentials().is_none() {
+                continue;
+            }
+            let mut config = SourceConfig::remote(id);
+            config.account = setting.and_then(|s| {
+                let user = s.user.as_deref()?.trim();
+                let password = s.password.as_deref()?;
+                (!user.is_empty() && !password.is_empty()).then(|| Account {
+                    user: user.to_owned(),
+                    password: password.to_owned(),
+                })
+            });
+            configs.push(config);
             continue;
         }
         match setting
@@ -530,14 +581,47 @@ fn redump_names(startup: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The game's releases in other regions (the same Redump title), for the
+/// types shared across markets (ADR-0034): America first, then Europe,
+/// then Asia, where the sources have the most pictures.
+fn other_releases(startup: &str, kind: ArtKind) -> Vec<OtherRelease> {
+    if region::region_specific(kind) {
+        return Vec::new();
+    }
+    let db = titles::database();
+    let Some(entry) = db.lookup(startup) else {
+        return Vec::new();
+    };
+    let mut others: Vec<OtherRelease> = db
+        .same_title(entry)
+        .into_iter()
+        .map(|e| OtherRelease {
+            serial: e.serial.clone(),
+            redump_names: e
+                .redump_names_by_region()
+                .iter()
+                .map(|n| n.name.clone())
+                .collect(),
+        })
+        .collect();
+    others.sort_by_key(|o| match region::of_id(&o.serial) {
+        Some(region::Family::America) => 0,
+        Some(region::Family::Europe) => 1,
+        Some(region::Family::Asia) => 2,
+        None => 3,
+    });
+    others
+}
+
 /// Why nothing was found for a picture, for the log and the plan: no
 /// source has the type, every source is off, the game has no Redump name
-/// to look up, nothing at the sources asked, or errors.
-fn why_missing(
+/// to look up, only another market's release, nothing at the sources
+/// asked, or errors.
+fn why_missing<'a>(
     kind: ArtKind,
     sources: &[SourceConfig],
     redump_names: &[String],
-    attempts: &[yaoplm_net::Attempt],
+    attempts: &'a [yaoplm_net::Attempt],
 ) -> (ArtLogState, Said) {
     let errors: Vec<String> = attempts
         .iter()
@@ -552,17 +636,41 @@ fn why_missing(
             Said::notice("artFailed").with("errors", errors.join("; ")),
         );
     }
-    let mut tried: Vec<&str> = attempts.iter().map(|a| a.source.as_str()).collect();
-    tried.dedup();
-    let phrase = if !tried.is_empty() {
+    // Each source once, in the order asked: other releases ask again.
+    let once = |sources: Vec<&'a str>| {
+        let mut seen = std::collections::HashSet::new();
+        sources
+            .into_iter()
+            .filter(|s| seen.insert(*s))
+            .collect::<Vec<_>>()
+    };
+    let tried = once(attempts.iter().map(|a| a.source.as_str()).collect());
+    let other_market = once(
+        attempts
+            .iter()
+            .filter(|a| a.result == AttemptResult::OtherMarket)
+            .map(|a| a.source.as_str())
+            .collect(),
+    );
+    let has_kind = |s: &&SourceConfig| s.id.kinds().contains(&kind);
+    let phrase = if !other_market.is_empty() {
+        // A picture was there, but of another market's release (ADR-0034).
+        Said::notice("artOtherMarket").with("sources", other_market.join(", "))
+    } else if !tried.is_empty() {
         Said::notice("artNotFound").with("sources", tried.join(", "))
     } else if !SourceId::ALL.iter().any(|s| s.kinds().contains(&kind)) {
         Said::notice("noSourceForKind").with("kind", kind_name(kind))
     } else if sources.is_empty() {
         Said::notice("noArtSource")
-    } else if redump_names.is_empty() && sources.iter().any(|s| s.id.kinds().contains(&kind)) {
-        // A source that is on has the type but had nowhere to look: it
-        // finds pictures by the Redump name the bundled database gives.
+    } else if redump_names.is_empty()
+        && sources
+            .iter()
+            .filter(has_kind)
+            .all(|s| s.id.needs_redump_name())
+        && sources.iter().any(|s| has_kind(&s))
+    {
+        // The sources that are on and have the type find pictures by the
+        // Redump name the bundled database gives, and it has none.
         Said::notice("notInTitleDatabase")
     } else {
         // The sources that are on do not have this type.
@@ -642,6 +750,7 @@ pub(crate) fn fetch_job(
             },
             *kind,
         );
+        let others = other_releases(&target.startup, *kind);
         let request = CoverRequest {
             serial: &serial_id,
             redump_names: &names,
@@ -649,6 +758,7 @@ pub(crate) fn fetch_job(
             size,
             sources: &params.sources,
             revalidate: params.scope == ArtScope::All,
+            others: &others,
         };
         let outcome = net.block_on(service.fetch_cover(&request))?;
         let (state, source, detail) = match &outcome.cover {
@@ -804,6 +914,7 @@ pub(crate) fn find_job(
     ctx.progress(0, Some(1), Some(&game.title));
     let serial_id = serial::opl_to_serial(&game.startup);
     let names = redump_names(&game.startup);
+    let others = other_releases(&game.startup, params.kind);
     let request = CoverRequest {
         serial: &serial_id,
         redump_names: &names,
@@ -817,6 +928,7 @@ pub(crate) fn find_job(
         ),
         sources: &params.sources,
         revalidate: false,
+        others: &others,
     };
     let (covers, attempts) = net.block_on(service.find_variants(&request))?;
     let mut variants = Vec::new();
@@ -990,4 +1102,74 @@ pub(crate) fn delete_art(
 ) -> Result<yaoplm_core::plan::Plan, ApiError> {
     let fs = HostFs::new(root).map_err(ApiError::internal_error)?;
     plan_delete_art(&fs, startup, kind).map_err(crate::op_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use yaoplm_net::Attempt;
+
+    use super::*;
+
+    fn tried(source: &str, result: AttemptResult) -> Attempt {
+        Attempt {
+            source: source.to_owned(),
+            target: String::new(),
+            result,
+        }
+    }
+
+    #[test]
+    fn reasons_for_a_missing_picture() {
+        let all: Vec<SourceConfig> = [SourceId::Xlenore, SourceId::Oplm, SourceId::Libretro]
+            .into_iter()
+            .map(SourceConfig::remote)
+            .collect();
+        let names = vec!["Game (USA)".to_owned()];
+        let key = |kind, sources: &[SourceConfig], names: &[String], attempts: &[Attempt]| {
+            let (state, phrase) = why_missing(kind, sources, names, attempts);
+            (state, phrase.key.clone(), phrase.english())
+        };
+        // Only another market's release: said so, rather than "not found".
+        let (state, code, text) = key(
+            ArtKind::Cov,
+            &all,
+            &names,
+            &[
+                tried("xlenore", AttemptResult::Missing),
+                tried("oplm", AttemptResult::OtherMarket),
+                tried("libretro", AttemptResult::Missing),
+            ],
+        );
+        assert_eq!(state, ArtLogState::NotFound);
+        assert_eq!(code, "notices.artOtherMarket");
+        assert!(text.contains("oplm") && !text.contains("xlenore"), "{text}");
+        let (_, code, text) = key(
+            ArtKind::Ico,
+            &all,
+            &names,
+            &[tried("oplm", AttemptResult::Missing)],
+        );
+        assert_eq!(code, "notices.artNotFound");
+        assert!(text.contains("oplm"), "{text}");
+        // Errors win.
+        let (state, code, _) = key(
+            ArtKind::Ico,
+            &all,
+            &names,
+            &[tried("oplm", AttemptResult::Error("HTTP 500".into()))],
+        );
+        assert_eq!(
+            (state, code.as_str()),
+            (ArtLogState::Failed, "notices.artFailed")
+        );
+        // Only libretro has the type and has nowhere to look.
+        let libretro = [SourceConfig::remote(SourceId::Libretro)];
+        let (_, code, _) = key(ArtKind::Scr, &libretro, &[], &[]);
+        assert_eq!(code, "notices.notInTitleDatabase");
+        // With OPL Manager's backup on, the ID is enough to ask.
+        let (_, code, _) = key(ArtKind::Lab, &libretro, &[], &[]);
+        assert_eq!(code, "notices.noSourceForKind");
+        let (_, code, _) = key(ArtKind::Lab, &[], &names, &[]);
+        assert_eq!(code, "notices.noArtSource");
+    }
 }
