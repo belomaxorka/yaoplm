@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use yaoplm_api::jobs::{JobInfo, JobResult, JobStatus};
 use yaoplm_api::loaders::{LoaderCatalogSource, LoaderChecksumSource, LoaderFile, LoaderOffer};
 use yaoplm_api::{Api, JobId};
-use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf, sha256};
+use yaoplm_test_support::loaders::{MirrorAsset, ReleaseMirror, opl_elf, sha256};
 
 fn call(api: &Api, request: Value) -> Result<Value, yaoplm_api::ApiError> {
     api.dispatch_json(&request.to_string())
@@ -341,4 +341,205 @@ fn the_users_own_file_says_what_it_is() {
     assert_eq!(error_key(&info), "errors.loaderFileNoElf");
     let files = call(&s.api, json!({"type": "LoaderFiles"})).unwrap();
     assert_eq!(files["files"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn a_versioned_yaopl_release_is_one_of_its_channel() {
+    let s = setup();
+    let elf = opl_elf("v1.2.0-Beta-2400-0123abc-yaopl");
+    let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&elf));
+    ReleaseMirror::new(&s.root)
+        .release(
+            "belomaxorka/yaopl",
+            "v1.2.0-Beta-2400-0123abc-yaopl",
+            "v1.2.0-Beta-2400-0123abc-yaopl",
+            "- Fix a hang on an empty cheat name\n",
+            "2026-11-01",
+            &[
+                MirrorAsset {
+                    name: "OPNPS2LD.ELF",
+                    bytes: &elf,
+                    digest: true,
+                },
+                MirrorAsset {
+                    name: "SHA256SUMS",
+                    bytes: sums.as_bytes(),
+                    digest: true,
+                },
+            ],
+        )
+        .unwrap();
+    let tag = "v1.2.0-Beta-2400-0123abc-yaopl";
+    let details = offer(run(
+        &s.api,
+        json!({"type": "LoaderRelease", "build": "yaopl", "tag": tag, "mirror": s.mirror}),
+    ));
+    assert_eq!((details.tag.as_str(), details.version.as_str()), (tag, tag));
+    assert_eq!(
+        details.changelog[0].text,
+        "Fix a hang on an empty cheat name"
+    );
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "yaopl", "tag": tag, "sha256": details.file.sha256, "mirror": s.mirror}),
+    ));
+    assert_eq!(got.tag.as_deref(), Some(tag));
+    assert_eq!(got.version.as_deref(), Some(tag));
+}
+
+#[test]
+fn a_release_without_checksums_is_kept_but_not_confirmed() {
+    let s = setup();
+    let elf = opl_elf("v1.2.0-Beta-2280-0123abc");
+    ReleaseMirror::new(&s.root)
+        .release(
+            "ps2homebrew/Open-PS2-Loader",
+            "latest",
+            "latest",
+            "",
+            "2026-11-02",
+            &[
+                MirrorAsset {
+                    name: "OPNPS2LD.ELF",
+                    bytes: &elf,
+                    digest: false,
+                },
+                MirrorAsset {
+                    name: "OPNPS2LD-v1.2.0-Beta-2280-0123abc.7z",
+                    bytes: b"7z",
+                    digest: false,
+                },
+            ],
+        )
+        .unwrap();
+    let details = offer(run(
+        &s.api,
+        json!({"type": "LoaderRelease", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    assert_eq!(details.file.sha256, None);
+    assert!(details.file.sources.is_empty() && details.changelog.is_empty());
+    // A hash the user could not have seen is still held to.
+    let info = run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "sha256": "0".repeat(64), "mirror": s.mirror}),
+    );
+    assert_eq!(error_key(&info), "errors.loaderDownloadChecksum");
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    assert_eq!(got.sha256, sha256(&elf));
+    assert!(!got.confirmed);
+}
+
+#[test]
+fn broken_and_oversized_releases_are_refused_before_a_download() {
+    let s = setup();
+    let tags = s
+        .root
+        .join("repos/ps2homebrew/Open-PS2-Loader/releases/tags");
+    std::fs::write(tags.join("latest.json"), "{\"tag_name\": \"latest\"").unwrap();
+    let info = run(
+        &s.api,
+        json!({"type": "LoaderRelease", "build": "opl-beta", "mirror": s.mirror}),
+    );
+    assert_eq!(error_key(&info), "errors.loaderReleaseUnreadable");
+
+    // The release claims a 100 MiB ELF: it is never asked for.
+    let big = format!(
+        "{{\"tag_name\":\"latest\",\"name\":\"latest\",\"body\":\"\",\"html_url\":\"https://github.com/ps2homebrew/Open-PS2-Loader/releases/tag/latest\",\"assets\":[{{\"name\":\"OPNPS2LD.ELF\",\"size\":104857600,\"digest\":\"sha256:{0}\",\"browser_download_url\":\"https://github.com/ps2homebrew/Open-PS2-Loader/releases/download/latest/OPNPS2LD.ELF\"}},{{\"name\":\"OPNPS2LD-v1.2.0-Beta-2271-b3a2199.7z\",\"size\":1,\"browser_download_url\":\"https://github.com/ps2homebrew/Open-PS2-Loader/releases/download/latest/OPNPS2LD-v1.2.0-Beta-2271-b3a2199.7z\"}}]}}",
+        "a".repeat(64)
+    );
+    std::fs::write(tags.join("latest.json"), big).unwrap();
+    let info = run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    );
+    assert_eq!(error_key(&info), "errors.loaderFileTooLarge");
+}
+
+#[test]
+fn an_oversized_own_file_is_not_read() {
+    let s = setup();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("OPNPS2LD.ELF");
+    // Sparse: no 65 MiB are written.
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(65 << 20)
+        .unwrap();
+    let info = run(
+        &s.api,
+        json!({"type": "ImportLoader", "file": path.to_string_lossy()}),
+    );
+    assert_eq!(error_key(&info), "errors.loaderFileTooLarge");
+}
+
+#[test]
+fn a_catalogue_that_names_a_missing_file_is_refused() {
+    let s = setup();
+    let mirror = ReleaseMirror::new(&s.root);
+    mirror
+        .catalog_file(
+            "loaders/index.toml",
+            "schema = 1\nbuilds = [\"opl-beta\", \"gone\"]\n",
+        )
+        .unwrap();
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/loaders/opl-beta.toml");
+    mirror
+        .catalog_file(
+            "loaders/opl-beta.toml",
+            &std::fs::read_to_string(data).unwrap(),
+        )
+        .unwrap();
+    let info = run(
+        &s.api,
+        json!({"type": "UpdateLoaderCatalog", "mirror": s.mirror}),
+    );
+    assert_eq!(error_key(&info), "errors.loaderCatalogInvalid");
+    let message = &info.error.as_ref().unwrap().message;
+    assert!(message.contains("loaders/gone.toml"), "{message}");
+    assert_eq!(
+        call(&s.api, json!({"type": "LoaderCatalog"})).unwrap()["source"],
+        "builtIn"
+    );
+}
+
+#[test]
+fn importing_a_downloaded_build_keeps_what_its_release_said() {
+    let s = setup();
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "yaopl", "mirror": s.mirror}),
+    ));
+    assert!(got.confirmed);
+    let dir = tempfile::tempdir().unwrap();
+    let copy = dir.path().join("OPNPS2LD.ELF");
+    std::fs::write(&copy, opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl")).unwrap();
+    let again = file(run(
+        &s.api,
+        json!({"type": "ImportLoader", "file": copy.to_string_lossy()}),
+    ));
+    assert_eq!(
+        (again.tag.as_deref(), again.confirmed),
+        (Some("latest"), true)
+    );
+    let files = call(&s.api, json!({"type": "LoaderFiles"})).unwrap();
+    assert_eq!(files["files"].as_array().unwrap().len(), 1);
+    assert_eq!(files["files"][0]["tag"], "latest");
+
+    // The other way round: a download confirms what an import left.
+    let s = setup();
+    let own = dir.path().join("beta.ELF");
+    std::fs::write(&own, opl_elf("v1.2.0-Beta-2271-b3a2199")).unwrap();
+    let first = file(run(
+        &s.api,
+        json!({"type": "ImportLoader", "file": own.to_string_lossy()}),
+    ));
+    assert!(!first.confirmed);
+    let then = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    assert_eq!((then.sha256, then.confirmed), (first.sha256, true));
 }

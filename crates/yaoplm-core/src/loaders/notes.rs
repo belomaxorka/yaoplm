@@ -48,17 +48,43 @@ pub fn is_github_link(url: &str) -> bool {
             .any(|c| c.is_whitespace() || c.is_control() || c == '"' || c == '<')
 }
 
-/// Removes HTML tags: `<details>`, `<summary>`, `<br>`.
+/// Removes HTML tags (`<details>`, `<summary>`, `<br/>`) and decodes the
+/// common entities. A `<` that opens no tag (`size < 4 GiB`) stays text;
+/// an autolink `<https://…>` becomes the bare URL.
 fn strip_tags(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
-    let mut in_tag = false;
-    for c in line.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' if in_tag => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
+    let mut rest = line;
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let opens = after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '/' || c == '!');
+        match after.find('>').filter(|_| opens) {
+            Some(close) => {
+                let inside = &after[..close];
+                if inside.starts_with("http://") || inside.starts_with("https://") {
+                    out.push_str(inside);
+                }
+                rest = &after[close + 1..];
+            }
+            None => {
+                out.push('<');
+                rest = after;
+            }
         }
+    }
+    out.push_str(rest);
+    for (entity, text) in [
+        ("&lt;", "<"),
+        ("&gt;", ">"),
+        ("&quot;", "\""),
+        ("&#39;", "'"),
+        ("&nbsp;", " "),
+        ("&amp;", "&"),
+    ] {
+        out = out.replace(entity, text);
     }
     out
 }
@@ -78,6 +104,29 @@ fn list_item(line: &str) -> Option<&str> {
         .flatten()
 }
 
+/// A task list's box (`[x] done`, `[ ] to do`) is no part of the text.
+fn without_checkbox(item: &str) -> &str {
+    ["[x] ", "[X] ", "[ ] "]
+        .iter()
+        .find_map(|b| item.strip_prefix(b))
+        .unwrap_or(item)
+}
+
+/// `[text](target)` at the start of `rest`: the text, the target and what
+/// follows. The text holds no other bracket, so `[WIP] Fix [x](…)` is a
+/// plain `[WIP]` and a link `x`.
+fn markdown_link(rest: &str) -> Option<(&str, &str, &str)> {
+    let inner = rest.strip_prefix('[')?;
+    let close = inner.find(']')?;
+    let text = &inner[..close];
+    if text.contains('[') {
+        return None;
+    }
+    let target = inner[close + 1..].strip_prefix('(')?;
+    let end = target.find(')')?;
+    Some((text, &target[..end], &target[end + 1..]))
+}
+
 /// Markdown links become their text; bare URLs go. The first github.com
 /// target is kept as the item's link.
 fn plain(text: &str) -> (String, Option<String>) {
@@ -94,13 +143,17 @@ fn plain(text: &str) -> (String, Option<String>) {
         }
     };
     while !rest.is_empty() {
-        if let Some(inner) = rest.strip_prefix('[')
-            && let Some(close) = inner.find("](")
-            && let Some(end) = inner[close + 2..].find(')')
+        // An image says nothing in plain text.
+        if let Some(image) = rest.strip_prefix('!')
+            && let Some((_, _, after)) = markdown_link(image)
         {
-            out.push_str(&inner[..close]);
-            keep(&inner[close + 2..close + 2 + end], &mut link);
-            rest = &inner[close + 2 + end + 1..];
+            rest = after;
+            continue;
+        }
+        if let Some((text, target, after)) = markdown_link(rest) {
+            out.push_str(text);
+            keep(target, &mut link);
+            rest = after;
             continue;
         }
         if rest.starts_with("http://") || rest.starts_with("https://") {
@@ -111,8 +164,9 @@ fn plain(text: &str) -> (String, Option<String>) {
             continue;
         }
         let mut chars = rest.chars();
+        // Emphasis and code marks go; `_` stays: `usb_mode` is a key.
         if let Some(c) = chars.next()
-            && !matches!(c, '*' | '_' | '`')
+            && !matches!(c, '*' | '`')
         {
             out.push(c);
         }
@@ -155,7 +209,7 @@ pub fn changelog(body: &str) -> Changelog {
     let mut items = Vec::new();
     let mut more = false;
     for line in raw {
-        let (text, link) = plain(line);
+        let (text, link) = plain(without_checkbox(line));
         if text.is_empty() || service(&text) {
             continue;
         }
@@ -255,6 +309,50 @@ mod tests {
         let item = &changelog(&format!("- {long}")).items[0].text;
         assert_eq!(item.chars().count(), 200);
         assert!(item.ends_with('…'));
+    }
+
+    #[test]
+    fn edge_cases_of_release_texts() {
+        // GitHub keeps release texts with CRLF.
+        let body = [
+            "- Fix the size check when size < 4 GiB and keep usb_mode",
+            "- [WIP] Read [the PR](https://github.com/o/r/pull/7) &amp; more",
+            "- ![screenshot](https://github.com/o/r/assets/1.png) New theme",
+            "- [x] Done item",
+            "- See <https://github.com/o/r/commit/abc> for <b>details</b>",
+            "- Plain _italic_ and **bold** and `code`",
+        ]
+        .join("\r\n");
+        let log = changelog(&body);
+        assert_eq!(
+            texts(&log),
+            [
+                "Fix the size check when size < 4 GiB and keep usb_mode",
+                "[WIP] Read the PR & more",
+                "New theme",
+                "Done item",
+                "See for details",
+                "Plain _italic_ and bold and code",
+            ]
+        );
+        assert_eq!(
+            log.items[1].link.as_deref(),
+            Some("https://github.com/o/r/pull/7")
+        );
+        assert_eq!(
+            log.items[4].link.as_deref(),
+            Some("https://github.com/o/r/commit/abc")
+        );
+        // Nothing of a script survives, and a broken link is just text.
+        let log = changelog("- <script>alert(1)</script>Hello [broken](no end\n- a > b");
+        assert_eq!(texts(&log), ["alert(1)Hello [broken](no end", "a > b"]);
+    }
+
+    #[test]
+    fn sums_lines_in_any_line_ending() {
+        let sha = "c".repeat(64);
+        let text = format!("{sha}  OPNPS2LD.ELF\r\n");
+        assert_eq!(sums_line(&text, "OPNPS2LD.ELF"), Some(sha));
     }
 
     #[test]

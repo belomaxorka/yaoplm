@@ -599,6 +599,13 @@ pub(crate) fn download_job(net: &Net, params: &DownloadParams) -> Result<JobResu
     if let Some(record) = stored_from(&store, &offer) {
         return Ok(JobResult::LoaderFile(Box::new(file_view(&record))));
     }
+    // A release that says its file is huge is not asked for at all.
+    if offer.file.size > download::MAX_FILE {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("loaderFileTooLarge").with("file", &offer.file.name),
+        ));
+    }
     let bytes = net
         .block_on(loader_net.file(&build.repo, &offer.file.url, download::MAX_FILE))?
         .map_err(|e| net_error(ErrorCode::Internal, &e))?;
@@ -655,6 +662,15 @@ pub(crate) fn import_job(net: &Net, path: &Path) -> Result<JobResult, ApiError> 
     let bytes = std::fs::read(path).map_err(io_error)?;
     let local = local::read(&catalog, &name, &bytes)
         .map_err(|e| loader_error(ErrorCode::BadRequest, &e))?;
+    // The same ELF downloaded from its release says more than a file
+    // nobody vouches for: that record stays.
+    if let Some(downloaded) = store
+        .elfs()
+        .into_iter()
+        .find(|r| r.sha256 == local.elf.sha256 && r.tag.is_some())
+    {
+        return Ok(JobResult::LoaderFile(Box::new(file_view(&downloaded))));
+    }
     let record = ElfRecord {
         sha256: local.elf.sha256.clone(),
         size: local.elf.bytes.len() as u64,

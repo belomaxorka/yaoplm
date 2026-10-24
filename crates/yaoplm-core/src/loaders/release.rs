@@ -499,6 +499,33 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn digests_in_any_case_and_versions_that_disagree() {
+        let beta = build("opl-beta");
+        let mut release = beta_release();
+        release.assets[0].digest = Some(format!("sha256:{}", BETA_ELF.to_uppercase()));
+        assert_eq!(
+            offer(beta, &release, None).unwrap().file.sha256.as_deref(),
+            Some(BETA_ELF)
+        );
+        // A digest that is no SHA-256 confirms nothing.
+        release.assets[0].digest = Some("sha512:abc".into());
+        assert_eq!(offer(beta, &release, None).unwrap().file.sha256, None);
+        // Two builds named in one release: which one is it?
+        let mut release = beta_release();
+        release.assets.push(asset(
+            "ps2homebrew/Open-PS2-Loader",
+            "latest",
+            "OPNPS2LD-v1.2.0-Beta-2280-0123abc.7z",
+            1,
+            None,
+        ));
+        assert_eq!(
+            offer(beta, &release, None).unwrap_err().phrase.key,
+            "errors.loaderReleaseNoVersion"
+        );
+    }
+
+    #[test]
     fn github_json_reads() {
         let json = br#"{"tag_name":"latest","name":"latest","body":null,"html_url":"https://github.com/o/r/releases/tag/latest",
             "prerelease":true,"draft":false,"published_at":"2026-10-13T04:07:00Z","id":411255901,
