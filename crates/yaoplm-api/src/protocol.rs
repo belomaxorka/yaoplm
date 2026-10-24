@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 use crate::ApiError;
 use crate::art::{ArtCacheInfo, ArtInput, ArtScope, ArtSourceSetting, ArtType, Attribution};
-use crate::devices::DeviceInfo;
+use crate::devices::{DeviceInfo, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
@@ -111,16 +111,26 @@ pub enum Request {
     /// Mounted volumes with the storage doctor's verdict (DEV-1, DEV-2).
     /// The server lists its library roots only.
     ListDevices {
+        /// The profile chosen in the settings for every device; absent:
+        /// auto, each device by its files (LIB-1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         profile: Option<LoaderProfile>,
+        /// Profiles chosen per device (`ActiveProfile::key`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        overrides: Option<Vec<ProfileOverride>>,
     },
     /// One volume or folder in detail (DEV-2).
     InspectDevice {
         root: String,
+        /// As in `ListDevices`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        overrides: Option<Vec<ProfileOverride>>,
         /// OPL is started from this device by FreeMcBoot or old uLaunchELF.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]

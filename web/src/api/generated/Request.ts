@@ -14,6 +14,7 @@ import type { LoaderProfile } from "./LoaderProfile";
 import type { Media } from "./Media";
 import type { NameStyle } from "./NameStyle";
 import type { NewVmc } from "./NewVmc";
+import type { ProfileOverride } from "./ProfileOverride";
 import type { RecoveryAction } from "./RecoveryAction";
 import type { Transfer } from "./Transfer";
 
@@ -24,7 +25,20 @@ import type { Transfer } from "./Transfer";
  * Writes are always two requests: one that returns a [`PlanView`], and
  * `ExecutePlan` with its id once the user confirmed it.
  */
-export type Request = { "type": "Ping" } | { "type": "Version" } | { "type": "ListDevices", profile?: LoaderProfile, } | { "type": "InspectDevice", root: string, profile?: LoaderProfile, 
+export type Request = { "type": "Ping" } | { "type": "Version" } | { "type": "ListDevices", 
+/**
+ * The profile chosen in the settings for every device; absent:
+ * auto, each device by its files (LIB-1).
+ */
+profile?: LoaderProfile, 
+/**
+ * Profiles chosen per device (`ActiveProfile::key`).
+ */
+overrides?: Array<ProfileOverride>, } | { "type": "InspectDevice", root: string, 
+/**
+ * As in `ListDevices`.
+ */
+profile?: LoaderProfile, overrides?: Array<ProfileOverride>, 
 /**
  * OPL is started from this device by FreeMcBoot or old uLaunchELF.
  */

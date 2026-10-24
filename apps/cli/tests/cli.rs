@@ -362,9 +362,39 @@ fn devices_and_device_doctor() {
     assert!(!stdout(&all).is_empty());
     let device = run(&["device".as_ref(), s.root.as_os_str()]);
     assert!(device.status.success());
+    // The loader profile is read from the device by default (LIB-1).
+    assert!(
+        stdout(&device)
+            .contains("Loader:     OPL 1.2.0 beta: no signs of a loader on the device (auto)"),
+        "{}",
+        stdout(&device)
+    );
     let json = run(&["device".as_ref(), s.root.as_os_str(), "--json".as_ref()]);
     let answer: serde_json::Value = serde_json::from_str(stdout(&json)).unwrap();
     assert_eq!(answer["type"], "Device");
+    assert_eq!(answer["loader"]["source"], "detected");
+
+    // RiptOPL's app on the stick; `--profile` still decides when given.
+    let app = s.root.join("APPS").join("APP_RIPTOPL");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(app.join("RIPTOPL.ELF"), b"elf").unwrap();
+    let device = run(&["device".as_ref(), s.root.as_os_str()]);
+    let text = stdout(&device);
+    assert!(
+        text.contains("Loader:     RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (auto)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Found:      RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF"),
+        "{text}"
+    );
+    let given = run(&[
+        "device".as_ref(),
+        s.root.as_os_str(),
+        "--profile".as_ref(),
+        "opl-1.1".as_ref(),
+    ]);
+    assert!(stdout(&given).contains("Loader:     OPL 1.1.0 (--profile)"));
 }
 
 #[test]

@@ -229,6 +229,81 @@ fn ul_games_by_index() {
 }
 
 #[test]
+fn the_loader_profile_of_a_device() {
+    let s = setup();
+    let api = Api::new();
+    let inspect = |extra: Value| {
+        let mut request = json!({"type": "InspectDevice", "root": s.device});
+        for (key, value) in extra.as_object().unwrap() {
+            request[key] = value.clone();
+        }
+        call(&api, request).unwrap()["loader"].clone()
+    };
+
+    // Nothing on the device: the default, and the reason says so.
+    let loader = inspect(json!({}));
+    assert_eq!(loader["profile"], "Opl120Beta");
+    assert_eq!(loader["source"], "detected");
+    assert_eq!(loader["detected"]["confidence"], "default");
+    assert_eq!(
+        loader["detected"]["reason"]["key"],
+        "reasons.profileNoSigns"
+    );
+    // A folder on a fixed disk is keyed by its path.
+    let key = loader["key"].as_str().unwrap().to_owned();
+    assert!(key.starts_with("path:"), "{key}");
+
+    // RiptOPL's settings next to its app.
+    let app = Path::new(&s.device).join("APPS").join("APP_RIPTOPL");
+    fs::create_dir_all(&app).unwrap();
+    fs::write(app.join("settings_riptopl.cfg"), "enable_usb=1\r\n").unwrap();
+    let loader = inspect(json!({}));
+    assert_eq!(loader["profile"], "RiptOpl");
+    assert_eq!(loader["detected"]["confidence"], "indirect");
+    assert_eq!(
+        loader["detected"]["reasonText"],
+        "RiptOPL settings in APPS/APP_RIPTOPL/settings_riptopl.cfg"
+    );
+
+    // A profile chosen in the settings beats the files, an override beats both.
+    let loader = inspect(json!({"profile": "Opl110"}));
+    assert_eq!(
+        (&loader["profile"], &loader["source"]),
+        (&json!("Opl110"), &json!("setting"))
+    );
+    let loader = inspect(json!({
+        "profile": "Opl110",
+        "overrides": [{"key": key, "profile": "Opl120Beta"}, {"key": "serial:0", "profile": "RiptOpl"}],
+    }));
+    assert_eq!(
+        (&loader["profile"], &loader["source"]),
+        (&json!("Opl120Beta"), &json!("override"))
+    );
+    // The detection is still there to show.
+    assert_eq!(loader["detected"]["profile"], "RiptOpl");
+
+    // The doctor speaks for the profile in force.
+    let device = call(
+        &api,
+        json!({"type": "InspectDevice", "root": s.device, "profile": "Opl110"}),
+    )
+    .unwrap();
+    let devices = call(
+        &api,
+        json!({"type": "ListDevices", "overrides": [{"key": key, "profile": "Opl110"}]}),
+    )
+    .unwrap();
+    assert!(device["advice"].is_array());
+    assert!(
+        devices["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["loader"]["key"].is_string())
+    );
+}
+
+#[test]
 fn devices_and_server_policy() {
     let s = setup();
     let api = Api::new();

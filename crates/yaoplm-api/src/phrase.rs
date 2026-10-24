@@ -27,6 +27,35 @@ pub enum PhraseParam {
     Phrase(Box<Phrase>),
 }
 
+impl Phrase {
+    /// The English text, as the core renders it (for the CLI and logs).
+    pub fn english(&self) -> String {
+        yaoplm_core::Phrase::from(self).english()
+    }
+}
+
+impl From<&Phrase> for yaoplm_core::Phrase {
+    fn from(phrase: &Phrase) -> Self {
+        Self {
+            key: phrase.key.clone(),
+            params: phrase
+                .params
+                .iter()
+                .map(|(name, value)| {
+                    let value = match value {
+                        PhraseParam::Number(n) => yaoplm_core::Param::Number(*n),
+                        PhraseParam::Text(text) => yaoplm_core::Param::Text(text.clone()),
+                        PhraseParam::Phrase(inner) => {
+                            yaoplm_core::Param::Phrase(Box::new(Self::from(inner.as_ref())))
+                        }
+                    };
+                    (name.clone(), value)
+                })
+                .collect(),
+        }
+    }
+}
+
 impl From<&yaoplm_core::Phrase> for Phrase {
     fn from(phrase: &yaoplm_core::Phrase) -> Self {
         Self {

@@ -4,7 +4,9 @@ use std::fmt::Write;
 use std::path::Path;
 
 use yaoplm_api::art::{ArtLogState, Attribution};
-use yaoplm_api::devices::{DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable};
+use yaoplm_api::devices::{
+    ActiveProfile, DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable, ProfileSource,
+};
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
     Fragments, GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice,
@@ -339,6 +341,19 @@ fn device_line(device: &DeviceInfo) -> String {
     line
 }
 
+/// The loader profile in force and why (LIB-1).
+pub fn loader_line(loader: &ActiveProfile) -> String {
+    let name = profile_name(loader.profile);
+    match (loader.source, &loader.detected) {
+        (ProfileSource::Override, _) => format!("{name} (chosen for this device)"),
+        (ProfileSource::Setting, _) => format!("{name} (--profile)"),
+        (ProfileSource::Detected, Some(detected)) => {
+            format!("{name}: {} (auto)", detected.reason.english())
+        }
+        (ProfileSource::Detected, None) => format!("{name} (auto, the device could not be read)"),
+    }
+}
+
 pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     let mut out = String::new();
     if devices.is_empty() {
@@ -380,6 +395,20 @@ pub fn device(device: &DeviceInfo) -> String {
             let _ = write!(line, ", type 0x{kind:02X}");
         }
         let _ = writeln!(out, "Partition:  {line}");
+    }
+    let _ = writeln!(out, "Loader:     {}", loader_line(&device.loader));
+    if let Some(detected) = &device.loader.detected {
+        for loader in &detected.loaders {
+            let mut found = loader.family.clone();
+            if let Some(version) = &loader.version {
+                let _ = write!(found, " \u{201c}{version}\u{201d}");
+            }
+            if loader.exact {
+                found.push_str(" (by checksum)");
+            }
+            let _ = writeln!(out, "Found:      {found} at {}", loader.path);
+        }
+        plan_notices(&mut out, "", &detected.notices);
     }
     for id in &device.unfinished {
         let _ = writeln!(out, "x unfinished operation {id}: run `yaoplm recover`");

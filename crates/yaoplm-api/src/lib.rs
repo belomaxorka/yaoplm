@@ -42,7 +42,7 @@ pub use protocol::{
 };
 
 use art::Net;
-use devices::DeviceInfo;
+use devices::{DeviceInfo, ProfileChoice};
 use jobs::{
     ExecutionReport, JobKind, JobLogEntry, JobManager, JobResult, Queue, StepLogState, TxLogState,
     TxOutcome, now_ms,
@@ -58,7 +58,7 @@ use yaoplm_core::import::{self, ImportOptions};
 use yaoplm_core::ops::{self, DeleteOptions, OpError, RenameOptions};
 use yaoplm_core::plan::Plan;
 use yaoplm_core::recovery;
-use yaoplm_device::advice::{DiagnoseOptions, count_apple_double};
+use yaoplm_device::advice::count_apple_double;
 use yaoplm_device::{HostFs, HostSources, RelPath};
 use yaoplm_formats::art::ArtKind;
 use yaoplm_formats::iso_name;
@@ -239,24 +239,22 @@ impl Api {
                 name: NAME.to_owned(),
                 version: VERSION.to_owned(),
             }),
-            Request::ListDevices { profile } => {
-                let options = DiagnoseOptions {
-                    profile: profile.unwrap_or_default().into(),
-                    boot_from_device: false,
+            Request::ListDevices { profile, overrides } => {
+                let choice = ProfileChoice {
+                    setting: profile,
+                    overrides: overrides.as_deref().unwrap_or_default(),
                 };
                 let devices = match &self.paths {
                     PathPolicy::Any => yaoplm_device::list_volumes()
                         .iter()
-                        .map(|v| DeviceInfo::new(v, &options))
+                        .map(|v| DeviceInfo::new(v, &v.root, choice, false))
                         .collect(),
                     // A server shows its library roots, never the host's disks.
                     PathPolicy::Within(roots) => roots
                         .iter()
                         .filter_map(|root| {
                             let volume = yaoplm_device::volume_for_path(root).ok()?;
-                            let mut info = DeviceInfo::new(&volume, &options);
-                            info.root = display_path(root);
-                            Some(info)
+                            Some(DeviceInfo::new(&volume, root, choice, false))
                         })
                         .collect(),
                 };
@@ -265,16 +263,17 @@ impl Api {
             Request::InspectDevice {
                 root,
                 profile,
+                overrides,
                 boot_from_device,
             } => {
                 let (path, fs) = self.root(&root)?;
                 let volume = yaoplm_device::volume_for_path(&path).map_err(io_error)?;
-                let options = DiagnoseOptions {
-                    profile: profile.unwrap_or_default().into(),
-                    boot_from_device: boot_from_device.unwrap_or(false),
+                let choice = ProfileChoice {
+                    setting: profile,
+                    overrides: overrides.as_deref().unwrap_or_default(),
                 };
-                let mut info = DeviceInfo::new(&volume, &options);
-                info.root = display_path(&path);
+                let mut info =
+                    DeviceInfo::new(&volume, &path, choice, boot_from_device.unwrap_or(false));
                 info.add_apple_double(count_apple_double(&path));
                 let (journals, unreadable) =
                     yaoplm_core::journal::load_all(&fs).map_err(io_error)?;

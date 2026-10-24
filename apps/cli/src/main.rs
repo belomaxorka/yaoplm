@@ -416,7 +416,7 @@ enum ArtCommand {
 
 #[derive(Debug, Args)]
 struct Common {
-    #[arg(long, value_enum, default_value_t = Profile::Opl12)]
+    #[arg(long, value_enum, default_value_t = Profile::Auto)]
     profile: Profile,
     /// Print the API answer as JSON.
     #[arg(long)]
@@ -431,7 +431,7 @@ struct Apply {
     /// Only print the plan.
     #[arg(long, conflicts_with = "yes")]
     dry_run: bool,
-    #[arg(long, value_enum, default_value_t = Profile::Opl12)]
+    #[arg(long, value_enum, default_value_t = Profile::Auto)]
     profile: Profile,
     /// Print the plan and the result as JSON.
     #[arg(long)]
@@ -441,7 +441,10 @@ struct Apply {
 /// The loader the device is prepared for.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Profile {
-    /// OPL 1.2.0 beta (default).
+    /// Read from the device: installed loader, settings files, exFAT/ZSO,
+    /// else OPL 1.2.0 beta (LIB-1).
+    Auto,
+    /// OPL 1.2.0 beta.
     #[value(name = "opl-1.2")]
     Opl12,
     /// OPL 1.1.0 stable.
@@ -451,13 +454,31 @@ enum Profile {
     RiptOpl,
 }
 
-impl From<Profile> for LoaderProfile {
-    fn from(profile: Profile) -> Self {
-        match profile {
-            Profile::Opl12 => Self::Opl120Beta,
-            Profile::Opl11 => Self::Opl110,
-            Profile::RiptOpl => Self::RiptOpl,
+impl Profile {
+    /// The profile given on the command line; `None` for `auto`.
+    fn explicit(self) -> Option<LoaderProfile> {
+        match self {
+            Self::Auto => None,
+            Self::Opl12 => Some(LoaderProfile::Opl120Beta),
+            Self::Opl11 => Some(LoaderProfile::Opl110),
+            Self::RiptOpl => Some(LoaderProfile::RiptOpl),
         }
+    }
+
+    /// The profile for the device at `root`: the one given, or what the
+    /// device says. A device that cannot be read gets the default.
+    fn at(self, api: &Api, root: &Path) -> LoaderProfile {
+        self.explicit().unwrap_or_else(|| {
+            match api.dispatch(Request::InspectDevice {
+                root: text(root),
+                profile: None,
+                overrides: None,
+                boot_from_device: None,
+            }) {
+                Ok(Response::Device(device)) => device.loader.profile,
+                _ => LoaderProfile::default(),
+            }
+        })
     }
 }
 
@@ -521,7 +542,8 @@ fn main() -> anyhow::Result<ExitCode> {
         Command::Rpc { request, pretty } => rpc(&api, request, pretty),
         Command::Devices { all, common } => {
             let response = api.dispatch(Request::ListDevices {
-                profile: Some(common.profile.into()),
+                profile: common.profile.explicit(),
+                overrides: None,
             });
             show(response, common.json, |response| match response {
                 Response::Devices { devices } => {
@@ -542,7 +564,8 @@ fn main() -> anyhow::Result<ExitCode> {
         } => {
             let response = api.dispatch(Request::InspectDevice {
                 root: text(&root),
-                profile: Some(common.profile.into()),
+                profile: common.profile.explicit(),
+                overrides: None,
                 boot_from_device: Some(boot_from_device),
             });
             show(response, common.json, |response| match response {
@@ -562,14 +585,25 @@ fn main() -> anyhow::Result<ExitCode> {
             if common.json {
                 print_json(&JobResult::Library(Box::new(library)), true);
             } else {
+                if common.profile.explicit().is_none()
+                    && let Ok(Response::Device(device)) = api.dispatch(Request::InspectDevice {
+                        root: text(&root),
+                        profile: None,
+                        overrides: None,
+                        boot_from_device: None,
+                    })
+                {
+                    println!("Profile: {}", report::loader_line(&device.loader));
+                }
                 print!("{}", report::library(&library));
             }
             Ok(ExitCode::SUCCESS)
         }
         Command::Info { image, common } => {
+            let folder = image.parent().unwrap_or(Path::new("."));
             let response = api.dispatch(Request::ImageInfo {
                 path: text(&image),
-                profile: Some(common.profile.into()),
+                profile: Some(common.profile.at(&api, folder)),
             });
             show(response, common.json, |response| match response {
                 Response::ImageInfo(info) => print!("{}", report::image(info)),
@@ -611,7 +645,7 @@ fn main() -> anyhow::Result<ExitCode> {
             let mut request = Request::PlanImport {
                 root: text(&root),
                 sources: sources.iter().map(|s| absolute(s)).collect(),
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(&api, &root)),
                 name_style: name_style.map(Into::into),
                 transfer: Some(if move_sources {
                     Transfer::Move
@@ -650,7 +684,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 root: text(&root),
                 games: refs,
                 target: to.into(),
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(&api, &root)),
                 name_style: name_style.map(Into::into),
             };
             plan_and_apply(&api, request, &apply)
@@ -785,7 +819,7 @@ fn main() -> anyhow::Result<ExitCode> {
             let request = Request::WriteCfg {
                 root: text(&root),
                 game,
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(&api, &root)),
                 settings: structured.then_some(settings),
                 set: (!set.is_empty()).then_some(set),
                 unset: (!unset.is_empty()).then_some(unset),
@@ -810,7 +844,7 @@ fn main() -> anyhow::Result<ExitCode> {
             let request = Request::VerifyGames {
                 root: text(&root),
                 games: (!refs.is_empty()).then_some(refs),
-                profile: Some(common.profile.into()),
+                profile: Some(common.profile.at(&api, &root)),
                 md5: Some(md5),
                 fresh: Some(fresh),
             };
@@ -936,7 +970,7 @@ fn find_import_covers(
     let job = games.then(|| {
         api.dispatch(Request::FetchArt {
             root: text(root),
-            profile: Some(apply.profile.into()),
+            profile: Some(apply.profile.at(api, root)),
             scope: None,
             games: None,
             sources: (!sources.is_empty()).then_some(sources),
@@ -1028,7 +1062,7 @@ fn vmc(api: &Api, command: VmcCommand) -> anyhow::Result<ExitCode> {
                     Request::WriteCfg {
                         root: text(&root),
                         game,
-                        profile: Some(apply.profile.into()),
+                        profile: Some(apply.profile.at(api, &root)),
                         settings: Some(settings),
                         set: None,
                         unset: None,
@@ -1091,7 +1125,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             let kinds = parse_kinds(&kinds)?;
             let request = Request::FetchArt {
                 root: text(&root),
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(api, &root)),
                 scope: Some(if all {
                     ArtScope::All
                 } else {
@@ -1141,7 +1175,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
                 input: ArtInput::File {
                     path: absolute(&image),
                 },
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(api, &root)),
                 kind,
                 overwrite: Some(!keep_existing),
             };
@@ -1175,7 +1209,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             let request = Request::ImportArt {
                 root: text(&root),
                 sources: sets.iter().map(|s| absolute(s)).collect(),
-                profile: Some(apply.profile.into()),
+                profile: Some(apply.profile.at(api, &root)),
                 kinds: (!kinds.is_empty()).then_some(kinds),
                 overwrite: Some(replace),
             };
@@ -1331,7 +1365,7 @@ fn scan(
 ) -> Result<Library, yaoplm_api::ApiError> {
     let Response::Job { job } = api.dispatch(Request::ScanLibrary {
         root: text(root),
-        profile: Some(profile.into()),
+        profile: Some(profile.at(api, root)),
         verify: Some(verify),
     })?
     else {
