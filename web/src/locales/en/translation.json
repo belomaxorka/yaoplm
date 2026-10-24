@@ -171,6 +171,8 @@
     "gameFragmentedOpl110": "Files of the game lie on the device in several pieces ({{fragments}} in all): OPL 1.1.0 starts a game over USB, MX4SIO or iLink only when each file is one piece. Copy the games to the computer, format the device and add them back",
     "vmcSlotFragmented": "VMC slot {{slot}}: VMC/{{name}}.bin lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Copy the files to the computer, format the device and copy them back",
     "severalLoaders": "Several loaders are on the device: {{loaders}}. If the profile is wrong, choose one for this device",
+    "leftoverLoaderFiles": "{{files}}: files of {{loader}}, but the loader here is {{installed}}. They are probably left from an earlier install and are not used",
+    "loaderNotPs2Elf": "{{path}} is named like a loader but is not a PS2 program: it may be damaged or copied only in part",
     "zsoHiddenFromOpl110": "OPL 1.1.0 does not show ZSO images ({{images}} on the device): convert them to ISO or choose another profile for this device",
     "jpgArtHint": "Pictures in ART/ are JPG ({{files}}): OPL 1.2 betas from build 2169 on do not load them. If this device is for OPL 1.1.0, choose that profile for it",
     "listedByOldOpl": "The games on this device were last listed by OPL 1.1.0 or an old beta. If OPL starts from elsewhere, such as the memory card, choose the profile for this device",
@@ -555,7 +557,18 @@
     "unreadable": "the device could not be read",
     "change": "Change",
     "forThisDevice": "Profile for this device",
-    "auto": "Auto (by device)"
+    "auto": "Auto (by device)",
+    "byUnknown": "version not known: rules every OPL can read",
+    "unknown": "I don’t know (rules for any OPL)",
+    "question": "Which OPL do you start with this device?",
+    "questionHint": "The device has OPL’s folders but no loader and no sign of one: OPL probably starts from the memory card. The version decides the rules for ZSO, exFAT, pictures and games in several pieces.",
+    "answers": {
+      "Opl120Beta": "OPL 1.2 or YAOPL",
+      "Opl110": "OPL 1.1.0",
+      "RiptOpl": "RiptOPL"
+    },
+    "filesSay": "The device’s files say {{profile}}: {{reason}}",
+    "backToAuto": "Back to auto"
   },
   "devices": {
     "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
@@ -1013,6 +1026,7 @@
     "vmcNameChars": "{{name}} has characters outside ASCII or ones a file name cannot hold",
     "profileByChecksum": "{{loader}} at {{path}}, known by its checksum",
     "profileByVersion": "{{loader}} “{{version}}” at {{path}}",
+    "profileByElfVersion": "{{loader}} {{version}} at {{path}}, by the version inside the file",
     "profileByLoader": "{{loader}} at {{path}}",
     "profileByFiles": "{{file}}, which only {{loader}} writes",
     "profileByOpl12Keys": "{{file}} has keys only OPL 1.2 writes",

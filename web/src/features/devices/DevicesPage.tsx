@@ -24,7 +24,7 @@ import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import { profileChoice } from "@/settings/settings";
 
-import { LoaderProfileLine } from "./LoaderProfile";
+import { LoaderProfileHint, LoaderProfileLine } from "./LoaderProfile";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
@@ -148,6 +148,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             </span>
           </div>
           <LoaderProfileLine loader={device.loader} className="mt-2 text-sm" />
+          <LoaderProfileHint loader={device.loader} className="mt-2" />
           {!simple && (
             <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {device.model && (
