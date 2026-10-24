@@ -170,6 +170,45 @@ describe("game settings (CFG-2, VMC-1)", () => {
     expect(fake.written[0]!.cards).toEqual([{ name: "SLUS_200.62_0", sizeMb: 8, replace: true }]);
   });
 
+  it("takes a negative GSM shift and holds back one OPL's menu cannot set", async () => {
+    const fake = core([]);
+    show(fake.transport, false);
+    const gsm = await screen.findByTestId("cfg-gsm");
+    await userEvent.click(within(gsm).getByRole("radio", { name: /game.s own/ }));
+    const shift = within(gsm).getByLabelText("Horizontal shift");
+    await userEvent.clear(shift);
+    await userEvent.type(shift, "-5");
+    expect(shift).toHaveValue("-5");
+    expect(screen.queryByTestId("cfg-offset-range")).not.toBeInTheDocument();
+
+    await userEvent.clear(shift);
+    await userEvent.type(shift, "999");
+    expect(screen.getByTestId("cfg-offset-range")).toHaveTextContent("−100 to 100");
+    expect(screen.getByTestId("cfg-save")).toBeDisabled();
+
+    await userEvent.clear(shift);
+    await userEvent.type(shift, "100");
+    expect(screen.queryByTestId("cfg-offset-range")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("cfg-save"));
+    await waitFor(() => expect(fake.written).toHaveLength(1));
+    expect(fake.written[0]!.settings?.gsm).toMatchObject({ perGame: true, xOffset: 100 });
+  });
+
+  it("says why a new card's name is refused", async () => {
+    show(core([]).transport, false);
+    await userEvent.click(await screen.findByTestId("cfg-vmc-create-1"));
+    const dialog = await screen.findByRole("dialog");
+    const name = within(dialog).getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "bad/name");
+    expect(within(dialog).getByTestId("cfg-card-name-invalid")).toBeInTheDocument();
+    expect(within(dialog).getByTestId("cfg-vmc-new")).toBeDisabled();
+    await userEvent.clear(name);
+    await userEvent.type(name, "generic_1");
+    expect(within(dialog).queryByTestId("cfg-card-name-invalid")).not.toBeInTheDocument();
+    expect(within(dialog).getByTestId("cfg-vmc-new")).toBeEnabled();
+  });
+
   it("offers no new card when a good one has the name", async () => {
     const good: VmcCard = {
       name: "SLUS_200.62_0",

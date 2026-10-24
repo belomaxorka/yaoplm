@@ -116,6 +116,21 @@ for (const language of ["en", "ru"] as const) {
       await shot("cfg-plan", page);
       await page.keyboard.press("Escape");
       await expect(plan).toBeHidden();
+
+      // A shift OPL's menu cannot set, and a card name OPL cannot take.
+      const gsm = settings.getByTestId("cfg-gsm");
+      await gsm.getByRole("radio", { name: /game.s own|Свои для этой игры/ }).click();
+      await gsm.getByRole("textbox").first().fill("999");
+      await expect(settings.getByTestId("cfg-offset-range")).toBeVisible();
+      await expect(settings.getByTestId("cfg-save")).toBeDisabled();
+      await shot("cfg-offset-range", gsm);
+      await settings.getByTestId("cfg-vmc-create-1").click();
+      const named = page.getByRole("dialog").last();
+      await named.getByRole("textbox").fill("bad/name");
+      await expect(named.getByTestId("cfg-card-name-invalid")).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot("cfg-card-name", named);
+      await page.keyboard.press("Escape");
     });
   }
 }
