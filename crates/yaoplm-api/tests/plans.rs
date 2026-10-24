@@ -262,7 +262,7 @@ fn the_loader_profile_of_a_device() {
     assert_eq!(loader["detected"]["confidence"], "indirect");
     assert_eq!(
         loader["detected"]["reasonText"],
-        "RiptOPL settings in APPS/APP_RIPTOPL/settings_riptopl.cfg"
+        "APPS/APP_RIPTOPL/settings_riptopl.cfg, which only RiptOPL writes"
     );
 
     // A profile chosen in the settings beats the files, an override beats both.

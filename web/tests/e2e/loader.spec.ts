@@ -55,7 +55,7 @@ test("a loader's settings file on the device decides the profile", async ({ page
     const header = page.getByTestId("loader-profile");
     await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
     await expect(header.getByTestId("loader-profile-reason")).toHaveText(
-      "— настройки RiptOPL в APPS/APP_RIPTOPL/settings_riptopl.cfg",
+      "— APPS/APP_RIPTOPL/settings_riptopl.cfg, который пишет только RiptOPL",
     );
   } finally {
     // Other specs expect a library without a loader.

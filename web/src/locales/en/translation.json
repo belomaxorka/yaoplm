@@ -172,7 +172,9 @@
     "vmcSlotFragmented": "VMC slot {{slot}}: VMC/{{name}}.bin lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Copy the files to the computer, format the device and copy them back",
     "severalLoaders": "Several loaders are on the device: {{loaders}}. If the profile is wrong, choose one for this device",
     "zsoHiddenFromOpl110": "OPL 1.1.0 does not show ZSO images ({{images}} on the device): convert them to ISO or choose another profile for this device",
-    "jpgArtHint": "Pictures in ART/ are JPG ({{files}}), which OPL 1.2 does not load. If this device is for OPL 1.1.0, choose that profile for it"
+    "jpgArtHint": "Pictures in ART/ are JPG ({{files}}): OPL 1.2 betas from build 2169 on do not load them. If this device is for OPL 1.1.0, choose that profile for it",
+    "listedByOldOpl": "The games on this device were last listed by OPL 1.1.0 or an old beta. If OPL starts from elsewhere, such as the memory card, choose the profile for this device",
+    "listedByNewOpl": "The games on this device were last listed by OPL 1.2 (a beta from build 2017 on) or a fork. If OPL starts from elsewhere, such as the memory card, choose the profile for this device"
   },
   "library": {
     "title": "Library",
@@ -1015,9 +1017,11 @@
     "profileByChecksum": "{{loader}} at {{path}}, known by its checksum",
     "profileByVersion": "{{loader}} “{{version}}” at {{path}}",
     "profileByLoader": "{{loader}} at {{path}}",
-    "profileBySettings": "{{loader}} settings in {{file}}",
+    "profileByFiles": "{{file}}, which only {{loader}} writes",
     "profileByOpl12Keys": "{{file}} has keys only OPL 1.2 writes",
-    "profileByMmceKeys": "{{file}} has keys of the OPL MMCE fork",
+    "profileByOpl110Keys": "{{file}} has none of the keys OPL 1.2 always writes",
+    "profileByOldGamesBin": "{{file}} was last written by OPL 1.1.0 or a beta up to build 2016",
+    "profileByNewGamesBin": "{{file}} was last written by a beta from build 2017 on or a fork of OPL 1.2",
     "profileByExfat": "the device is exFAT, which OPL 1.1.0 cannot read",
     "profileByZso": "ZSO images ({{images}}), which OPL 1.1.0 does not show",
     "profileNoSigns": "no signs of a loader on the device"
