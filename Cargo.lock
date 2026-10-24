@@ -6849,6 +6849,7 @@ dependencies = [
  "md-5 0.11.0",
  "sevenz-rust2",
  "sha1 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "yaoplm-device",
  "zip",

@@ -12,7 +12,9 @@ use yaoplm_api::library::{
     Fragments, GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice,
     Platform,
 };
-use yaoplm_api::loaders::{LoaderCatalog, LoaderPublisher, LoaderTarget};
+use yaoplm_api::loaders::{
+    LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderOffer, LoaderPublisher, LoaderTarget,
+};
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
 use yaoplm_api::verify::{
@@ -797,6 +799,120 @@ pub fn loaders(catalog: &LoaderCatalog, lang: &str) -> String {
         let _ = writeln!(out);
     }
     out
+}
+
+fn checksum_source(source: LoaderChecksumSource) -> &'static str {
+    match source {
+        LoaderChecksumSource::Digest => "GitHub digest",
+        LoaderChecksumSource::Sums => "the release's SHA256SUMS",
+        LoaderChecksumSource::Pinned => "the catalogue",
+    }
+}
+
+/// `yaoplm loader release`: what a download would be.
+pub fn loader_offer(offer: &LoaderOffer) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{} {} (release {}{})",
+        offer.build,
+        offer.version,
+        offer.tag,
+        offer
+            .date
+            .as_deref()
+            .map(|d| format!(", {d}"))
+            .unwrap_or_default()
+    );
+    let file = &offer.file;
+    let _ = write!(out, "  File: {}, {}", file.name, size(file.size));
+    if let Some(member) = &offer.member {
+        let _ = write!(out, ", the ELF is {member}");
+    }
+    let _ = writeln!(out);
+    match &file.sha256 {
+        Some(sha) => {
+            let sources: Vec<&str> = file.sources.iter().map(|s| checksum_source(*s)).collect();
+            let _ = writeln!(out, "  SHA-256: {sha} (from {})", sources.join(" and "));
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "  SHA-256: not published; YAOPLM shows the one it computes"
+            );
+        }
+    }
+    let _ = writeln!(
+        out,
+        "  Licence: {}, {} ({})",
+        offer.license.spdx, offer.license.authors, offer.license.url
+    );
+    let _ = writeln!(out, "  Release: {}", offer.release_url);
+    if let Some(commit) = &offer.commit_url {
+        let _ = writeln!(out, "  Commit: {commit}");
+    }
+    if offer.changelog.is_empty() {
+        let _ = writeln!(out, "  No change list was published.");
+    } else {
+        let _ = writeln!(out, "  Changes:");
+        for item in &offer.changelog {
+            match &item.link {
+                Some(link) => {
+                    let _ = writeln!(out, "    - {} ({link})", item.text);
+                }
+                None => {
+                    let _ = writeln!(out, "    - {}", item.text);
+                }
+            }
+        }
+        if offer.changelog_more {
+            let _ = writeln!(out, "    … and more on the release page");
+        }
+    }
+    if offer.offline {
+        let _ = writeln!(
+            out,
+            "  GitHub could not be reached: shown from the last stored answer."
+        );
+    }
+    if let Some(sha) = &offer.stored {
+        let _ = writeln!(out, "  Already stored: {sha}");
+    }
+    out
+}
+
+/// One stored loader ELF.
+pub fn loader_file(file: &LoaderFile) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{} {} ({})",
+        file.build.as_deref().unwrap_or("no catalogue build"),
+        file.version.as_deref().unwrap_or("version unknown"),
+        size(file.size)
+    );
+    let _ = writeln!(out, "  SHA-256: {}", file.sha256);
+    let from = match &file.member {
+        Some(member) => format!("{member} in {}", file.file),
+        None => file.file.clone(),
+    };
+    let _ = writeln!(out, "  From: {from} ({})", file.source);
+    let trust = match (&file.tag, file.confirmed, &file.stable) {
+        (Some(_), true, _) => "confirmed by its release before the download".to_owned(),
+        (Some(_), false, _) => "the release published no checksum for it".to_owned(),
+        (None, _, Some(stable)) => format!("your own file; it is the official {stable}"),
+        (None, _, None) => "your own file; nothing vouches for it".to_owned(),
+    };
+    let _ = writeln!(out, "  {trust}");
+    out
+}
+
+/// `yaoplm loader files`.
+pub fn loader_files(files: &[LoaderFile]) -> String {
+    if files.is_empty() {
+        return "No loader stored yet.\n".to_owned();
+    }
+    files.iter().map(loader_file).collect::<Vec<_>>().join("\n")
 }
 
 pub fn about(about: &Attribution) -> String {
