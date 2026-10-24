@@ -249,6 +249,16 @@ Consequence for YAOPLM: the device format also depends on **how the user starts 
 - README: "We do **not** recommend using any defrag programs. The best way for defragmenting - copy all files to PC, format USB, and copy all files back." [R]
 - A clean format followed by preallocated sequential writes is the practical guarantee. Formatting is therefore also the fix the app can offer when the fragmentation check fails.
 
+**How the count is made, and who checks what (2026-10-24, IMP-7b, ADR-0037)**
+- **OPL** (`b3a21997`): `bdmLaunchGame()` in `src/bdmsupport.c` calls `USBMASS_IOCTL_GET_FRAGLIST` for every part into `settings->frags[iTotalFragCount]` with the remaining buffer size, and refuses only when one part returns more than 64 (`iFragCount > BDM_MAX_FRAGS`) [V]. The driver walks the FAT chain and starts a fragment wherever the next cluster is not the current one + 1; it **counts past the buffer** and returns the full count (`get_frag_list()` in ps2sdk `iop/fs/bdmfs_fatfs/src/fs_driver.c`, `329e2bb4`) [V]. So parts of 40 and 25 fragments pass the check, and `frag_count` 65 points past the 64-entry table [V code, D effect]. 64 since `8f04d009` (2022-06-15, "BDM: increase maximum fragments to 64 (same as HDD)") [V].
+- **OPL 1.1.0** (tag `v1.1.0`, `src/bdmsupport.c` L325–332): every part must pass `USBMASS_IOCTL_CHECK_CHAIN` (exactly one fragment), else "the game is fragmented" [V].
+- **Forks.** ps2-mmce, OPL-Evolution and wOPL keep upstream's per-part check [V]. NathanNeurotic's OPL fork (`55261de1`) and our YAOPL check `iFragCount > BDM_MAX_FRAGS - iTotalFragCount` and refuse negative counts: the total is refused cleanly there [V]. RiptOPL's Neutrino launcher (`include/neutrinolauncher.h`, `6edea174`) pre-counts one **shared 64-entry budget for the ISO and both VMCs**, as Neutrino does (`backend_bd_add_file_fd()` in `ee/loader/src/fhi_config.c`, rickgaiser/neutrino `7be8de2`) [V].
+- **Managers.** None of the cloned managers measures fragments. TinyPS2Manager warns when the destination holds over 100 files (`internal/queue/preflight.go`); others only split and copy [V].
+- **Counting on the PC** (what YAOPLM does):
+  - Windows: `FSCTL_GET_RETRIEVAL_POINTERS` on FAT32, exFAT and NTFS, no administrator rights; `fsutil file queryextents` shows the same extents (and warns that it wants NTFS) [V, owner's stick E: 2026-10-24: five `ul` parts, one extent each].
+  - Linux: **vfat and exfat implement no `.fiemap`** (`fs/fat/file.c`, `fs/exfat/file.c`, torvalds/linux master 2026-10; also absent in v5.4), so `FS_IOC_FIEMAP` returns EOPNOTSUPP (`ioctl_fiemap()` in `fs/ioctl.c`) [V]. `FIBMAP` works through `bmap` on both but needs `CAP_SYS_RAWIO` and stops at block 2^31 [V]. Without root the count on FAT32/exFAT is unknown. `statfs` reports the cluster as `f_bsize` on both drivers, `FIGETBSZ` the `FIBMAP` unit [V].
+  - macOS: `fcntl(F_LOG2PHYS_EXT)` maps a file offset to a device offset plus the contiguous length (`VNOP_BLOCKMAP`, xnu `bsd/kern/kern_descrip.c`) [V]. msdosfs implements the block map; Apple documents FSKit's `blockmapFile` as reached through `F_LOG2PHYS` [R]. Whether the user-space FAT/exFAT drivers of macOS 15 answer: CI job `real-fs-macos` tells [U].
+
 ---
 
 ## 2. How to format from a desktop app, per OS
