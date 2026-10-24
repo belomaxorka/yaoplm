@@ -28,7 +28,10 @@ export function App({ transport }: { transport: Transport }) {
           <JobsProvider>
             <ThemeProvider>
               <TooltipProvider>
-                <BrowserRouter>
+                {/* The library search lives in the URL. Inside a transition its
+                    new value arrives a render late, React puts the old text
+                    back, and fast typing loses keys. */}
+                <BrowserRouter useTransitions={false}>
                   <Routes>
                     <Route element={<AppShell />}>
                       <Route index element={<Navigate to="/library" replace />} />
