@@ -1,0 +1,78 @@
+# OPL 1.2.0 beta: upstream's pre-release `latest`, rebuilt in place on every
+# push to `master`. The version is only in the versioned asset names; every
+# asset has a GitHub digest, there is no SHA256SUMS (research/17 §7.1).
+id = "opl-beta"
+family = "opl"
+name = "OPL 1.2.0 beta"
+publisher = "official"
+repo = "ps2homebrew/Open-PS2-Loader"
+profile = "opl-1.2"
+recommended = true
+devices = ["usb", "mx4sio"]
+history = "opl-beta"
+
+[license]
+spdx = "AFL-3.0"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/blob/master/LICENSE"
+authors = "ps2homebrew and the Open PS2 Loader contributors"
+
+[summary]
+en = "The official beta, rebuilt on every change to OPL: exFAT, ZSO, up to 64 pieces per game and the latest compatibility fixes."
+ru = "Официальная бета, собирается при каждом изменении OPL: exFAT, ZSO, до 64 кусков на игру, свежие исправления совместимости."
+
+[limits]
+en = "A beta without a fixed version: the build behind the tag is replaced in place. Covers must be PNG."
+ru = "Бета без неизменной версии: сборка под тегом заменяется на месте. Обложки — только PNG."
+
+[[docs]]
+kind = "readme"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/blob/master/README.md"
+
+[[docs]]
+kind = "site"
+url = "https://ps2homebrew.github.io/Open-PS2-Loader/"
+
+[[docs]]
+kind = "wiki"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/wiki"
+
+[channel]
+tag = "latest"
+floating = true
+prerelease = true
+releases = ["latest"]
+version = "OPNPS2LD-{version}.7z"
+elf = "OPNPS2LD.ELF"
+languages = "OPNPS2LD-LANGS.7z"
+checksums = { digest = true }
+
+[layout]
+folders = ["CFG", "THM", "LNG", "ART", "VMC", "CHT", "APPS", "CD", "DVD"]
+settings = "conf_opl.cfg"
+settings_location = "memory-card"
+seed = ["usb_mode", "language_text"]
+languages = "LNG"
+defaults = { usb = "fmcb", mx4sio = "app" }
+
+[[layout.presets]]
+id = "fmcb"
+path = "UPDT/OPL.ELF"
+devices = ["usb"]
+launchers = ["fmcb"]
+
+[[layout.presets]]
+id = "ps2bbl"
+path = "APPS/OPNPS2LD.ELF"
+devices = ["usb"]
+launchers = ["ps2bbl"]
+
+[[layout.presets]]
+id = "app"
+path = "APPS/OPL/OPNPS2LD.ELF"
+title = "Open PS2 Loader"
+devices = ["usb", "mx4sio"]
+launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
+
+[fingerprints]
+elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
+settings = ["conf_opl.cfg"]

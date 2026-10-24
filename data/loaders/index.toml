@@ -1,0 +1,7 @@
+# Loader catalogue (SPEC LDR-1, §5.10.1, ADR-0022, ADR-0040): the builds
+# YAOPLM installs, one file per build, in this order on the build cards.
+# A copy ships inside the program; a newer one is read from `main` when the
+# user checks for updates. `schema` changes when a field is added or its
+# meaning changes: a program that does not know the schema keeps its own copy.
+schema = 1
+builds = ["opl-stable", "opl-beta", "yaopl"]

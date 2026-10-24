@@ -1,0 +1,8 @@
+# YAOPL (belomaxorka/yaopl), pre-release `latest`, recreated on every push to
+# `master`. Every build seen is kept here: the `OPNPS2LD.ELF` line of the
+# release's SHA256SUMS (checked against the GitHub `digest`), the release name
+# as the version and the upload date. .github/workflows/loader-hashes.yml
+# appends new builds once a day until the fork keeps its own HASHES.txt
+# (SPEC §5.10.1, ADR-0022, ADR-0040).
+# Columns: version sha256 release-date file. Lines are only ever added.
+v1.2.0-Beta-2370-33a2b19-yaopl aabb85cc5b3f2194ccb3f7e0488b48a49fcd5197be8e5936d7e3e27b9489e4fa 2026-10-23 OPNPS2LD.ELF

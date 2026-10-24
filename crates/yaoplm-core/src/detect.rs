@@ -74,8 +74,10 @@ pub enum Confidence {
     Default,
 }
 
-/// A loader family YAOPLM recognises on a device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A loader family YAOPLM recognises on a device; the catalogue names
+/// them in lower case (`data/loaders/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Family {
     Opl,
     RiptOpl,
