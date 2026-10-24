@@ -302,6 +302,7 @@ impl Scanner<'_> {
                 cfg: None,
                 art: Vec::new(),
                 cheats: None,
+                fragments: None,
                 warnings,
             });
         }
@@ -382,6 +383,7 @@ impl Scanner<'_> {
                 cfg: None,
                 art: Vec::new(),
                 cheats: None,
+                fragments: None,
                 warnings,
             });
         }

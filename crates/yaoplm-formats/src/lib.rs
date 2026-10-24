@@ -31,4 +31,4 @@ pub mod vmc;
 pub mod zso;
 
 pub use media::Media;
-pub use profile::LoaderProfile;
+pub use profile::{BDM_MAX_FRAGS, FragmentLimit, LoaderProfile};

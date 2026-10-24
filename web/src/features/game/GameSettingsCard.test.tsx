@@ -39,6 +39,7 @@ const game: Game = {
   warnings: [],
   knownTitle: null,
   dump: null,
+  fragments: null,
 };
 
 const cfg: CfgView = {

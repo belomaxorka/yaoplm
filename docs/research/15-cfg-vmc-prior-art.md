@@ -118,7 +118,7 @@ OPL-PC-Tools offers 8–512 MiB; OPL's menu only 8–64, and Neutrino emulates a
 
 ### 2.5 Contiguity on the PC [verified]
 
-Windows reports a file's runs through `FSCTL_GET_RETRIEVAL_POINTERS` on FAT32, exFAT and NTFS without administrator rights; extents that continue each other on disk form one run (`fsutil file queryextents` shows the same). YAOPLM reserves the space first (`SetFileInformationByHandle(FileAllocationInfo)`, ADR-0019) and counts the runs once the card is written. Linux (`FIEMAP`) and macOS come with the fragmentation check of the whole library (IMP-7b).
+Windows reports a file's runs through `FSCTL_GET_RETRIEVAL_POINTERS` on FAT32, exFAT and NTFS without administrator rights; extents that continue each other on disk form one run (`fsutil file queryextents` shows the same). YAOPLM reserves the space first (`SetFileInformationByHandle(FileAllocationInfo)`, ADR-0019) and counts the runs once the card is written. Linux (`FIEMAP`, then `FIBMAP` as root) and macOS (`F_LOG2PHYS_EXT`) came with the fragmentation check of the whole library (IMP-7b, ADR-0037; research/06 §1.11).
 
 ## 3. Editors in other tools [secondary]
 

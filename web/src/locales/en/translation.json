@@ -166,7 +166,10 @@
     "vmcReplaced": "{{path}} is replaced by a blank card; the old one moves to {{folder}} with its saves",
     "vmcNotOnDevice": "VMC slot {{slot}}: VMC/{{name}}.bin is not on the device; OPL creates an 8 MiB card when its VMC menu is opened, or asks at launch to use the memory card instead",
     "settingsUnchanged": "The settings are already like this; nothing to write",
-    "vmcFragmented": "{{path}} lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Free some space or defragment the device, then create the card again"
+    "vmcFragmented": "{{path}} lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Delete it, free some space and create the card again; if it still comes out in pieces, copy the files to the computer, format the device and copy them back",
+    "gameFragmented": "The game lies on the device in {{fragments}} pieces, more than the {{limit}} OPL loads over USB, MX4SIO or iLink: it will not start. Copy the games to the computer, format the device and add them back",
+    "gameFragmentedOpl110": "Files of the game lie on the device in several pieces ({{fragments}} in all): OPL 1.1.0 starts a game over USB, MX4SIO or iLink only when each file is one piece. Copy the games to the computer, format the device and add them back",
+    "vmcSlotFragmented": "VMC slot {{slot}}: VMC/{{name}}.bin lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Copy the files to the computer, format the device and copy them back"
   },
   "library": {
     "title": "Library",
@@ -247,6 +250,11 @@
     },
     "layers": "Layers",
     "dualLayer": "Dual layer (DVD-9); the second layer starts at sector {{sector}}",
+    "fragments": "Pieces on the device",
+    "fragmentsOf": "{{pieces}} (OPL loads a game from up to {{limit}})",
+    "fragmentsEachOne": "{{pieces}}: each file in one piece, as OPL 1.1.0 needs",
+    "fragmentsNotEachOne": "{{pieces}}: not every file is in one piece, and OPL 1.1.0 needs each to be",
+    "fragmentsUnknown": "Unknown: the system does not say where files lie on this device (on Linux, only root can ask)",
     "parts_one": "{{count}} ul chunk",
     "parts_other": "{{count}} ul chunks",
     "partName": "Chunk",

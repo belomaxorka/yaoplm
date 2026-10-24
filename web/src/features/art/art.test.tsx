@@ -53,6 +53,7 @@ const game: Game = {
   warnings: [],
   knownTitle: null,
   dump: null,
+  fragments: null,
 };
 
 /** Answers the requests these dialogs make; jobs end with `results[kind]`, or run until cancelled. */

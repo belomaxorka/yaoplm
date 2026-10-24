@@ -205,6 +205,41 @@ pub struct Game {
     /// The last verification of this image, when its hashes are cached and
     /// it has not changed since (GAME-5). Scans never hash.
     pub dump: Option<DumpCheck>,
+    /// How the game lies on a BDM device (IMP-7b); `null` off BDM.
+    pub fragments: Option<Fragments>,
+}
+
+/// Runs of clusters a game's files occupy on a FAT32 or exFAT device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Fragments {
+    Known {
+        total: u32,
+        /// One count per file, in part order.
+        files: Vec<u32>,
+        /// OPL's limit for the whole game under the profile; `null` when
+        /// every file must be one piece (OPL 1.1.0).
+        limit: Option<u32>,
+    },
+    /// The OS does not say where files lie (Linux without root).
+    Unknown,
+}
+
+impl Fragments {
+    pub fn from_core(fragments: &core::Fragments, profile: core::LoaderProfile) -> Self {
+        match fragments {
+            core::Fragments::Known(files) => Self::Known {
+                total: fragments.total().unwrap_or(u32::MAX),
+                files: files.clone(),
+                limit: match profile.fragment_limit() {
+                    yaoplm_formats::FragmentLimit::Total(limit) => Some(limit),
+                    yaoplm_formats::FragmentLimit::OnePerFile => None,
+                },
+            },
+            core::Fragments::Unknown => Self::Unknown,
+        }
+    }
 }
 
 /// A game's standing against Redump, from the hash cache.
@@ -223,7 +258,7 @@ pub struct DumpCheck {
 }
 
 impl Game {
-    fn from_core(game: &core::Game, root: &std::path::Path) -> Self {
+    fn from_core(game: &core::Game, root: &std::path::Path, profile: core::LoaderProfile) -> Self {
         let ul_index = match &game.location {
             core::GameLocation::Ul { index, .. } => u32::try_from(*index).ok(),
             core::GameLocation::Image { .. } => None,
@@ -274,6 +309,10 @@ impl Game {
             warnings: notices(&game.warnings),
             known_title: core::titles::known_title(&game.startup),
             dump: None,
+            fragments: game
+                .fragments
+                .as_ref()
+                .map(|f| Fragments::from_core(f, profile)),
         }
     }
 }
@@ -336,7 +375,7 @@ impl Library {
             games: library
                 .games
                 .iter()
-                .map(|g| Game::from_core(g, &library.root))
+                .map(|g| Game::from_core(g, &library.root, profile.into()))
                 .collect(),
             apps: library
                 .apps
@@ -420,6 +459,11 @@ pub struct ImageDetails {
     pub warnings: Vec<Notice>,
     /// The title the bundled database gives the ID (META-1).
     pub known_title: Option<String>,
+    /// How the file lies on a FAT32 or exFAT device (IMP-7b); `null` when
+    /// the file is elsewhere.
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fragments: Option<Fragments>,
 }
 
 impl From<&core::ImageInfo> for ImageDetails {
@@ -466,6 +510,7 @@ impl From<&core::ImageInfo> for ImageDetails {
                 .as_ref()
                 .ok()
                 .and_then(|id| core::titles::known_title(id)),
+            fragments: None,
         }
     }
 }
