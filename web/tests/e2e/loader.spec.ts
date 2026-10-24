@@ -82,6 +82,27 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по носителю)");
 });
 
+test("the question follows the doctor's verdict (ADR-0041)", async ({ page, request }) => {
+  // The fixture library has OPL's folders and no loader. On a system disk
+  // (Windows) the doctor says it does not suit OPL and nothing is asked; on
+  // a plain disk it is asked. The answers: LoaderProfileHint.test.tsx.
+  await openLibrary(page, request, { language: "en" });
+  await page.goto("/devices");
+  const card = libraryCard(page);
+  await expect(card.getByTestId("loader-profile")).toBeVisible();
+  const unusable = (await card.getAttribute("data-verdict")) === "error";
+  await expect(card.getByTestId("loader-question")).toHaveCount(unusable ? 0 : 1);
+  await page.goto("/library");
+  const header = page.getByTestId("loader-profile");
+  await header.getByTestId("loader-profile-change").click();
+  await page.getByTestId("loader-profile-RiptOpl").click();
+  await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
+  await expect(page.getByTestId("loader-question")).toHaveCount(0);
+  await expect(page.getByTestId("loader-conflict")).toHaveCount(0);
+  await header.getByTestId("loader-profile-change").click();
+  await page.getByTestId("loader-profile-auto").click();
+});
+
 for (const language of ["en", "ru"] as const) {
   for (const theme of ["light", "dark"] as const) {
     test(`loader profile screenshots ${language} ${theme}`, async ({ page, request }) => {

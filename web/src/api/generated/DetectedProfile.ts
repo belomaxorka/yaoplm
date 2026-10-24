@@ -16,4 +16,9 @@ reason: Phrase,
 /**
  * `reason` in English.
  */
-reasonText: string, loaders: Array<FoundLoader>, notices: Array<PlanNotice>, };
+reasonText: string, loaders: Array<FoundLoader>, notices: Array<PlanNotice>, 
+/**
+ * OPL's folders or `ul.cfg` are at the root (the device is prepared for
+ * OPL): with no signs, the interface asks which OPL it is for.
+ */
+library: boolean, };

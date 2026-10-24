@@ -26,6 +26,14 @@ describe("the loader profile per device (LIB-1, ADR-0040)", () => {
     expect(readSettings().profileOverrides).toEqual({ "serial:7E1CD2C5": "Opl110" });
   });
 
+  it("keeps \"I don't know\" and sends it as the rules every OPL reads (ADR-0041)", () => {
+    save({ profileOverrides: { "serial:A": "unknown" } });
+    expect(readSettings().profileOverrides).toEqual({ "serial:A": "unknown" });
+    expect(profileChoice({ profileOverrides: { "serial:A": "unknown" } })).toEqual({
+      overrides: [{ key: "serial:A", profile: "Opl110" }],
+    });
+  });
+
   it("asks the core with the overrides only, never a profile for every device", () => {
     expect(profileChoice({ profileOverrides: { "serial:A": "RiptOpl" } })).toEqual({
       overrides: [{ key: "serial:A", profile: "RiptOpl" }],

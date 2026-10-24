@@ -202,7 +202,7 @@ impl DeviceInfo {
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum ProfileConfidence {
-    /// A release known by its checksum.
+    /// A release known by its checksum or by the version inside its ELF.
     Exact,
     /// File names, settings files, the file system or the images.
     Indirect,
@@ -249,6 +249,9 @@ pub struct DetectedProfile {
     pub reason_text: String,
     pub loaders: Vec<FoundLoader>,
     pub notices: Vec<PlanNotice>,
+    /// OPL's folders or `ul.cfg` are at the root (the device is prepared for
+    /// OPL): with no signs, the interface asks which OPL it is for.
+    pub library: bool,
 }
 
 impl From<&yaoplm_core::detect::Detection> for DetectedProfile {
@@ -274,6 +277,7 @@ impl From<&yaoplm_core::detect::Detection> for DetectedProfile {
                 })
                 .collect(),
             notices: d.notices.iter().map(PlanNotice::from).collect(),
+            library: d.library,
         }
     }
 }

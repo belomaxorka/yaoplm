@@ -3,38 +3,45 @@
 //! Signs by strength (research/16 §9–10), the first level that agrees
 //! decides:
 //! 1. An ELF whose SHA-256 is an upstream stable release
-//!    (`data/loader-hashes/opl-stable.txt`): exact. ELFs are packed by
-//!    ps2-packer, so their version string cannot be read.
-//! 2. Files only one family writes: RiptOPL's `title.cfg` `Version=` and its
+//!    (`data/loader-hashes/opl-stable.txt`): exact.
+//! 2. The version string inside an ELF, unpacked from ps2-packer's LZMA
+//!    stream when needed (`yaoplm_formats::ps2_elf`, research/16 §1.6):
+//!    exact too. Releases before 1.2 and upstream betas before build 1871
+//!    get 1.1.0's rules. The program's own strings also name its family
+//!    (`settings_riptopl.cfg` in RiptOPL, `wopl_settings.cfg` in wOPL), so
+//!    a renamed ELF is still known.
+//! 3. Files only one family writes: RiptOPL's `title.cfg` `Version=` and its
 //!    settings and state files, wOPL's and uOPL's settings, NHDDL's caches.
-//! 3. `CD/games.bin`, `DVD/games.bin`: 92-byte records were last written by
+//! 4. `CD/games.bin`, `DVD/games.bin`: 92-byte records were last written by
 //!    OPL 1.1.0 or a beta up to build 2016, 188-byte ones by a later beta or
 //!    a fork (build numbers, not years).
-//! 4. `conf_opl.cfg`: OPL saves every key it knows, so the keys every beta
+//! 5. `conf_opl.cfg`: OPL saves every key it knows, so the keys every beta
 //!    from 1871 on writes (`bdm_cache`, `enable_bgm`, `x_sensitivity`,
 //!    `enable_bdm_hdd`) prove a 1.2 build saved it, and their absence that
 //!    none did (`include/config.h`, `src/opl.c` `_saveConfig()`).
-//! 5. ELF names: `RIPTOPL*`, `WOPNPS2LD*`, `nhddl*`, `OPNPS2LD*`, `OPL.ELF`.
+//! 6. ELF names: `RIPTOPL*`, `WOPNPS2LD*`, `nhddl*`, `OPNPS2LD*`, `OPL.ELF`.
 //!
 //! exFAT and ZSO images rule out OPL 1.1.0 (and betas before 1880/1871) for
-//! levels 3 to 5; with nothing else they mean OPL 1.2.0 beta. A stronger
+//! levels 4 to 6; with nothing else they mean OPL 1.2.0 beta. A stronger
 //! sign for 1.1.0 on such a device stays, and the device's problems say
 //! why it will not work. Without signs: OPL 1.2.0 beta (ADR-0004); JPG art
 //! then adds a hint. Builds without a profile of their own (wOPL, uOPL,
 //! NHDDL, the MMCE fork, YAOPL) get 1.2.0 beta's rules. An override for
-//! the device or an explicit setting beats all of this; the front ends
-//! decide that, never the core.
+//! the device or the CLI's `--profile` beats all of this; the front ends
+//! decide that, never the core (ADR-0040).
 
-use std::io;
+use std::io::{self, Read};
 use std::sync::OnceLock;
 
 use yaoplm_device::fs::{DirEntry, find_entry, list_or_empty};
 use yaoplm_device::{DeviceFs, FsKind, RelPath};
 use yaoplm_formats::LoaderProfile;
 use yaoplm_formats::games_bin::{self, Generation};
+use yaoplm_formats::ps2_elf;
 use yaoplm_i18n::Phrase;
 
 use crate::plan::Notice;
+use crate::scan::OPL_FOLDERS;
 
 /// Known ELFs of upstream stable releases: `version sha256 date file`.
 static OPL_STABLE: &str = include_str!("../../../data/loader-hashes/opl-stable.txt");
@@ -63,6 +70,51 @@ const OPL_KEYS: [&str; 3] = ["usb_mode", "default_device", "enable_delete_rename
 /// FMCB's `UPDT/`, RiptOPL's `OPL/` fallback; `APPS/` and its app folders
 /// are read on their own.
 const LOADER_DIRS: [&str; 3] = ["", "UPDT", "OPL"];
+
+/// Larger files are hashed but not unpacked: a PS2 program fits in 32 MiB.
+const MAX_ELF_BYTES: u64 = 64 << 20;
+
+/// Settings files a program names, telling its family whatever the file is
+/// called. RiptOPL also names `conf_opl.cfg` (it reads one as a seed) and
+/// wOPL `conf_wopl.cfg` (it migrates it), so OPL's comes last.
+const PROGRAM_MARKERS: [(&[u8], Family); 6] = [
+    (b"settings_riptopl.cfg", Family::RiptOpl),
+    (b"conf_riptopl.cfg", Family::RiptOpl),
+    (b"wopl_settings.cfg", Family::Wopl),
+    (b"conf_wopl.cfg", Family::Wopl),
+    (b"conf_uopl.cfg", Family::Uopl),
+    (b"conf_opl.cfg", Family::Opl),
+];
+
+/// The first upstream beta with ZSO (research/16 §1.4): older betas follow
+/// 1.1.0's rules.
+const FIRST_ZSO_BETA: u32 = 1871;
+
+/// The rules an OPL version string asks for: 1.0, 1.1 and upstream betas
+/// before build 1871 are 1.1.0's. A fork's suffix (`-yaopl`) means the
+/// number counts the fork's own commits, so it says nothing.
+fn opl_rules(version: &str) -> LoaderProfile {
+    let mut parts = version.trim_start_matches('v').split('-');
+    let release: Vec<u32> = parts
+        .next()
+        .unwrap_or_default()
+        .split('.')
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    if release.as_slice() < [1, 2].as_slice() {
+        return LoaderProfile::Opl110;
+    }
+    let rest: Vec<&str> = parts.collect();
+    match rest.as_slice() {
+        [beta, number, hash] if beta.eq_ignore_ascii_case("beta") && hash.len() == 7 => {
+            match number.parse::<u32>() {
+                Ok(n) if n < FIRST_ZSO_BETA => LoaderProfile::Opl110,
+                _ => LoaderProfile::Opl120Beta,
+            }
+        }
+        _ => LoaderProfile::Opl120Beta,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
@@ -107,27 +159,33 @@ impl Family {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoundLoader {
     pub family: Family,
-    /// `v1.1.0` when the checksum says so, or a `title.cfg` `Version=`.
+    /// `v1.1.0` when the checksum or the ELF says so, or a `title.cfg`
+    /// `Version=`.
     pub version: Option<String>,
     /// The ELF.
     pub path: String,
     /// Identified by its SHA-256.
     pub exact: bool,
+    /// `version` is the string inside the ELF.
+    pub version_in_elf: bool,
 }
 
 impl FoundLoader {
     fn profile(&self) -> LoaderProfile {
-        match (self.family, self.exact) {
+        match (self.family, self.exact, &self.version) {
             // Only upstream's stable releases are in the table: 1.0.0 and
             // 1.1.0 share 1.1.0's rules.
-            (Family::Opl, true) => LoaderProfile::Opl110,
-            (family, _) => family.profile(),
+            (Family::Opl, true, _) => LoaderProfile::Opl110,
+            (Family::Opl, false, Some(version)) if self.version_in_elf => opl_rules(version),
+            (family, ..) => family.profile(),
         }
     }
 
     fn label(&self) -> String {
         match &self.version {
-            Some(version) if self.exact => format!("{} {version}", self.family.name()),
+            Some(version) if self.exact || self.version_in_elf => {
+                format!("{} {version}", self.family.name())
+            }
             _ => self.family.name().to_owned(),
         }
     }
@@ -144,12 +202,18 @@ pub struct Detection {
     /// Several loaders, `games.bin` from another generation, ZSO for
     /// 1.1.0, a hint from JPG art.
     pub notices: Vec<Notice>,
+    /// OPL's folders (`OPL_FOLDERS` but `APPS`) or `ul.cfg` are at the root:
+    /// the device is prepared for OPL, so an unknown profile is worth asking
+    /// about; an empty or foreign device gets a loader installed first
+    /// (SPEC §5.11.2).
+    pub library: bool,
 }
 
 /// Strength of a sign, strongest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Level {
     Checksum,
+    ElfVersion,
     FamilyFiles,
     GamesBin,
     ConfOpl,
@@ -161,6 +225,9 @@ struct Sign {
     level: Level,
     profile: LoaderProfile,
     reason: Phrase,
+    /// The family a loader's ELF or a family's file names; `None` for signs
+    /// of the whole device.
+    family: Option<(Family, String)>,
 }
 
 struct KnownElf {
@@ -246,6 +313,8 @@ struct Scan<'a> {
     known: &'a [KnownElf],
     loaders: Vec<FoundLoader>,
     signs: Vec<Sign>,
+    /// Files named like a loader that are no PS2 program.
+    damaged: Vec<String>,
 }
 
 impl Scan<'_> {
@@ -265,12 +334,32 @@ impl Scan<'_> {
             level,
             profile,
             reason,
+            family: None,
+        });
+    }
+
+    /// A sign of one family, from one of its ELFs or files at `path`.
+    fn family_sign(
+        &mut self,
+        level: Level,
+        family: Family,
+        path: &str,
+        profile: LoaderProfile,
+        reason: Phrase,
+    ) {
+        self.signs.push(Sign {
+            level,
+            profile,
+            reason,
+            family: Some((family, path.to_owned())),
         });
     }
 
     fn by_file(&mut self, family: Family, path: &str) {
-        self.sign(
+        self.family_sign(
             Level::FamilyFiles,
+            family,
+            path,
             family.profile(),
             Phrase::reason("profileByFiles")
                 .with("loader", family.name())
@@ -278,28 +367,66 @@ impl Scan<'_> {
         );
     }
 
-    fn elf(&mut self, path: &str, family: Family) -> io::Result<()> {
+    /// An ELF found by its name as `named`: its checksum, the version and
+    /// family strings of its program (research/16 §1.6), else the name.
+    fn elf(&mut self, path: &str, named: Family) -> io::Result<()> {
         let Some(rel) = rel(path) else {
             return Ok(());
         };
+        let mut bytes = Vec::new();
+        self.fs
+            .open(&rel)?
+            .take(MAX_ELF_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        let whole = bytes.len() as u64 <= MAX_ELF_BYTES;
+        let sha = if whole {
+            yaoplm_hash::sha256_reader(&bytes[..])?
+        } else {
+            yaoplm_hash::sha256_reader(self.fs.open(&rel)?)?
+        };
+        let parsed = whole.then(|| ps2_elf::program(&bytes));
+        let not_ps2 = matches!(parsed, Some(Err(_)));
+        let program = parsed.and_then(Result::ok);
+        let family = program
+            .as_ref()
+            .and_then(|p| {
+                PROGRAM_MARKERS
+                    .iter()
+                    .find(|(marker, _)| p.contains(marker))
+            })
+            .map_or(named, |&(_, family)| family);
         let mut found = FoundLoader {
             family,
             version: None,
             path: path.to_owned(),
             exact: false,
+            version_in_elf: false,
         };
-        if family == Family::Opl {
-            let sha = yaoplm_hash::sha256_reader(self.fs.open(&rel)?)?;
-            if let Some(known) = self.known.iter().find(|k| k.sha256 == sha) {
-                found.version = Some(known.version.clone());
-                found.exact = true;
-            }
+        if family == Family::Opl
+            && let Some(known) = self.known.iter().find(|k| k.sha256 == sha)
+        {
+            found.version = Some(known.version.clone());
+            found.exact = true;
+        } else if let Some(version) = program
+            .as_ref()
+            .and_then(|p| ps2_elf::find_version(&p.bytes))
+        {
+            found.version = Some(version);
+            found.version_in_elf = true;
         }
         let (level, reason) = if found.exact {
             (
                 Level::Checksum,
                 Phrase::reason("profileByChecksum")
                     .with("loader", found.label())
+                    .with("path", path),
+            )
+        } else if let Some(version) = found.version.as_deref().filter(|_| found.version_in_elf) {
+            (
+                Level::ElfVersion,
+                Phrase::reason("profileByElfVersion")
+                    .with("loader", family.name())
+                    .with("version", version)
                     .with("path", path),
             )
         } else {
@@ -310,7 +437,10 @@ impl Scan<'_> {
                     .with("path", path),
             )
         };
-        self.sign(level, found.profile(), reason);
+        if not_ps2 && !found.exact {
+            self.damaged.push(path.to_owned());
+        }
+        self.family_sign(level, family, path, found.profile(), reason);
         self.loaders.push(found);
         Ok(())
     }
@@ -410,7 +540,12 @@ impl Scan<'_> {
             return Ok(());
         }
         let version = version.unwrap_or_default();
-        for loader in self.loaders[before..].iter_mut().filter(|l| !l.exact) {
+        // An ELF that names its own version knows better than the package's
+        // `title.cfg`, which may be left from another build.
+        for loader in self.loaders[before..]
+            .iter_mut()
+            .filter(|l| !l.exact && !l.version_in_elf)
+        {
             loader.family = Family::RiptOpl;
             loader.version = Some(version.clone());
             self.signs.push(Sign {
@@ -420,6 +555,7 @@ impl Scan<'_> {
                     .with("loader", Family::RiptOpl.name())
                     .with("version", &version)
                     .with("path", &loader.path),
+                family: Some((Family::RiptOpl, loader.path.clone())),
             });
         }
         Ok(())
@@ -502,19 +638,39 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         known,
         loaders: Vec::new(),
         signs: Vec::new(),
+        damaged: Vec::new(),
     };
+    let mut library = false;
     for dir in LOADER_DIRS {
         let entries = match rel(dir) {
             Some(path) => list_or_empty(fs, &path)?,
             None => continue,
         };
+        if dir.is_empty() {
+            // The folders a library scan reports (LIB-3), but `APPS/` alone
+            // is any homebrew stick.
+            library = entries.iter().any(|e| {
+                if e.is_dir {
+                    OPL_FOLDERS
+                        .iter()
+                        .any(|f| *f != "APPS" && e.name.eq_ignore_ascii_case(f))
+                } else {
+                    e.name.eq_ignore_ascii_case("ul.cfg")
+                }
+            });
+        }
         scan.folder(dir, &entries)?;
     }
     scan.apps()?;
     scan.nhddl()?;
     scan.art_cache()?;
     let listed_by = scan.games_bin()?;
-    let Scan { loaders, signs, .. } = scan;
+    let Scan {
+        loaders,
+        signs,
+        damaged,
+        ..
+    } = scan;
 
     let images = zso_images(fs)?;
     let exfat = fs.info().is_ok_and(|info| info.kind == FsKind::ExFat);
@@ -523,24 +679,28 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
     let mut notices = Vec::new();
 
     let mut chosen: Option<(Level, &Sign)> = None;
-    for level in [
-        Level::Checksum,
-        Level::FamilyFiles,
-        Level::GamesBin,
-        Level::ConfOpl,
-        Level::ElfName,
+    // A checksum and a version string are both exact: two ELFs that
+    // disagree that way decide nothing either.
+    for tier in [
+        &[Level::Checksum, Level::ElfVersion][..],
+        &[Level::FamilyFiles],
+        &[Level::GamesBin],
+        &[Level::ConfOpl],
+        &[Level::ElfName],
     ] {
         let here: Vec<&Sign> = signs
             .iter()
-            .filter(|s| s.level == level)
+            .filter(|s| tier.contains(&s.level))
             .filter(|s| {
-                !(not_110 && level > Level::FamilyFiles && s.profile == LoaderProfile::Opl110)
+                !(not_110 && s.level > Level::FamilyFiles && s.profile == LoaderProfile::Opl110)
             })
             .collect();
-        let Some(first) = here.first() else { continue };
+        let Some(first) = here.iter().min_by_key(|s| s.level) else {
+            continue;
+        };
         // Signs of one level that disagree decide nothing.
         if here.iter().all(|s| s.profile == first.profile) {
-            chosen = Some((level, first));
+            chosen = Some((first.level, first));
             break;
         }
     }
@@ -548,7 +708,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
     let (profile, confidence, reason) = match chosen {
         Some((level, sign)) => (
             sign.profile,
-            if level == Level::Checksum {
+            if matches!(level, Level::Checksum | Level::ElfVersion) {
                 Confidence::Exact
             } else {
                 Confidence::Indirect
@@ -578,7 +738,9 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         }
         seen
     });
-    if loaders.len() > 1 && (families.len() > 1 || loaders.iter().any(|l| l.exact)) {
+    if loaders.len() > 1
+        && (families.len() > 1 || loaders.iter().any(|l| l.exact || l.version_in_elf))
+    {
         let list = loaders
             .iter()
             .map(|l| format!("{} ({})", l.label(), l.path))
@@ -586,6 +748,44 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
             .join(", ");
         notices.push(Notice::info(
             Phrase::notice("severalLoaders").with("loaders", list),
+        ));
+    }
+    // Files of another family next to the loader whose ELF decided: left
+    // from an earlier install, and that loader does not use them.
+    if let Some((
+        level,
+        Sign {
+            family: Some((installed, _)),
+            ..
+        },
+    )) = chosen
+        && matches!(level, Level::Checksum | Level::ElfVersion)
+    {
+        let mut left: Vec<(Family, Vec<&str>)> = Vec::new();
+        for sign in signs.iter().filter(|s| s.level == Level::FamilyFiles) {
+            let Some((family, path)) = &sign.family else {
+                continue;
+            };
+            if family == installed {
+                continue;
+            }
+            match left.iter_mut().find(|(f, _)| f == family) {
+                Some((_, paths)) => paths.push(path),
+                None => left.push((*family, vec![path])),
+            }
+        }
+        for (family, paths) in left {
+            notices.push(Notice::info(
+                Phrase::notice("leftoverLoaderFiles")
+                    .with("files", paths.join(", "))
+                    .with("loader", family.name())
+                    .with("installed", installed.name()),
+            ));
+        }
+    }
+    for path in &damaged {
+        notices.push(Notice::warning(
+            Phrase::notice("loaderNotPs2Elf").with("path", path),
         ));
     }
     // An installed loader against the generation that last listed the
@@ -626,6 +826,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         reason,
         loaders,
         notices,
+        library,
     })
 }
 
@@ -872,7 +1073,7 @@ mod tests {
     #[test]
     fn app_folders_and_their_title_cfg() {
         let fs = MemFs::new(FsKind::Fat32);
-        fs.insert_file("APPS/APP_RIPTOPL/RIPTOPL.ELF", b"elf");
+        fs.insert_file("APPS/APP_RIPTOPL/RIPTOPL.ELF", &plain_elf(&[]));
         fs.insert_file(
             "APPS/APP_RIPTOPL/title.cfg",
             b"title=RiptOPL\nboot=RIPTOPL.ELF\nVersion=RiptOpen PS2 Loader v1.2.0 OFFICIAL ROLLING\n",
@@ -889,7 +1090,7 @@ mod tests {
 
         // An app whose ELF has its own name, found through `boot=`.
         let fs = MemFs::new(FsKind::Fat32);
-        fs.insert_file("APPS/MYOPL/MINE.ELF", b"elf");
+        fs.insert_file("APPS/MYOPL/MINE.ELF", &plain_elf(&[]));
         fs.insert_file(
             "APPS/MYOPL/title.cfg",
             b"title=Open PS2 Loader\nboot=MINE.ELF\n",
@@ -904,8 +1105,8 @@ mod tests {
     #[test]
     fn loaders_that_disagree_decide_nothing() {
         let fs = MemFs::new(FsKind::Fat32);
-        fs.insert_file("APPS/OPNPS2LD.ELF", b"one");
-        fs.insert_file("APPS/APP_RIPTOPL/RIPTOPL.ELF", b"two");
+        fs.insert_file("APPS/OPNPS2LD.ELF", &plain_elf(&[]));
+        fs.insert_file("APPS/APP_RIPTOPL/RIPTOPL.ELF", &plain_elf(&[]));
         let d = detect(&fs);
         assert_eq!(d.loaders.len(), 2);
         assert_eq!(
@@ -925,8 +1126,8 @@ mod tests {
 
         // Two copies of one family agree.
         let fs = MemFs::new(FsKind::Fat32);
-        fs.insert_file("UPDT/OPL.ELF", b"a");
-        fs.insert_file("APPS/OPNPS2LD.ELF", b"b");
+        fs.insert_file("UPDT/OPL.ELF", &plain_elf(&[]));
+        fs.insert_file("APPS/OPNPS2LD.ELF", &plain_elf(&[]));
         let d = detect(&fs);
         assert_eq!(reason(&d), "profileByLoader");
         assert!(d.notices.is_empty());
@@ -945,5 +1146,262 @@ mod tests {
         assert_eq!(family_file("CONF_UOPL.CFG"), Some(Family::Uopl));
         assert_eq!(family_file("wopl_boot.cfg"), Some(Family::Wopl));
         assert_eq!(family_file("conf_opl.cfg"), None);
+    }
+
+    /// An unpacked 32-bit MIPS ELF whose program holds `strings` as C
+    /// strings (packed ones are `yaoplm_formats::ps2_elf`'s tests).
+    fn plain_elf(strings: &[&str]) -> Vec<u8> {
+        let mut out = vec![0u8; 0x80];
+        out[..6].copy_from_slice(&[0x7F, b'E', b'L', b'F', 1, 1]);
+        out[0x12] = 8;
+        out[0x2A] = 32;
+        out[0x2C] = 2;
+        for s in strings {
+            out.push(0);
+            out.extend_from_slice(s.as_bytes());
+        }
+        out.push(0);
+        out
+    }
+
+    #[test]
+    fn an_elf_tells_its_version() {
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file(
+            "UPDT/OPL.ELF",
+            &plain_elf(&[
+                "conf_opl.cfg",
+                "Open PS2 Loader %s",
+                "v1.2.0-Beta-2271-b3a2199",
+            ]),
+        );
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.confidence, reason(&d)),
+            (
+                LoaderProfile::Opl120Beta,
+                Confidence::Exact,
+                "profileByElfVersion"
+            )
+        );
+        assert_eq!(
+            d.reason.english(),
+            "OPL v1.2.0-Beta-2271-b3a2199 at UPDT/OPL.ELF, by the version inside the file"
+        );
+        assert!(d.loaders[0].version_in_elf && !d.loaders[0].exact);
+
+        // A 1.1.0 the table does not know (self-built): 1.1.0's rules, and it
+        // beats exFAT like a checksum does; the device's problems say why.
+        let fs = MemFs::new(FsKind::ExFat);
+        fs.insert_file("OPNPS2LD.ELF", &plain_elf(&["conf_opl.cfg", "v1.1.0"]));
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.confidence),
+            (LoaderProfile::Opl110, Confidence::Exact)
+        );
+    }
+
+    #[test]
+    fn the_program_names_its_family_whatever_the_file_is_called() {
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file(
+            "APPS/OPNPS2LD.ELF",
+            &plain_elf(&[
+                "settings_riptopl.cfg",
+                "conf_opl.cfg",
+                "v1.2.0-Beta-4257-Korium",
+            ]),
+        );
+        fs.insert_file(
+            "UPDT/OPL.ELF",
+            &plain_elf(&["wopl_settings.cfg", "v1.2-beta-468"]),
+        );
+        let d = detect(&fs);
+        let families: Vec<Family> = d.loaders.iter().map(|l| l.family).collect();
+        assert!(families.contains(&Family::Wopl), "{families:?}");
+        // Two loaders of other families on one device: a notice, and the
+        // version level decides nothing.
+        assert!(codes(&d).contains(&"severalLoaders"));
+        assert_ne!(reason(&d), "profileByElfVersion");
+
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file(
+            "OPNPS2LD.ELF",
+            &plain_elf(&[
+                "settings_riptopl.cfg",
+                "conf_opl.cfg",
+                "v1.2.0-Beta-4257-Korium",
+            ]),
+        );
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.loaders[0].family),
+            (LoaderProfile::RiptOpl, Family::RiptOpl)
+        );
+    }
+
+    #[test]
+    fn version_rules() {
+        assert_eq!(opl_rules("v1.0.0"), LoaderProfile::Opl110);
+        assert_eq!(opl_rules("v1.1.0"), LoaderProfile::Opl110);
+        assert_eq!(opl_rules("v0.9.3"), LoaderProfile::Opl110);
+        assert_eq!(opl_rules("v1.2.0-Beta-1870-0123abc"), LoaderProfile::Opl110);
+        assert_eq!(
+            opl_rules("v1.2.0-Beta-1871-0123abc"),
+            LoaderProfile::Opl120Beta
+        );
+        assert_eq!(
+            opl_rules("v1.2.0-Beta-2271-b3a2199"),
+            LoaderProfile::Opl120Beta
+        );
+        // A fork's own numbering says nothing about upstream's ladder.
+        assert_eq!(
+            opl_rules("v1.2.0-Beta-1500-0123abc-yaopl"),
+            LoaderProfile::Opl120Beta
+        );
+        assert_eq!(opl_rules("v1.2-beta-468"), LoaderProfile::Opl120Beta);
+    }
+
+    #[test]
+    fn a_library_is_games_folders_or_ul_cfg_at_the_root() {
+        let fs = MemFs::new(FsKind::Fat32);
+        assert!(!detect(&fs).library);
+        fs.insert_file("APPS/X/x.elf", b"x");
+        fs.insert_file("Music/a.mp3", b"x");
+        assert!(!detect(&fs).library);
+        fs.insert_file("ul.cfg", b"");
+        assert!(detect(&fs).library);
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("ART/SLUS_200.62_COV.png", b"x");
+        assert!(detect(&fs).library);
+        let fs = MemFs::new(FsKind::ExFat);
+        fs.insert_file("DVD/Game.iso", b"x");
+        assert!(detect(&fs).library);
+    }
+
+    fn upstream(version: &str) -> Vec<u8> {
+        plain_elf(&["conf_opl.cfg", "Open PS2 Loader %s", version])
+    }
+
+    #[test]
+    fn files_left_by_another_loader_do_not_decide() {
+        // Official OPL replaced RiptOPL and wOPL; their settings stayed.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("UPDT/OPL.ELF", &upstream("v1.2.0-Beta-2271-b3a2199"));
+        fs.insert_file("settings_riptopl.cfg", b"enable_usb=1\r\n");
+        fs.insert_file("config.path", b"mass:/\n");
+        fs.insert_file("wopl_settings.cfg", b"display : {};\n");
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.confidence, reason(&d)),
+            (
+                LoaderProfile::Opl120Beta,
+                Confidence::Exact,
+                "profileByElfVersion"
+            )
+        );
+        let left: Vec<String> = d
+            .notices
+            .iter()
+            .filter(|n| n.code == "leftoverLoaderFiles")
+            .map(|n| n.message.clone())
+            .collect();
+        assert_eq!(left.len(), 2, "{left:?}");
+        assert!(
+            left[0].starts_with(
+                "config.path, settings_riptopl.cfg: files of RiptOPL, but the loader here is OPL"
+            ),
+            "{left:?}"
+        );
+        assert!(left[1].contains("wOPL"), "{left:?}");
+
+        // The same files with a RiptOPL ELF: they are its own.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file(
+            "APPS/RIPTOPL/RIPTOPL.ELF",
+            &plain_elf(&[
+                "settings_riptopl.cfg",
+                "conf_opl.cfg",
+                "v1.2.0-Beta-4257-Korium",
+            ]),
+        );
+        fs.insert_file("APPS/RIPTOPL/settings_riptopl.cfg", b"enable_usb=1\r\n");
+        let d = detect(&fs);
+        assert_eq!(d.profile, LoaderProfile::RiptOpl);
+        assert!(
+            !codes(&d).contains(&"leftoverLoaderFiles"),
+            "{:?}",
+            codes(&d)
+        );
+
+        // An old 1.1.0 games.bin and leftovers: the ELF still decides.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("OPNPS2LD.ELF", &upstream("v1.1.0"));
+        fs.insert_file("CD/games.bin", &games_bin(188));
+        fs.insert_file("conf_wopl.cfg", b"usb_mode=2\r\n");
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.confidence),
+            (LoaderProfile::Opl110, Confidence::Exact)
+        );
+        assert!(codes(&d).contains(&"listedByNewOpl"));
+        assert!(codes(&d).contains(&"leftoverLoaderFiles"));
+    }
+
+    #[test]
+    fn two_exact_loaders_that_disagree_decide_nothing() {
+        // 1.1.0 for FreeMcBoot's menu, a 1.2 beta in APPS: which one runs is
+        // not known, so games.bin decides and the card lists both.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("UPDT/OPL.ELF", &upstream("v1.1.0"));
+        fs.insert_file("APPS/OPNPS2LD.ELF", &upstream("v1.2.0-Beta-2271-b3a2199"));
+        fs.insert_file("DVD/games.bin", &games_bin(92));
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, reason(&d)),
+            (LoaderProfile::Opl110, "profileByOldGamesBin")
+        );
+        assert!(codes(&d).contains(&"severalLoaders"));
+        // Two copies of one build agree.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("UPDT/OPL.ELF", &upstream("v1.2.0-Beta-2271-b3a2199"));
+        fs.insert_file("APPS/OPNPS2LD.ELF", &upstream("v1.2.0-Beta-2271-b3a2199"));
+        assert_eq!(reason(&detect(&fs)), "profileByElfVersion");
+    }
+
+    #[test]
+    fn a_damaged_or_odd_install() {
+        // Named like OPL but not a PS2 program: the name is all it says, and
+        // the card warns.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("UPDT/OPL.ELF", b"<html>404 Not Found</html>");
+        let d = detect(&fs);
+        assert_eq!(reason(&d), "profileByLoader");
+        assert_eq!(codes(&d), ["loaderNotPs2Elf"]);
+        // With a family's files next to it, those decide.
+        fs.insert_file("conf_uopl.cfg", b"usb_mode=2\r\n");
+        let d = detect(&fs);
+        assert_eq!(reason(&d), "profileByFiles");
+        assert!(codes(&d).contains(&"loaderNotPs2Elf"));
+
+        // An ELF with no strings of a family: its name tells the family, its
+        // version still counts.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("WOPNPS2LD.ELF", &plain_elf(&["v1.2-beta-468"]));
+        let d = detect(&fs);
+        assert_eq!(
+            (d.profile, d.loaders[0].family, reason(&d)),
+            (
+                LoaderProfile::Opl120Beta,
+                Family::Wopl,
+                "profileByElfVersion"
+            )
+        );
+        // A PS2 program without a version: the name decides, nothing warns.
+        let fs = MemFs::new(FsKind::Fat32);
+        fs.insert_file("OPNPS2LD.ELF", &plain_elf(&["conf_opl.cfg"]));
+        let d = detect(&fs);
+        assert_eq!(reason(&d), "profileByLoader");
+        assert!(d.notices.is_empty(), "{:?}", codes(&d));
     }
 }

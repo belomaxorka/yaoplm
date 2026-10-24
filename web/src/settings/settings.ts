@@ -4,6 +4,10 @@ import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import { readStorage, writeStorage } from "@/lib/storage";
 
 export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies readonly LoaderProfile[];
+/** A profile chosen for one device, or `unknown`: the user does not know which OPL they run (ADR-0041). */
+export type ProfileOverrideValue = LoaderProfile | "unknown";
+/** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
+export const UNKNOWN_RULES: LoaderProfile = "Opl110";
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
@@ -36,7 +40,7 @@ export interface Settings {
    * device gets the profile its files say (LIB-1); there is no global
    * profile (ADR-0040).
    */
-  profileOverrides: Record<string, LoaderProfile>;
+  profileOverrides: Record<string, ProfileOverrideValue>;
   /** `ID.Title.iso` (ADR-0006) or `Title.iso`. */
   nameStyle: NameStyle;
   /** The library root currently open. */
@@ -83,14 +87,23 @@ function isProfile(value: unknown): value is LoaderProfile {
 
 // Saved settings may still hold the old global `loaderProfile` (or the
 // older `profile`): both are ignored, the device decides (ADR-0040).
-function readOverrides(value: unknown): Record<string, LoaderProfile> {
+function readOverrides(value: unknown): Record<string, ProfileOverrideValue> {
   if (typeof value !== "object" || value === null) return {};
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, LoaderProfile] => isProfile(entry[1])));
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, ProfileOverrideValue] => isProfile(entry[1]) || entry[1] === "unknown",
+    ),
+  );
 }
 
 /** What `ListDevices` and `InspectDevice` need to pick each device's profile. */
 export function profileChoice(settings: Pick<Settings, "profileOverrides">): { overrides: ProfileOverride[] } {
-  return { overrides: Object.entries(settings.profileOverrides).map(([key, profile]) => ({ key, profile })) };
+  return {
+    overrides: Object.entries(settings.profileOverrides).map(([key, value]) => ({
+      key,
+      profile: value === "unknown" ? UNKNOWN_RULES : value,
+    })),
+  };
 }
 
 function isNameStyle(value: unknown): value is NameStyle {
