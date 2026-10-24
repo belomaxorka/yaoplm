@@ -117,7 +117,7 @@
     "nothingToFetch": "No game to fetch a cover for",
     "nothingToImport": "No game to add",
     "nothingToRecover": "No unfinished operation",
-    "nothingToWrite": "No cover to write",
+    "nothingToWrite": "No picture to write",
     "oldImageDeleted": "{{name}} is deleted once the {{format}} is complete",
     "partialSector": "The image is {{size}} bytes, not a whole number of 2048-byte sectors",
     "ps1Game": "A PS1 disc: OPL does not run it (POPStarter support is planned)",
@@ -292,6 +292,7 @@
     "dumpUnchecked": "Not checked yet"
   },
   "plan": {
+    "stepsToggle": "Steps: {{count}}",
     "title": "Plan",
     "on": "On {{root}}",
     "building": "Building the plan…",
@@ -619,6 +620,7 @@
     "artCacheState_one": "{{count}} object, {{size}} in {{path}}",
     "artCacheState_other": "{{count}} objects, {{size}} in {{path}}",
     "clearArtCache": "Clear cache",
+    "clearArtCacheFailed": "The cache could not be cleared completely: {{error}}",
     "interface": "Interface",
     "simpleMode": "Simple mode",
     "simpleModeHint": "Hides sorting, counters, conversions, picture sets, the jobs page and technical details. Turn it off to see everything.",

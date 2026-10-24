@@ -129,7 +129,10 @@ test("renaming goes through the plan dialog", async ({ page, request }) => {
   const plan = page.getByTestId("plan-dialog");
   await expect(plan).toContainText("CD/SCES_500.03.Lf Final.iso");
   await plan.getByTestId("plan-confirm").click();
-  await expect(page).toHaveURL(/\/library$/);
+  // The card stays open, found by the game's ID now that its file changed.
+  await expect(page).toHaveURL(/\/library\/game\/id%3ASCES_500\.03$/);
+  await expect(page.getByRole("heading", { name: "Lf Final" })).toBeVisible();
+  await page.goto("/library");
   await expect(page.getByRole("listitem", { name: /Lf Final/ })).toBeVisible();
   await expect(page.getByRole("listitem", { name: /Lf Renamed/ })).toHaveCount(0);
 });

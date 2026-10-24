@@ -22,6 +22,7 @@ import { NoticeList } from "@/components/Notices";
 import { Badge } from "@/components/ui/badge";
 import { formatBytes } from "@/lib/format";
 import { phraseText } from "@/lib/phrase";
+import { useSimpleMode } from "@/settings/context";
 
 const stepIcons: Record<StepOp, LucideIcon> = {
   createDir: FolderPlus,
@@ -66,6 +67,11 @@ function StepLine({ step }: { step: PlanStep }) {
   );
 }
 
+/**
+ * One operation of a plan. Its steps (folders made, files renamed, written,
+ * deleted) are a detail: folded away by default, and left out in simple
+ * mode, where the summary, the notices and the confirmation are enough.
+ */
 export function TransactionCard({
   index,
   transaction,
@@ -75,6 +81,8 @@ export function TransactionCard({
   transaction: PlanTransaction;
   children?: ReactNode;
 }) {
+  const { t } = useTranslation();
+  const simple = useSimpleMode();
   return (
     <li className="rounded-lg border bg-card p-3" data-testid="plan-transaction">
       <div className="flex flex-wrap items-center gap-2">
@@ -91,11 +99,18 @@ export function TransactionCard({
         )}
       </div>
       {children}
-      <ul className="mt-2 flex flex-col gap-0.5">
-        {transaction.steps.map((step, i) => (
-          <StepLine key={i} step={step} />
-        ))}
-      </ul>
+      {!simple && transaction.steps.length > 0 && (
+        <details className="group mt-2" data-testid="plan-steps">
+          <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
+            {t("plan.stepsToggle", { count: transaction.steps.length })}
+          </summary>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {transaction.steps.map((step, i) => (
+              <StepLine key={i} step={step} />
+            ))}
+          </ul>
+        </details>
+      )}
       <NoticeList notices={transaction.notices} className="mt-2" />
     </li>
   );
@@ -149,7 +164,13 @@ export function PlanDetails({
   keyOf?: (transaction: PlanTransaction, index: number) => string;
 }) {
   const { t } = useTranslation();
+  const simple = useSimpleMode();
   const blockers = plan.notices.filter((n) => n.level === "error");
+  // Simple mode lists the games an operation touches, not the housekeeping
+  // around them (backup folders, ul.cfg): the summary counts it all.
+  const shown = plan.transactions
+    .map((transaction, index) => ({ transaction, index }))
+    .filter(({ transaction }) => !simple || transaction.game !== null);
   return (
     <div className="flex flex-col gap-4">
       <PlanSummary plan={plan} />
@@ -160,14 +181,12 @@ export function PlanDetails({
         </div>
       )}
       <NoticeList notices={plan.notices.filter((n) => n.level !== "error")} />
-      {plan.transactions.length > 0 && (
+      {shown.length > 0 && (
         <section>
-          <h3 className="mb-2 text-sm font-medium">
-            {t("plan.transactions", { count: plan.transactions.length })}
-          </h3>
+          <h3 className="mb-2 text-sm font-medium">{t("plan.transactions", { count: shown.length })}</h3>
           <ul className="flex flex-col gap-2">
-            {plan.transactions.map((transaction, index) => (
-              <TransactionCard key={keyOf(transaction, index)} index={index} transaction={transaction}>
+            {shown.map(({ transaction, index }, position) => (
+              <TransactionCard key={keyOf(transaction, index)} index={position} transaction={transaction}>
                 {renderTransaction?.(transaction, index)}
               </TransactionCard>
             ))}

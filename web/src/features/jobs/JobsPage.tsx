@@ -106,7 +106,10 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
   const { t } = useTranslation();
   const value = percent(job.done, job.total);
   const bytes = job.kind === "executePlan" || job.kind === "verifyGames";
-  const eta = formatEta(job.done, job.total, job.rate);
+  // Speed, time left and the item being worked on mean nothing once the
+  // job has ended: the last item would read as still in progress.
+  const active = job.status === "queued" || job.status === "running";
+  const eta = active ? formatEta(job.done, job.total, job.rate) : null;
   return (
     <div className="flex flex-col gap-1">
       <Progress
@@ -120,9 +123,9 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
           {job.total !== null && ` / ${bytes ? formatBytes(job.total) : job.total}`}
           {value !== null && ` (${value}%)`}
         </span>
-        {job.rate !== null && <span>{formatRate(job.rate)}</span>}
+        {active && job.rate !== null && <span>{formatRate(job.rate)}</span>}
         {eta && <span>{t("jobs.eta", { time: eta })}</span>}
-        {job.item && (
+        {active && job.item && (
           <span className="truncate" title={phraseText(job.itemPhrase, job.item)}>
             {phraseText(job.itemPhrase, job.item)}
           </span>
@@ -301,7 +304,7 @@ function JobCard({ job }: { job: JobInfo }) {
                 <ChevronDown className={cn("transition-transform", logOpen && "rotate-180")} aria-hidden />
                 {t("jobs.log", { count: job.log.length })}
               </Button>
-              {logOpen && <JobLog entries={job.log} />}
+              {logOpen && <JobLog entries={job.log} collapsible={false} />}
             </div>
           )}
         </div>
@@ -345,14 +348,45 @@ const artStateColours = {
   failed: "text-destructive",
 } as const;
 
-export function JobLog({ entries: all }: { entries: readonly JobLogEntry[] }) {
+/**
+ * A job's log: folded away by default (`collapsible`, unless the caller has
+ * its own toggle) and not shown at all in simple mode, which keeps to the
+ * result. It scrolls by itself: wrap it without `overflow`, or the page
+ * shows two scrollbars. `height` caps it (`max-h-72` by default).
+ */
+export function JobLog({
+  entries,
+  height,
+  collapsible = true,
+}: {
+  entries: readonly JobLogEntry[];
+  height?: string;
+  collapsible?: boolean;
+}) {
   const { t } = useTranslation();
   const simple = useSimpleMode();
-  // Each step of a write (started, done) is a detail: simple mode shows what happened to each game.
-  const entries = simple ? all.filter((entry) => entry.kind !== "step") : all;
+  if (simple) return null;
   if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
+  if (collapsible) {
+    return (
+      <details className="text-xs" data-testid="job-log-details">
+        <summary className="cursor-pointer text-muted-foreground select-none hover:text-foreground">
+          {t("jobs.log", { count: entries.length })}
+        </summary>
+        <JobLogList entries={entries} height={height} />
+      </details>
+    );
+  }
+  return <JobLogList entries={entries} height={height} />;
+}
+
+function JobLogList({ entries, height }: { entries: readonly JobLogEntry[]; height?: string }) {
+  const { t } = useTranslation();
   return (
-    <ol className="mt-1 max-h-72 overflow-auto rounded-md border bg-background p-2 font-mono text-xs" data-testid="job-log">
+    <ol
+      className={cn("relative mt-1 min-h-0 overflow-auto rounded-md border bg-background p-2 font-mono text-xs", height ?? "max-h-72")}
+      data-testid="job-log"
+    >
       {entries.map((entry, index) => (
         <li
           key={index}

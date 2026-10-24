@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRightLeft, ImageDown, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 
@@ -33,7 +33,7 @@ import { usePlan } from "@/features/plan/usePlan";
 import { DumpBadge } from "@/features/verify/DumpBadge";
 import { VerifyDialog } from "@/features/verify/VerifyDialog";
 import { formatBytes } from "@/lib/format";
-import { findGame, gameRef } from "@/lib/gameKey";
+import { findGame, gameRef, idKey } from "@/lib/gameKey";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import { nameStyles } from "@/settings/settings";
 
@@ -96,8 +96,12 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  // After a rename, a move or a conversion the card stays open, found by the
+  // game's ID now that its path changed; after a deletion the library opens.
+  const cardOf = (startup: string) => `/library/game/${encodeURIComponent(idKey(startup))}`;
+  const afterPlan = useRef("/library");
   const flow = usePlan({
-    onExecuted: () => void navigate("/library"),
+    onExecuted: () => void navigate(afterPlan.current, { replace: true }),
   });
   const otherMedia: Media = game.media === "CD" ? "DVD" : "CD";
   const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
@@ -146,7 +150,10 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
               </Button>
               <Button
                 variant="outline"
-                onClick={() => void flow.request({ type: "MoveGame", root, game: gameRef(game), media: otherMedia })}
+                onClick={() => {
+                  afterPlan.current = cardOf(game.startup);
+                  void flow.request({ type: "MoveGame", root, game: gameRef(game), media: otherMedia });
+                }}
               >
                 <ArrowRightLeft aria-hidden />
                 {t("game.moveTo", { media: otherMedia })}
@@ -338,6 +345,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         simple={simple}
         onSubmit={(title, startup, nameStyle) => {
           setRenameOpen(false);
+          afterPlan.current = cardOf(startup || game.startup);
           void flow.request({
             type: "RenameGame",
             root,
@@ -354,6 +362,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         onOpenChange={setDeleteOpen}
         onSubmit={(related) => {
           setDeleteOpen(false);
+          afterPlan.current = "/library";
           void flow.request({ type: "DeleteGame", root, game: gameRef(game), related });
         }}
       />
@@ -364,7 +373,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         games={[game]}
         open={convertOpen}
         onOpenChange={setConvertOpen}
-        onExecuted={() => void navigate("/library")}
+        onExecuted={() => void navigate(cardOf(game.startup), { replace: true })}
       />
       <PlanDialog flow={flow} />
     </PageScroll>

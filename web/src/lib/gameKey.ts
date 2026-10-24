@@ -17,6 +17,18 @@ export function gameRef(game: Game): GameRef {
   return { kind: "image", path: game.path };
 }
 
+/**
+ * A key that finds a game by its ID: what the game card goes to after a
+ * rename, a move or a conversion changed the file, and with it the path.
+ */
+export function idKey(startup: string): string {
+  return `id:${startup}`;
+}
+
 export function findGame(games: readonly Game[], key: string): Game | undefined {
+  if (key.startsWith("id:")) {
+    const id = key.slice(3).toLowerCase();
+    return games.find((game) => game.startup.toLowerCase() === id);
+  }
   return games.find((game) => gameKey(game) === key);
 }

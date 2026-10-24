@@ -27,6 +27,7 @@ import { pickFolder } from "@/features/add/desktop";
 import { artSourceInfo, takesMirror } from "@/features/art/sources";
 import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { formatBytes } from "@/lib/format";
+import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 import { artSourceIds, nameStyles, profiles } from "@/settings/settings";
 import { useTheme } from "@/theme/context";
@@ -46,16 +47,21 @@ export function SettingsPage() {
   const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport) });
   const cache = useQuery({ queryKey: ["artCache"], queryFn: () => artCache(transport) });
   const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
 
   const versionText =
     version.data?.version ?? (version.isPending ? t("settings.loading") : t("settings.unavailable"));
 
   const clearCache = async () => {
     setClearing(true);
+    setClearError(null);
     try {
       await clearArtCache(transport);
-      await cache.refetch();
+    } catch (error) {
+      // Part of the cache may be gone even so: the counts below say how much.
+      setClearError(errorText(error));
     } finally {
+      await cache.refetch();
       setClearing(false);
     }
   };
@@ -170,6 +176,11 @@ export function SettingsPage() {
                   {t("settings.clearArtCache")}
                 </Button>
               </SettingRow>
+              {clearError && (
+                <p className="text-xs text-destructive" role="alert" data-testid="clear-art-cache-error">
+                  {t("settings.clearArtCacheFailed", { error: clearError })}
+                </p>
+              )}
             </CardContent>
           </Card>
         )}

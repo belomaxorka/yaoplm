@@ -7,7 +7,7 @@ import { applyFilters, defaultFilters, filtersToParams, matchesQuery, parseFilte
 import { GRID_GAP, GRID_MIN_COLUMN, gridLayout } from "@/features/library/gridLayout";
 import i18n from "@/i18n";
 import { formatBytes, formatDuration, formatEta, percent } from "@/lib/format";
-import { findGame, gameKey, gameRef } from "@/lib/gameKey";
+import { findGame, gameKey, gameRef, idKey } from "@/lib/gameKey";
 
 function game(overrides: Partial<Game>): Game {
   return {
@@ -116,6 +116,11 @@ describe("game keys", () => {
     expect(gameRef(games[0]!)).toEqual({ kind: "image", path: "E:\\CD\\SLUS_200.62.Game.iso" });
     expect(findGame(games, "ul:0")?.title).toBe("Big Game");
     expect(findGame(games, "ul:7")).toBeUndefined();
+  });
+
+  it("finds a game by its ID once its path changed", () => {
+    expect(findGame(games, idKey("slpm_123.45"))?.title).toBe("Big Game");
+    expect(findGame(games, idKey("SLUS_999.99"))).toBeUndefined();
   });
 });
 

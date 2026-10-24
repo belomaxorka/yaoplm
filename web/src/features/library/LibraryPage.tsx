@@ -356,7 +356,7 @@ function LibraryView({
               <DialogTitle>{t("library.skippedTitle")}</DialogTitle>
               <DialogDescription>{t("library.skippedDescription")}</DialogDescription>
             </DialogHeader>
-            <ul className="min-h-0 flex-1 overflow-auto text-sm">
+            <ul className="relative min-h-0 flex-1 overflow-auto text-sm">
               {data.skipped.map((skipped) => (
                 <li key={skipped.path} className="border-b py-2 last:border-0">
                   <div className="truncate font-mono text-xs" title={skipped.path}>
@@ -605,7 +605,7 @@ function GameGrid({ games }: { games: Game[] }) {
   }, []);
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-grid">
+    <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-grid">
       <div
         role="list"
         aria-label={t("library.games")}
@@ -674,7 +674,7 @@ function GameTable({ games }: { games: Game[] }) {
   const onKeyDown = useRovingFocus(games.length, 1, (index) => virtualizer.scrollToIndex(index, { align: "auto" }));
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-list">
+    <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-list">
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_8rem_4rem_4rem_6rem] gap-3 border-b bg-background px-2 pb-2 text-xs font-medium text-muted-foreground">
         <span>{t("game.title")}</span>
         <span>{t("game.id")}</span>

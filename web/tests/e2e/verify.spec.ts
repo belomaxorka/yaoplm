@@ -88,7 +88,9 @@ async function convert(page: Page, title: RegExp, target: "iso" | "zso", step: s
   await expect(plan.getByTestId("plan-confirm")).toBeDisabled();
   await plan.getByRole("checkbox", { name: /deleted/ }).check();
   await plan.getByTestId("plan-confirm").click();
-  await expect(page).toHaveURL(/\/library$/);
+  // The card stays open, found by the game's ID now that its file changed.
+  await expect(page).toHaveURL(/\/library\/game\/id%3A/);
+  await page.goto("/library");
 }
 
 test("a game goes to ZSO and back through plans", async ({ page, request }) => {
@@ -139,10 +141,14 @@ test("games are added with their covers and checked as they are written", async 
     "Pictures found: 1, not found: 13, on the device already: 2.",
   );
   await expect(search.getByTestId("job-log")).toContainText("SLUS_299.99 New Game: found at xlenore");
+  // A long plan scrolls inside the page, never the window as well (the
+  // second scrollbar of the 2026-10-24 walkthrough).
+  expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
   // The plan comes back with the cover right after its game.
   const steps = plan.getByTestId("plan-transaction");
   await expect(steps).toHaveCount(3);
-  const texts = await steps.allInnerTexts();
+  // Text, not innerText: each operation's steps are folded away.
+  const texts = await steps.allTextContents();
   const game = texts.findIndex((t) => t.includes("CD/SLUS_299.99.New Game.iso"));
   expect(game).toBeGreaterThanOrEqual(0);
   expect(texts[game + 1]).toContain("ART/SLUS_299.99_COV.png");
