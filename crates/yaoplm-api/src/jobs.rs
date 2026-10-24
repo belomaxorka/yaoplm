@@ -260,10 +260,16 @@ pub enum Queue {
 struct Record {
     info: JobInfo,
     cancel: CancelToken,
+    /// When the job reached its final state, in finishing order; 0 while
+    /// it runs. Pruning drops the jobs that finished first, not the oldest
+    /// ids: a scan queued long ago may finish last, and a front end asks
+    /// for its result right after the final event.
+    finished: u64,
 }
 
 struct Inner {
     next: AtomicU64,
+    finishing: AtomicU64,
     jobs: Mutex<BTreeMap<u64, Record>>,
     changed: Condvar,
     events: EventBus,
@@ -398,6 +404,7 @@ impl JobManager {
         Self {
             inner: Arc::new(Inner {
                 next: AtomicU64::new(1),
+                finishing: AtomicU64::new(1),
                 jobs: Mutex::new(BTreeMap::new()),
                 changed: Condvar::new(),
                 events,
@@ -440,6 +447,7 @@ impl JobManager {
                 Record {
                     info: info.clone(),
                     cancel: cancel.clone(),
+                    finished: 0,
                 },
             );
             prune(&mut jobs);
@@ -533,13 +541,14 @@ impl WriteQueue<'_> {
 }
 
 fn prune(jobs: &mut BTreeMap<u64, Record>) {
-    let finished: Vec<u64> = jobs
+    let mut finished: Vec<(u64, u64)> = jobs
         .iter()
         .filter(|(_, r)| r.info.status.is_final())
-        .map(|(id, _)| *id)
+        .map(|(id, r)| (r.finished, *id))
         .collect();
     if finished.len() > KEEP_FINISHED {
-        for id in &finished[..finished.len() - KEEP_FINISHED] {
+        finished.sort_unstable();
+        for (_, id) in &finished[..finished.len() - KEEP_FINISHED] {
             jobs.remove(id);
         }
     }
@@ -554,7 +563,10 @@ fn update(inner: &Inner, id: JobId, change: impl FnOnce(&mut JobInfo)) {
 /// Records the final state, publishes the final event, then wakes
 /// `wait()`ers: whoever waited has seen every event of the job.
 fn finish(inner: &Inner, id: JobId, change: impl FnOnce(&mut JobInfo), event: &JobEvent) {
-    update(inner, id, change);
+    if let Some(record) = lock(&inner.jobs).get_mut(&id.0) {
+        change(&mut record.info);
+        record.finished = inner.finishing.fetch_add(1, Ordering::Relaxed);
+    }
     inner.events.publish(event);
     inner.changed.notify_all();
 }
@@ -679,6 +691,43 @@ mod tests {
         assert_eq!(jobs.list().len(), 4);
         assert!(jobs.list()[0].result.is_none());
         assert!(jobs.get(ids[0]).unwrap().result.is_some());
+    }
+
+    #[test]
+    fn pruning_keeps_the_jobs_that_finished_last() {
+        let jobs = JobManager::new(EventBus::default());
+        let title = yaoplm_core::Phrase::title("scanLibrary");
+        let (release, gate) = mpsc::channel::<()>();
+        // Queued first, finished last: a slow scan.
+        let slow = jobs.spawn(
+            JobKind::ScanLibrary,
+            &title,
+            None,
+            Queue::Write,
+            move |_| {
+                let _ = gate.recv();
+                Ok(execution(false))
+            },
+        );
+        let quick: Vec<JobId> = (0..KEEP_FINISHED)
+            .map(|_| {
+                jobs.spawn(JobKind::ScanLibrary, &title, None, Queue::Read, |_| {
+                    Ok(execution(false))
+                })
+            })
+            .collect();
+        for id in &quick {
+            jobs.wait(*id).unwrap();
+        }
+        release.send(()).unwrap();
+        jobs.wait(slow).unwrap();
+        // One more job prunes one finished job: the quick one that ended first.
+        let next = jobs.spawn(JobKind::ScanLibrary, &title, None, Queue::Read, |_| {
+            Ok(execution(false))
+        });
+        jobs.wait(next).unwrap();
+        assert!(jobs.get(slow).is_some(), "the job that finished last stays");
+        assert_eq!(jobs.list().len(), KEEP_FINISHED + 1);
     }
 
     #[test]
