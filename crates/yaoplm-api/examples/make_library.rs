@@ -7,8 +7,9 @@
 //!
 //! `<folder>/library` is a device root with games in every format and a
 //! few things to warn about; `<folder>/sources` holds images to import;
-//! `<folder>/mirror` holds local mirrors of the two cover sources with a
-//! cover each (ART-1), so the art screens work without the network, and a
+//! `<folder>/mirror` holds local mirrors of three picture sources with a
+//! picture each (ART-1, ADR-0035), so the art screens work without the
+//! network, and a
 //! Redump DAT that verifies some of the games and not others (GAME-5), and
 //! `sets/` with two picture sets to import (ART-5). Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
@@ -167,6 +168,12 @@ fn main() -> ExitCode {
     write(
         &mirror.join("libretro/Named_Boxarts/Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
         &cover(256, 362, 110, image::ImageFormat::Png),
+    );
+    // OPL Manager's backup, in its own layout, has the split game's disc
+    // icon: a type no other source has.
+    write(
+        &mirror.join("oplm/PS2/SCES_500.03/SCES_500.03_ICO.png"),
+        &cover(64, 64, 75, image::ImageFormat::Png),
     );
     // A CD to add, dumped raw as Redump does: xlenore has its cover and the
     // DAT its data track, so adding it writes the cover and verifies it

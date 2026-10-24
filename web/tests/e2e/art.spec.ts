@@ -33,8 +33,8 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
-  // Icons have no open source: their slot cannot download.
-  await expect(page.getByTestId("art-download-ICO")).toBeDisabled();
+  // Every type has a source now (ADR-0035): the icon slot can download.
+  await expect(page.getByTestId("art-download-ICO")).toBeEnabled();
   await page.getByTestId("art-download-COV").click();
   // The sources' pictures to pick from, the first one chosen.
   const variants = page.getByTestId("art-variants-dialog");
@@ -143,8 +143,8 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
   await page.goto("/library");
   await page.getByTestId("download-covers").click();
   const dialog = page.getByTestId("art-fetch-dialog");
-  // Only the types a source has are offered; the front cover is preselected.
-  await expect(dialog.getByTestId("art-kinds").getByRole("checkbox")).toHaveCount(4);
+  // Every type has a source; the front cover is preselected.
+  await expect(dialog.getByTestId("art-kinds").getByRole("checkbox")).toHaveCount(8);
   await expect(dialog.getByTestId("art-kind-COV")).toBeChecked();
   await dialog.getByTestId("art-kind-COV").click();
   await dialog.getByTestId("art-kind-LGO").click();
@@ -204,7 +204,31 @@ test("the About screen credits the data and cover sources", async ({ page, reque
   await expect(about.getByTestId("source-libretro").first()).toContainText("CC BY-SA 4.0");
   await expect(about.getByTestId("source-xlenore")).toContainText("no licence stated");
   await expect(about).toContainText(/Game IDs: \d{2,}, built 20\d\d-\d\d-\d\d/);
-  // The art sources and the cache are configurable.
+  await expect(about.getByTestId("source-oplm")).toContainText("no licence stated");
+  // The art sources and the cache are configurable. ScreenScraper needs a
+  // build with its developer key, which the test server has not: it is
+  // shown nowhere, neither in the settings nor in the credits.
   await expect(page.getByTestId("art-source-xlenore")).toContainText("xlenore/ps2-covers");
+  await expect(page.getByTestId("art-source-oplm")).toContainText("OPL Manager backup");
+  await expect(page.getByTestId("art-source-screenscraper")).toHaveCount(0);
+  await expect(about.getByTestId("source-screenscraper")).toHaveCount(0);
   await expect(page.getByText(/\d+ objects?, .* in /)).toBeVisible();
+});
+
+test("an icon comes from OPL Manager's backup", async ({ page, request }) => {
+  await openLibrary(page, request);
+  await page.goto("/library");
+  await page.getByRole("listitem", { name: /Split Game/ }).click();
+  await page.getByTestId("art-download-ICO").click();
+  const variants = page.getByTestId("art-variants-dialog");
+  await expect(variants.getByTestId("art-variant")).toHaveCount(1);
+  await expect(variants).toContainText("oplm");
+  await variants.getByTestId("art-variant-use").click();
+  const plan = page.getByTestId("plan-dialog");
+  await expect(plan).toContainText("ART/SCES_500.03_ICO.png");
+  await plan.getByTestId("plan-confirm").click();
+  await expect(plan).toBeHidden();
+  const slot = page.getByTestId("art-slot-ICO");
+  await expect(slot).toHaveAttribute("data-has-art", "true");
+  await expect(slot).toContainText("64×64");
 });

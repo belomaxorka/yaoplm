@@ -2,14 +2,20 @@
 
 /**
  * How one source is used for a request. Sources not listed keep their
- * defaults: enabled, remote.
+ * defaults: enabled, remote. ScreenScraper is on only in a build or an
+ * environment with its developer key (ADR-0035).
  */
 export type ArtSourceSetting = { 
 /**
- * `xlenore` or `libretro`.
+ * `xlenore`, `oplm`, `libretro` or `screenscraper`.
  */
 id: string, enabled?: boolean, 
 /**
- * A folder with the repository's layout, read instead of the network.
+ * A folder with the repository's layout, read instead of the network
+ * (for OPL Manager's backup: `PS2/<ID>/<ID>_<TYPE>.png`).
  */
-mirror?: string, };
+mirror?: string, 
+/**
+ * A ScreenScraper account, for a larger daily quota.
+ */
+user?: string, password?: string, };

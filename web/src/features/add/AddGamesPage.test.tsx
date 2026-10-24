@@ -89,8 +89,8 @@ class FakeCore {
           repository: "https://example.invalid",
           data: [],
           art: [
-            { id: "xlenore", name: "xlenore", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV"] },
-            { id: "libretro", name: "libretro", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV", "SCR", "LGO"] },
+            { id: "xlenore", name: "xlenore", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV"], available: true },
+            { id: "libretro", name: "libretro", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV", "SCR", "LGO"], available: true },
           ],
           titles: { built: "2026-10-01", libretroVersion: "1", entries: 1 },
         };

@@ -244,14 +244,17 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
         "parts that come from libretro-database and is distributed with YAOPLM under",
         "GPL-3.0-or-later (ADR-0002).",
         "",
-        "## Cover art sources (never bundled)",
+        "## Picture sources (never bundled)",
         "",
-        "Covers are downloaded only when the user asks for them, cached locally and",
-        "written to the user's device. YAOPLM does not redistribute them.",
+        "Pictures are downloaded only when the user asks for them, cached locally and",
+        "written to the user's device. YAOPLM does not redistribute them (ADR-0007,",
+        "ADR-0035).",
         "",
     ]
     for entry in attribution["art"]:
         licence = entry["license"] or "no licence stated; used on request only"
+        if entry.get("licenseUrl"):
+            licence += f" (<{entry['licenseUrl']}>)"
         lines += [
             f"### {entry['name']}",
             "",
@@ -269,11 +272,21 @@ def main() -> int:
     parser.add_argument("--pcsx2", default=PCSX2_URL, help="GameIndex.yaml URL or file")
     parser.add_argument("--libretro", default=LIBRETRO_URL, help="libretro PS2 DAT URL or file")
     parser.add_argument("--out", default=Path(__file__).resolve().parent.parent / "data", type=Path)
+    parser.add_argument(
+        "--attribution-only",
+        action="store_true",
+        help="only rewrite ATTRIBUTION.md from attribution.json and the titles.json.gz there is",
+    )
     args = parser.parse_args()
 
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)
     attribution = json.loads((out / "attribution.json").read_text(encoding="utf-8"))
+    if args.attribution_only:
+        db = json.loads(gzip.decompress((out / "titles.json.gz").read_bytes()))
+        (out / "ATTRIBUTION.md").write_text(attribution_markdown(attribution, db), encoding="utf-8", newline="\n")
+        print(f"wrote {out / 'ATTRIBUTION.md'}")
+        return 0
 
     print(f"reading {args.pcsx2}")
     pcsx2 = fetch(args.pcsx2)

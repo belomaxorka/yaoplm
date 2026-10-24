@@ -222,6 +222,9 @@ pub struct DbInfo {
 pub struct Database {
     info: DbInfo,
     games: HashMap<String, Entry>,
+    /// Serials by Redump title without tags, lower case: the releases of
+    /// one game in other regions and languages.
+    by_title: HashMap<String, Vec<String>>,
 }
 
 impl Database {
@@ -250,6 +253,26 @@ impl Database {
                 (serial, entry)
             })
             .collect::<HashMap<_, _>>();
+        let mut by_title: HashMap<String, Vec<String>> = HashMap::new();
+        for entry in games.values() {
+            let mut titles: Vec<String> = entry
+                .redump
+                .iter()
+                .map(|r| strip_tags(&r.name).to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect();
+            titles.dedup();
+            for title in titles {
+                by_title
+                    .entry(title)
+                    .or_default()
+                    .push(entry.serial.clone());
+            }
+        }
+        for serials in by_title.values_mut() {
+            serials.sort();
+            serials.dedup();
+        }
         Ok(Self {
             info: DbInfo {
                 format: raw.format,
@@ -262,6 +285,7 @@ impl Database {
                 entries: games.len(),
             },
             games,
+            by_title,
         })
     }
 
@@ -274,6 +298,7 @@ impl Database {
                 entries: 0,
             },
             games: HashMap::new(),
+            by_title: HashMap::new(),
         }
     }
 
@@ -288,6 +313,28 @@ impl Database {
     /// Looks a game up by either spelling of its ID.
     pub fn lookup(&self, id: &str) -> Option<&Entry> {
         self.games.get(&lookup_key(id))
+    }
+
+    /// Other serials whose Redump name, without its tags, is the same as
+    /// one of `entry`'s: the game's releases elsewhere, whose screenshots
+    /// and logos stand in for its own (ADR-0035). Sorted by serial.
+    pub fn same_title(&self, entry: &Entry) -> Vec<&Entry> {
+        let mut out: Vec<&Entry> = entry
+            .redump
+            .iter()
+            .filter_map(|r| self.by_title.get(&strip_tags(&r.name).to_lowercase()))
+            .flatten()
+            .filter(|serial| **serial != entry.serial)
+            .filter_map(|serial| self.games.get(serial))
+            .collect();
+        out.sort_by(|a, b| a.serial.cmp(&b.serial));
+        out.dedup_by(|a, b| a.serial == b.serial);
+        out
+    }
+
+    /// Every serial, in no particular order (coverage measurements).
+    pub fn entries(&self) -> impl Iterator<Item = &Entry> {
+        self.games.values()
     }
 }
 
@@ -333,6 +380,22 @@ mod tests {
             known_title("SLUS_200.62").as_deref(),
             Some("Grand Theft Auto III")
         );
+    }
+
+    #[test]
+    fn releases_of_the_same_game_elsewhere() {
+        let db = database();
+        // Dead or Alive 2 in Japan and Europe share a Redump title; the US
+        // "DOA2 - Hardcore" does not.
+        let jp = db.lookup("SLPS-25002").unwrap();
+        let others: Vec<&str> = db
+            .same_title(jp)
+            .iter()
+            .map(|e| e.serial.as_str())
+            .collect();
+        assert!(others.contains(&"SCES-50003"), "{others:?}");
+        assert!(!others.contains(&"SLUS-20071") && !others.contains(&"SLPS-25002"));
+        assert!(db.entries().count() > 12_000);
     }
 
     #[test]

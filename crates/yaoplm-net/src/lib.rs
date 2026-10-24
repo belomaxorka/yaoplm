@@ -1,30 +1,46 @@
-//! Cover-art sources, the download cache, request limits and PNG
-//! transcoding (ART-1, ART-2, ADR-0007), and the Redump DAT for dump
-//! verification (META-2).
+//! Picture sources, the download cache, request limits and PNG
+//! transcoding (ART-1, ART-2, ADR-0007, ADR-0035), and the Redump DAT for
+//! dump verification (META-2).
 //!
 //! Asynchronous on purpose: the core never uses this crate (ADR-0003);
 //! `yaoplm-api` drives [`ArtService`] from a job thread through a tokio
-//! runtime. Network access happens only inside [`ArtService::fetch_cover`]
-//! and [`redump::RedumpStore::update`], each started by a user action, and
-//! every answer is cached (ARCHITECTURE.md §6-§7).
+//! runtime. Network access happens only inside [`ArtService::fetch_cover`],
+//! [`ArtService::find_variants`] and [`redump::RedumpStore::update`], each
+//! started by a user action, and every answer is cached (ARCHITECTURE.md
+//! §6-§7).
 
 pub mod cache;
 pub mod http;
+pub mod oplm;
 pub mod redump;
+pub mod region;
+pub mod remote_zip;
+pub mod screenscraper;
 pub mod sources;
 pub mod transcode;
+
+#[cfg(test)]
+mod remote_tests;
+#[cfg(test)]
+mod test_server;
 
 use std::path::{Path, PathBuf};
 
 use transcode::Fit;
 use yaoplm_formats::art::{ArtKind, ArtSize};
+use yaoplm_formats::serial;
 
 use cache::{Cache, Download, Record, Status};
 use http::{Fetched, Http};
+use oplm::Oplm;
+use screenscraper::ScreenScraper;
 use sources::{Candidate, Location, SourceConfig, SourceId};
 
 /// At most this many Redump names are tried per game: each is a request.
 pub const MAX_LIBRETRO_CANDIDATES: usize = 3;
+/// At most this many other releases stand in for a game, with their first
+/// Redump name each.
+pub const MAX_OTHER_RELEASES: usize = 2;
 /// The pseudo-source of covers the user supplied (file, drop, paste).
 pub const LOCAL_SOURCE: &str = "local";
 
@@ -40,6 +56,8 @@ pub enum NetError {
     Image(String),
     #[error("cache: {0}")]
     Cache(String),
+    #[error("zip: {0}")]
+    Zip(String),
     #[error("Redump DAT: {0}")]
     Dat(String),
     #[error("{path}: {source}")]
@@ -75,11 +93,24 @@ pub struct CoverRequest<'a> {
     pub kind: ArtKind,
     /// The profile's size for `kind`.
     pub size: ArtSize,
-    /// Sources in priority order; an empty list means nothing is asked.
+    /// The sources that are on; an empty list means nothing is asked. They
+    /// are tried in the order of [`sources::order`], not in this one.
     pub sources: &'a [SourceConfig],
     /// Ask the server even when the cache has an answer (conditional
     /// request); "overwrite" runs set this.
     pub revalidate: bool,
+    /// The game's releases in other regions (the same Redump title). For
+    /// types shared across markets they are asked when the game's own
+    /// serial has nothing, the way RetroArch falls back to the short name.
+    pub others: &'a [OtherRelease],
+}
+
+/// Another release of the same game (ADR-0035).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtherRelease {
+    /// `SCES-50003`.
+    pub serial: String,
+    pub redump_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +122,9 @@ pub enum AttemptResult {
     NotModified,
     /// 404, a missing mirror file, or a cached "not found".
     Missing,
+    /// The source has a picture, but it shows another market's release
+    /// (ADR-0035): left out rather than put on the wrong game.
+    OtherMarket,
     Error(String),
 }
 
@@ -124,18 +158,50 @@ pub struct CoverOutcome {
     pub attempts: Vec<Attempt>,
 }
 
+/// A picture found at a source; one that may show another market's
+/// release is offered only when the user picks by hand.
+struct Found {
+    cover: Cover,
+    other_market: bool,
+}
+
+/// Where the remote sources are. Tests point them at a local server.
+#[derive(Debug, Clone, Default)]
+pub struct Endpoints {
+    pub oplm: oplm::Archive,
+    pub screenscraper: screenscraper::Api,
+}
+
 /// Finds covers and keeps them in the cache.
 #[derive(Debug)]
 pub struct ArtService {
     http: Http,
     cache: Cache,
+    oplm: Oplm,
+    screenscraper: ScreenScraper,
+}
+
+fn attempt(source: SourceId, target: impl Into<String>, result: AttemptResult) -> Attempt {
+    Attempt {
+        source: source.as_str().to_owned(),
+        target: target.into(),
+        result,
+    }
 }
 
 impl ArtService {
     pub fn open(data_dir: &Path) -> Result<Self, NetError> {
+        Self::open_with(data_dir, Endpoints::default())
+    }
+
+    pub fn open_with(data_dir: &Path, endpoints: Endpoints) -> Result<Self, NetError> {
+        let cache = Cache::open(data_dir)?;
+        let art_dir = cache.root().join(cache::ART_DIR);
         Ok(Self {
             http: Http::new()?,
-            cache: Cache::open(data_dir)?,
+            oplm: Oplm::new(endpoints.oplm, &art_dir),
+            screenscraper: ScreenScraper::new(endpoints.screenscraper),
+            cache,
         })
     }
 
@@ -146,6 +212,12 @@ impl ArtService {
     /// The shared client, for other downloads (the Redump DAT).
     pub fn http(&self) -> &Http {
         &self.http
+    }
+
+    /// Whether ScreenScraper can be asked: this build or the environment
+    /// has developer credentials.
+    pub fn screenscraper_ready(&self) -> bool {
+        self.screenscraper.api.dev.is_some()
     }
 
     /// `COV-140x200`: the kind decides how the picture is fitted.
@@ -219,21 +291,60 @@ impl ArtService {
         }
     }
 
-    /// Tries the sources in order and returns the first picture found,
-    /// with every attempt made along the way.
+    /// What one source has for the request: the first fitting picture, or
+    /// with `variants` every picture to pick from.
+    async fn ask_source(
+        &self,
+        config: &SourceConfig,
+        request: &CoverRequest<'_>,
+        variants: bool,
+        attempts: &mut Vec<Attempt>,
+    ) -> Vec<Found> {
+        match (config.id, &config.location) {
+            (SourceId::Oplm, Location::Remote) => {
+                return self.via_oplm(request, variants, attempts).await;
+            }
+            (SourceId::ScreenScraper, _) => {
+                return self
+                    .via_screenscraper(config, request, variants, attempts)
+                    .await;
+            }
+            _ => {}
+        }
+        let candidates = Self::candidates(request, config.id, variants);
+        let mut found = Vec::new();
+        for candidate in &candidates {
+            if let Some(cover) = self
+                .try_candidate(config, candidate, request, attempts)
+                .await
+            {
+                found.push(Found {
+                    cover,
+                    other_market: false,
+                });
+                if !variants {
+                    break;
+                }
+            }
+        }
+        found
+    }
+
+    /// Tries the sources in the order of their type and returns the first
+    /// picture found, with every attempt made along the way.
     pub async fn fetch_cover(&self, request: &CoverRequest<'_>) -> CoverOutcome {
         let mut attempts = Vec::new();
-        for config in request.sources {
-            for candidate in &Self::candidates(request, config.id, false) {
-                if let Some(cover) = self
-                    .try_candidate(config, candidate, request, &mut attempts)
-                    .await
-                {
-                    return CoverOutcome {
-                        cover: Some(cover),
-                        attempts,
-                    };
-                }
+        for (request, config) in Self::plan(request) {
+            if let Some(found) = self
+                .ask_source(config, &request, false, &mut attempts)
+                .await
+                .into_iter()
+                .next()
+            {
+                return CoverOutcome {
+                    cover: Some(found.cover),
+                    attempts,
+                };
             }
         }
         CoverOutcome {
@@ -242,25 +353,58 @@ impl ArtService {
         }
     }
 
+    /// The game's own serial at every source in the order of its type,
+    /// then, for a type shared across markets, its other releases at every
+    /// source but ScreenScraper (which already answered for every market).
+    fn plan<'a>(request: &'a CoverRequest<'a>) -> Vec<(CoverRequest<'a>, &'a SourceConfig)> {
+        let ordered = sources::ordered(request.sources, request.kind, request.size);
+        let mut plan: Vec<(CoverRequest<'a>, &'a SourceConfig)> =
+            ordered.iter().map(|c| (request.clone(), *c)).collect();
+        if region::region_specific(request.kind) {
+            return plan;
+        }
+        for other in request.others.iter().take(MAX_OTHER_RELEASES) {
+            let names = &other.redump_names[..other.redump_names.len().min(1)];
+            for config in ordered.iter().filter(|c| c.id != SourceId::ScreenScraper) {
+                plan.push((
+                    CoverRequest {
+                        serial: &other.serial,
+                        redump_names: names,
+                        others: &[],
+                        ..request.clone()
+                    },
+                    *config,
+                ));
+            }
+        }
+        plan
+    }
+
     /// Every picture the sources have for the request, in source order,
-    /// with the alternatives (3-D covers): what a user picks from (SPEC
-    /// §5.4.1). A source answers once per place, a second apart.
+    /// with the alternatives (3-D covers, more screenshots): what a user
+    /// picks from (SPEC §5.4.1). Pictures that may show another market's
+    /// release come last. A source answers once per place, a second apart.
     pub async fn find_variants(&self, request: &CoverRequest<'_>) -> (Vec<Cover>, Vec<Attempt>) {
         let mut attempts = Vec::new();
         let mut found: Vec<Cover> = Vec::new();
-        for config in request.sources {
-            for candidate in &Self::candidates(request, config.id, true) {
-                if let Some(cover) = self
-                    .try_candidate(config, candidate, request, &mut attempts)
-                    .await
-                {
-                    // Several Redump names often lead to the same file.
-                    if !found.iter().any(|c| same_picture(&c.png, &cover.png)) {
-                        found.push(cover);
+        let mut last: Vec<Cover> = Vec::new();
+        for (request, config) in Self::plan(request) {
+            for picture in self.ask_source(config, &request, true, &mut attempts).await {
+                // Several Redump names often lead to the same file.
+                let seen = found
+                    .iter()
+                    .chain(last.iter())
+                    .any(|c| same_picture(&c.png, &picture.cover.png));
+                if !seen {
+                    if picture.other_market {
+                        last.push(picture.cover);
+                    } else {
+                        found.push(picture.cover);
                     }
                 }
             }
         }
+        found.extend(last);
         (found, attempts)
     }
 
@@ -327,6 +471,297 @@ impl ArtService {
                 attempt(AttemptResult::Error(err.to_string()));
                 None
             }
+        }
+    }
+
+    /// A cached original of `source`/`key` that is still on disk.
+    fn cached(&self, source: SourceId, key: &str) -> Result<Option<Record>, NetError> {
+        Ok(self
+            .cache
+            .get(source.as_str(), key)?
+            .filter(|r| r.status == Status::Ok && self.cache.original_path(r).is_some()))
+    }
+
+    /// Stores downloaded bytes and derives the slot's PNG.
+    fn store(
+        &self,
+        source: SourceId,
+        key: &str,
+        url: &str,
+        bytes: &[u8],
+        request: &CoverRequest<'_>,
+    ) -> Result<Cover, NetError> {
+        let info = source.info();
+        let record = self.cache.put(
+            source.as_str(),
+            key,
+            &Download {
+                url,
+                bytes,
+                content_type: None,
+                etag: None,
+                last_modified: None,
+                license_tag: info.license_tag,
+                attribution: info.attribution,
+            },
+        )?;
+        self.cover_from(&record, request.kind, request.size, false, url)
+    }
+
+    /// OPL Manager's backup through its index (ADR-0035): no request for a
+    /// picture the backup does not have, and none for one that shows
+    /// another market's release unless the user picks by hand.
+    async fn via_oplm(
+        &self,
+        request: &CoverRequest<'_>,
+        variants: bool,
+        attempts: &mut Vec<Attempt>,
+    ) -> Vec<Found> {
+        let source = SourceId::Oplm;
+        let archive = self.oplm.archive();
+        let id = serial::serial_to_opl(request.serial);
+        let index = match self.oplm.index(&self.http).await {
+            Ok(index) => index,
+            Err(err) => {
+                let target = archive.urls.first().cloned().unwrap_or_default();
+                attempts.push(attempt(
+                    source,
+                    target,
+                    AttemptResult::Error(err.to_string()),
+                ));
+                return Vec::new();
+            }
+        };
+        let pictures = index.pictures(&id, request.kind, variants);
+        if pictures.is_empty() {
+            let wanted = format!("PS2/{id}/{id}_{}.png", request.kind.suffix());
+            attempts.push(attempt(
+                source,
+                archive.member_url(&wanted),
+                AttemptResult::Missing,
+            ));
+            return Vec::new();
+        }
+        let packaging = region::region_specific(request.kind);
+        let mut found = Vec::new();
+        for picture in pictures {
+            let url = archive.member_url(&picture.member.name);
+            let other_market = packaging && picture.shared_across_markets;
+            if other_market && !variants {
+                attempts.push(attempt(source, url, AttemptResult::OtherMarket));
+                continue;
+            }
+            let key = picture.key();
+            let cover = match self.cached(source, &key) {
+                Ok(Some(record)) => self
+                    .cover_from(&record, request.kind, request.size, true, &url)
+                    .map(|c| (c, AttemptResult::Cached)),
+                Ok(None) => match self.oplm.read(&self.http, picture).await {
+                    Ok(bytes) => self
+                        .store(source, &key, &url, &bytes, request)
+                        .map(|c| (c, AttemptResult::Downloaded)),
+                    Err(err) => Err(err),
+                },
+                Err(err) => Err(err),
+            };
+            match cover {
+                Ok((cover, result)) => {
+                    attempts.push(attempt(source, url, result));
+                    found.push(Found {
+                        cover,
+                        other_market,
+                    });
+                    if !variants {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    attempts.push(attempt(source, url, AttemptResult::Error(err.to_string())))
+                }
+            }
+        }
+        found
+    }
+
+    /// ScreenScraper: the game's media list, then the media that fit the
+    /// slot and the game's market.
+    async fn via_screenscraper(
+        &self,
+        config: &SourceConfig,
+        request: &CoverRequest<'_>,
+        variants: bool,
+        attempts: &mut Vec<Attempt>,
+    ) -> Vec<Found> {
+        let source = SourceId::ScreenScraper;
+        let ss = &self.screenscraper;
+        let account = config
+            .account
+            .clone()
+            .or_else(screenscraper::account_from_env);
+        let Some(info_url) = ss.api.info_url(account.as_ref(), request.serial) else {
+            // No developer key: the source is not set up.
+            return Vec::new();
+        };
+        let shown = screenscraper::redact(&info_url);
+        if let Some(why) = ss.paused() {
+            attempts.push(attempt(source, shown, AttemptResult::Error(why)));
+            return Vec::new();
+        }
+        let info = match self.screenscraper_info(request, &info_url, &shown).await {
+            Ok(Some(info)) => info,
+            Ok(None) => {
+                attempts.push(attempt(source, shown, AttemptResult::Missing));
+                return Vec::new();
+            }
+            Err(err) => {
+                attempts.push(attempt(source, shown, AttemptResult::Error(err)));
+                return Vec::new();
+            }
+        };
+        let medias = screenscraper::pick(&info.medias, request.kind, request.serial, variants);
+        if medias.is_empty() {
+            let any = info
+                .medias
+                .iter()
+                .any(|m| screenscraper::media_types(request.kind).contains(&m.kind.as_str()));
+            attempts.push(attempt(
+                source,
+                shown,
+                if any {
+                    AttemptResult::OtherMarket
+                } else {
+                    AttemptResult::Missing
+                },
+            ));
+            return Vec::new();
+        }
+        let mut found = Vec::new();
+        for media in medias {
+            let key = format!("{}({})/{}", media.kind, media.region, request.serial);
+            let url = screenscraper::redact(&media.url);
+            let result = match self.cached(source, &key) {
+                Ok(Some(record)) => self
+                    .cover_from(&record, request.kind, request.size, true, &url)
+                    .map(|c| Some((c, AttemptResult::Cached)))
+                    .map_err(|e| e.to_string()),
+                Ok(None) => match self
+                    .http
+                    .get(screenscraper::LIMITER, &media.url, &Default::default())
+                    .await
+                {
+                    Ok(Fetched::Ok(body)) if transcode::looks_like_image(&body.bytes) => self
+                        .store(source, &key, &url, &body.bytes, request)
+                        .map(|c| Some((c, AttemptResult::Downloaded)))
+                        .map_err(|e| e.to_string()),
+                    // `NOMEDIA`, a 404, or an answer that is not a picture.
+                    Ok(_) => Ok(None),
+                    Err(err) => Err(self.screenscraper_error(&err)),
+                },
+                Err(err) => Err(err.to_string()),
+            };
+            match result {
+                Ok(Some((cover, result))) => {
+                    attempts.push(attempt(source, url, result));
+                    found.push(Found {
+                        cover,
+                        other_market: false,
+                    });
+                    if !variants {
+                        break;
+                    }
+                }
+                Ok(None) => attempts.push(attempt(source, url, AttemptResult::Missing)),
+                Err(err) => {
+                    attempts.push(attempt(source, url, AttemptResult::Error(err)));
+                    if ss.paused().is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// A game's media list from the cache (30 days, "not found" for 7) or
+    /// the API. `None`: ScreenScraper does not know the serial.
+    async fn screenscraper_info(
+        &self,
+        request: &CoverRequest<'_>,
+        url: &str,
+        shown: &str,
+    ) -> Result<Option<screenscraper::GameInfo>, String> {
+        let source = SourceId::ScreenScraper;
+        let key = format!("jeu/{}", request.serial);
+        let now = cache::now_secs();
+        let record = self
+            .cache
+            .get(source.as_str(), &key)
+            .map_err(|e| e.to_string())?;
+        if let Some(record) = &record {
+            let fresh = now.saturating_sub(record.fetched_at) < screenscraper::INFO_TTL.as_secs();
+            match record.status {
+                Status::Ok if fresh && !request.revalidate => {
+                    if let Some(bytes) = self
+                        .cache
+                        .original_path(record)
+                        .and_then(|p| std::fs::read(p).ok())
+                        && let Ok(info) = screenscraper::parse_game_info(&bytes)
+                    {
+                        return Ok(Some(info));
+                    }
+                }
+                Status::Missing if !record.is_stale_missing(now) => return Ok(None),
+                _ => {}
+            }
+        }
+        let body = match self
+            .http
+            .get(screenscraper::LIMITER, url, &Default::default())
+            .await
+        {
+            Ok(Fetched::Ok(body)) => body,
+            Ok(_) => {
+                let _ = self.cache.put_missing(source.as_str(), &key, shown);
+                return Ok(None);
+            }
+            Err(err) => return Err(self.screenscraper_error(&err)),
+        };
+        let info = screenscraper::parse_game_info(&body.bytes).map_err(|e| e.to_string())?;
+        if info.quota_spent() {
+            let (why, pause) = screenscraper::status_pause(430);
+            self.screenscraper.pause(&why, pause.unwrap_or_default());
+        }
+        let info_tag = source.info();
+        self.cache
+            .put(
+                source.as_str(),
+                &key,
+                &Download {
+                    url: shown,
+                    bytes: &body.bytes,
+                    content_type: Some("application/xml"),
+                    etag: None,
+                    last_modified: None,
+                    license_tag: info_tag.license_tag,
+                    attribution: info_tag.attribution,
+                },
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(Some(info))
+    }
+
+    /// The message of a failed ScreenScraper request, with credentials
+    /// removed, and a pause when retrying soon would not help.
+    fn screenscraper_error(&self, err: &NetError) -> String {
+        match err {
+            NetError::Status { status, .. } => {
+                let (why, pause) = screenscraper::status_pause(*status);
+                if let Some(pause) = pause {
+                    self.screenscraper.pause(&why, pause);
+                }
+                why
+            }
+            other => redact_all(&other.to_string()),
         }
     }
 
@@ -484,6 +919,11 @@ impl ArtService {
     }
 }
 
+/// `text` with ScreenScraper credentials removed from any URL in it.
+fn redact_all(text: &str) -> String {
+    screenscraper::redact_text(text)
+}
+
 /// Two PNGs with the same bytes. Files that cannot be read are never the
 /// same: two failed reads say nothing about the pictures.
 fn same_picture(a: &Path, b: &Path) -> bool {
@@ -496,15 +936,13 @@ fn same_picture(a: &Path, b: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
     use image::{DynamicImage, ImageBuffer, Rgb};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
     use yaoplm_formats::art::png_header;
 
     use super::*;
+    use crate::test_server::{Reply, serve};
 
     fn jpeg(width: u32, height: u32) -> Vec<u8> {
         let img = ImageBuffer::from_fn(width, height, |x, y| Rgb([x as u8, y as u8, 7]));
@@ -531,98 +969,6 @@ mod tests {
         width: 140,
         height: 200,
     };
-
-    /// A canned answer of the test server.
-    #[derive(Clone)]
-    struct Reply {
-        status: u16,
-        headers: Vec<(&'static str, String)>,
-        body: Vec<u8>,
-    }
-
-    struct Seen {
-        requests: Vec<(String, HashMap<String, String>)>,
-        times: Vec<Instant>,
-    }
-
-    /// The smallest HTTP/1.1 server that satisfies reqwest: one request
-    /// per connection, routed by path.
-    async fn serve(routes: HashMap<String, Reply>) -> (String, Arc<Mutex<Seen>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let seen = Arc::new(Mutex::new(Seen {
-            requests: Vec::new(),
-            times: Vec::new(),
-        }));
-        let log = Arc::clone(&seen);
-        tokio::spawn(async move {
-            loop {
-                let Ok((mut socket, _)) = listener.accept().await else {
-                    return;
-                };
-                let routes = routes.clone();
-                let log = Arc::clone(&log);
-                tokio::spawn(async move {
-                    let mut buf = Vec::new();
-                    let mut chunk = [0u8; 4096];
-                    while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                        let Ok(n) = socket.read(&mut chunk).await else {
-                            return;
-                        };
-                        if n == 0 {
-                            return;
-                        }
-                        buf.extend_from_slice(&chunk[..n]);
-                    }
-                    let text = String::from_utf8_lossy(&buf).into_owned();
-                    let mut lines = text.lines();
-                    let path = lines
-                        .next()
-                        .and_then(|l| l.split_whitespace().nth(1))
-                        .unwrap_or("/")
-                        .to_owned();
-                    let headers: HashMap<String, String> = lines
-                        .filter_map(|l| l.split_once(':'))
-                        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_owned()))
-                        .collect();
-                    {
-                        let mut seen = log.lock().unwrap();
-                        seen.requests.push((path.clone(), headers.clone()));
-                        seen.times.push(Instant::now());
-                    }
-                    let reply = routes.get(&path).cloned().unwrap_or(Reply {
-                        status: 404,
-                        headers: Vec::new(),
-                        body: b"nope".to_vec(),
-                    });
-                    // A conditional request for the current ETag gets 304.
-                    let etag = reply
-                        .headers
-                        .iter()
-                        .find(|(k, _)| *k == "ETag")
-                        .map(|(_, v)| v.clone());
-                    let (status, body) = match (etag, headers.get("if-none-match")) {
-                        (Some(etag), Some(sent)) if *sent == etag && reply.status == 200 => {
-                            (304, Vec::new())
-                        }
-                        _ => (reply.status, reply.body.clone()),
-                    };
-                    let mut out = format!(
-                        "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n",
-                        body.len()
-                    );
-                    for (k, v) in &reply.headers {
-                        out.push_str(&format!("{k}: {v}\r\n"));
-                    }
-                    out.push_str("\r\n");
-                    let _ = socket.write_all(out.as_bytes()).await;
-                    let _ = socket.write_all(&body).await;
-                    let _ = socket.shutdown().await;
-                });
-            }
-        });
-        (base, seen)
-    }
 
     fn service() -> (tempfile::TempDir, ArtService) {
         let dir = tempfile::tempdir().unwrap();
@@ -670,6 +1016,7 @@ mod tests {
                     ("ETag", "\"v1\"".into()),
                 ],
                 body: jpeg(300, 420),
+                failures: 0,
             },
         );
         let (base, seen) = serve(routes).await;
@@ -738,6 +1085,7 @@ mod tests {
                 status: 200,
                 headers: vec![("Content-Type", "image/png".into())],
                 body: png(64, 90),
+                failures: 0,
             },
         );
         let (base, seen) = serve(routes).await;
@@ -783,6 +1131,7 @@ mod tests {
                     status: 200,
                     headers: vec![("Content-Type", "image/jpeg".into())],
                     body: jpeg(8, 8),
+                    failures: 0,
                 },
             );
         }
@@ -816,6 +1165,7 @@ mod tests {
                 status: 503,
                 headers: vec![("Retry-After", "1".into())],
                 body: Vec::new(),
+                failures: 0,
             },
         );
         routes.insert(
@@ -824,6 +1174,7 @@ mod tests {
                 status: 200,
                 headers: vec![("Content-Type", "text/html".into())],
                 body: b"<html>not a cover</html>".to_vec(),
+                failures: 0,
             },
         );
         let (base, seen) = serve(routes).await;
@@ -891,6 +1242,7 @@ mod tests {
                 size: SIZE,
                 sources: &sources,
                 revalidate: false,
+                others: &[],
             })
             .await;
         let cover = outcome.cover.unwrap();
@@ -906,6 +1258,7 @@ mod tests {
                 size: SIZE,
                 sources: &sources,
                 revalidate: false,
+                others: &[],
             })
             .await;
         let cover = outcome.cover.unwrap();
@@ -924,6 +1277,7 @@ mod tests {
                 size: SIZE,
                 sources: &sources,
                 revalidate: false,
+                others: &[],
             })
             .await;
         assert!(outcome.cover.is_none());
@@ -981,6 +1335,7 @@ mod tests {
             size,
             sources: &sources,
             revalidate: false,
+            others: &[],
         };
         // Front covers: xlenore's 2-D and 3-D, then libretro's box art.
         let (covers, _) = service.find_variants(&request(ArtKind::Cov, SIZE)).await;
@@ -1040,5 +1395,44 @@ mod tests {
         let (gone, lost) = (dir.path().join("gone.png"), dir.path().join("lost.png"));
         assert!(!same_picture(&gone, &lost));
         assert!(!same_picture(&a, &gone));
+    }
+
+    #[tokio::test]
+    async fn other_releases_stand_in_for_shared_types_only() {
+        let (_dir, service) = service();
+        let thumbs = tempfile::tempdir().unwrap();
+        for folder in ["Named_Snaps", "Named_Boxarts"] {
+            let dir = thumbs.path().join(folder);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("Game (Europe).png"), png(64, 48)).unwrap();
+        }
+        let sources = [SourceConfig::mirror(SourceId::Libretro, thumbs.path())];
+        let names = vec!["Game (Japan)".to_owned()];
+        let others = vec![OtherRelease {
+            serial: "SLES-50001".into(),
+            redump_names: vec!["Game (Europe)".into(), "Game (Europe) (Rev 1)".into()],
+        }];
+        let request = |kind| CoverRequest {
+            serial: "SLPS-25001",
+            redump_names: &names,
+            kind,
+            size: SIZE,
+            sources: &sources,
+            revalidate: false,
+            others: &others,
+        };
+        // The Japanese release has no screenshot: the European one has.
+        let snap = service.fetch_cover(&request(ArtKind::Scr)).await;
+        let cover = snap.cover.unwrap();
+        assert!(
+            cover.origin.ends_with("Game (Europe).png"),
+            "{}",
+            cover.origin
+        );
+        assert_eq!(snap.attempts.len(), 2, "{:?}", snap.attempts);
+        // A box is the release itself: never another region's.
+        let cover = service.fetch_cover(&request(ArtKind::Cov)).await;
+        assert!(cover.cover.is_none());
+        assert!(cover.attempts.iter().all(|a| !a.target.contains("Europe")));
     }
 }

@@ -31,10 +31,13 @@ export async function openLibrary(
   extra: { language?: "en" | "ru"; theme?: "light" | "dark"; view?: "grid" | "list"; simple?: boolean } = {},
 ): Promise<string> {
   const { library, mirror } = await roots(request);
-  // The cover sources read the fixture mirrors instead of the network.
+  // The picture sources read the fixture mirrors instead of the network;
+  // ScreenScraper has none and stays off.
   const artSources = {
     xlenore: { enabled: true, mirror: joinPath(mirror, "xlenore") },
+    oplm: { enabled: true, mirror: joinPath(mirror, "oplm") },
     libretro: { enabled: true, mirror: joinPath(mirror, "libretro") },
+    screenscraper: { enabled: false, mirror: "" },
   };
   await page.addInitScript(
     ([root, language, theme, view, sources, simpleMode]) => {

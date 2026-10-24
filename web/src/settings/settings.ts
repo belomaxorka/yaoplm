@@ -6,14 +6,21 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
-export const artSourceIds = ["xlenore", "libretro"] as const;
+/** Picture sources; each type tries them in its own order (ADR-0035). */
+export const artSourceIds = ["xlenore", "oplm", "libretro", "screenscraper"] as const;
 export type ArtSourceId = (typeof artSourceIds)[number];
 
-/** A cover source: on or off, and an optional local mirror folder (ADR-0007). */
+/** A picture source: on or off, and an optional local mirror folder (ADR-0007). */
 export interface ArtSourceSettings {
   enabled: boolean;
   /** A folder with the repository's layout; empty means the network. */
   mirror: string;
+}
+
+/** A ScreenScraper account, for a larger daily quota (ADR-0035). */
+export interface ScreenScraperAccount {
+  user: string;
+  password: string;
 }
 
 /** Preferences kept in the browser (or the WebView) until a settings file lands. */
@@ -38,8 +45,10 @@ export interface Settings {
   coversOnAdd: boolean;
   /** Title the games being added by the bundled database (META-1). */
   titlesFromDb: boolean;
-  /** Cover sources in priority order (ART-1). */
+  /** Picture sources on or off, and their mirrors (ART-1). */
   artSources: Record<ArtSourceId, ArtSourceSettings>;
+  /** Optional; the source works without one. */
+  screenscraper: ScreenScraperAccount;
 }
 
 export const defaultSettings: Settings = {
@@ -54,8 +63,11 @@ export const defaultSettings: Settings = {
   titlesFromDb: true,
   artSources: {
     xlenore: { enabled: true, mirror: "" },
+    oplm: { enabled: true, mirror: "" },
     libretro: { enabled: true, mirror: "" },
+    screenscraper: { enabled: true, mirror: "" },
   },
+  screenscraper: { user: "", password: "" },
 };
 
 const STORAGE_KEY = "yaoplm.settings";
@@ -87,6 +99,14 @@ function readArtSources(value: unknown): Record<ArtSourceId, ArtSourceSettings> 
   return out;
 }
 
+function readAccount(value: unknown): ScreenScraperAccount {
+  const raw = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  return {
+    user: typeof raw.user === "string" ? raw.user : "",
+    password: typeof raw.password === "string" ? raw.password : "",
+  };
+}
+
 export function readSettings(): Settings {
   const raw = readStorage(STORAGE_KEY);
   if (!raw) return defaultSettings;
@@ -105,6 +125,7 @@ export function readSettings(): Settings {
       coversOnAdd: typeof p.coversOnAdd === "boolean" ? p.coversOnAdd : defaultSettings.coversOnAdd,
       titlesFromDb: typeof p.titlesFromDb === "boolean" ? p.titlesFromDb : defaultSettings.titlesFromDb,
       artSources: readArtSources(p.artSources),
+      screenscraper: readAccount(p.screenscraper),
     };
   } catch {
     return defaultSettings;

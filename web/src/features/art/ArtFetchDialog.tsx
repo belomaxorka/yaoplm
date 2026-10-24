@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { Ban, Globe, ImageDown, Loader2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import type { Game } from "@/api/generated/Game";
 import type { JobId } from "@/api/generated/JobId";
 import type { PlanView } from "@/api/generated/PlanView";
 import { artOf, hasCover } from "@/api/media";
-import { fetchArt, waitForJob } from "@/api/rpc";
+import { attribution, fetchArt, waitForJob } from "@/api/rpc";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,7 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { artTypes, useFetchableTypes } from "@/features/art/kinds";
-import { artSourceInfo, enabledSources, requestSources } from "@/features/art/sources";
+import { artSourceInfo, enabledSources, requestSources, takesMirror } from "@/features/art/sources";
 import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
@@ -160,7 +161,8 @@ function FetchBody({
   const missing = coversOnly
     ? inScope.filter((g) => !hasCover(g)).length
     : inScope.reduce((sum, g) => sum + chosen.filter((kind) => !artOf(g, kind)).length, 0);
-  const sources = enabledSources(settings);
+  const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport), staleTime: Infinity });
+  const sources = enabledSources(settings, about.data?.art);
   const job = jobId === null ? undefined : jobs.find((j) => j.id === jobId);
   const active = job !== undefined && (job.status === "queued" || job.status === "running");
 
@@ -263,14 +265,16 @@ function FetchBody({
             {sources.length === 0 ? (
               <p className="text-destructive">{t("art.noSources")}</p>
             ) : (
-              <ol className="list-inside list-decimal text-muted-foreground">
+              <ul className="list-inside list-disc text-muted-foreground">
                 {sources.map((id) => (
                   <li key={id}>
                     {artSourceInfo[id].name}
-                    {settings.artSources[id].mirror.trim() && <span className="ml-1 text-xs">({t("art.mirrorUsed")})</span>}
+                    {takesMirror(id) && settings.artSources[id].mirror.trim() && (
+                      <span className="ml-1 text-xs">({t("art.mirrorUsed")})</span>
+                    )}
                   </li>
                 ))}
-              </ol>
+              </ul>
             )}
             <p className="mt-2 text-xs text-muted-foreground">
               {t("art.sourcesHint")}{" "}

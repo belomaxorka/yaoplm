@@ -27,10 +27,11 @@ The derived database keeps the share-alike terms of CC BY-SA 4.0 for the
 parts that come from libretro-database and is distributed with YAOPLM under
 GPL-3.0-or-later (ADR-0002).
 
-## Cover art sources (never bundled)
+## Picture sources (never bundled)
 
-Covers are downloaded only when the user asks for them, cached locally and
-written to the user's device. YAOPLM does not redistribute them.
+Pictures are downloaded only when the user asks for them, cached locally and
+written to the user's device. YAOPLM does not redistribute them (ADR-0007,
+ADR-0035).
 
 ### xlenore/ps2-covers
 
@@ -39,9 +40,23 @@ written to the user's device. YAOPLM does not redistribute them.
 - Credits: xlenore; covers from pcsx2.net, psxdatacenter.com, gvcover.top and imkira3
 - Used for: front covers by serial (COV)
 
+### OPL Manager art backup OPLM_ART_2024_09 (archive.org)
+
+- Source: <https://archive.org/details/OPLM_ART_2024_09>
+- Licence: no licence stated; used on request only
+- Credits: OPL Manager ART database contributors; backup published by danielb (OPL Manager)
+- Used for: every picture type by game ID, one picture at a time from the backup
+
 ### libretro-thumbnails, Sony - PlayStation 2
 
 - Source: <https://github.com/libretro-thumbnails/Sony_-_PlayStation_2>
 - Licence: no licence stated; used on request only
 - Credits: libretro-thumbnails contributors
-- Used for: front covers by Redump name (COV)
+- Used for: covers, screenshots, title screens and logos by Redump name
+
+### ScreenScraper
+
+- Source: <https://www.screenscraper.fr>
+- Licence: CC BY-NC-SA 4.0 (<https://creativecommons.org/licenses/by-nc-sa/4.0/>)
+- Credits: ScreenScraper.fr and its contributors
+- Used for: every picture type by serial and region, in builds with a developer key

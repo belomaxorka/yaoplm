@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { pickFolder } from "@/features/add/desktop";
-import { artSourceInfo } from "@/features/art/sources";
+import { artSourceInfo, takesMirror } from "@/features/art/sources";
 import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { formatBytes } from "@/lib/format";
 import { useSettings } from "@/settings/context";
@@ -156,45 +156,7 @@ export function SettingsPage() {
               <CardDescription>{t("settings.coversDescription")}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
-              {artSourceIds.map((id, index) => {
-                const source = settings.artSources[id];
-                const set = (patch: Partial<typeof source>) =>
-                  update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
-                return (
-                  <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
-                    <SettingRow
-                      label={`${index + 1}. ${artSourceInfo[id].name}`}
-                      hint={t(`settings.artSources.${id}`)}
-                      htmlFor={`${ids}-src-${id}`}
-                    >
-                      <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
-                    </SettingRow>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
-                        {t("settings.mirror")}
-                      </Label>
-                      <Input
-                        id={`${ids}-mirror-${id}`}
-                        value={source.mirror}
-                        placeholder={t("settings.mirrorPlaceholder")}
-                        onChange={(event) => set({ mirror: event.target.value })}
-                        className="font-mono text-xs"
-                      />
-                      {isTauri() && (
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          aria-label={t("settings.pickMirror")}
-                          onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
-                        >
-                          <FolderOpen aria-hidden />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
+              <ArtSourceSettingsList art={about.data?.art} />
               <SettingRow
                 label={t("settings.artCache")}
                 hint={
@@ -303,12 +265,99 @@ export function SettingsPage() {
   );
 }
 
-/** Credits of the bundled data and the cover sources (ADR-0007). */
+/**
+ * The switch and the mirror folder of every picture source, and the
+ * ScreenScraper account (ADR-0035). There is no order to set: each type
+ * tries the sources in its own order. A source this build cannot ask is
+ * left out.
+ */
+function ArtSourceSettingsList({ art }: { art: readonly SourceEntry[] | undefined }) {
+  const { t } = useTranslation();
+  const { settings, update } = useSettings();
+  const ids = useId();
+  return (
+    <>
+      {artSourceIds.map((id) => {
+        const source = settings.artSources[id];
+        const set = (patch: Partial<typeof source>) =>
+          update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
+        // A source this build cannot ask (ScreenScraper without a key) is
+        // not shown at all.
+        if (art?.find((entry) => entry.id === id)?.available === false) return null;
+        return (
+          <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
+            <SettingRow label={artSourceInfo[id].name} hint={t(`settings.artSources.${id}`)} htmlFor={`${ids}-src-${id}`}>
+              <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
+            </SettingRow>
+            {takesMirror(id) ? (
+              <div className="flex items-center gap-2">
+                <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
+                  {t("settings.mirror")}
+                </Label>
+                <Input
+                  id={`${ids}-mirror-${id}`}
+                  value={source.mirror}
+                  placeholder={t("settings.mirrorPlaceholder")}
+                  onChange={(event) => set({ mirror: event.target.value })}
+                  className="font-mono text-xs"
+                />
+                {isTauri() && (
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label={t("settings.pickMirror")}
+                    onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
+                  >
+                    <FolderOpen aria-hidden />
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor={`${ids}-ss-user`} className="shrink-0 text-xs text-muted-foreground">
+                    {t("settings.screenscraperUser")}
+                  </Label>
+                  <Input
+                    id={`${ids}-ss-user`}
+                    value={settings.screenscraper.user}
+                    autoComplete="username"
+                    onChange={(event) => update({ screenscraper: { ...settings.screenscraper, user: event.target.value } })}
+                    className="w-40 text-xs"
+                  />
+                  <Label htmlFor={`${ids}-ss-password`} className="shrink-0 text-xs text-muted-foreground">
+                    {t("settings.screenscraperPassword")}
+                  </Label>
+                  <Input
+                    id={`${ids}-ss-password`}
+                    type="password"
+                    value={settings.screenscraper.password}
+                    autoComplete="current-password"
+                    onChange={(event) =>
+                      update({ screenscraper: { ...settings.screenscraper, password: event.target.value } })
+                    }
+                    className="w-40 text-xs"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">{t("settings.screenscraperAccountHint")}</p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
+    </>
+  );
+}
+
+/** Credits of the bundled data and the picture sources (ADR-0007). */
 function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
   const { t } = useTranslation();
   return (
     <ul className="flex flex-col gap-3 text-sm">
-      {entries.map((entry) => (
+      {entries
+        .filter((entry) => entry.available)
+        .map((entry) => (
         <li key={entry.id} className="rounded-md border p-3" data-testid={`source-${entry.id}`}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-medium">{entry.name}</span>

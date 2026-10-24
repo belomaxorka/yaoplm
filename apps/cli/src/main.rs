@@ -118,10 +118,11 @@ enum Command {
         #[arg(long)]
         covers: bool,
         /// With --covers: read a source from a folder with its repository
-        /// layout, xlenore=DIR or libretro=DIR. Repeatable.
+        /// layout, xlenore=DIR, oplm=DIR or libretro=DIR. Repeatable.
         #[arg(long = "mirror", value_name = "SOURCE=DIR", requires = "covers")]
         mirrors: Vec<String>,
-        /// With --covers: skip a source, xlenore or libretro. Repeatable.
+        /// With --covers: skip a source: xlenore, oplm, libretro or
+        /// screenscraper. Repeatable.
         #[arg(long = "skip-source", value_name = "SOURCE", requires = "covers")]
         skipped: Vec<String>,
         /// With --covers: picture types to look for, as `art fetch --kind`:
@@ -245,12 +246,17 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum ArtCommand {
-    /// Find covers (xlenore/ps2-covers, then libretro-thumbnails) for the
-    /// games on a device, then write them after confirmation.
+    /// Find pictures for the games on a device, then write them after
+    /// confirmation.
     ///
-    /// Only games without a cover by default. Downloads are cached under
-    /// the app data folder; a local mirror of a source (a clone of its
-    /// repository) replaces the network with --mirror.
+    /// Each type has its own order of sources: xlenore/ps2-covers, OPL
+    /// Manager's art backup on archive.org, libretro-thumbnails and, with a
+    /// developer key (YAOPLM_SCREENSCRAPER_DEVID, _DEVPASSWORD; an account
+    /// in YAOPLM_SCREENSCRAPER_USER, _PASSWORD), ScreenScraper. Only games
+    /// without the picture by default. Downloads are cached under the app
+    /// data folder; a local mirror of a source (a clone of its repository)
+    /// replaces the network with --mirror. YAOPLM_OFFLINE=1 refuses any
+    /// network access.
     Fetch {
         root: PathBuf,
         /// Every game, replacing existing covers (the old files move to
@@ -261,14 +267,16 @@ enum ArtCommand {
         #[arg(long = "game", value_name = "ID")]
         games: Vec<String>,
         /// Read a source from a folder with its repository layout:
-        /// xlenore=DIR or libretro=DIR. Repeatable.
+        /// xlenore=DIR, oplm=DIR (PS2/<ID>/<ID>_<TYPE>.png) or
+        /// libretro=DIR. Repeatable.
         #[arg(long = "mirror", value_name = "SOURCE=DIR")]
         mirrors: Vec<String>,
-        /// Skip a source: xlenore or libretro. Repeatable.
+        /// Skip a source: xlenore, oplm, libretro or screenscraper.
+        /// Repeatable.
         #[arg(long = "skip-source", value_name = "SOURCE")]
         skipped: Vec<String>,
-        /// Picture types to look for: COV (default), SCR, SCR2, LGO; ICO,
-        /// COV2, LAB and BG have no open source. Repeatable.
+        /// Picture types to look for: COV (default), ICO, COV2, LAB, BG,
+        /// SCR, SCR2, LGO. Repeatable.
         #[arg(long = "kind", value_name = "TYPE")]
         kinds: Vec<String>,
         #[command(flatten)]
@@ -825,6 +833,8 @@ fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<Art
             id: id.to_owned(),
             enabled: None,
             mirror: Some(absolute(Path::new(dir))),
+            user: None,
+            password: None,
         });
     }
     for id in skipped {
@@ -832,6 +842,8 @@ fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<Art
             id: id.clone(),
             enabled: Some(false),
             mirror: None,
+            user: None,
+            password: None,
         });
     }
     Ok(settings)
