@@ -1,4 +1,5 @@
-//! Windows: volume queries through kernel32 and preallocation.
+//! Windows: volume queries through kernel32, preallocation and the
+//! fragment count of a file.
 //!
 //! The only module with `unsafe` (ADR-0019): thin wrappers around
 //! documented Win32 calls, with every buffer owned and sized on the Rust
@@ -27,9 +28,10 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
-    IOCTL_DISK_GET_PARTITION_INFO_EX, IOCTL_STORAGE_QUERY_PROPERTY, PARTITION_INFORMATION_EX,
-    PARTITION_STYLE_GPT, PARTITION_STYLE_MBR, PropertyStandardQuery, STORAGE_DEVICE_DESCRIPTOR,
-    STORAGE_PROPERTY_QUERY, StorageDeviceProperty,
+    FSCTL_GET_RETRIEVAL_POINTERS, IOCTL_DISK_GET_PARTITION_INFO_EX, IOCTL_STORAGE_QUERY_PROPERTY,
+    PARTITION_INFORMATION_EX, PARTITION_STYLE_GPT, PARTITION_STYLE_MBR, PropertyStandardQuery,
+    STARTING_VCN_INPUT_BUFFER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY,
+    StorageDeviceProperty,
 };
 use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
 use windows_sys::Win32::System::SystemServices::FILE_READ_ONLY_VOLUME;
@@ -334,6 +336,87 @@ pub fn volume_for_path(path: &Path) -> io::Result<Volume> {
     query(&plain(Path::new(&from_wide(&root))))
 }
 
+/// How many runs of contiguous clusters `file` occupies: 1 for a file OPL
+/// can mount as a VMC, 0 for an empty one. Asks the file system for the
+/// file's extents (`FSCTL_GET_RETRIEVAL_POINTERS`, which FAT32, exFAT and
+/// NTFS answer) and merges extents that continue each other on disk.
+pub fn fragments(file: &File) -> io::Result<u32> {
+    const ERROR_HANDLE_EOF: i32 = 38;
+    const ERROR_MORE_DATA: i32 = 234;
+    // Header (ExtentCount, padding, StartingVcn), then 16-byte extents.
+    const HEADER: usize = 16;
+    let mut input = STARTING_VCN_INPUT_BUFFER { StartingVcn: 0 };
+    // u64 keeps the buffer aligned the way the file system expects.
+    let mut out = vec![0u64; 1024];
+    let mut runs = 0u32;
+    let mut last_end = None;
+    loop {
+        let mut returned = 0u32;
+        // SAFETY: the handle belongs to `file`, which outlives the call;
+        // `input` and `out` are valid for the sizes passed, and `returned`
+        // is a valid out pointer. No OVERLAPPED: the call is synchronous.
+        let ok = unsafe {
+            DeviceIoControl(
+                file.as_raw_handle(),
+                FSCTL_GET_RETRIEVAL_POINTERS,
+                (&raw const input).cast(),
+                size_of::<STARTING_VCN_INPUT_BUFFER>() as u32,
+                out.as_mut_ptr().cast(),
+                (out.len() * size_of::<u64>()) as u32,
+                &mut returned,
+                ptr::null_mut(),
+            )
+        };
+        let more = if ok == 0 {
+            let err = io::Error::last_os_error();
+            match err.raw_os_error() {
+                // No clusters at all: an empty file.
+                Some(ERROR_HANDLE_EOF) => return Ok(runs),
+                Some(ERROR_MORE_DATA) => true,
+                _ => return Err(err),
+            }
+        } else {
+            false
+        };
+        let bytes: Vec<u8> = out.iter().flat_map(|w| w.to_ne_bytes()).collect();
+        let at = |offset: usize| -> i64 {
+            let mut raw = [0u8; 8];
+            raw.copy_from_slice(&bytes[offset..offset + 8]);
+            i64::from_ne_bytes(raw)
+        };
+        let count = u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        let count = count.min((bytes.len() - HEADER) / 16);
+        let extents: Vec<(i64, i64)> = (0..count)
+            .map(|index| (at(HEADER + index * 16), at(HEADER + index * 16 + 8)))
+            .collect();
+        let vcn = merge_runs(at(8), &extents, &mut runs, &mut last_end);
+        if !more || count == 0 {
+            return Ok(runs);
+        }
+        input.StartingVcn = vcn;
+    }
+}
+
+/// Counts runs in `(next_vcn, lcn)` extents that start at `vcn`: an extent
+/// that begins where the last one ended on disk continues its run. Returns
+/// the VCN after the last extent.
+fn merge_runs(
+    mut vcn: i64,
+    extents: &[(i64, i64)],
+    runs: &mut u32,
+    last_end: &mut Option<i64>,
+) -> i64 {
+    for &(next_vcn, lcn) in extents {
+        // LCN -1: a hole or compressed run, never contiguous with anything.
+        if !(lcn >= 0 && *last_end == Some(lcn)) {
+            *runs += 1;
+        }
+        *last_end = (lcn >= 0).then(|| lcn + (next_vcn - vcn));
+        vcn = next_vcn;
+    }
+    vcn
+}
+
 /// Reserves `len` bytes for `file` without changing its size, so a
 /// sequential write lands in as few fragments as the volume allows.
 pub fn preallocate(file: &File, len: u64) -> io::Result<()> {
@@ -355,5 +438,22 @@ pub fn preallocate(file: &File, len: u64) -> io::Result<()> {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_runs;
+
+    #[test]
+    fn extents_that_continue_on_disk_are_one_run() {
+        let mut runs = 0;
+        let mut last = None;
+        // 0..16 at 100, 16..32 at 116 (continues), 32..40 at 500.
+        let end = merge_runs(0, &[(16, 100), (32, 116), (40, 500)], &mut runs, &mut last);
+        assert_eq!((runs, end, last), (2, 40, Some(508)));
+        // The next answer of a long list carries on.
+        merge_runs(40, &[(48, 508), (50, -1)], &mut runs, &mut last);
+        assert_eq!((runs, last), (3, None));
     }
 }

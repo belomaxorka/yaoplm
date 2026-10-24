@@ -22,6 +22,7 @@ yaoplm-api.workspace = true
 [dev-dependencies]
 image.workspace = true
 tempfile.workspace = true
+yaoplm-formats.workspace = true
 yaoplm-test-support.workspace = true
 
 [lints]

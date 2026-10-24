@@ -3,14 +3,17 @@ import type { ArtInput } from "./ArtInput";
 import type { ArtScope } from "./ArtScope";
 import type { ArtSourceSetting } from "./ArtSourceSetting";
 import type { ArtType } from "./ArtType";
+import type { CfgPair } from "./CfgPair";
 import type { ConvertTarget } from "./ConvertTarget";
 import type { GameRef } from "./GameRef";
+import type { GameSettings } from "./GameSettings";
 import type { ImportOverride } from "./ImportOverride";
 import type { JobId } from "./JobId";
 import type { Layout } from "./Layout";
 import type { LoaderProfile } from "./LoaderProfile";
 import type { Media } from "./Media";
 import type { NameStyle } from "./NameStyle";
+import type { NewVmc } from "./NewVmc";
 import type { RecoveryAction } from "./RecoveryAction";
 import type { Transfer } from "./Transfer";
 
@@ -103,7 +106,7 @@ overwrite?: boolean, } | { "type": "SetArt", root: string, startup: string, inpu
  * Replace an existing cover (moved to the backup folder first).
  * Defaults to true.
  */
-overwrite?: boolean, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
+overwrite?: boolean, } | { "type": "ReadCfg", root: string, game: GameRef, } | { "type": "WriteCfg", root: string, game: GameRef, profile?: LoaderProfile, settings?: GameSettings, set?: Array<CfgPair>, unset?: Array<string>, cards?: Array<NewVmc>, } | { "type": "ListVmc", root: string, } | { "type": "CreateVmc", root: string, cards: Array<NewVmc>, } | { "type": "DeleteArt", root: string, startup: string, kind?: string, } | { "type": "VerifyGames", root: string, 
 /**
  * Only these games; every game when absent.
  */

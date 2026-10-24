@@ -6711,6 +6711,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "yaoplm-api",
+ "yaoplm-formats",
  "yaoplm-test-support",
 ]
 

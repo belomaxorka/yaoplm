@@ -271,3 +271,87 @@ fn zso_interoperates_with_ziso_py() {
         assert_eq!(std::fs::read(&back).unwrap(), iso, "align {align}");
     }
 }
+
+/// Builds OPL's `pc/genvmc`, the PC copy of the VMC formatter. MSVC lacks
+/// the POSIX headers it includes (and does not use): empty ones stand in.
+fn compile_genvmc(dir: &Path) -> PathBuf {
+    let src = opl_src().join("pc").join("genvmc").join("src");
+    let stubs = dir.join("stubs");
+    std::fs::create_dir_all(&stubs).unwrap();
+    for header in ["unistd.h", "dirent.h"] {
+        std::fs::write(stubs.join(header), "").unwrap();
+    }
+    for file in ["genvmc.c", "genvmc.h"] {
+        std::fs::copy(src.join(file), dir.join(file)).unwrap();
+    }
+    let exe = dir.join(if cfg!(windows) {
+        "genvmc.exe"
+    } else {
+        "genvmc"
+    });
+    let triple = target_triple();
+    let tool = cc::Build::new()
+        .cargo_metadata(false)
+        .target(&triple)
+        .host(&triple)
+        .opt_level(0)
+        .debug(false)
+        .out_dir(dir)
+        .get_compiler();
+    let mut cmd = tool.to_command();
+    cmd.current_dir(dir);
+    if tool.is_like_msvc() {
+        cmd.arg("/nologo")
+            .arg(format!("/I{}", stubs.display()))
+            .arg("genvmc.c")
+            .arg(format!("/Fe{}", exe.display()));
+    } else {
+        cmd.arg("-fwrapv").arg("genvmc.c").arg("-o").arg(&exe);
+    }
+    let status = cmd.status().expect("run the C compiler");
+    assert!(status.success(), "C compiler failed: {cmd:?}");
+    exe
+}
+
+/// The `created` and `modified` times of the `.` and `..` entries: genvmc
+/// stamps the moment it runs (and its PC copy reads the decimal clock as if
+/// it were BCD), so they never match.
+fn without_root_times(card: &mut [u8]) {
+    let sb = yaoplm_formats::vmc::Superblock::parse(card);
+    let root = sb.root_dir_offset() as usize;
+    for entry in [root, root + 512] {
+        card[entry + 0x08..entry + 0x10].fill(0);
+        card[entry + 0x18..entry + 0x20].fill(0);
+    }
+}
+
+#[test]
+#[ignore = "needs YAOPLM_OPL_SRC and a C compiler"]
+fn blank_vmc_matches_opl_genvmc() {
+    use yaoplm_formats::vmc::{McTime, SIZES_MB, blank_card};
+    let dir = tempfile::tempdir().unwrap();
+    let exe = compile_genvmc(dir.path());
+    for mb in SIZES_MB {
+        let path = dir.path().join(format!("opl{mb}.bin"));
+        let status = Command::new(&exe)
+            .arg(mb.to_string())
+            .arg(&path)
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "genvmc {mb}");
+        let mut opl = std::fs::read(&path).unwrap();
+        let mut ours = blank_card(mb, McTime::FALLBACK).unwrap();
+        assert_eq!(opl.len(), ours.len(), "{mb} MiB");
+        without_root_times(&mut opl);
+        without_root_times(&mut ours);
+        if let Some(at) = opl.iter().zip(&ours).position(|(a, b)| a != b) {
+            panic!(
+                "{mb} MiB card differs at {at:#x} (cluster {}): OPL {:#04x}, ours {:#04x}",
+                at / 1024,
+                opl[at],
+                ours[at]
+            );
+        }
+    }
+}

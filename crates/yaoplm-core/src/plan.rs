@@ -173,6 +173,15 @@ pub enum Step {
         source: usize,
         max_len: u64,
     },
+    /// A blank, formatted VMC of `size_mb` MiB (VMC-1), its root directory
+    /// stamped `created` (Unix seconds). Written as `<path>.yaoplm-part`
+    /// with the space reserved first, synced, renamed into place.
+    #[serde(rename_all = "camelCase")]
+    WriteVmc {
+        path: RelPath,
+        size_mb: u32,
+        created: i64,
+    },
     /// Replaces a small file atomically (`ul.cfg`, a CFG).
     PutFile {
         path: RelPath,
@@ -223,6 +232,7 @@ impl Step {
         match self {
             Self::WriteFile { len, .. } => *len,
             Self::WriteZso { max_len, .. } => *max_len,
+            Self::WriteVmc { size_mb, .. } => u64::from(*size_mb) << 20,
             Self::PutFile { content, .. } => content.0.len() as u64,
             _ => 0,
         }
@@ -270,6 +280,15 @@ mod media_name {
     }
 }
 
+/// A key a transaction changes in a CFG, for the plan view (CFG-2):
+/// `None` is absent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CfgChange {
+    pub key: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
 /// One unit that either happens completely or not at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
@@ -284,6 +303,9 @@ pub struct Transaction {
     /// Steps `..commit` are undoable; `commit..` only finish the job.
     pub commit: usize,
     pub notices: Vec<Notice>,
+    /// The CFG keys this transaction changes, for display.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cfg_changes: Vec<CfgChange>,
 }
 
 impl Transaction {
@@ -295,6 +317,7 @@ impl Transaction {
             steps: Vec::new(),
             commit: 0,
             notices: Vec::new(),
+            cfg_changes: Vec::new(),
         }
     }
 
@@ -404,6 +427,11 @@ pub enum PlanKind {
     Art,
     /// Games converted between ISO, ZSO and `ul` (GAME-4).
     Convert,
+    /// A game's settings written to its CFG (CFG-2), with the cards it
+    /// gets in the same plan.
+    Settings,
+    /// Blank VMC cards created (VMC-1).
+    Vmc,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

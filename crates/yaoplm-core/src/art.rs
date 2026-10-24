@@ -258,7 +258,7 @@ pub fn present_art_kinds(
 }
 
 /// `CreateDir` steps for `.yaoplm/backup/<id>/ART`, outermost first.
-fn backup_dirs(backup: &RelPath) -> io::Result<Vec<Step>> {
+pub(crate) fn backup_dirs(backup: &RelPath) -> io::Result<Vec<Step>> {
     let mut steps = Vec::new();
     let mut parts = Vec::new();
     let mut at = Some(backup.clone());

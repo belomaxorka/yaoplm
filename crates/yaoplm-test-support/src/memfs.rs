@@ -123,6 +123,8 @@ struct State {
     budget: Option<u64>,
     fault: Option<Fault>,
     ops: Vec<String>,
+    /// Fragment counts to report, by key; unknown otherwise.
+    fragments: BTreeMap<String, u32>,
 }
 
 fn key(path: &str) -> String {
@@ -197,6 +199,7 @@ impl MemFs {
                 budget: None,
                 fault: None,
                 ops: Vec::new(),
+                fragments: BTreeMap::new(),
             })),
         }
     }
@@ -243,6 +246,12 @@ impl MemFs {
             op,
             path: path.to_owned(),
         });
+    }
+
+    /// Makes [`DeviceFs::fragments`] report `runs` for `path`, as if the
+    /// volume's free space were cut up.
+    pub fn set_fragments(&self, path: &str, runs: u32) {
+        self.lock().fragments.insert(key(path), runs);
     }
 
     /// Adds a file directly, creating folders as needed.
@@ -451,6 +460,14 @@ impl DeviceFs for MemFs {
         let mut info = state.info.clone();
         info.free_bytes = info.free_bytes.saturating_sub(state.used());
         Ok(info)
+    }
+
+    fn fragments(&self, path: &RelPath) -> io::Result<Option<u32>> {
+        let state = self.lock();
+        if state.unplugged {
+            return Err(gone());
+        }
+        Ok(state.fragments.get(&key(path.as_str())).copied())
     }
 
     fn metadata(&self, path: &RelPath) -> io::Result<Option<FileMeta>> {

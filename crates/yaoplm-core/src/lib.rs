@@ -2,7 +2,7 @@
 //! and the plan → confirm → execute engine for every write.
 //!
 //! - [`scan_library`] and [`image_info`] read what OPL would see.
-//! - [`import::plan_import`], [`ops`], [`convert`] and [`art`] build
+//! - [`import::plan_import`], [`ops`], [`convert`], [`art`] and [`settings`] build
 //!   [`plan::Plan`]s; nothing is written while planning.
 //! - [`verify`] hashes the images on a device for dump verification.
 //! - [`exec::execute`] runs a plan with a journal, rollback before each
@@ -28,6 +28,7 @@ pub mod plan;
 mod reasons;
 pub mod recovery;
 mod scan;
+pub mod settings;
 pub mod source;
 pub mod titles;
 pub mod verify;

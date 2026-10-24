@@ -68,7 +68,7 @@ test("the game card shows warnings, CFG and keyboard navigation works", async ({
   );
   await expect(page.getByText("Mode 1: accurate reads")).toBeVisible();
   await expect(page.getByText("Mode 3: unhook syscalls")).toBeVisible();
-  await expect(page.getByText("SLUS_200.62_0", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("cfg-vmc-0")).toContainText("SLUS_200.62_0");
 
   await page.goBack();
   await page.getByRole("listitem", { name: /Split Game/ }).click();

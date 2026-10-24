@@ -215,6 +215,12 @@ pub trait DeviceFs: Send + Sync {
     fn sync_dir(&self, _dir: &RelPath) -> io::Result<()> {
         Ok(())
     }
+    /// How many runs of contiguous clusters the file at `path` occupies,
+    /// or `None` when the OS cannot tell. OPL mounts a VMC only when it is
+    /// one run (research/02 §9).
+    fn fragments(&self, _path: &RelPath) -> io::Result<Option<u32>> {
+        Ok(None)
+    }
 }
 
 /// Finds an entry by name the way FAT, exFAT and SMB do: ignoring case.
@@ -422,6 +428,15 @@ impl DeviceFs for HostFs {
         fs::remove_dir(self.resolve_checked(path)?)
     }
 
+    fn fragments(&self, path: &RelPath) -> io::Result<Option<u32>> {
+        let file = File::open(self.resolve_checked(path)?)?;
+        match crate::sys::fragments(&file) {
+            Ok(runs) => Ok(Some(runs)),
+            Err(err) if err.kind() == io::ErrorKind::Unsupported => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     fn sync_dir(&self, dir: &RelPath) -> io::Result<()> {
         #[cfg(unix)]
         {
@@ -494,6 +509,24 @@ mod tests {
         write_atomic(&fs, &rel("ul.cfg"), b"two").unwrap();
         assert_eq!(fs.read(&rel("ul.cfg")).unwrap(), b"two");
         assert!(fs.metadata(&rel("ul.cfg.yaoplm-tmp")).unwrap().is_none());
+
+        // A small file is one run where the OS can tell at all.
+        assert!(matches!(
+            fs.fragments(&rel("ul.cfg")).unwrap(),
+            None | Some(0..=1)
+        ));
+        let mut big = fs.create(&rel("CD/big.bin")).unwrap();
+        big.preallocate(1 << 20).unwrap();
+        big.write_all(&vec![0xFF; 1 << 20]).unwrap();
+        big.sync().unwrap();
+        drop(big);
+        #[cfg(windows)]
+        assert!(
+            fs.fragments(&rel("CD/big.bin"))
+                .unwrap()
+                .is_some_and(|n| n >= 1)
+        );
+        fs.remove_file(&rel("CD/big.bin")).unwrap();
 
         fs.remove_file(&rel("CD/b.iso")).unwrap();
         fs.remove_dir(&rel("CD")).unwrap();

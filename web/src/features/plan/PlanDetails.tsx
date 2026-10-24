@@ -8,6 +8,7 @@ import {
   FolderMinus,
   FolderPlus,
   type LucideIcon,
+  MemoryStick,
   NotebookPen,
   Trash2,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const stepIcons: Record<StepOp, LucideIcon> = {
   removeDir: FolderMinus,
   writeFile: FileInput,
   writeZso: FileArchive,
+  writeVmc: MemoryStick,
   putFile: NotebookPen,
   copyFile: Copy,
   rename: FilePen,
@@ -99,6 +101,18 @@ export function TransactionCard({
         )}
       </div>
       {children}
+      {transaction.cfgChanges.length > 0 && (
+        <div className="mt-2" data-testid="plan-cfg-changes">
+          <p className="text-xs text-muted-foreground">{t("plan.cfgChanges")}</p>
+          <ul className="mt-0.5 flex flex-col gap-0.5 font-mono text-xs">
+            {transaction.cfgChanges.map((change) => (
+              <li key={change.key} className="wrap-anywhere">
+                {change.key}: {change.before ?? t("plan.cfgAbsent")} → {change.after ?? t("plan.cfgRemoved")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {!simple && transaction.steps.length > 0 && (
         <details className="group mt-2" data-testid="plan-steps">
           <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">

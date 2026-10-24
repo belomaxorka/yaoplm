@@ -11,6 +11,7 @@ use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
+use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
 use crate::verify::RedumpInfo;
 
 /// `ID.Title.iso` (ADR-0006, the default) or `Title.iso`.
@@ -361,6 +362,45 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overwrite: Option<bool>,
     },
+    /// A game's settings: what its CFG says (CFG-2). Answered with
+    /// [`Response::Cfg`].
+    ReadCfg {
+        root: String,
+        game: GameRef,
+    },
+    /// Plans changing a game's CFG the way OPL's game menu saves it
+    /// (CFG-2), with a backup first (CFG-5): `settings` as they should be,
+    /// then `set` and `unset` keys as given. `cards` are blank VMCs
+    /// created in the same transaction (VMC-1).
+    WriteCfg {
+        root: String,
+        game: GameRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        settings: Option<GameSettings>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        set: Option<Vec<CfgPair>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        unset: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        cards: Option<Vec<NewVmc>>,
+    },
+    /// The memory cards in `VMC/` and the games that use them (VMC-1).
+    /// Answered with [`Response::Vmcs`].
+    ListVmc {
+        root: String,
+    },
+    /// Plans blank, formatted memory cards (VMC-1).
+    CreateVmc {
+        root: String,
+        cards: Vec<NewVmc>,
+    },
     /// Plans deleting a cover, with a copy in the backup folder.
     DeleteArt {
         root: String,
@@ -441,6 +481,10 @@ pub enum Response {
     /// The stored Redump DAT; `None` before the first download or import.
     Redump {
         dat: Option<Box<RedumpInfo>>,
+    },
+    Cfg(Box<CfgView>),
+    Vmcs {
+        cards: Vec<VmcCard>,
     },
 }
 

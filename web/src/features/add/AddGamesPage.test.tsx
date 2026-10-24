@@ -155,6 +155,7 @@ class FakeCore {
         steps: [{ ...write, path: `DVD/${startup}.${title}.iso`, source }],
         commit: 1,
         notices: [],
+        cfgChanges: [],
       };
       if (!request.covers) return [add];
       const cover: PlanTransaction = {
@@ -164,6 +165,7 @@ class FakeCore {
         steps: [{ ...write, path: `ART/${startup}_COV.png`, source: `/cache/${startup}.png` }],
         commit: 1,
         notices: [],
+        cfgChanges: [],
       };
       return [add, cover];
     });

@@ -29,6 +29,7 @@ const plan: PlanView = {
       steps: [{ op: "createDir", path: ".yaoplm/backup", to: null, bytes: null, removal: null, source: null }],
       commit: 1,
       notices: [],
+      cfgChanges: [],
     },
     {
       title: "Grand Theft Auto III: screenshot",
@@ -36,6 +37,7 @@ const plan: PlanView = {
       steps: [{ op: "writeFile", path: "ART/SLUS_200.62_SCR.png", to: null, bytes: 36_000, removal: null, source: "cache" }],
       commit: 1,
       notices: [],
+      cfgChanges: [],
     },
   ],
   skipped: [],

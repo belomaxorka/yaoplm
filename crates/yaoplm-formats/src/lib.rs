@@ -1,6 +1,6 @@
 //! Readers and writers for the on-disk formats OPL uses: ISO9660 and
 //! `SYSTEM.CNF`, `ul.cfg` and `USBA_crc32`, per-game CFG, ZSO, CUE/BIN, ART
-//! naming, VMC, CHT and APPS; and the containers images arrive in: CHD,
+//! naming, game settings, VMC, CHT and APPS; and the containers images arrive in: CHD,
 //! zip and 7z (IMP-1b).
 //!
 //! One format per module. Each module links the section of
@@ -15,6 +15,7 @@ pub mod cfg;
 pub mod chd;
 pub mod cht;
 pub mod cue;
+pub mod game_cfg;
 pub mod games_bin;
 pub mod image;
 pub mod iso9660;
