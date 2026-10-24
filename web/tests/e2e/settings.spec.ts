@@ -73,3 +73,49 @@ test("simple: the broken card in slot 1 is replaced by a formatted one", async (
   await expect(settings.getByTestId("cfg-vmc-0")).toContainText("SLUS_200.62_0 (8 MiB)");
   await expect(page.getByTestId("game-warnings")).toHaveCount(0);
 });
+
+// Screenshots for PR review (TESTING.md), after the tests above changed the games.
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`settings screenshots ${language} ${theme}`, async ({ page, request }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const shot = (name: string, target: { screenshot: (o: { path: string }) => Promise<unknown> }) =>
+        target.screenshot({ path: `test-results/screenshots/${name}-${language}-${theme}.png` });
+
+      await openLibrary(page, request, { language, theme, simple: true });
+      await page.goto("/library");
+      await page.getByRole("listitem", { name: /Retail Game/ }).click();
+      const settings = page.getByTestId("game-settings");
+      await expect(settings.getByTestId("cfg-modes")).toBeVisible();
+      await settings.scrollIntoViewIfNeeded();
+      await shot("cfg-simple", settings);
+
+      await page.evaluate(() => {
+        const stored = JSON.parse(localStorage.getItem("yaoplm.settings") ?? "{}") as Record<string, unknown>;
+        localStorage.setItem("yaoplm.settings", JSON.stringify({ ...stored, simpleMode: false }));
+      });
+      await page.goto("/library");
+      await page.getByRole("listitem", { name: /Dual Layer Quest/ }).click();
+      await expect(settings.getByTestId("cfg-gsm")).toBeVisible();
+      // The whole section in one picture: a window taller than the card.
+      await page.setViewportSize({ width: 1280, height: 2400 });
+      await shot("cfg-advanced", settings);
+      await page.setViewportSize({ width: 1280, height: 900 });
+
+      await settings.getByRole("checkbox", { name: /Mode 4|Режим 4/ }).check();
+      await settings.getByTestId("cfg-vmc-create-0").click();
+      const newCard = page.getByRole("dialog").last();
+      await expect(newCard.getByTestId("cfg-vmc-new")).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot("cfg-new-card", page);
+      await newCard.getByTestId("cfg-vmc-new").click();
+      await settings.getByTestId("cfg-save").click();
+      const plan = page.getByTestId("plan-dialog");
+      await expect(plan.getByTestId("plan-cfg-changes")).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot("cfg-plan", page);
+      await page.keyboard.press("Escape");
+      await expect(plan).toBeHidden();
+    });
+  }
+}
