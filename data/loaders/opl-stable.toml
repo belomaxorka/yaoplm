@@ -1,0 +1,85 @@
+# OPL 1.1.0: upstream's last stable release (2021-09-09), a fixed tag.
+# GitHub has no digest for its assets, so the archives are pinned here; the
+# ELF inside is `v1.1.0` in data/loader-hashes/opl-stable.txt
+# (research/16 §1.6, research/17 §7.2–§7.3).
+id = "opl-stable"
+family = "opl"
+name = "OPL 1.1.0"
+publisher = "official"
+repo = "ps2homebrew/Open-PS2-Loader"
+profile = "opl-1.1"
+recommended = false
+devices = ["usb", "mx4sio"]
+
+[license]
+spdx = "AFL-3.0"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/blob/v1.1.0/LICENSE"
+authors = "ps2homebrew and the Open PS2 Loader contributors"
+
+[summary]
+en = "The official stable release from 2021. Proven over years and named in older guides; reads PNG, JPG and BMP covers."
+ru = "Официальный стабильный выпуск 2021 года. Проверен годами, на него ссылаются старые инструкции; читает обложки PNG, JPG и BMP."
+
+[limits]
+en = "No exFAT and no ZSO; every game file must be in one piece; no fixes since 2021."
+ru = "Нет exFAT и ZSO; каждый файл игры должен лежать одним куском; исправлений после 2021 года нет."
+
+[[docs]]
+kind = "readme"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/blob/v1.1.0/README.md"
+
+[[docs]]
+kind = "wiki"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/wiki"
+
+[channel]
+tag = "v1.1.0"
+floating = false
+prerelease = false
+releases = ["v1.1.0"]
+version = "tag"
+elf = { archive = "OPNPS2LD-v1.1.0.7z", member = "OPNPS2LD/OPNPS2LD-v1.1.0.ELF" }
+languages = "OPNPS2LD-LANGUAGES-AND-FONTS-v1.1.0.7z"
+
+[channel.checksums]
+digest = false
+# SHA-256 computed by YAOPLM from the release files on 2026-10-25.
+pinned = { "OPNPS2LD-v1.1.0.7z" = "869b51f2c9c442c79f9545a57d65ed1a28a47b19fb82ac7d307ad6cb30ddd4ed", "OPNPS2LD-LANGUAGES-AND-FONTS-v1.1.0.7z" = "10d93f39353a870103bcd9b94b226ff51cf0cf540a16d279bcee8ee342a8af68" }
+
+[layout]
+folders = ["CFG", "THM", "LNG", "ART", "VMC", "CHT", "APPS", "CD", "DVD"]
+settings = "conf_opl.cfg"
+settings_location = "memory-card"
+seed = ["usb_mode", "language_text"]
+languages = "LNG"
+defaults = { usb = "fmcb", mx4sio = "app" }
+
+# FreeMcBoot 1.953–1.966: path1 of the stock "Open PS2 Loader" item, ahead of
+# the copy on the memory card (research/17 §4.1).
+[[layout.presets]]
+id = "fmcb"
+path = "UPDT/OPL.ELF"
+devices = ["usb"]
+launchers = ["fmcb"]
+
+# PS2BBL's stock PS2BBL.INI: LK_AUTO_E1 (research/17 §4.2).
+[[layout.presets]]
+id = "ps2bbl"
+path = "APPS/OPNPS2LD.ELF"
+devices = ["usb"]
+launchers = ["ps2bbl"]
+
+# An app folder: OPL's own Apps page lists it, and any launcher that takes a
+# path (PS2BBL's MX4SIO build, OSDMenu) can start it.
+[[layout.presets]]
+id = "app"
+path = "APPS/OPL/OPNPS2LD.ELF"
+title = "Open PS2 Loader"
+devices = ["usb", "mx4sio"]
+launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
+
+# The version inside the ELF names the channel (ADR-0041, ADR-0042).
+[fingerprints]
+elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
+settings = ["conf_opl.cfg"]
+versions = ["v1.1.0"]

@@ -1,0 +1,81 @@
+# YAOPL: the YAOPLM author's fork of OPL (ADR-0018), pre-release `latest`
+# recreated on every push to `master`. Release name = version string; the
+# CI publishes SHA256SUMS next to the assets (research/17 §6). Versioned
+# releases (`v…-yaopl`) are planned in the fork (ADR-0038).
+id = "yaopl"
+family = "opl"
+name = "YAOPL"
+publisher = "fork"
+repo = "belomaxorka/yaopl"
+profile = "opl-1.2"
+recommended = false
+devices = ["usb", "mx4sio"]
+
+[license]
+spdx = "AFL-3.0"
+url = "https://github.com/belomaxorka/yaopl/blob/master/LICENSE"
+authors = "belomaxorka, on top of ps2homebrew and the Open PS2 Loader contributors"
+
+[summary]
+en = "The YAOPLM author’s fork of the 1.2.0 beta with fixes for hangs and crashes on unusual files: cheats, ISO, ZSO, SYSTEM.CNF, ul.cfg, CFG and VMC. The same format rules as the beta."
+ru = "Форк автора YAOPLM: та же бета 1.2.0 плюс исправления зависаний и падений на необычных файлах — читы, ISO, ZSO, SYSTEM.CNF, ul.cfg, CFG, VMC. Правила форматов те же."
+
+[limits]
+en = "Not an official OPL build. Only the newest build is published so far."
+ru = "Не официальная сборка OPL. Пока публикуется только последняя сборка."
+
+[[docs]]
+kind = "fork"
+url = "https://github.com/belomaxorka/yaopl/blob/master/FORK.md"
+
+[[docs]]
+kind = "readme"
+url = "https://github.com/belomaxorka/yaopl/blob/master/README.md"
+
+[[docs]]
+kind = "wiki"
+url = "https://github.com/ps2homebrew/Open-PS2-Loader/wiki"
+
+[channel]
+tag = "latest"
+floating = true
+prerelease = true
+releases = ["latest", "v*-yaopl"]
+version = "name"
+elf = "OPNPS2LD.ELF"
+languages = "OPNPS2LD-LANGS-{version}.7z"
+checksums = { digest = true, sums = "SHA256SUMS" }
+
+[layout]
+folders = ["CFG", "THM", "LNG", "ART", "VMC", "CHT", "APPS", "CD", "DVD"]
+settings = "conf_opl.cfg"
+settings_location = "memory-card"
+seed = ["usb_mode", "language_text"]
+languages = "LNG"
+defaults = { usb = "fmcb", mx4sio = "app" }
+
+[[layout.presets]]
+id = "fmcb"
+path = "UPDT/OPL.ELF"
+devices = ["usb"]
+launchers = ["fmcb"]
+
+[[layout.presets]]
+id = "ps2bbl"
+path = "APPS/OPNPS2LD.ELF"
+devices = ["usb"]
+launchers = ["ps2bbl"]
+
+[[layout.presets]]
+id = "app"
+path = "APPS/YAOPL/OPNPS2LD.ELF"
+title = "YAOPL"
+devices = ["usb", "mx4sio"]
+launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
+
+# `-yaopl` follows the commit (`LOCALVERSION`), `-nosio2man` may follow it.
+[fingerprints]
+elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
+settings = ["conf_opl.cfg"]
+versions = ["v1.2.0-Beta-*"]
+suffix = "yaopl"

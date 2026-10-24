@@ -64,6 +64,8 @@ tauri-plugin-clipboard-manager = "2.5.0"
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-opener = "2.7.2"
 thiserror = "2.0.21"
+# Parsing only: the loader catalogue (LDR-1).
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
 tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

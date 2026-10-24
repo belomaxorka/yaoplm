@@ -110,7 +110,7 @@ All rows are [V] (gh api `repos/<o>/<r>` and `releases`, 2026-10-22), except whe
 
 - **Version string** [V `Makefile`]: `v1.2.0-Beta-<REVISION>-<hash>`. `REVISION` = `git rev-list --count HEAD` + 2, followed by the 7-char hash. A tagged build uses the tag (`v1.1.0`).
 - **Packaging** [V `.github/workflows/compilation.yml`]:
-  - `OPNPS2LD.7z` holds `OPNPS2LD-<ver>.ELF` plus `DETAILED_CHANGELOG`, `CREDITS`, `LICENSE`, `README.md`, flat with no folder.
+  - `OPNPS2LD.7z` holds `OPNPS2LD-<ver>.ELF` plus `DETAILED_CHANGELOG`, `CREDITS`, `LICENSE`, `README.md` in a folder `OPNPS2LD/` (corrected by listing the release files, research/17 §7.3; this line first said "flat with no folder").
   - The bare `OPNPS2LD.ELF` asset is the same ELF renamed.
   - The un-suffixed `.7z` names are byte-identical copies of the versioned ones; the digests match.
 - **Variants** [V CI, Makefile]:
@@ -319,7 +319,7 @@ For the version picker of SPEC LDR-6 (§5.10.2, ADR-0038). All [V] (gh api `rele
   - At most 3 paths per item.
   - Launch keys are `LK_<Key>_E1..E3`, where Key is Auto, Circle, Cross, Square, Triangle, L1–R3, Up/Down/Left/Right, Start or Select.
   - Special targets: `OSDSYS`, `FASTBOOT`, `POWEROFF`.
-- **Stock 1.953** [V]: `LK_L1_E1..E3 = mass:/OPL.ELF, mc?:/OPL/OPNPS2LD.ELF, mc?:/APPS/OPNPS2LD.ELF`.
+- **Stock 1.953** [V]: `LK_L1_E1..E3 = mass:/OPL.ELF, mc?:/OPL/OPNPS2LD.ELF, mc?:/APPS/OPNPS2LD.ELF`. It has the item 3 paths above too: `mass:/UPDT/OPL.ELF` is path1 in all five stock configs, 1.953 and 1.963–1.966, and the OPL the installer puts on the card is v1.0.0 (research/17 §4.1).
 - **MASS package** (FMCB itself on USB) [V]:
   - `mass:/APPS/OPNPS2LD_LATEST.ELF` and `hdd0:+OPL:pfs:/APPS/OPL/OPNPS2LD_LATEST.ELF`;
   - `LK_L1`: `mass:/APPS/OPL.ELF`.

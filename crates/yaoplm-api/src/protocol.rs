@@ -9,6 +9,7 @@ use crate::devices::{DeviceInfo, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
+use crate::loaders::LoaderCatalog;
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
@@ -458,6 +459,9 @@ pub enum Request {
     ArtCache,
     /// Deletes the art cache; nothing on any device changes.
     ClearArtCache,
+    /// The loader builds YAOPLM installs, with their channels and presets
+    /// (LDR-1).
+    LoaderCatalog,
 }
 
 /// The successful answer to a [`Request`].
@@ -497,6 +501,7 @@ pub enum Response {
     Vmcs {
         cards: Vec<VmcCard>,
     },
+    LoaderCatalog(Box<LoaderCatalog>),
 }
 
 /// Identifies a long-running job for its whole lifetime.

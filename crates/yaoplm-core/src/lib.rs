@@ -23,6 +23,7 @@ mod fsutil;
 pub mod import;
 mod info;
 pub mod journal;
+pub mod loaders;
 mod model;
 mod multipart;
 pub mod ops;
