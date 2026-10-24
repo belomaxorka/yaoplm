@@ -138,6 +138,9 @@ pub enum Removal {
     Cache,
     /// A file YAOPLM created itself in this operation (rollback).
     Ours,
+    /// An older backup YAOPLM made of a loader it replaced: only the newest
+    /// ones are kept (ADR-0042).
+    Backup,
     /// A ZSO this operation compressed (rollback of `WriteZso`, whose size
     /// is not known up front): removed only when its header says it holds
     /// `iso_len` bytes, so a file someone else put there stays.
@@ -466,6 +469,8 @@ pub enum PlanKind {
     Settings,
     /// Blank VMC cards created (VMC-1).
     Vmc,
+    /// A loader build put on the device (LDR-3).
+    InstallLoader,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

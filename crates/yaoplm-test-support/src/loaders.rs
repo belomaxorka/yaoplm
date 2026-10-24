@@ -40,6 +40,33 @@ pub fn sha256(bytes: &[u8]) -> String {
         })
 }
 
+/// A language pack shaped like the betas' (research/17 §7.3): a 7z holding
+/// a zip of `<Language>-<version>/` folders.
+pub fn beta_langs() -> io::Result<Vec<u8>> {
+    let zip = crate::packed::zip(
+        &[
+            ("README", b"Copy the files to LNG/".as_slice()),
+            (
+                "Russian-v1.2.0-Beta-2271-b3a2199/lang_Russian.lng",
+                b"Russian strings",
+            ),
+            (
+                "Russian-v1.2.0-Beta-2271-b3a2199/font_Russian.ttf",
+                b"Russian font",
+            ),
+            (
+                "German-v1.2.0-Beta-2271-b3a2199/lang_German.lng",
+                b"German strings",
+            ),
+        ],
+        false,
+    )?;
+    crate::packed::seven_zip(&[(
+        "OPNPS2LD-LANGS/OPNPS2LD-LANGS-v1.2.0-Beta-2271-b3a2199.zip",
+        &zip,
+    )])
+}
+
 /// A file of a mirrored release.
 pub struct MirrorAsset<'a> {
     pub name: &'a str,
@@ -152,6 +179,7 @@ impl ReleaseMirror {
                 MirrorAsset { name: "OPNPS2LD.ELF", bytes: &beta, digest: true },
                 MirrorAsset { name: "OPNPS2LD.7z", bytes: &beta_7z, digest: true },
                 MirrorAsset { name: "OPNPS2LD-v1.2.0-Beta-2271-b3a2199.7z", bytes: &beta_7z, digest: true },
+                MirrorAsset { name: "OPNPS2LD-LANGS.7z", bytes: &beta_langs()?, digest: true },
             ],
         )?;
         let yaopl = opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl");

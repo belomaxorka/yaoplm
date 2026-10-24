@@ -7,7 +7,7 @@ interface Device {
 /** The fixture roots the e2e server was started with (`server.mjs`). */
 export async function roots(
   request: APIRequestContext,
-): Promise<{ library: string; sources: string; mirror: string }> {
+): Promise<{ library: string; sources: string; mirror: string; stick: string }> {
   const response = await request.post("/api/rpc", { data: { type: "ListDevices" } });
   const body = (await response.json()) as { devices: Device[] };
   const find = (name: string) => {
@@ -15,7 +15,7 @@ export async function roots(
     if (!device) throw new Error(`no fixture root ending in ${name}: ${JSON.stringify(body)}`);
     return device.root;
   };
-  return { library: find("library"), sources: find("sources"), mirror: find("mirror") };
+  return { library: find("library"), sources: find("sources"), mirror: find("mirror"), stick: find("stick") };
 }
 
 /** `<root>/<name>` with the separator the server uses. */
@@ -39,17 +39,22 @@ export async function openLibrary(
     libretro: { enabled: true, mirror: joinPath(mirror, "libretro") },
     screenscraper: { enabled: false, mirror: "" },
   };
+  // Loader releases come from the fixture mirror too (LDR-2).
+  const loaderMirror = joinPath(mirror, "loaders");
   await page.addInitScript(
-    ([root, language, theme, view, sources, simpleMode]) => {
+    ([root, language, theme, view, sources, simpleMode, loaders]) => {
       // Runs on every load, so settings a test changed survive a reload.
       const current: unknown = JSON.parse(localStorage.getItem("yaoplm.settings") ?? "{}");
       const kept = typeof current === "object" && current !== null ? current : {};
-      localStorage.setItem("yaoplm.settings", JSON.stringify({ simpleMode, ...kept, root, view, artSources: sources }));
+      localStorage.setItem(
+        "yaoplm.settings",
+        JSON.stringify({ simpleMode, ...kept, root, view, artSources: sources, loaderMirror: loaders }),
+      );
       if (language) localStorage.setItem("yaoplm.language", language);
       if (theme) localStorage.setItem("yaoplm.theme", theme);
     },
     // Most specs test the advanced tools; simple mode is the app's default.
-    [library, extra.language ?? "", extra.theme ?? "", extra.view ?? "grid", artSources, extra.simple ?? false] as const,
+    [library, extra.language ?? "", extra.theme ?? "", extra.view ?? "grid", artSources, extra.simple ?? false, loaderMirror] as const,
   );
   return library;
 }

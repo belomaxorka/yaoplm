@@ -333,6 +333,11 @@ enum LoaderCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Install BUILD on the device at ROOT through a plan (LDR-3): the
+    /// build's folders, the ELF at the preset paths (FreeMcBoot's
+    /// UPDT/OPL.ELF on a stick, an app folder on MX4SIO by default), a
+    /// backup of what it replaces, the manifest; then how to start it.
+    Install(LoaderInstall),
     /// The loader ELFs YAOPLM keeps.
     Files {
         /// Print the answer as JSON.
@@ -350,6 +355,38 @@ enum LoaderCommand {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Args)]
+struct LoaderInstall {
+    root: PathBuf,
+    build: String,
+    /// fmcb, ps2bbl or app; several are fine (fmcb and ps2bbl when you do
+    /// not know how the console starts OPL).
+    #[arg(long = "preset", value_name = "PRESET")]
+    presets: Vec<String>,
+    /// A path of your own on the device, ending in .ELF.
+    #[arg(long, value_name = "PATH")]
+    path: Option<String>,
+    /// The device is an SD card for MX4SIO, not a USB stick.
+    #[arg(long)]
+    mx4sio: bool,
+    /// Install an OPL menu language from the release's pack: Russian, ...
+    #[arg(long, value_name = "NAME")]
+    language: Option<String>,
+    /// Write usb_mode=2 (and the language) to conf_opl.cfg on the device.
+    #[arg(long)]
+    starter_settings: bool,
+    /// Replace a file of another program at the path; a backup is kept.
+    #[arg(long)]
+    replace_foreign: bool,
+    /// Your own ELF, zip or 7z instead of a download.
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["tag", "mirror"])]
+    file: Option<PathBuf>,
+    #[command(flatten)]
+    from: ReleaseFrom,
+    #[command(flatten)]
+    apply: Apply,
 }
 
 #[derive(Debug, Args)]
@@ -1075,30 +1112,7 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
                 Ok(other) => bail!("unexpected answer {other:?}"),
                 Err(error) => return fail(&error, json),
             };
-            if !json {
-                print!("{}", report::loader_offer(&offer));
-            }
-            let go = if yes {
-                true
-            } else if io::stdin().is_terminal() && !json {
-                eprint!(
-                    "Download {} ({})? [y/N] ",
-                    offer.file.name,
-                    report::size(offer.file.size)
-                );
-                io::stderr().flush()?;
-                let mut answer = String::new();
-                io::stdin().lock().read_line(&mut answer)?;
-                matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
-            } else {
-                if json {
-                    print_json(&offer, true);
-                }
-                eprintln!("yaoplm: nothing downloaded; add --yes to download");
-                return Ok(ExitCode::SUCCESS);
-            };
-            if !go {
-                eprintln!("yaoplm: nothing downloaded");
+            if !confirm_download(&offer, yes, json)? {
                 return Ok(ExitCode::SUCCESS);
             }
             let request = Request::DownloadLoader {
@@ -1107,6 +1121,7 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
                 // Held to the hash just printed: a rebuilt tag is refused.
                 sha256: offer.file.sha256.clone(),
                 mirror: from.mirror.as_deref().map(absolute),
+                languages: None,
             };
             loader_file(loader_job(api, request), json)
         }
@@ -1119,6 +1134,7 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
             ),
             json,
         ),
+        LoaderCommand::Install(install) => install_loader(api, install),
         LoaderCommand::Files { json } => {
             let response = api.dispatch(Request::LoaderFiles);
             show(response, json, |response| match response {
@@ -1147,6 +1163,140 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
             }
         }
     }
+}
+
+/// Prints what a download would be and asks; `false`: nothing to download.
+fn confirm_download(
+    offer: &yaoplm_api::loaders::LoaderOffer,
+    yes: bool,
+    json: bool,
+) -> anyhow::Result<bool> {
+    if !json {
+        print!("{}", report::loader_offer(offer));
+    }
+    let go = if yes {
+        true
+    } else if io::stdin().is_terminal() && !json {
+        eprint!(
+            "Download {} ({})? [y/N] ",
+            offer.file.name,
+            report::size(offer.file.size)
+        );
+        io::stderr().flush()?;
+        let mut answer = String::new();
+        io::stdin().lock().read_line(&mut answer)?;
+        matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
+    } else {
+        if json {
+            print_json(offer, true);
+        }
+        eprintln!("yaoplm: nothing downloaded; add --yes to download");
+        return Ok(false);
+    };
+    if !go {
+        eprintln!("yaoplm: nothing downloaded");
+    }
+    Ok(go)
+}
+
+/// `yaoplm loader install`: the ELF from the store (downloaded first when
+/// needed) or the user's file, then the install plan, then the boot hints.
+fn install_loader(api: &Api, install: LoaderInstall) -> anyhow::Result<ExitCode> {
+    let LoaderInstall {
+        root,
+        build,
+        presets,
+        path,
+        mx4sio,
+        language,
+        starter_settings,
+        replace_foreign,
+        file,
+        from,
+        apply,
+    } = install;
+    let json = apply.json;
+    let device = if mx4sio {
+        yaoplm_api::loaders::LoaderTarget::Mx4sio
+    } else {
+        yaoplm_api::loaders::LoaderTarget::Usb
+    };
+    let elf = match &file {
+        Some(file) => loader_job(
+            api,
+            Request::ImportLoader {
+                file: absolute(file),
+            },
+        ),
+        None => {
+            let offer = match loader_job(api, release_request(&build, &from)) {
+                Ok(JobResult::LoaderOffer(offer)) => offer,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, json),
+            };
+            let stored = offer.stored.is_some() && language.is_none();
+            if !stored && !confirm_download(&offer, apply.yes, json)? {
+                return Ok(ExitCode::SUCCESS);
+            }
+            loader_job(
+                api,
+                Request::DownloadLoader {
+                    build: build.clone(),
+                    tag: Some(offer.tag.clone()),
+                    sha256: offer.file.sha256.clone(),
+                    mirror: from.mirror.as_deref().map(absolute),
+                    languages: language.is_some().then_some(true),
+                },
+            )
+        }
+    };
+    let elf = match elf {
+        Ok(JobResult::LoaderFile(file)) => file,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, json),
+    };
+    let presets = if presets.is_empty() && path.is_none() {
+        match api.dispatch(Request::LoaderCatalog) {
+            Ok(Response::LoaderCatalog(catalog)) => catalog
+                .builds
+                .iter()
+                .find(|b| b.id == build)
+                .and_then(|b| b.default_presets.iter().find(|d| d.device == device))
+                .map(|d| vec![d.preset.clone()])
+                .unwrap_or_default(),
+            Ok(other) => bail!("unexpected answer {other:?}"),
+            Err(error) => return fail(&error, json),
+        }
+    } else {
+        presets
+    };
+    let request = Request::PlanInstallLoader {
+        root: absolute(&root),
+        build: build.clone(),
+        sha256: elf.sha256.clone(),
+        presets: presets.clone(),
+        path: path.clone(),
+        device,
+        language,
+        starter_settings: starter_settings.then_some(true),
+        replace_foreign: replace_foreign.then_some(true),
+    };
+    let code = plan_and_apply(api, request, &apply)?;
+    if code == ExitCode::SUCCESS && !apply.dry_run && !json {
+        match api.dispatch(Request::LoaderBootHints {
+            build,
+            presets,
+            path,
+            device,
+        }) {
+            Ok(Response::LoaderBootHints { hints }) => {
+                print!("{}", report::boot_hints(&hints, device))
+            }
+            Ok(other) => bail!("unexpected answer {other:?}"),
+            Err(error) => return fail(&error, json),
+        }
+    }
+    Ok(code)
 }
 
 fn release_request(build: &str, from: &ReleaseFrom) -> Request {

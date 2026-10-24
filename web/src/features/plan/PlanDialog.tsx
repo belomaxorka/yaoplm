@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,18 @@ type PlanFlow = ReturnType<typeof usePlan>;
 /**
  * The confirmation screen for every write (IMP-10). Deleting the user's
  * files needs its own checkbox on top of the Confirm button (GAME-2).
+ * `choice` sits beside the buttons: a choice that plans again, such as
+ * replacing a file the plan stopped at (LDR-3).
  */
-export function PlanDialog({ flow, description }: { flow: PlanFlow; description?: string }) {
+export function PlanDialog({
+  flow,
+  description,
+  choice,
+}: {
+  flow: PlanFlow;
+  description?: string;
+  choice?: ReactNode;
+}) {
   const { t } = useTranslation();
   // The confirmation belongs to one plan: the next one asks again.
   const [confirmedFor, setConfirmedFor] = useState<string | null>(null);
@@ -71,7 +81,7 @@ export function PlanDialog({ flow, description }: { flow: PlanFlow; description?
                 {t("plan.confirmDelete")}
               </Label>
             ) : (
-              <span />
+              (choice ?? <span />)
             )}
             <div className="flex gap-2">
               <Button variant="outline" onClick={flow.discard} disabled={flow.executing}>

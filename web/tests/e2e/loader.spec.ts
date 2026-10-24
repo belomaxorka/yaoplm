@@ -29,7 +29,7 @@ test("auto reads the device, an override wins, auto comes back", async ({ page, 
   await expect(line).toHaveAttribute("data-source", "override");
   await expect(line.getByTestId("loader-profile-name")).toHaveText("OPL 1.1.0");
   await expect(line.getByTestId("loader-profile-reason")).toHaveText("— chosen for this device");
-  await expect(page.locator('[data-testid="loader-profile"][data-source="detected"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="loader-profile"][data-source="detected"]')).toHaveCount(3);
 
   // The library scans with it and says so in its header.
   await page.goto("/library");

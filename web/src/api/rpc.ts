@@ -6,7 +6,12 @@ import type { DirListing } from "@/api/generated/DirListing";
 import type { GameRef } from "@/api/generated/GameRef";
 import type { JobId } from "@/api/generated/JobId";
 import type { JobInfo } from "@/api/generated/JobInfo";
+import type { JobResult } from "@/api/generated/JobResult";
 import type { Library } from "@/api/generated/Library";
+import type { LoaderBootHint } from "@/api/generated/LoaderBootHint";
+import type { LoaderCatalog } from "@/api/generated/LoaderCatalog";
+import type { LoaderFile } from "@/api/generated/LoaderFile";
+import type { LoaderOffer } from "@/api/generated/LoaderOffer";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { PlanView } from "@/api/generated/PlanView";
 import type { ProfileOverride } from "@/api/generated/ProfileOverride";
@@ -119,6 +124,66 @@ export async function artCache(transport: Transport): Promise<ArtCacheInfo> {
 
 export async function clearArtCache(transport: Transport): Promise<void> {
   await call(transport, { type: "ClearArtCache" }, "Ack");
+}
+
+/** The loader catalogue in force (LDR-1). */
+export async function loaderCatalog(transport: Transport): Promise<LoaderCatalog> {
+  const { type: _type, ...catalog } = await call(transport, { type: "LoaderCatalog" }, "LoaderCatalog");
+  return catalog;
+}
+
+/** Runs a loader job to its end and returns what it ended with. */
+async function loaderJob(transport: Transport, request: Request, signal?: AbortSignal): Promise<JobResult> {
+  const { job } = await call(transport, request, "Job");
+  const info = await waitForJob(transport, job, signal);
+  if (info.status === "finished" && info.result) return info.result;
+  throw new RpcError(info.error ?? { code: "Internal", message: "the job ended without a result" });
+}
+
+/** What a download of `build` would be (LDR-2). */
+export async function loaderRelease(
+  transport: Transport,
+  build: string,
+  mirror: string,
+  signal?: AbortSignal,
+): Promise<LoaderOffer> {
+  const result = await loaderJob(transport, { type: "LoaderRelease", build, ...(mirror ? { mirror } : {}) }, signal);
+  if (result.type !== "LoaderOffer") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
+  const { type: _type, ...offer } = result;
+  return offer;
+}
+
+/** Downloads the build the offer named, held to the hash it showed (LDR-2). */
+export async function downloadLoader(
+  transport: Transport,
+  offer: LoaderOffer,
+  languages: boolean,
+  mirror: string,
+  signal?: AbortSignal,
+): Promise<LoaderFile> {
+  const result = await loaderJob(
+    transport,
+    {
+      type: "DownloadLoader",
+      build: offer.build,
+      tag: offer.tag,
+      ...(offer.file.sha256 ? { sha256: offer.file.sha256 } : {}),
+      ...(languages ? { languages } : {}),
+      ...(mirror ? { mirror } : {}),
+    },
+    signal,
+  );
+  if (result.type !== "LoaderFile") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
+  const { type: _type, ...file } = result;
+  return file;
+}
+
+/** How the console starts an installed loader (BOOT-1). */
+export function loaderBootHints(
+  transport: Transport,
+  request: Omit<Extract<Request, { type: "LoaderBootHints" }>, "type">,
+): Promise<LoaderBootHint[]> {
+  return call(transport, { type: "LoaderBootHints", ...request }, "LoaderBootHints").then((r) => r.hints);
 }
 
 const FINAL = new Set(["finished", "failed", "cancelled"]);
