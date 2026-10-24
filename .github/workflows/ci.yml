@@ -37,6 +37,10 @@ jobs:
       - run: cargo fmt --all --check
       - name: Core crates do not depend on tauri, axum or tokio (ADR-0003)
         run: scripts/check-core-deps.sh
+      - name: Loader hash histories and their script (LDR-1)
+        run: |
+          python3 scripts/loader-hashes.py --check
+          python3 -m unittest discover -s scripts -p "test_*.py"
       - name: Generated TS types match the Rust API
         run: |
           cargo test -p yaoplm-api --features ts-export
