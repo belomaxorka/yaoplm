@@ -65,6 +65,7 @@ Read before working:
    - Before implementing a format, a device feature or a loader rule, read the matching code in upstream OPL and the forks, plus their commits and issues. The index is `docs/research/REFERENCES.md`; clones live in `D:\yaoplm-testdata\refs\<owner>__<repo>` (`git -C <dir> pull` to refresh).
    - Upstream OPL defines behaviour. Forks and other managers are a source of edge cases to verify, not to copy blindly.
    - Cite the source file and commit in a code comment. Record new findings in `docs/research/`.
+   - Loader-detection signs (research/16) are snapshots of moving repos, YAOPL included. Before relying on a sign or changing detection, re-check it against the current code of every build it names, and update the commit it was checked at.
    - Licences: never copy AFL code (OPL, ps2sdk) — reimplement from the logic (ADR-0002). GPL-3-compatible code may be ported with attribution.
    - Forums: psx-place blocks bots; read threads through the user's Chrome (Claude in Chrome), never bypass the check.
 
