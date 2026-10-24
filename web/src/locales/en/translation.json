@@ -292,6 +292,7 @@
     "dumpUnchecked": "Not checked yet"
   },
   "plan": {
+    "stepsToggle": "Steps: {{count}}",
     "title": "Plan",
     "on": "On {{root}}",
     "building": "Building the plan…",

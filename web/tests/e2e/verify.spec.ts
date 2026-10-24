@@ -88,7 +88,9 @@ async function convert(page: Page, title: RegExp, target: "iso" | "zso", step: s
   await expect(plan.getByTestId("plan-confirm")).toBeDisabled();
   await plan.getByRole("checkbox", { name: /deleted/ }).check();
   await plan.getByTestId("plan-confirm").click();
-  await expect(page).toHaveURL(/\/library$/);
+  // The card stays open, found by the game's ID now that its file changed.
+  await expect(page).toHaveURL(/\/library\/game\/id%3A/);
+  await page.goto("/library");
 }
 
 test("a game goes to ZSO and back through plans", async ({ page, request }) => {

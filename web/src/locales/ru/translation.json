@@ -304,6 +304,7 @@
     "dumpUnchecked": "Ещё не проверен"
   },
   "plan": {
+    "stepsToggle": "Шаги: {{count}}",
     "title": "План",
     "on": "На {{root}}",
     "building": "Составление плана…",
