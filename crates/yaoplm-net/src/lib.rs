@@ -1,5 +1,5 @@
 //! Picture sources, the download cache, request limits and PNG
-//! transcoding (ART-1, ART-2, ADR-0007, ADR-0034), and the Redump DAT for
+//! transcoding (ART-1, ART-2, ADR-0007, ADR-0035), and the Redump DAT for
 //! dump verification (META-2).
 //!
 //! Asynchronous on purpose: the core never uses this crate (ADR-0003);
@@ -105,7 +105,7 @@ pub struct CoverRequest<'a> {
     pub others: &'a [OtherRelease],
 }
 
-/// Another release of the same game (ADR-0034).
+/// Another release of the same game (ADR-0035).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtherRelease {
     /// `SCES-50003`.
@@ -123,7 +123,7 @@ pub enum AttemptResult {
     /// 404, a missing mirror file, or a cached "not found".
     Missing,
     /// The source has a picture, but it shows another market's release
-    /// (ADR-0034): left out rather than put on the wrong game.
+    /// (ADR-0035): left out rather than put on the wrong game.
     OtherMarket,
     Error(String),
 }
@@ -520,7 +520,7 @@ impl ArtService {
         self.cover_from(&record, request.kind, request.size, false, url)
     }
 
-    /// OPL Manager's backup through its index (ADR-0034): no request for a
+    /// OPL Manager's backup through its index (ADR-0035): no request for a
     /// picture the backup does not have, and none for one that shows
     /// another market's release unless the user picks by hand.
     async fn via_oplm(

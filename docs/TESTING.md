@@ -80,6 +80,10 @@ D:\yaoplm-testdata\
 
 Имена картинок из резервных копий OPL Manager (ART-5): `oplm-art\<item>.tsv` — оглавления копий с archive.org, их пишет `python scripts/oplm-backup-toc.py D:\yaoplm-testdata\oplm-art OPLM_ART_2024_09 OPLM_ART_2023_07` (только центральный каталог zip, около 8 МБ на копию, без картинок). Тест: `cargo test -p yaoplm-formats --test oplm_backups -- --ignored --nocapture`.
 
+Покрытие источников картинок (ART-1, ADR-0035): `art-lists\` — списки файлов xlenore и libretro, их пишет `python scripts/art-source-lists.py D:\yaoplm-testdata\art-lists` (пять запросов, без картинок), и оглавление `oplm-art\OPLM_ART_2024_09.tsv`. Тест `cargo test -p yaoplm-api --test art_coverage -- --ignored --nocapture` печатает таблицу покрытия по типам и регионам тем же кодом, что выбирает источники (research/14 §1, §6).
+
+Сеть в тестах: все тесты работают на зеркалах и локальных серверах; CI и сервер e2e ставят `YAOPLM_OFFLINE=1`, и HTTP-клиент отказывает любому хосту, кроме этого компьютера, поэтому тест, забывший зеркало, падает, а не уходит в интернет.
+
 **Агент не скачивает коммерческие образы игр**, даже маленькие. Скачивать можно: официальные релизы OPL, открытые инструменты (`ziso.py`, hdl-dump и т.п. из исходников), homebrew, открытые базы данных. Для проверки на консоли без коммерческих игр собираем свой тестовый ISO из открытого homebrew-ELF с `SYSTEM.CNF`; с файлом-заполнителем он же проверяет нарезку `ul` (> 4 ГиБ).
 
 ## Оборудование пользователя (2026-10-22)

@@ -6,7 +6,7 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
-/** Picture sources; each type tries them in its own order (ADR-0034). */
+/** Picture sources; each type tries them in its own order (ADR-0035). */
 export const artSourceIds = ["xlenore", "oplm", "libretro", "screenscraper"] as const;
 export type ArtSourceId = (typeof artSourceIds)[number];
 
@@ -17,7 +17,7 @@ export interface ArtSourceSettings {
   mirror: string;
 }
 
-/** A ScreenScraper account, for a larger daily quota (ADR-0034). */
+/** A ScreenScraper account, for a larger daily quota (ADR-0035). */
 export interface ScreenScraperAccount {
   user: string;
   password: string;

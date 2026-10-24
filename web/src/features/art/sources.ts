@@ -2,7 +2,7 @@ import type { ArtSourceSetting } from "@/api/generated/ArtSourceSetting";
 import type { SourceEntry } from "@/api/generated/SourceEntry";
 import { type ArtSourceId, artSourceIds, type Settings } from "@/settings/settings";
 
-/** Display names and home pages of the picture sources (ADR-0007, ADR-0034). */
+/** Display names and home pages of the picture sources (ADR-0007, ADR-0035). */
 export const artSourceInfo: Record<ArtSourceId, { name: string; url: string }> = {
   xlenore: { name: "xlenore/ps2-covers", url: "https://github.com/xlenore/ps2-covers" },
   oplm: { name: "OPL Manager backup (archive.org)", url: "https://archive.org/details/OPLM_ART_2024_09" },

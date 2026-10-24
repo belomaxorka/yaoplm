@@ -33,7 +33,7 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
-  // Every type has a source now (ADR-0034): the icon slot can download.
+  // Every type has a source now (ADR-0035): the icon slot can download.
   await expect(page.getByTestId("art-download-ICO")).toBeEnabled();
   await page.getByTestId("art-download-COV").click();
   // The sources' pictures to pick from, the first one chosen.

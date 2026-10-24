@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Writes the file lists of the picture sources for the coverage test
-`crates/yaoplm-api/tests/art_coverage.rs` (ADR-0034, research/14 §6).
+`crates/yaoplm-api/tests/art_coverage.rs` (ADR-0035, research/14 §6).
 
 Five requests, no pictures:
 - xlenore/ps2-covers: the git tree of `main` (one GitHub API request);

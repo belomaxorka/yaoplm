@@ -1,5 +1,5 @@
 //! The parts of a zip archive needed to read single members over HTTP
-//! range requests (ADR-0034, research/14 §3): the end records, the central
+//! range requests (ADR-0035, research/14 §3): the end records, the central
 //! directory and a member's local header (PKWARE APPNOTE 6.3.10 §4.3).
 //!
 //! The OPL Manager backups on archive.org are 5-6 GB zip64 files whose

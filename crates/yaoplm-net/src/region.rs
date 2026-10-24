@@ -1,4 +1,4 @@
-//! Which market a game and a picture belong to (ADR-0034, research/14 §4).
+//! Which market a game and a picture belong to (ADR-0035, research/14 §4).
 //!
 //! Covers, back covers, spines and disc labels differ between releases:
 //! rating badges, the PAL or NTSC bar, the language. A picture of another

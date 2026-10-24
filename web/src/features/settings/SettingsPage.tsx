@@ -290,7 +290,7 @@ function ExternalA({ href, children }: { href: string; children?: ReactNode }) {
 
 /**
  * The switch and the mirror folder of every picture source, and the
- * ScreenScraper account (ADR-0034). There is no order to set: each type
+ * ScreenScraper account (ADR-0035). There is no order to set: each type
  * tries the sources in its own order.
  */
 function ArtSourceSettingsList({ art }: { art: readonly SourceEntry[] | undefined }) {

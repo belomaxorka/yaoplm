@@ -1,4 +1,4 @@
-//! How many games get a picture of each type (ADR-0034, research/14 §6),
+//! How many games get a picture of each type (ADR-0035, research/14 §6),
 //! measured with the code that picks sources (per-type order, region
 //! policy, OPL Manager's numbering) against lists of the sources' files:
 //! the xlenore tree, the libretro directory indexes and the table of

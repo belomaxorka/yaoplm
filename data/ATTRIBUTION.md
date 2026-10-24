@@ -31,7 +31,7 @@ GPL-3.0-or-later (ADR-0002).
 
 Pictures are downloaded only when the user asks for them, cached locally and
 written to the user's device. YAOPLM does not redistribute them (ADR-0007,
-ADR-0034).
+ADR-0035).
 
 ### xlenore/ps2-covers
 

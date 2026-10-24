@@ -1,4 +1,4 @@
-//! Where pictures come from (ART-1, ART-2, ADR-0007, ADR-0034, research/03
+//! Where pictures come from (ART-1, ART-2, ADR-0007, ADR-0035, research/03
 //! §2, research/14, SPEC §5.4.1).
 //!
 //! Four sources:
@@ -137,7 +137,7 @@ impl SourceId {
     }
 }
 
-/// The sources for `kind`, best first (ADR-0034, research/14 §5):
+/// The sources for `kind`, best first (ADR-0035, research/14 §5):
 ///
 /// | Type | Order |
 /// |---|---|

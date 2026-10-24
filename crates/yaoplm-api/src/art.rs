@@ -46,7 +46,7 @@ pub enum ArtScope {
 
 /// How one source is used for a request. Sources not listed keep their
 /// defaults: enabled, remote. ScreenScraper is on only in a build or an
-/// environment with its developer key (ADR-0034).
+/// environment with its developer key (ADR-0035).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -582,7 +582,7 @@ fn redump_names(startup: &str) -> Vec<String> {
 }
 
 /// The game's releases in other regions (the same Redump title), for the
-/// types shared across markets (ADR-0034): America first, then Europe,
+/// types shared across markets (ADR-0035): America first, then Europe,
 /// then Asia, where the sources have the most pictures.
 fn other_releases(startup: &str, kind: ArtKind) -> Vec<OtherRelease> {
     if region::region_specific(kind) {
@@ -654,7 +654,7 @@ fn why_missing<'a>(
     );
     let has_kind = |s: &&SourceConfig| s.id.kinds().contains(&kind);
     let phrase = if !other_market.is_empty() {
-        // A picture was there, but of another market's release (ADR-0034).
+        // A picture was there, but of another market's release (ADR-0035).
         Said::notice("artOtherMarket").with("sources", other_market.join(", "))
     } else if !tried.is_empty() {
         Said::notice("artNotFound").with("sources", tried.join(", "))

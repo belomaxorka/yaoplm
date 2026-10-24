@@ -317,7 +317,7 @@ impl Database {
 
     /// Other serials whose Redump name, without its tags, is the same as
     /// one of `entry`'s: the game's releases elsewhere, whose screenshots
-    /// and logos stand in for its own (ADR-0034). Sorted by serial.
+    /// and logos stand in for its own (ADR-0035). Sorted by serial.
     pub fn same_title(&self, entry: &Entry) -> Vec<&Entry> {
         let mut out: Vec<&Entry> = entry
             .redump

@@ -3,7 +3,7 @@
 /**
  * How one source is used for a request. Sources not listed keep their
  * defaults: enabled, remote. ScreenScraper is on only in a build or an
- * environment with its developer key (ADR-0034).
+ * environment with its developer key (ADR-0035).
  */
 export type ArtSourceSetting = { 
 /**

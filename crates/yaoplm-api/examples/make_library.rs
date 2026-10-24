@@ -8,7 +8,7 @@
 //! `<folder>/library` is a device root with games in every format and a
 //! few things to warn about; `<folder>/sources` holds images to import;
 //! `<folder>/mirror` holds local mirrors of three picture sources with a
-//! picture each (ART-1, ADR-0034), so the art screens work without the
+//! picture each (ART-1, ADR-0035), so the art screens work without the
 //! network, and a
 //! Redump DAT that verifies some of the games and not others (GAME-5), and
 //! `sets/` with two picture sets to import (ART-5). Pass

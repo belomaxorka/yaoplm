@@ -137,6 +137,8 @@ Long tail from research/01 §2.7. Mostly small and 2025–26, many look LLM-assi
 | [libretro/libretro-database](https://github.com/libretro/libretro-database) | CC-BY-SA-4.0 | 2026-10-10 | `metadat/redump/Sony - PlayStation 2.dat`. About 0.8 GB | no |
 | [Luden02/psx-ps2-opl-art-database](https://github.com/Luden02/psx-ps2-opl-art-database) | none ("assets belong to their respective owners") | 2025-08-14 | Static dump of the OPLM art DB, about 4 GB. Reference only; see ADR-0007 and research/03 | no |
 | [CosmicScale/HDD-OSD-Icon-Database](https://github.com/CosmicScale/HDD-OSD-Icon-Database) | none | 2026-10-16 | HDD-OSD/PSBBN icons, about 130 MB | no |
+| [es-de/emulationstation-de](https://gitlab.com/es-de/emulationstation-de) (GitLab) | MIT | 2026-10-24 (master, read raw) | ScreenScraper client: `es-app/src/scrapers/ScreenScraper.cpp` (XML `Data/jeu/medias/media` with `type`, `region`, `format`; quota in `ssuser`; region fallback), `ScreenScraper.h` (media type names, API base, PS2 = 58). research/14 §4 | no |
+| archive.org item [OPLM_ART_2024_09](https://archive.org/details/OPLM_ART_2024_09) | none | 2024-09-02 | The last OPL Manager art backup, a 5.5 GB stored zip64 read member by member (ADR-0035). Table of contents in `D:\yaoplm-testdata\oplm-art\` | no |
 
 Deliberately excluded:
 - **Sony POPS/BIOS binaries (ADR-0007):** AnimMouse/POPS-binaries and TonyLimaPHB/PopCraft. Neither is cloned.

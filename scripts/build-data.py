@@ -248,7 +248,7 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
         "",
         "Pictures are downloaded only when the user asks for them, cached locally and",
         "written to the user's device. YAOPLM does not redistribute them (ADR-0007,",
-        "ADR-0034).",
+        "ADR-0035).",
         "",
     ]
     for entry in attribution["art"]:

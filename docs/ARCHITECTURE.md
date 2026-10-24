@@ -121,7 +121,7 @@ yaoplm/
 
 ## 6. Хранение состояния
 
-- Каталог данных приложения (`dirs`, переопределяется `YAOPLM_DATA_DIR` и `--data-dir` сервера): `cache.sqlite`, `art-cache/<source>/<key>/` (оригинал и производные PNG; `art-cache/local/` — картинки из файлов и наборов пользователя), `db/redump-ps2.dat` с метаданными `db/redump-ps2.json` и отметкой последнего запроса `db/redump-ps2.asked` (с M5, ADR-0026), позже `settings.toml`. Создаётся при первой записи в кэш: сканирование только читает его. Десктоп и CLI: `%LOCALAPPDATA%\yaoplm`, `~/.local/share/yaoplm`, `~/Library/Application Support/yaoplm`.
+- Каталог данных приложения (`dirs`, переопределяется `YAOPLM_DATA_DIR` и `--data-dir` сервера): `cache.sqlite`, `art-cache/<source>/<key>/` (оригинал и производные PNG; `art-cache/local/` — картинки из файлов и наборов пользователя; `art-cache/oplm-index/<item>/` — центральный каталог копии OPL Manager, ADR-0035), `db/redump-ps2.dat` с метаданными `db/redump-ps2.json` и отметкой последнего запроса `db/redump-ps2.asked` (с M5, ADR-0026), позже `settings.toml`. Создаётся при первой записи в кэш: сканирование только читает его. Десктоп и CLI: `%LOCALAPPDATA%\yaoplm`, `~/.local/share/yaoplm`, `~/Library/Application Support/yaoplm`.
 - В SQLite лежат:
   - манифест обложек: источник, URL, ETag, `Last-Modified`, дата, SHA-256, лицензия, атрибуция (с M4);
   - результаты «не найдено» с TTL 7 дней (с M4);
@@ -134,11 +134,11 @@ yaoplm/
 
 ## 7. Источники данных
 
-- `yaoplm-net`: один HTTP-клиент (User-Agent `YAOPLM/<версия> (+repo)`, не чаще одного запроса в секунду на источник, условные запросы, back-off на 429/5xx), кэш с манифестом и источники обложек `SourceId::{Xlenore, Libretro}`; у каждого: лицензионная метка, атрибуция и режим зеркала (папка с раскладкой репозитория, она же мок для тестов). Метаданные берутся из встроенной базы, `DatSource` появится с META-2.
+- `yaoplm-net`: один HTTP-клиент (User-Agent `YAOPLM/<версия> (+repo)`, не чаще одного запроса в секунду на источник, условные и Range-запросы, back-off на 429/5xx, `YAOPLM_OFFLINE=1` запрещает всё, кроме этого компьютера), кэш с манифестом и источники картинок `SourceId::{Xlenore, Oplm, Libretro, ScreenScraper}` (ADR-0035); у каждого: лицензионная метка, атрибуция и режим зеркала (папка с раскладкой репозитория, она же мок для тестов), кроме ScreenScraper. Порядок источников свой у каждого типа (`sources::order`), политика регионов — `region`. Метаданные берутся из встроенной базы, `DatSource` появился с META-2.
 - Порядок для MVP:
   1. ID из образа;
   2. встроенная база названий;
-  3. обложки xlenore (raw-URL по серийнику) → libretro-thumbnails (`thumbnails.libretro.com`, затем raw GitHub, по имени Redump из встроенной базы); никакого GitHub API;
+  3. картинки по типам (ADR-0035): xlenore (raw-URL по серийнику), копия OPL Manager на archive.org (оглавление zip один раз, затем Range-запрос на картинку), libretro-thumbnails (`thumbnails.libretro.com`, затем raw GitHub, по имени Redump из встроенной базы), ScreenScraper при ключе разработчика; никакого GitHub API;
   4. Redump DAT (v0.2).
 - Запрещено: приватный сервер OPL Manager, скрейпинг сайтов без API, бандл изображений.
 - Загрузчики (LDR-1, LDR-2) — тоже источник данных: каталог сборок с репозиторием, лицензией и шаблоном имени ассета; загрузка только с официальных релизов по действию пользователя, проверка хеша, кэш (ADR-0014).

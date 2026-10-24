@@ -164,7 +164,7 @@ impl Http {
         read_body(response, max_body).await.map(Fetched::Ok)
     }
 
-    /// GETs part of `url` (ADR-0034): `None` for 404 or 410. A server that
+    /// GETs part of `url` (ADR-0035): `None` for 404 or 410. A server that
     /// answers a range request with the whole file is accepted only while
     /// the file fits in `max_body`, and the range is cut out of it.
     pub async fn get_range(

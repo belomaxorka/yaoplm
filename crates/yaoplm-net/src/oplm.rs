@@ -1,5 +1,5 @@
 //! OPL Manager's art backup on archive.org, read picture by picture
-//! (ADR-0034, research/14 §3).
+//! (ADR-0035, research/14 §3).
 //!
 //! `OPLM_ART_2024_09` is the last of the "entire OPLM ART database
 //! backups" OPL Manager's author published (the private art server itself

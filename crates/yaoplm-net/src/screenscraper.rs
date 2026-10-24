@@ -1,4 +1,4 @@
-//! ScreenScraper API v2 (ADR-0034, research/03 §2.4, research/14 §4): all
+//! ScreenScraper API v2 (ADR-0035, research/03 §2.4, research/14 §4): all
 //! eight picture types, tagged with the market they show, looked up by
 //! the game's serial.
 //!
