@@ -1152,3 +1152,32 @@ fn vmc_create_assign_and_list() {
     ]);
     assert_eq!(bad.status.code(), Some(2), "clap refuses the size");
 }
+
+#[test]
+fn loader_ls_lists_the_catalogue() {
+    let output = yaoplm().args(["loader", "ls"]).output().unwrap();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    for line in [
+        "opl-stable  OPL 1.1.0",
+        "opl-beta  OPL 1.2.0 beta  [recommended]",
+        "yaopl  YAOPL",
+        "official, ps2homebrew/Open-PS2-Loader @ v1.1.0 (fixed), profile OPL 1.1.0",
+        "Preset fmcb: UPDT/OPL.ELF (usb), default on usb",
+        "Preset app: APPS/YAOPL/OPNPS2LD.ELF (usb, mx4sio), title.cfg \"YAOPL\", default on mx4sio",
+        "Newest known build: v1.2.0-Beta-2370-33a2b19-yaopl (2026-10-23)",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+
+    let ru = yaoplm()
+        .args(["loader", "ls", "--lang", "ru"])
+        .output()
+        .unwrap();
+    assert!(stdout(&ru).contains("Официальная бета"), "{}", stdout(&ru));
+
+    let json = yaoplm().args(["loader", "ls", "--json"]).output().unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["type"], "LoaderCatalog");
+    assert_eq!(value["builds"].as_array().unwrap().len(), 3);
+}

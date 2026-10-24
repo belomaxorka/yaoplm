@@ -285,6 +285,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Loader builds YAOPLM installs (LDR-1).
+    Loader {
+        #[command(subcommand)]
+        command: LoaderCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum LoaderCommand {
+    /// List the catalogue: each build, its channel, presets and licence.
+    Ls {
+        /// Language of the build descriptions.
+        #[arg(long, default_value = "en", value_parser = ["en", "ru"])]
+        lang: String,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -939,6 +957,15 @@ fn main() -> anyhow::Result<ExitCode> {
             let response = api.dispatch(Request::Attribution);
             show(response, json, |response| match response {
                 Response::Attribution(about) => print!("{}", report::about(about)),
+                other => print_json(other, true),
+            })
+        }
+        Command::Loader {
+            command: LoaderCommand::Ls { lang, json },
+        } => {
+            let response = api.dispatch(Request::LoaderCatalog);
+            show(response, json, |response| match response {
+                Response::LoaderCatalog(catalog) => print!("{}", report::loaders(catalog, &lang)),
                 other => print_json(other, true),
             })
         }

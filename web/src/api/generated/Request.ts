@@ -133,4 +133,4 @@ md5?: boolean,
  * Read every image even when its hashes are cached: finds damage
  * that left a file's size and time alone.
  */
-fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" };
+fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" } | { "type": "LoaderCatalog" };

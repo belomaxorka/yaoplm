@@ -23,6 +23,7 @@ mod error;
 mod events;
 pub mod jobs;
 pub mod library;
+pub mod loaders;
 mod paths;
 pub mod phrase;
 pub mod plans;
@@ -925,6 +926,7 @@ impl Api {
             Request::Attribution => Ok(Response::Attribution(Box::new(art::attribution()?))),
             Request::ArtCache => Ok(Response::ArtCache(self.net.cache_info()?)),
             Request::ClearArtCache => self.net.clear_cache().map(|()| Response::Ack),
+            Request::LoaderCatalog => Ok(Response::LoaderCatalog(Box::new(loaders::catalog()?))),
         }
     }
 
