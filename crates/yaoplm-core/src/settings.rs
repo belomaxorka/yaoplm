@@ -112,6 +112,9 @@ fn settings_reason(err: &SettingsError) -> Phrase {
         SettingsError::GsmVmode(value) => Phrase::reason("gsmVmode")
             .with("value", value.to_string())
             .with("max", yaoplm_formats::game_cfg::GSM_VMODE_MAX.to_string()),
+        SettingsError::GsmOffset(value) => Phrase::reason("gsmOffset")
+            .with("value", value.to_string())
+            .with("max", yaoplm_formats::game_cfg::GSM_OFFSET_MAX.to_string()),
         SettingsError::CheatMode(value) => {
             Phrase::reason("cheatMode").with("value", value.to_string())
         }

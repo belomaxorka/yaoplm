@@ -55,6 +55,10 @@ pub const PADEMU_SETTINGS: &str = "$PadEmuSettings";
 pub const ALT_STARTUP_MAX: usize = 21;
 /// The last GSM video mode (`predef_vmode[29]` in `src/gsm.c`).
 pub const GSM_VMODE_MAX: i32 = 28;
+/// GSM offsets OPL's menu can set: -100 to 100 (`diaGSConfig` in
+/// `src/dialogs.c`). A launch takes any number and shifts the picture off
+/// screen.
+pub const GSM_OFFSET_MAX: i32 = 100;
 /// `$CheatMode`: 0 applies every code, 1 asks at launch.
 pub const CHEAT_MODE_MAX: i32 = 1;
 /// `CONFIG_SOURCE_USER`.
@@ -138,6 +142,8 @@ pub enum SettingsError {
     VmcName { slot: u8, error: VmcNameError },
     #[error("GSM video mode {0} is not one of OPL's 0 to {GSM_VMODE_MAX}")]
     GsmVmode(i32),
+    #[error("GSM offset {0} is outside OPL's -{GSM_OFFSET_MAX} to {GSM_OFFSET_MAX}")]
+    GsmOffset(i32),
     #[error("cheat mode {0} is not 0 or {CHEAT_MODE_MAX}")]
     CheatMode(i32),
     #[error(transparent)]
@@ -237,6 +243,15 @@ impl GameSettings {
         let vmode = self.gsm.vmode;
         if vmode != before.gsm.vmode && !(0..=GSM_VMODE_MAX).contains(&vmode) {
             return Err(SettingsError::GsmVmode(vmode));
+        }
+        let offsets = [
+            (self.gsm.x_offset, before.gsm.x_offset),
+            (self.gsm.y_offset, before.gsm.y_offset),
+        ];
+        for (offset, was) in offsets {
+            if offset != was && offset.abs() > GSM_OFFSET_MAX {
+                return Err(SettingsError::GsmOffset(offset));
+            }
         }
         let mode = self.cheats.mode;
         if mode != before.cheats.mode && !(0..=CHEAT_MODE_MAX).contains(&mode) {
@@ -593,6 +608,20 @@ mod tests {
             Err(SettingsError::GsmVmode(29))
         );
         settings.gsm.vmode = 0;
+        settings.gsm.y_offset = -101;
+        assert_eq!(
+            settings.validate(&GameSettings::default(), OPL),
+            Err(SettingsError::GsmOffset(-101))
+        );
+        settings.gsm.y_offset = -100;
+        settings.gsm.x_offset = 100;
+        assert_eq!(settings.validate(&GameSettings::default(), OPL), Ok(()));
+        // A value the file already has is left alone.
+        let mut before = GameSettings::default();
+        before.gsm.x_offset = 999;
+        settings.gsm.x_offset = 999;
+        assert_eq!(settings.validate(&before, OPL), Ok(()));
+        settings.gsm.x_offset = 0;
         settings.cheats.mode = 2;
         assert_eq!(
             settings.apply(&mut cfg, OPL),

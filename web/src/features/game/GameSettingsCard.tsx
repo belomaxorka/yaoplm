@@ -38,6 +38,8 @@ const MODE_BITS = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80] as const;
 const GSM_MODES = [
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
 ] as const;
+/** OPL's menu keeps GSM offsets within ±100 (`diaGSConfig` in `src/dialogs.c`). */
+const GSM_OFFSET_MAX = 100;
 const VMC_SIZES = [8, 16, 32, 64] as const;
 /** `$AltStartup` must fit `cdrom0:\<name>;1` in OPL's 32-byte buffer. */
 const ALT_STARTUP_MAX = 21;
@@ -126,6 +128,10 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
     .filter(([slot, card]) => current.vmc[Number(slot)] === card.name)
     .map(([, card]) => card);
   const dirty = JSON.stringify(current) !== JSON.stringify(base) || pending.length > 0;
+  // Like the core, only a changed offset has to be in range.
+  const offsetOutOfRange = (["xOffset", "yOffset"] as const).some(
+    (axis) => current.gsm[axis] !== base.gsm[axis] && Math.abs(current.gsm[axis]) > GSM_OFFSET_MAX,
+  );
   const shownBits = app.profile === "RiptOpl" ? MODE_BITS : MODE_BITS.slice(0, 6);
   let shownMask = 0;
   for (const bit of shownBits) shownMask |= bit;
@@ -229,22 +235,20 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
                 {(["xOffset", "yOffset"] as const).map((axis) => (
                   <div key={axis} className="flex flex-col gap-1.5">
                     <Label htmlFor={`${ids}-${axis}`}>{t(`cfg.${axis}`)}</Label>
-                    <Input
+                    <OffsetInput
                       id={`${ids}-${axis}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={-100}
-                      max={100}
                       value={current.gsm[axis]}
                       disabled={!current.gsm.perGame}
-                      onChange={(event) => {
-                        const value = Math.trunc(Number(event.target.value));
-                        if (Number.isFinite(value)) set({ gsm: { ...current.gsm, [axis]: value } });
-                      }}
+                      onChange={(value) => set({ gsm: { ...current.gsm, [axis]: value } })}
                     />
                   </div>
                 ))}
               </div>
+              {offsetOutOfRange && (
+                <p className="text-xs text-destructive" role="alert" data-testid="cfg-offset-range">
+                  {t("cfg.offsetRange", { max: GSM_OFFSET_MAX })}
+                </p>
+              )}
               <ToggleRow
                 label={t("cfg.gsmFieldFix")}
                 hint={t("cfg.gsmFieldFixHint")}
@@ -371,7 +375,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            disabled={!dirty || flow.pending}
+            disabled={!dirty || offsetOutOfRange || flow.pending}
             onClick={() =>
               void flow.request({
                 type: "WriteCfg",
@@ -440,6 +444,46 @@ function ToggleRow({
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </Label>
     </div>
+  );
+}
+
+/**
+ * A whole number typed as text: a number box would turn a lone "-" into 0
+ * and make a negative shift impossible to type. What is not a number yet
+ * stays in the box until it loses focus.
+ */
+function OffsetInput({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(String(value));
+  }
+  return (
+    <Input
+      id={id}
+      inputMode="numeric"
+      value={text}
+      disabled={disabled}
+      aria-invalid={Math.abs(value) > GSM_OFFSET_MAX || undefined}
+      onChange={(event) => {
+        const next = event.target.value.replace("−", "-");
+        if (!/^-?\d{0,4}$/.test(next)) return;
+        setText(next);
+        if (/\d/.test(next)) onChange(Number(next));
+      }}
+      onBlur={() => setText(String(value))}
+    />
   );
 }
 
@@ -519,7 +563,7 @@ function VmcSlot({
           value={name === "" ? NO_CARD : name}
           onValueChange={(value) => onChange(value === NO_CARD ? "" : value)}
         >
-          <SelectTrigger id={`${id}-select`} className="w-full sm:w-80">
+          <SelectTrigger id={`${id}-select`} className="w-full max-w-full sm:w-auto sm:min-w-80">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -648,9 +692,18 @@ function NewCardDialog({
                 value={name}
                 maxLength={31}
                 className="font-mono"
+                aria-invalid={(clean.length > 0 && !valid) || undefined}
+                aria-describedby={`${id}-name-hint`}
                 onChange={(event) => setName(event.target.value)}
               />
-              <p className="text-xs text-muted-foreground">{t("cfg.cardNameHint")}</p>
+              <p id={`${id}-name-hint`} className="text-xs text-muted-foreground">
+                {t("cfg.cardNameHint")}
+              </p>
+              {clean.length > 0 && !valid && (
+                <p className="text-xs text-destructive" role="alert" data-testid="cfg-card-name-invalid">
+                  {t("cfg.cardNameInvalid")}
+                </p>
+              )}
             </div>
             <fieldset className="flex flex-col gap-1.5">
               <legend className="mb-1.5 text-sm font-medium">{t("cfg.cardSizeLabel")}</legend>

@@ -334,7 +334,7 @@ Path `"%sCFG%s%s.cfg"` (prefix, separator, ID) [V] `sbPopulateConfig`.
 | `$GSMSource` | Absent = global (`conf_game.cfg`), `1` = per-game. **A launch checks only that the key exists**, so `$GSMSource=0` means per-game (`src/gsm.c:42`; the same for `$CheatsSource`, `$PADEMUSource`) |
 | `$EnableGSM` | 0/1 |
 | `$GSMVMode` | 0–28. 0 NTSC, 1 NTSC non-interlaced, 2 PAL, 3 PAL NI, 4 PAL@60, 5 PAL@60 NI, 6 PS1 NTSC (480p), 7 PS1 PAL (576p), 8 480p, 9 576p, 10 720p, 11 1080i, 12 1080i NI, 13–17 VGA 640x480 @60/72/75/85 and 640x960i, 18–22 VGA 800x600 @56/60/72/75/85, 23–26 VGA 1024x768 @60/70/75/85, 27–28 VGA 1280x1024 @60/75 |
-| `$GSMXOffset`, `$GSMYOffset` | Integers |
+| `$GSMXOffset`, `$GSMYOffset` | Integers; the menu sets −100 to 100 (`diaGSConfig` in `src/dialogs.c`), a launch takes any value |
 | `$GSMFIELDFix` | 0/1 |
 | `$CheatsSource` | 0 = global, 1 = per-game |
 | `$EnableCheat` | 0/1 |

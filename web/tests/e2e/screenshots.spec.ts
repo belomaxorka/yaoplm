@@ -42,6 +42,14 @@ for (const language of ["en", "ru"] as const) {
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("art-fetch-dialog")).toBeHidden();
 
+        // The "More" menu keeps each tool on one line.
+        await page.getByTestId("library-more").click();
+        await expect(page.getByTestId("convert-shown")).toBeVisible();
+        await page.waitForTimeout(200);
+        await shot("library-more");
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("convert-shown")).toBeHidden();
+
         // Picture sets with the two fixture sets picked (ART-5).
         await libraryTool(page, "import-pictures");
         const importDialog = page.getByTestId("art-import-dialog");

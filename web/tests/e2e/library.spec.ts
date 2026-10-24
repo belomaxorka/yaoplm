@@ -31,6 +31,19 @@ test("search, filters and the list view", async ({ page, request }) => {
   await expect(page.getByRole("listitem", { name: /Retail Game/ })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search" }).fill("");
 
+  // Keys that come faster than a render all land: each one goes after what
+  // the box shows at that moment, the way typing does.
+  const search = page.getByRole("searchbox", { name: "Search" });
+  await search.evaluate((input: HTMLInputElement, text) => {
+    for (const key of text) {
+      input.setRangeText(key, input.value.length, input.value.length, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }, "retail");
+  await expect(search).toHaveValue("retail");
+  await expect(page).toHaveURL(/q=retail/);
+  await search.fill("");
+
   await page.getByRole("radio", { name: "UL" }).click();
   await expect(page.getByTestId("library-count")).toHaveText("1 of 5 games");
   await expect(page.getByRole("listitem", { name: /Split Game/ })).toBeVisible();
