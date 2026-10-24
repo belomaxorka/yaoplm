@@ -76,8 +76,15 @@ fn fragments(fragments: &Fragments) -> String {
             ..
         } => format!("{total} (OPL loads up to {limit} per game)"),
         Fragments::Known {
+            total,
+            files,
+            limit: None,
+        } if files.iter().all(|&n| n <= 1) => {
+            format!("{total}: each file in one piece, as OPL 1.1.0 needs")
+        }
+        Fragments::Known {
             total, limit: None, ..
-        } => format!("{total} (OPL 1.1.0 needs one per file)"),
+        } => format!("{total}: not every file is in one piece, and OPL 1.1.0 needs each to be"),
         Fragments::Unknown => FRAGMENTS_UNKNOWN.to_owned(),
     }
 }
@@ -967,7 +974,15 @@ mod tests {
                 files: vec![1, 1],
                 limit: None
             }),
-            "2 (OPL 1.1.0 needs one per file)"
+            "2: each file in one piece, as OPL 1.1.0 needs"
+        );
+        assert!(
+            fragments(&Fragments::Known {
+                total: 2,
+                files: vec![2],
+                limit: None
+            })
+            .starts_with("2: not every file")
         );
     }
 }

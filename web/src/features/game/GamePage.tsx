@@ -240,7 +240,9 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                         {game.fragments.kind === "unknown"
                           ? t("game.fragmentsUnknown")
                           : game.fragments.limit === null
-                            ? t("game.fragmentsOnePerFile", { pieces: game.fragments.total })
+                            ? t(game.fragments.files.every((n) => n <= 1) ? "game.fragmentsEachOne" : "game.fragmentsNotEachOne", {
+                                pieces: game.fragments.total,
+                              })
                             : t("game.fragmentsOf", { pieces: game.fragments.total, limit: game.fragments.limit })}
                       </span>
                     </Fact>

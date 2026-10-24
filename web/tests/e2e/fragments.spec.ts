@@ -13,8 +13,8 @@ interface WireGame {
   fragments: unknown;
 }
 
-/** Makes the first game without warnings lie in 70 pieces; returns its title. */
-async function fragmentedStick(page: Page): Promise<() => string> {
+/** Makes the first game without warnings lie in 70 pieces, or as `pieces` says; returns its title. */
+async function fragmentedStick(page: Page, pieces?: unknown): Promise<() => string> {
   let title = "";
   await page.route("**/api/rpc", async (route) => {
     const request = route.request().postDataJSON() as { type?: string };
@@ -25,7 +25,10 @@ async function fragmentedStick(page: Page): Promise<() => string> {
       const games = body.result.games;
       const target = games.find((g) => g.title === title) ?? games.find((g) => g.warnings.length === 0);
       for (const game of games) game.fragments = { kind: "known", total: 1, files: [1], limit: 64 };
-      if (target) {
+      if (target && pieces) {
+        title = target.title;
+        target.fragments = pieces;
+      } else if (target) {
         title = target.title;
         target.fragments = { kind: "known", total: 70, files: [70], limit: 64 };
         target.warnings.push({
@@ -73,6 +76,24 @@ test("simple mode keeps the warning and hides the count", async ({ page, request
   await openGame(page, title());
   await expect(page.getByTestId("game-warnings")).toContainText("Игра лежит на носителе кусками (частей: 70)");
   await expect(page.getByTestId("game-fragments")).toHaveCount(0);
+});
+
+test("OPL 1.1.0 says whether every file is one piece", async ({ page, request }) => {
+  let title = await fragmentedStick(page, { kind: "known", total: 5, files: [1, 1, 1, 1, 1], limit: null });
+  await openLibrary(page, request, { language: "en" });
+  await page.goto("/library");
+  await expect(page.getByTestId("library-count")).toBeVisible();
+  await openGame(page, title());
+  await expect(page.getByTestId("game-fragments")).toHaveText("5: each file in one piece, as OPL 1.1.0 needs");
+
+  await page.unroute("**/api/rpc");
+  title = await fragmentedStick(page, { kind: "known", total: 3, files: [2, 1], limit: null });
+  await page.goto("/library");
+  await expect(page.getByTestId("library-count")).toBeVisible();
+  await openGame(page, title());
+  await expect(page.getByTestId("game-fragments")).toHaveText(
+    "3: not every file is in one piece, and OPL 1.1.0 needs each to be",
+  );
 });
 
 for (const language of ["en", "ru"] as const) {
