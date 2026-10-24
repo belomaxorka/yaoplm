@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
+import type { ArtType } from "@/api/generated/ArtType";
 import type { CoverSearch } from "@/api/generated/CoverSearch";
 import type { JobId } from "@/api/generated/JobId";
 import type { PlanView } from "@/api/generated/PlanView";
@@ -59,23 +60,28 @@ function begin(store: Store, root: string, plan: PlanView): Store {
 }
 
 /**
- * Covers for the games an import plan adds (ART-8, SPEC §5.4.1): the same
- * FetchArt job as "Download pictures", scoped to the plan. A search runs
- * once per set of game IDs; a plan that adds a game the last search did not
- * see starts a new one (the cache answers for the rest). Stopping it keeps
- * the games, without covers.
+ * Pictures for the games an import plan adds (ART-8, SPEC §5.4.1): the same
+ * FetchArt job as "Download pictures", scoped to the plan, for `kinds`. A
+ * search runs once per set of game IDs; a plan that adds a game the last
+ * search did not see starts a new one (the cache answers for the rest).
+ * Stopping it keeps the games, without pictures.
  *
  * The state says which search should run; an effect keeps one job running
  * for it and cancels the job once the search is stopped, forgotten or left.
  */
-export function useCoverSearch(root: string | null, plan: PlanView | null, enabled: boolean) {
+export function useCoverSearch(
+  root: string | null,
+  plan: PlanView | null,
+  enabled: boolean,
+  kinds: readonly ArtType[] = ["COV"],
+) {
   const { transport } = useApi();
   const { settings } = useSettings();
   const { cancel } = useJobs();
   const [store, setStore] = useState<Store>({ started: 0, search: null, skip: null });
   const state = store.search;
 
-  // Covers switched off forget the search; switched on again, the plan gets a new one.
+  // Pictures switched off forget the search; switched on again, the plan gets a new one.
   const [wasEnabled, setWasEnabled] = useState(enabled);
   if (enabled !== wasEnabled) {
     setWasEnabled(enabled);
@@ -102,6 +108,7 @@ export function useCoverSearch(root: string | null, plan: PlanView | null, enabl
           root,
           profile: settings.profile,
           sources: requestSources(settings),
+          kinds: [...kinds],
           import: plan,
         });
         if (poll.signal.aborted) {

@@ -82,8 +82,9 @@ kind?: string,
  */
 kinds?: Array<ArtType>, 
 /**
- * The id of an import plan: look for the covers of the games it
- * adds, `missing` scope (ART-8).
+ * The id of an import plan: look for the pictures (`kinds`) of the
+ * games it adds, `missing` scope (ART-8). Ends with a set for
+ * `PlanImport.covers`, not a plan.
  */
 import?: string, } | { "type": "FindArt", root: string, startup: string, kind: ArtType, profile?: LoaderProfile, sources?: Array<ArtSourceSetting>, } | { "type": "ImportArt", root: string, 
 /**

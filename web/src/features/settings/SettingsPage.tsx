@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
-import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import type { NameStyle } from "@/api/generated/NameStyle";
 import type { SourceEntry } from "@/api/generated/SourceEntry";
 import { artCache, attribution, clearArtCache } from "@/api/rpc";
 import { call } from "@/api/transport";
+import { ExternalLink } from "@/components/ExternalLink";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { PageScroll } from "@/components/PageScroll";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ export function SettingsPage() {
   const { transport } = useApi();
   const { theme, setTheme } = useTheme();
   const { settings, update } = useSettings();
+  const simple = settings.simpleMode;
   const ids = useId();
   const version = useQuery({
     queryKey: ["version"],
@@ -61,6 +63,44 @@ export function SettingsPage() {
   return (
     <PageScroll>
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.interface")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <SettingRow label={t("settings.simpleMode")} hint={t("settings.simpleModeHint")} htmlFor={`${ids}-simple`}>
+              <Switch
+                id={`${ids}-simple`}
+                checked={settings.simpleMode}
+                onCheckedChange={(simpleMode) => update({ simpleMode })}
+                data-testid="simple-mode"
+              />
+            </SettingRow>
+            <SettingRow label={t("settings.language")}>
+              <LanguageSwitch showNames />
+            </SettingRow>
+            <SettingRow label={t("settings.theme")}>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                aria-label={t("settings.theme")}
+                value={theme}
+                onValueChange={(value) => {
+                  if (isTheme(value)) setTheme(value);
+                }}
+              >
+                {themes.map((option) => (
+                  <ToggleGroupItem key={option} value={option}>
+                    {t(`settings.themes.${option}`)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </SettingRow>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.library")}</CardTitle>
@@ -101,88 +141,76 @@ export function SettingsPage() {
                 ))}
               </RadioGroup>
             </div>
-            <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
-              <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
-            </SettingRow>
-            <SettingRow label={t("settings.titlesFromDb")} hint={t("settings.titlesFromDbHint")} htmlFor={`${ids}-titles`}>
-              <Switch
-                id={`${ids}-titles`}
-                checked={settings.titlesFromDb}
-                onCheckedChange={(titlesFromDb) => update({ titlesFromDb })}
-                data-testid="settings-titles-from-db"
-              />
-            </SettingRow>
+            {!simple && (
+              <SettingRow label={t("settings.verify")} hint={t("settings.verifyHint")} htmlFor={`${ids}-verify`}>
+                <Switch id={`${ids}-verify`} checked={settings.verify} onCheckedChange={(verify) => update({ verify })} />
+              </SettingRow>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.covers")}</CardTitle>
-            <CardDescription>{t("settings.coversDescription")}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <SettingRow label={t("settings.coversOnAdd")} hint={t("settings.coversOnAddHint")} htmlFor={`${ids}-covers-on-add`}>
-              <Switch
-                id={`${ids}-covers-on-add`}
-                checked={settings.coversOnAdd}
-                onCheckedChange={(coversOnAdd) => update({ coversOnAdd })}
-                data-testid="settings-covers-on-add"
-              />
-            </SettingRow>
-            {artSourceIds.map((id, index) => {
-              const source = settings.artSources[id];
-              const set = (patch: Partial<typeof source>) =>
-                update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
-              return (
-                <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
-                  <SettingRow
-                    label={`${index + 1}. ${artSourceInfo[id].name}`}
-                    hint={t(`settings.artSources.${id}`)}
-                    htmlFor={`${ids}-src-${id}`}
-                  >
-                    <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
-                  </SettingRow>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
-                      {t("settings.mirror")}
-                    </Label>
-                    <Input
-                      id={`${ids}-mirror-${id}`}
-                      value={source.mirror}
-                      placeholder={t("settings.mirrorPlaceholder")}
-                      onChange={(event) => set({ mirror: event.target.value })}
-                      className="font-mono text-xs"
-                    />
-                    {isTauri() && (
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label={t("settings.pickMirror")}
-                        onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
-                      >
-                        <FolderOpen aria-hidden />
-                      </Button>
-                    )}
+        {!simple && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("settings.covers")}</CardTitle>
+              <CardDescription>{t("settings.coversDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              {artSourceIds.map((id, index) => {
+                const source = settings.artSources[id];
+                const set = (patch: Partial<typeof source>) =>
+                  update({ artSources: { ...settings.artSources, [id]: { ...source, ...patch } } });
+                return (
+                  <div key={id} className="flex flex-col gap-2" data-testid={`art-source-${id}`}>
+                    <SettingRow
+                      label={`${index + 1}. ${artSourceInfo[id].name}`}
+                      hint={t(`settings.artSources.${id}`)}
+                      htmlFor={`${ids}-src-${id}`}
+                    >
+                      <Switch id={`${ids}-src-${id}`} checked={source.enabled} onCheckedChange={(enabled) => set({ enabled })} />
+                    </SettingRow>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`${ids}-mirror-${id}`} className="shrink-0 text-xs text-muted-foreground">
+                        {t("settings.mirror")}
+                      </Label>
+                      <Input
+                        id={`${ids}-mirror-${id}`}
+                        value={source.mirror}
+                        placeholder={t("settings.mirrorPlaceholder")}
+                        onChange={(event) => set({ mirror: event.target.value })}
+                        className="font-mono text-xs"
+                      />
+                      {isTauri() && (
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t("settings.pickMirror")}
+                          onClick={() => void pickFolder().then((folder) => folder && set({ mirror: folder }))}
+                        >
+                          <FolderOpen aria-hidden />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
-            <SettingRow
-              label={t("settings.artCache")}
-              hint={
-                cache.data
-                  ? t("settings.artCacheState", { count: Number(cache.data.objects), size: formatBytes(Number(cache.data.bytes)), path: cache.data.path })
-                  : t("settings.loading")
-              }
-            >
-              <Button variant="outline" size="sm" onClick={() => void clearCache()} disabled={clearing || !cache.data} data-testid="clear-art-cache">
-                <Trash2 aria-hidden />
-                {t("settings.clearArtCache")}
-              </Button>
-            </SettingRow>
-          </CardContent>
-        </Card>
+                );
+              })}
+              <p className="text-xs text-muted-foreground">{t("settings.mirrorHint")}</p>
+              <SettingRow
+                label={t("settings.artCache")}
+                hint={
+                  cache.data
+                    ? t("settings.artCacheState", { count: Number(cache.data.objects), size: formatBytes(Number(cache.data.bytes)), path: cache.data.path })
+                    : t("settings.loading")
+                }
+              >
+                <Button variant="outline" size="sm" onClick={() => void clearCache()} disabled={clearing || !cache.data} data-testid="clear-art-cache">
+                  <Trash2 aria-hidden />
+                  {t("settings.clearArtCache")}
+                </Button>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -190,47 +218,10 @@ export function SettingsPage() {
             <CardDescription>{t("settings.dumpsDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <SettingRow label={t("settings.checkOnAdd")} hint={t("settings.checkOnAddHint")} htmlFor={`${ids}-check-on-add`}>
-              <Switch
-                id={`${ids}-check-on-add`}
-                checked={settings.checkOnAdd}
-                onCheckedChange={(checkOnAdd) => update({ checkOnAdd })}
-                data-testid="settings-check-on-add"
-              />
-            </SettingRow>
-            <RedumpPanel />
+            <RedumpPanel compact={simple} />
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.appearance")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <SettingRow label={t("settings.language")}>
-              <LanguageSwitch showNames />
-            </SettingRow>
-            <SettingRow label={t("settings.theme")}>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                spacing={0}
-                aria-label={t("settings.theme")}
-                value={theme}
-                onValueChange={(value) => {
-                  if (isTheme(value)) setTheme(value);
-                }}
-              >
-                {themes.map((option) => (
-                  <ToggleGroupItem key={option} value={option}>
-                    {t(`settings.themes.${option}`)}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </SettingRow>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>
@@ -277,7 +268,7 @@ export function SettingsPage() {
               <dd>{about.data?.license ?? "GPL-3.0-or-later"}</dd>
               <dt className="text-muted-foreground">{t("settings.repository")}</dt>
               <dd>
-                <ExternalA href={about.data?.repository ?? "https://github.com/belomaxorka/yaoplm"} />
+                <ExternalLink href={about.data?.repository ?? "https://github.com/belomaxorka/yaoplm"} />
               </dd>
               {about.data && (
                 <>
@@ -312,20 +303,6 @@ export function SettingsPage() {
   );
 }
 
-function ExternalA({ href, children }: { href: string; children?: ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
-    >
-      {children ?? href.replace(/^https?:\/\//, "")}
-      <ExternalLink className="size-3" aria-hidden />
-    </a>
-  );
-}
-
 /** Credits of the bundled data and the cover sources (ADR-0007). */
 function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
   const { t } = useTranslation();
@@ -338,7 +315,7 @@ function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
             <span className="text-xs text-muted-foreground">
               {entry.license ? (
                 entry.licenseUrl ? (
-                  <ExternalA href={entry.licenseUrl}>{entry.license}</ExternalA>
+                  <ExternalLink href={entry.licenseUrl}>{entry.license}</ExternalLink>
                 ) : (
                   entry.license
                 )
@@ -353,7 +330,7 @@ function SourceList({ entries }: { entries: readonly SourceEntry[] }) {
           </div>
           <div className="mt-1 text-xs">{entry.credits}</div>
           <div className="mt-1 text-xs">
-            <ExternalA href={entry.url} />
+            <ExternalLink href={entry.url} />
           </div>
         </li>
       ))}
@@ -372,9 +349,10 @@ function SettingRow({
   htmlFor?: string;
   children: ReactNode;
 }) {
+  // The control keeps its place on the right; a long hint wraps beside it.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <span className="flex flex-col">
+    <div className="flex items-center justify-between gap-x-6 gap-y-3 max-sm:flex-wrap">
+      <span className="flex min-w-0 flex-col">
         {htmlFor ? (
           <Label htmlFor={htmlFor}>{label}</Label>
         ) : (
@@ -382,7 +360,7 @@ function SettingRow({
         )}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </span>
-      {children}
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }

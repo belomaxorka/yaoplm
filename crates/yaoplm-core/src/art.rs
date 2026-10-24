@@ -228,14 +228,32 @@ impl ArtFolder {
 /// Lower-case keys of the files of `kind` in the art folder, in any of the
 /// formats [`plan_set_art`] would refuse to overwrite.
 pub fn present_art(fs: &dyn DeviceFs, kind: ArtKind) -> io::Result<HashSet<String>> {
+    Ok(present_art_kinds(fs, &[kind])?
+        .pop()
+        .map(|(_, keys)| keys)
+        .unwrap_or_default())
+}
+
+/// [`present_art`] for several kinds, in their order, listing the art folder
+/// once: on a stick with thousands of pictures that is one slow listing.
+pub fn present_art_kinds(
+    fs: &dyn DeviceFs,
+    kinds: &[ArtKind],
+) -> io::Result<Vec<(ArtKind, HashSet<String>)>> {
     let state = DeviceState::read(fs)?;
     let entries = list_or_empty(fs, &art_folder(&state)?)?;
-    let suffix = kind.suffix().to_lowercase();
-    Ok(entries
+    let files: Vec<(String, String)> = entries.iter().filter_map(art_key).collect();
+    Ok(kinds
         .iter()
-        .filter_map(art_key)
-        .filter(|(_, s)| *s == suffix)
-        .map(|(key, _)| key)
+        .map(|&kind| {
+            let suffix = kind.suffix().to_lowercase();
+            let keys = files
+                .iter()
+                .filter(|(_, s)| *s == suffix)
+                .map(|(key, _)| key.clone())
+                .collect();
+            (kind, keys)
+        })
         .collect())
 }
 

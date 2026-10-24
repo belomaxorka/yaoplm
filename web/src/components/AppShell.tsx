@@ -3,26 +3,31 @@ import { HardDrive, Library, ListChecks, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 
-import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { ConnectionGuard } from "@/components/ConnectionStatus";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { JobsDock } from "@/features/jobs/JobsDock";
-import { useJobs } from "@/jobs/context";
+import { JobToasts } from "@/features/jobs/JobToasts";
+import { LibraryKeeper } from "@/features/library/useLibrary";
+import { isUserJob, useJobs } from "@/jobs/context";
 import { useSettings } from "@/settings/context";
 
 const navItems = [
-  { to: "/library", label: "nav.library", icon: Library },
-  { to: "/devices", label: "nav.devices", icon: HardDrive },
-  { to: "/jobs", label: "nav.jobs", icon: ListChecks },
-  { to: "/settings", label: "nav.settings", icon: Settings },
+  { to: "/library", label: "nav.library", icon: Library, advanced: false },
+  { to: "/devices", label: "nav.devices", icon: HardDrive, advanced: false },
+  // Simple mode follows writes in the dock and notifications instead.
+  { to: "/jobs", label: "nav.jobs", icon: ListChecks, advanced: true },
+  { to: "/settings", label: "nav.settings", icon: Settings, advanced: false },
 ] as const;
 
 export function AppShell() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { active } = useJobs();
+  const active = useJobs().active.filter(isUserJob);
   const { settings } = useSettings();
+  const simple = settings.simpleMode;
   const current = navItems.find((item) => pathname.startsWith(item.to)) ?? navItems[0];
   const title =
     pathname === "/library/add" ? t("add.heading") : pathname.startsWith("/library/game/") ? t("game.heading") : t(current.label);
@@ -36,43 +41,53 @@ export function AppShell() {
         {t("app.skipToContent")}
       </a>
 
-      <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
-          <img src="/favicon.svg" alt="" className="size-7" />
-          <div className="leading-tight">
+      {/* Icons only below 1024 px: at 800 px the full menu took a quarter of the window. */}
+      <aside className="flex w-14 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:w-56">
+        <div className="flex h-14 shrink-0 items-center justify-center gap-2.5 border-b lg:justify-start lg:px-4">
+          <img src="/favicon.svg" alt={t("app.name")} className="size-7" />
+          <div className="hidden leading-tight lg:block">
             <div className="text-sm font-semibold">{t("app.name")}</div>
             <div className="text-xs text-muted-foreground">{t("app.tagline")}</div>
           </div>
         </div>
 
         <nav aria-label={t("nav.label")} className="flex flex-1 flex-col gap-0.5 px-2 py-2">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
-                  isActive
-                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                )
-              }
-            >
-              <Icon className="size-4" aria-hidden />
-              <span className="flex-1">{t(label)}</span>
-              {to === "/jobs" && active.length > 0 && (
-                <Badge className="h-5 min-w-5 justify-center px-1.5 tabular-nums" aria-label={t("jobs.active", { count: active.length })}>
-                  {active.length}
-                </Badge>
-              )}
-            </NavLink>
-          ))}
+          {navItems
+            .filter((item) => !(simple && item.advanced))
+            .map(({ to, label, icon: Icon }) => (
+              <Tooltip key={to}>
+                <TooltipTrigger asChild>
+                  <NavLink
+                    to={to}
+                    className={({ isActive }) =>
+                      cn(
+                        "relative flex items-center justify-center gap-2.5 rounded-md py-2 text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 lg:justify-start lg:px-3",
+                        isActive
+                          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                          : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                      )
+                    }
+                  >
+                    <Icon className="size-4" aria-hidden />
+                    <span className="sr-only lg:not-sr-only lg:flex-1">{t(label)}</span>
+                    {to === "/jobs" && active.length > 0 && (
+                      <Badge
+                        className="absolute -top-1 right-0.5 h-4 min-w-4 justify-center px-1 text-[0.65rem] tabular-nums lg:static lg:h-5 lg:min-w-5 lg:px-1.5 lg:text-xs"
+                        aria-label={t("jobs.active", { count: active.length })}
+                      >
+                        {active.length}
+                      </Badge>
+                    )}
+                  </NavLink>
+                </TooltipTrigger>
+                {/* The name is on screen from 1024 px. */}
+                <TooltipContent side="right" className="lg:hidden">
+                  {t(label)}
+                </TooltipContent>
+              </Tooltip>
+            ))}
         </nav>
 
-        <div className="border-t px-4 py-3">
-          <ConnectionStatus />
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -99,6 +114,9 @@ export function AppShell() {
         </main>
       </div>
       <JobsDock />
+      <JobToasts />
+      <LibraryKeeper />
+      <ConnectionGuard />
     </div>
   );
 }

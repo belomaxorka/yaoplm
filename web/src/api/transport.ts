@@ -18,6 +18,8 @@ export interface EventHandlers {
 /** How the UI reaches the Rust core: Tauri IPC, HTTP + WebSocket, or a mock. */
 export interface Transport {
   readonly kind: TransportKind;
+  /** Where the core runs, for messages about the link: `host:port` over HTTP. */
+  readonly address?: string;
   call(request: Request): Promise<Response>;
   /** Streams job events until the returned function is called. */
   subscribe(handlers: EventHandlers): () => void;
@@ -85,12 +87,14 @@ const MAX_RECONNECT_DELAY_MS = 15_000;
 
 export class HttpTransport implements Transport {
   readonly kind = "http";
+  readonly address: string;
   readonly #baseUrl: string;
   readonly #token: string | null;
 
   constructor(options: { baseUrl?: string; token?: string | null } = {}) {
     this.#baseUrl = options.baseUrl ?? window.location.origin;
     this.#token = options.token ?? null;
+    this.address = new URL(this.#baseUrl).host;
   }
 
   async call(request: Request): Promise<Response> {

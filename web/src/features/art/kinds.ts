@@ -47,7 +47,8 @@ export function useFetchableTypes(): FetchableTypes {
   const { settings } = useSettings();
   const about = useQuery({ queryKey: ["attribution"], queryFn: () => attribution(transport), staleTime: Infinity });
   if (enabledSources(settings).length === 0) {
-    return { types: new Set(), blocked: { why: "noSources", text: t("art.noSources") } };
+    const text = settings.simpleMode ? t("art.noSourcesSimple") : t("art.noSources");
+    return { types: new Set(), blocked: { why: "noSources", text } };
   }
   if (about.isPending) return { types: new Set(), blocked: { why: "loading", text: t("art.sourcesLoading") } };
   if (about.isError) {

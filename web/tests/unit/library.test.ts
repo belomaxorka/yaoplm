@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Game } from "@/api/generated/Game";
 import { applyFilters, defaultFilters, filtersToParams, matchesQuery, parseFilters } from "@/features/library/filters";
+import { GRID_GAP, GRID_MIN_COLUMN, gridLayout } from "@/features/library/gridLayout";
 import i18n from "@/i18n";
 import { formatBytes, formatDuration, formatEta, percent } from "@/lib/format";
 import { findGame, gameKey, gameRef } from "@/lib/gameKey";
@@ -78,6 +79,32 @@ describe("library filters", () => {
     const filters = { ...defaultFilters, q: "big", media: "DVD" as const, warnings: true, sort: "size" as const, desc: true };
     expect(parseFilters(filtersToParams(filters))).toEqual(filters);
     expect(parseFilters(new URLSearchParams("media=Blu-ray&sort=nope"))).toEqual(defaultFilters);
+  });
+});
+
+describe("grid layout", () => {
+  it("fits as many columns as the minimum width allows", () => {
+    expect(gridLayout(GRID_MIN_COLUMN - 1).columns).toBe(1);
+    expect(gridLayout(GRID_MIN_COLUMN).columns).toBe(1);
+    expect(gridLayout(2 * GRID_MIN_COLUMN + GRID_GAP).columns).toBe(2);
+    expect(gridLayout(2 * GRID_MIN_COLUMN + GRID_GAP - 1).columns).toBe(1);
+  });
+
+  it("grows the row with the column, so a card never reaches the next row", () => {
+    // A card: 8 px padding on each side, the 7:10 cover, 8 px gap, 36 px of text.
+    for (let width = 300; width <= 2600; width += 37) {
+      const { columns, rowHeight } = gridLayout(width);
+      const column = (width - GRID_GAP * (columns - 1)) / columns;
+      const card = 8 + ((column - 16) * 10) / 7 + 8 + 36 + 8;
+      expect(rowHeight).toBeGreaterThanOrEqual(card + GRID_GAP);
+      expect(rowHeight).toBeLessThan(card + GRID_GAP + 1);
+    }
+  });
+
+  it("follows the root font size", () => {
+    // 500 px: three 161⅓ px columns. At 20 px per rem the padding is 10 px and the text 45 px.
+    expect(gridLayout(500, 20).columns).toBe(3);
+    expect(gridLayout(500, 20).rowHeight).toBe(Math.ceil(10 + (((500 - 2 * GRID_GAP) / 3 - 20) * 10) / 7 + 10 + 45 + 10) + GRID_GAP);
   });
 });
 

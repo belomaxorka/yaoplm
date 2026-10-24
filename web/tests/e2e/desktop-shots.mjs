@@ -33,7 +33,8 @@ await page.evaluate(
           libretro: { enabled: true, mirror: `${m}\\libretro` },
         }
       : undefined;
-    localStorage.setItem("yaoplm.settings", JSON.stringify({ root: r, view: "grid", ...(artSources ? { artSources } : {}) }));
+    // Advanced mode: the picture sets are one of its tools.
+    localStorage.setItem("yaoplm.settings", JSON.stringify({ root: r, view: "grid", simpleMode: false, ...(artSources ? { artSources } : {}) }));
     localStorage.setItem("yaoplm.language", "en");
     localStorage.setItem("yaoplm.theme", "light");
   },
@@ -55,6 +56,7 @@ if (!loaded) process.exitCode = 1;
 await shot("library");
 
 // Picture sets come from native pickers or a drop on the desktop (ART-5).
+await page.getByTestId("library-more").click();
 await page.getByTestId("import-pictures").click();
 await page.waitForSelector('[data-testid="art-import-dialog"]');
 await page.waitForTimeout(400);

@@ -18,6 +18,13 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 
+// Nor ResizeObserver; jsdom lays nothing out, so there is nothing to report.
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();

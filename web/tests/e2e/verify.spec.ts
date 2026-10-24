@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { openLibrary } from "./helpers";
+import { libraryTool, openLibrary } from "./helpers";
 
 // Dump checks and conversions end to end (GAME-4, GAME-5, META-2): the
 // Redump DAT is imported from a server file, every game is checked against
@@ -36,7 +36,7 @@ test("the Redump DAT is imported from a server file", async ({ page, request }) 
 test("every game is checked and the verdicts reach the library", async ({ page, request }) => {
   await openLibrary(page, request, { view: "list" });
   await page.goto("/library");
-  await page.getByTestId("verify-dumps").click();
+  await libraryTool(page, "verify-dumps");
   const dialog = page.getByTestId("verify-dialog");
   await expect(dialog.getByTestId("redump-state")).toContainText(`entries: ${DAT_GAMES}`);
   await dialog.getByTestId("verify-scope-all").click();
@@ -109,7 +109,7 @@ test("the add page offers ZSO and the bulk dialog counts the games", async ({ pa
   await page.goto("/library/add");
   await expect(page.getByTestId("compress-zso")).toBeEnabled();
   await page.goto("/library");
-  await page.getByTestId("convert-shown").click();
+  await libraryTool(page, "convert-shown");
   const dialog = page.getByTestId("convert-dialog");
   await dialog.getByTestId("convert-target-zso").click();
   await expect(dialog.getByTestId("convert-count")).toHaveText(/^Change format: \d of 5\.$/);
@@ -133,7 +133,10 @@ test("games are added with their covers and checked as they are written", async 
   const plan = page.getByTestId("import-plan");
   const search = plan.getByTestId("cover-search");
   await expect(search).toHaveAttribute("data-status", "done");
-  await expect(search.getByTestId("cover-search-result")).toHaveText("Found: 1, not found: 0, already on the device: 1.");
+  await expect(search.getByTestId("cover-search-result")).toHaveText(
+    // Every type the mirrors have is looked for; they have covers only.
+    "Pictures found: 1, not found: 6, on the device already: 1.",
+  );
   await expect(search.getByTestId("job-log")).toContainText("SLUS_299.99 New Game: found at xlenore");
   // The plan comes back with the cover right after its game.
   const steps = plan.getByTestId("plan-transaction");
@@ -176,7 +179,7 @@ for (const language of ["en", "ru"] as const) {
       await expect(page.getByTestId("dump-mark").first()).toBeVisible();
       await shot("library-dumps");
 
-      await page.getByTestId("verify-dumps").click();
+      await libraryTool(page, "verify-dumps");
       const dialog = page.getByTestId("verify-dialog");
       await dialog.getByTestId("verify-scope-all").click();
       await shot("verify-form");

@@ -23,7 +23,8 @@ describe("App", () => {
     renderAt("/");
     expect(screen.getByRole("heading", { level: 1, name: "Library" })).toBeInTheDocument();
     expect(screen.getByText("No library open")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Connected");
+    // The link to the core is not shown while it holds (plan task 8).
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
   it("switches language to Russian", async () => {

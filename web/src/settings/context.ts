@@ -14,3 +14,11 @@ export function useSettings(): SettingsContextValue {
   if (!value) throw new Error("useSettings must be used inside <SettingsProvider>");
   return value;
 }
+
+/**
+ * Simple mode (UI-4, ADR-0034): the one switch every screen reads to hide
+ * advanced controls, so what one screen hides never shows on another.
+ */
+export function useSimpleMode(): boolean {
+  return useSettings().settings.simpleMode;
+}

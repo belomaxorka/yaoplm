@@ -21,7 +21,7 @@ import { pickFolder } from "@/features/add/desktop";
 import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useSettings, useSimpleMode } from "@/settings/context";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with the storage doctor's
@@ -107,7 +107,10 @@ export function DevicesPage() {
 
 function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
   const { t } = useTranslation();
+  const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
+  // Simple mode keeps the advice that explains the verdict.
+  const advice = simple ? device.advice.filter((notice) => notice.level !== "info") : device.advice;
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
   return (
     <li
@@ -119,57 +122,60 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
         <HardDrive className="mt-1 size-6 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-semibold">{device.root}</span>
+            <span className="font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
             {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
             <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
-            {device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
-            <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>
+            {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
+            {!simple && <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>}
             {device.system && <Badge variant="destructive">{t("devices.systemDisk")}</Badge>}
             {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
             {current && <Badge>{t("devices.current")}</Badge>}
           </div>
-          <div className="mt-2 flex items-center gap-3 text-sm">
-            <Progress value={used} className="h-1.5 max-w-xs" aria-label={t("devices.used", { percent: used })} />
-            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <Progress value={used} className="h-1.5 w-full max-w-xs" aria-label={t("devices.used", { percent: used })} />
+            <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
               {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
             </span>
           </div>
-          <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {device.model && (
-              <div>
-                <dt className="inline">{t("devices.model")}: </dt>
-                <dd className="inline">{device.model}</dd>
-              </div>
-            )}
-            {device.serial && (
-              <div>
-                <dt className="inline">{t("devices.serial")}: </dt>
-                <dd className="inline font-mono">{device.serial}</dd>
-              </div>
-            )}
-            {device.clusterSize !== null && (
-              <div>
-                <dt className="inline">{t("devices.cluster")}: </dt>
-                <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
-              </div>
-            )}
-            {device.partition?.table && (
-              <div>
-                <dt className="inline">{t("devices.partition")}: </dt>
-                <dd className="inline">
-                  {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
-                </dd>
-              </div>
-            )}
-          </dl>
+          {!simple && (
+            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {device.model && (
+                <div>
+                  <dt className="inline">{t("devices.model")}: </dt>
+                  <dd className="inline">{device.model}</dd>
+                </div>
+              )}
+              {device.serial && (
+                <div>
+                  <dt className="inline">{t("devices.serial")}: </dt>
+                  <dd className="inline font-mono">{device.serial}</dd>
+                </div>
+              )}
+              {device.clusterSize !== null && (
+                <div>
+                  <dt className="inline">{t("devices.cluster")}: </dt>
+                  <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
+                </div>
+              )}
+              {device.partition?.table && (
+                <div>
+                  <dt className="inline">{t("devices.partition")}: </dt>
+                  <dd className="inline">
+                    {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        {/* Beside the details when there is room, under them when there is not. */}
+        <div className="ml-auto flex flex-col items-end gap-2">
           <span
             className={cn(
               "flex items-center gap-1.5 text-sm font-medium",
               verdict === "error" && "text-destructive",
-              verdict === "warning" && "text-amber-600 dark:text-amber-400",
-              (verdict === null || verdict === "info") && "text-emerald-600 dark:text-emerald-400",
+              verdict === "warning" && "text-amber-700 dark:text-amber-400",
+              (verdict === null || verdict === "info") && "text-emerald-700 dark:text-emerald-400",
             )}
           >
             {verdict === null || verdict === "info" ? (
@@ -184,7 +190,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           </Button>
         </div>
       </div>
-      {device.advice.length > 0 && <NoticeList notices={device.advice} className="mt-3 border-t pt-3" />}
+      {advice.length > 0 && <NoticeList notices={advice} className="mt-3 border-t pt-3" />}
     </li>
   );
 }
