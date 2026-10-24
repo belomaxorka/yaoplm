@@ -668,6 +668,110 @@ fn covers_found_for_an_import_land_with_the_games() {
     assert_eq!(err.code, ErrorCode::NotFound);
 }
 
+/// Every picture type for the games being added (ART-8 with ART-2): the
+/// search over an import plan takes `kinds`, skips the pictures the device
+/// has, and the plan writes each found picture right after its game. Only
+/// missing covers are listed as skipped; the other types are counted.
+#[test]
+fn all_picture_types_for_an_import() {
+    let s = setup();
+    let libretro = s.mirror.join("libretro");
+    for folder in ["Named_Snaps", "Named_Logos"] {
+        fs::create_dir_all(libretro.join(folder)).unwrap();
+        fs::write(
+            libretro
+                .join(folder)
+                .join("Dead or Alive 2 (Europe) (En,Fr,De,Es,It).png"),
+            image_bytes(320, 240, image::ImageFormat::Png),
+        )
+        .unwrap();
+    }
+    let incoming = s.mirror.parent().unwrap().join("incoming");
+    fs::create_dir_all(&incoming).unwrap();
+    fs::write(incoming.join("Doa.iso"), Variant::LfOnly.build().to_vec()).unwrap();
+    fs::write(incoming.join("Big.iso"), Variant::Dvd9.build().to_vec()).unwrap();
+    let device = s.mirror.parent().unwrap().join("empty");
+    fs::create_dir_all(device.join("ART")).unwrap();
+    // Dead or Alive 2 has its logo already: not searched again.
+    fs::write(
+        device.join("ART/SCES_500.03_LGO.png"),
+        image_bytes(300, 125, image::ImageFormat::Png),
+    )
+    .unwrap();
+    let device = device.to_string_lossy().into_owned();
+    let import =
+        json!({"type": "PlanImport", "root": device, "sources": [incoming.to_string_lossy()]});
+    let first = call(&s.api, import.clone()).unwrap();
+    let search = wait(
+        &s.api,
+        &call(
+            &s.api,
+            json!({
+                "type": "FetchArt",
+                "root": device,
+                "sources": sources(&s.mirror),
+                "kinds": ["COV", "SCR", "LGO"],
+                "import": first["id"],
+            }),
+        )
+        .unwrap(),
+    );
+    assert_eq!(search.title, "Picture search");
+    let Some(JobResult::Covers(found)) = search.result.clone() else {
+        panic!("expected a picture set: {:?}", search.result);
+    };
+    // Found: DOA2's cover and screenshot. Missing: three for the DVD-9 game.
+    assert_eq!((found.found, found.missing, found.present), (2, 3, 1));
+    let mut searched: Vec<String> = search
+        .log
+        .iter()
+        .filter_map(|e| match e {
+            JobLogEntry::Art { startup, art, .. } => Some(format!("{startup} {art}")),
+            _ => None,
+        })
+        .collect();
+    searched.sort();
+    assert_eq!(
+        searched,
+        [
+            "SCES_500.03 COV",
+            "SCES_500.03 SCR",
+            "SLUS_212.18 COV",
+            "SLUS_212.18 LGO",
+            "SLUS_212.18 SCR"
+        ]
+    );
+
+    let mut with_art = import;
+    with_art["covers"] = json!(found.id);
+    let plan = call(&s.api, with_art).unwrap();
+    let writes: Vec<String> = plan["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["steps"].as_array().unwrap().clone())
+        .filter(|s| s["op"] == "writeFile")
+        .map(|s| s["path"].as_str().unwrap().to_owned())
+        .collect();
+    let doa = writes
+        .iter()
+        .position(|p| p == "CD/SCES_500.03.Doa.iso")
+        .unwrap();
+    assert_eq!(
+        writes[doa + 1..doa + 3],
+        ["ART/SCES_500.03_COV.png", "ART/SCES_500.03_SCR.png"],
+        "{writes:?}"
+    );
+    let skipped: Vec<&str> = plan["skipped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(skipped.len(), 1, "only the missing cover: {skipped:?}");
+    assert!(skipped[0].starts_with("SLUS_212.18"), "{skipped:?}");
+}
+
 /// Picture types beyond the front cover (ART-2): several types in one
 /// bulk run, the variants of one slot to pick from, a manual picture of
 /// another type and its removal.

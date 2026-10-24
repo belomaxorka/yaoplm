@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRightLeft, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ImageDown, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
 import { ArtSlots } from "@/features/art/ArtSlots";
 import { GameCover } from "@/features/library/GameCover";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
@@ -33,7 +34,7 @@ import { DumpBadge } from "@/features/verify/DumpBadge";
 import { VerifyDialog } from "@/features/verify/VerifyDialog";
 import { formatBytes } from "@/lib/format";
 import { findGame, gameRef } from "@/lib/gameKey";
-import { useSettings } from "@/settings/context";
+import { useSettings, useSimpleMode } from "@/settings/context";
 import { nameStyles } from "@/settings/settings";
 
 /** OPL's compatibility modes, bit by bit (research/02 §6; 0x40/0x80 are RiptOPL's). */
@@ -87,7 +88,10 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { settings } = useSettings();
+  const simple = useSimpleMode();
+  const ids = useId();
   const [renameOpen, setRenameOpen] = useState(false);
+  const [artOpen, setArtOpen] = useState(false);
   const [presetTitle, setPresetTitle] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -96,6 +100,9 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
     onExecuted: () => void navigate("/library"),
   });
   const otherMedia: Media = game.media === "CD" ? "DVD" : "CD";
+  const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
+  // Simple mode has no technical details: only what the user can act on.
+  const showDetails = !simple || knownTitle !== null || game.dump !== null;
   const compat = game.cfg?.compatibility ?? null;
 
   return (
@@ -117,12 +124,18 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 {game.title}
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <Badge variant="secondary" className="font-mono">
+                <Badge variant="secondary" className="font-mono" title={t("game.id")} data-testid="game-id">
                   {game.startup}
                 </Badge>
-                <Badge variant="outline">{game.media}</Badge>
-                <Badge variant="outline">{game.format}</Badge>
-                <Badge variant="outline">{formatBytes(game.size)}</Badge>
+                <Badge variant="outline" title={t("game.media")}>
+                  {game.media}
+                </Badge>
+                <Badge variant="outline" title={t("game.format")}>
+                  {game.format}
+                </Badge>
+                <Badge variant="outline" title={t("game.size")}>
+                  {formatBytes(game.size)}
+                </Badge>
                 {game.layer1Start !== null && <Badge variant="outline">DVD-9</Badge>}
               </div>
             </div>
@@ -138,14 +151,18 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 <ArrowRightLeft aria-hidden />
                 {t("game.moveTo", { media: otherMedia })}
               </Button>
-              <Button variant="outline" onClick={() => setConvertOpen(true)} data-testid="game-convert">
-                <Replace aria-hidden />
-                {t("game.convert")}
-              </Button>
-              <Button variant="outline" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
-                <ShieldCheck aria-hidden />
-                {t("game.verify")}
-              </Button>
+              {!simple && (
+                <>
+                  <Button variant="outline" onClick={() => setConvertOpen(true)} data-testid="game-convert">
+                    <Replace aria-hidden />
+                    {t("game.convert")}
+                  </Button>
+                  <Button variant="outline" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
+                    <ShieldCheck aria-hidden />
+                    {t("game.verify")}
+                  </Button>
+                </>
+              )}
               <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
                 <Trash2 aria-hidden />
                 {t("game.delete")}
@@ -160,60 +177,66 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">{t("game.details")}</h3>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-            <Fact label={t("game.id")} mono>
-              {game.startup}
-            </Fact>
-            {game.imageStartup !== null && game.imageStartup !== game.startup && (
-              <Fact label={t("game.imageId")} mono>
-                {game.imageStartup}
-              </Fact>
-            )}
-            {game.knownTitle !== null && game.knownTitle !== game.title && (
-              <Fact label={t("game.knownTitle")}>
-                <span data-testid="known-title">{game.knownTitle}</span>
-                <button
-                  type="button"
-                  className="ml-2 text-xs text-primary underline-offset-2 hover:underline"
-                  onClick={() => {
-                    setPresetTitle(game.knownTitle);
-                    setRenameOpen(true);
-                  }}
-                >
-                  {t("game.useKnownTitle")}
-                </button>
-              </Fact>
-            )}
-            <Fact label={t("game.media")}>{game.media}</Fact>
-            <Fact label={t("game.format")}>{game.format}</Fact>
-            <Fact label={t("game.dump")}>
-              {game.dump ? (
-                <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                  <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
-                  {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
-                </span>
-              ) : (
-                <span className="text-muted-foreground" data-testid="game-dump">
-                  {t("game.dumpUnchecked")}
-                </span>
+        {/* ID, media, format and size are the badges above; these are the rest. */}
+        {showDetails && (
+          <section className="rounded-lg border bg-card p-4">
+            <h3 className="mb-3 text-sm font-medium">{t("game.details")}</h3>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+              {!simple && game.imageStartup !== null && game.imageStartup !== game.startup && (
+                <Fact label={t("game.imageId")} mono>
+                  {game.imageStartup}
+                </Fact>
               )}
-            </Fact>
-            <Fact label={t("game.size")}>{formatBytes(game.size)}</Fact>
-            <Fact label={t("game.path")} mono>
-              {game.path}
-            </Fact>
-            {game.nameFormat !== null && (
-              <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
-            )}
-            {game.layer1Start !== null && (
-              <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
-            )}
-          </dl>
-        </section>
+              {knownTitle && (
+                <Fact label={t("game.knownTitle")}>
+                  <span className="flex flex-wrap items-baseline gap-x-3">
+                    <span data-testid="known-title">{knownTitle}</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
+                      onClick={() => {
+                        setPresetTitle(knownTitle);
+                        setRenameOpen(true);
+                      }}
+                    >
+                      {t("game.useKnownTitle")}
+                    </Button>
+                  </span>
+                </Fact>
+              )}
+              {(!simple || game.dump) && (
+                <Fact label={t("game.dump")}>
+                  {game.dump ? (
+                    <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
+                      <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
+                      {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground" data-testid="game-dump">
+                      {t("game.dumpUnchecked")}
+                    </span>
+                  )}
+                </Fact>
+              )}
+              {!simple && (
+                <>
+                  <Fact label={t("game.path")} mono>
+                    {game.path}
+                  </Fact>
+                  {game.nameFormat !== null && (
+                    <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
+                  )}
+                  {game.layer1Start !== null && (
+                    <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
+                  )}
+                </>
+              )}
+            </dl>
+          </section>
+        )}
 
-        {game.parts.length > 0 && (
+        {!simple && game.parts.length > 0 && (
           <section className="rounded-lg border bg-card p-4" data-testid="game-parts">
             <h3 className="mb-3 text-sm font-medium">{t("game.parts", { count: game.parts.length })}</h3>
             <table className="w-full text-sm">
@@ -241,55 +264,66 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           </section>
         )}
 
-        <section className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">{t("game.settings")}</h3>
-          {game.cfg ? (
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-              <Fact label={t("game.cfgFile")} mono>
-                {game.cfg.path}
-              </Fact>
-              {!game.cfg.oplSyntax && <Fact label={t("game.cfgSyntax")}>{t("game.cfgLibconfig")}</Fact>}
-              <Fact label={t("game.compatibility")}>
-                {compat === null || compat === 0 ? (
-                  t("game.compatibilityNone")
-                ) : (
-                  <ul className="flex flex-wrap gap-1">
-                    {COMPAT_BITS.filter((bit) => (compat & bit) !== 0).map((bit) => (
-                      <li key={bit}>
-                        <Badge variant="outline">{t(`game.compatibilityModes.${bit}`)}</Badge>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Fact>
-              {game.cfg.vmc.map((card, slot) => (
-                // OPL numbers the slots 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
-                <Fact key={slot} label={t("game.vmcSlot", { slot: slot + 1 })} mono>
-                  {card ?? <span className="font-sans text-muted-foreground">{t("game.vmcNone")}</span>}
-                </Fact>
-              ))}
-            </dl>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t("game.noCfg")}</p>
-          )}
-        </section>
-
-        <section className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">{t("art.pictures")}</h3>
+        <section className="rounded-lg border bg-card p-4" aria-labelledby={`${ids}-pictures`}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 id={`${ids}-pictures`} className="text-sm font-medium">
+              {t("art.pictures")}
+            </h3>
+            <Button variant="outline" size="sm" onClick={() => setArtOpen(true)} data-testid="game-download-art">
+              <ImageDown aria-hidden />
+              {t("art.downloadAll")}
+            </Button>
+          </div>
           <ArtSlots game={game} root={root} />
         </section>
 
-        <section className="rounded-lg border bg-card p-4">
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-            <Fact label={t("game.cheats")}>
-              {game.cheats === null ? (
-                <span className="text-muted-foreground">{t("game.noCheats")}</span>
+        {!simple && (
+          <>
+            <section className="rounded-lg border bg-card p-4">
+              <h3 className="mb-3 text-sm font-medium">{t("game.settings")}</h3>
+              {game.cfg ? (
+                <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+                  <Fact label={t("game.cfgFile")} mono>
+                    {game.cfg.path}
+                  </Fact>
+                  {!game.cfg.oplSyntax && <Fact label={t("game.cfgSyntax")}>{t("game.cfgLibconfig")}</Fact>}
+                  <Fact label={t("game.compatibility")}>
+                    {compat === null || compat === 0 ? (
+                      t("game.compatibilityNone")
+                    ) : (
+                      <ul className="flex flex-wrap gap-1">
+                        {COMPAT_BITS.filter((bit) => (compat & bit) !== 0).map((bit) => (
+                          <li key={bit}>
+                            <Badge variant="outline">{t(`game.compatibilityModes.${bit}`)}</Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Fact>
+                  {game.cfg.vmc.map((card, slot) => (
+                    // OPL numbers the slots 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
+                    <Fact key={slot} label={t("game.vmcSlot", { slot: slot + 1 })} mono>
+                      {card ?? <span className="font-sans text-muted-foreground">{t("game.vmcNone")}</span>}
+                    </Fact>
+                  ))}
+                </dl>
               ) : (
-                t("game.cheatCount", { count: game.cheats })
+                <p className="text-sm text-muted-foreground">{t("game.noCfg")}</p>
               )}
-            </Fact>
-          </dl>
-        </section>
+            </section>
+            <section className="rounded-lg border bg-card p-4">
+              <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+                <Fact label={t("game.cheats")}>
+                  {game.cheats === null ? (
+                    <span className="text-muted-foreground">{t("game.noCheats")}</span>
+                  ) : (
+                    t("game.cheatCount", { count: game.cheats })
+                  )}
+                </Fact>
+              </dl>
+            </section>
+          </>
+        )}
       </div>
 
       <RenameDialog
@@ -301,6 +335,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         }}
         presetTitle={presetTitle}
         defaultStyle={settings.nameStyle}
+        simple={simple}
         onSubmit={(title, startup, nameStyle) => {
           setRenameOpen(false);
           void flow.request({
@@ -323,6 +358,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         }}
       />
       <VerifyDialog root={root} games={games} only={game} open={verifyOpen} onOpenChange={setVerifyOpen} />
+      <ArtFetchDialog root={root} games={games} only={game} open={artOpen} onOpenChange={setArtOpen} quick />
       <ConvertDialog
         root={root}
         games={[game]}
@@ -341,6 +377,7 @@ function RenameDialog({
   onOpenChange,
   presetTitle,
   defaultStyle,
+  simple,
   onSubmit,
 }: {
   game: Game;
@@ -349,6 +386,8 @@ function RenameDialog({
   /** A title to start from, e.g. the database title (META-1). */
   presetTitle?: string | null;
   defaultStyle: NameStyle;
+  /** Only the title: fixing the ID and the file name style are advanced. */
+  simple: boolean;
   onSubmit: (title: string, startup: string | null, nameStyle: NameStyle) => void;
 }) {
   const { t } = useTranslation();
@@ -366,7 +405,9 @@ function RenameDialog({
   const isUl = game.format === "UL";
   const maxTitle = isUl ? 32 : 160;
   const idChanged = startup.trim() !== game.startup;
-  const canSubmit = title.trim().length > 0 && (title.trim() !== game.title || idChanged || (!isUl && style !== styleOf(game)));
+  // The style picker is advanced: simple mode keeps the file's own style.
+  const nameStyle = simple ? styleOf(game) : style;
+  const canSubmit = title.trim().length > 0 && (title.trim() !== game.title || idChanged || (!isUl && nameStyle !== styleOf(game)));
 
   return (
     <Dialog
@@ -385,7 +426,7 @@ function RenameDialog({
           className="contents"
           onSubmit={(event) => {
             event.preventDefault();
-            if (canSubmit) onSubmit(title.trim(), idChanged ? startup.trim() : null, style);
+            if (canSubmit) onSubmit(title.trim(), idChanged ? startup.trim() : null, nameStyle);
           }}
         >
           <DialogHeader>
@@ -400,24 +441,25 @@ function RenameDialog({
                 value={title}
                 maxLength={maxTitle}
                 onChange={(event) => setTitle(event.target.value)}
-                autoFocus
               />
               <p className="text-xs text-muted-foreground">
                 {isUl ? t("game.ulTitleHint") : t("game.titleHint", { max: maxTitle })}
               </p>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor={`${id}-startup`}>{t("game.fixId")}</Label>
-              <Input
-                id={`${id}-startup`}
-                value={startup}
-                maxLength={11}
-                className="font-mono"
-                onChange={(event) => setStartup(event.target.value.toUpperCase())}
-              />
-              <p className="text-xs text-muted-foreground">{t("game.fixIdHint")}</p>
-            </div>
-            {!isUl && (
+            {!simple && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${id}-startup`}>{t("game.fixId")}</Label>
+                <Input
+                  id={`${id}-startup`}
+                  value={startup}
+                  maxLength={11}
+                  className="font-mono"
+                  onChange={(event) => setStartup(event.target.value.toUpperCase())}
+                />
+                <p className="text-xs text-muted-foreground">{t("game.fixIdHint")}</p>
+              </div>
+            )}
+            {!simple && !isUl && (
               <fieldset className="flex flex-col gap-1.5">
                 <legend className="mb-1.5 text-sm font-medium">{t("settings.nameStyle")}</legend>
                 <RadioGroup value={style} onValueChange={(value) => setStyle(value as NameStyle)}>

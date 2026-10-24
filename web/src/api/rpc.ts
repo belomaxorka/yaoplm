@@ -119,7 +119,11 @@ export async function waitForJob(transport: Transport, job: JobId, signal?: Abor
   }
 }
 
-/** Starts a scan and waits for the library it produces. */
+/**
+ * Starts a scan and waits for the library it produces. A scan nobody waits
+ * for any more (`signal` aborted: replaced by a newer one) is cancelled on
+ * the core too, so a device is never read twice at once.
+ */
 export async function scanLibrary(
   transport: Transport,
   root: string,
@@ -128,10 +132,17 @@ export async function scanLibrary(
   signal?: AbortSignal,
 ): Promise<Library> {
   const { job } = await call(transport, { type: "ScanLibrary", root, profile, verify }, "Job");
-  const info = await waitForJob(transport, job, signal);
-  if (info.status === "finished" && info.result?.type === "Library") {
-    const { type: _type, ...library } = info.result;
-    return library;
+  const stop = () => void cancelJob(transport, job).catch(() => undefined);
+  if (signal?.aborted) stop();
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    const info = await waitForJob(transport, job, signal);
+    if (info.status === "finished" && info.result?.type === "Library") {
+      const { type: _type, ...library } = info.result;
+      return library;
+    }
+    throw new RpcError(info.error ?? { code: "Internal", message: "the scan produced no library" });
+  } finally {
+    signal?.removeEventListener("abort", stop);
   }
-  throw new RpcError(info.error ?? { code: "Internal", message: "the scan produced no library" });
 }

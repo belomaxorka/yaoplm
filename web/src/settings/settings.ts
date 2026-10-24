@@ -25,6 +25,11 @@ export interface ScreenScraperAccount {
 
 /** Preferences kept in the browser (or the WebView) until a settings file lands. */
 export interface Settings {
+  /**
+   * Show only what most users need (UI-4, ADR-0034): sorting, counters,
+   * conversions, picture sets, the jobs page and technical details hide.
+   */
+  simpleMode: boolean;
   /** The loader the device is prepared for (SPEC §4, ADR-0004). */
   profile: LoaderProfile;
   /** `ID.Title.iso` (ADR-0006) or `Title.iso`. */
@@ -47,6 +52,7 @@ export interface Settings {
 }
 
 export const defaultSettings: Settings = {
+  simpleMode: true,
   profile: "Opl120Beta",
   nameStyle: "idTitle",
   root: null,
@@ -109,6 +115,7 @@ export function readSettings(): Settings {
     if (typeof parsed !== "object" || parsed === null) return defaultSettings;
     const p = parsed as Record<string, unknown>;
     return {
+      simpleMode: typeof p.simpleMode === "boolean" ? p.simpleMode : defaultSettings.simpleMode,
       profile: isProfile(p.profile) ? p.profile : defaultSettings.profile,
       nameStyle: isNameStyle(p.nameStyle) ? p.nameStyle : defaultSettings.nameStyle,
       root: typeof p.root === "string" && p.root.length > 0 ? p.root : null,

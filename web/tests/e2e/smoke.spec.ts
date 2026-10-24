@@ -13,10 +13,15 @@ test("rpc answers Ping", async ({ request }) => {
 });
 
 test("library screen loads and the event stream connects", async ({ page }) => {
+  const events = page.waitForEvent("websocket", (socket) => socket.url().endsWith("/api/events"));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
   await expect(page.getByText("No library open")).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("Connected");
+  const socket = await events;
+  expect(socket.isClosed()).toBe(false);
+  // The link to the core shows only when it drops (plan task 8).
+  await expect(page.getByTestId("connection-lost")).toHaveCount(0);
+  await expect(page.getByText("Connected")).toHaveCount(0);
 });
 
 test("settings show the core version over HTTP", async ({ page }) => {

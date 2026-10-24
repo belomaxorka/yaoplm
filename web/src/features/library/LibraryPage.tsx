@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowDownAZ,
   ArrowUpZA,
+  ChevronDown,
   Disc3,
   FolderInput,
   FolderPlus,
@@ -31,8 +32,10 @@ import { NoticeList } from "@/components/Notices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -43,12 +46,14 @@ import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { CoverThumb, GameCover } from "@/features/library/GameCover";
 import {
   applyFilters,
+  effectiveFilters,
   filtersToParams,
   type LibraryFilters,
   parseFilters,
   type SortKey,
   sortKeys,
 } from "@/features/library/filters";
+import { GRID_GAP, GRID_MIN_COLUMN, type GridLayout, gridLayout } from "@/features/library/gridLayout";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
@@ -59,12 +64,9 @@ import { useJobs } from "@/jobs/context";
 import { formatBytes, percent } from "@/lib/format";
 import { gameKey } from "@/lib/gameKey";
 import { errorText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useSettings, useSimpleMode } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
 
-const GRID_MIN_COLUMN = 168;
-const GRID_GAP = 16;
-const GRID_ROW_HEIGHT = 300;
 const LIST_ROW_HEIGHT = 56;
 
 export function LibraryPage() {
@@ -120,12 +122,15 @@ function LibraryView({
 }) {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
+  const simple = useSimpleMode();
   const filters = useMemo(() => parseFilters(params), [params]);
+  const shown = useMemo(() => effectiveFilters(filters, simple), [filters, simple]);
+  const shownView = simple ? "grid" : view;
   const setFilters = useCallback(
     (patch: Partial<LibraryFilters>) => setParams(filtersToParams({ ...filters, ...patch }), { replace: true }),
     [filters, setParams],
   );
-  const games = useMemo(() => (data ? applyFilters(data.games, filters) : []), [data, filters]);
+  const games = useMemo(() => (data ? applyFilters(data.games, shown) : []), [data, shown]);
   const withWarnings = data?.games.filter((g) => g.warnings.length > 0).length ?? 0;
   const withoutCover = data?.games.filter((g) => !hasCover(g)).length ?? 0;
   const missingFolders = data?.folders.filter((f) => !f.present) ?? [];
@@ -154,7 +159,7 @@ function LibraryView({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-3 border-b px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-48 flex-1 max-w-sm">
+          <div className="relative max-w-sm min-w-48 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               ref={searchRef}
@@ -193,65 +198,17 @@ function LibraryView({
             <ToggleGroupItem value="ZSO">ZSO</ToggleGroupItem>
             <ToggleGroupItem value="UL">UL</ToggleGroupItem>
           </ToggleGroup>
-          <Toggle
-            variant="outline"
-            size="sm"
-            pressed={filters.warnings}
-            onPressedChange={(warnings) => setFilters({ warnings })}
-            aria-label={t("library.onlyWarnings")}
-          >
-            <AlertTriangle aria-hidden />
-            {t("library.warnings", { count: withWarnings })}
-          </Toggle>
-          <Toggle
-            variant="outline"
-            size="sm"
-            pressed={filters.noCover}
-            onPressedChange={(noCover) => setFilters({ noCover })}
-            aria-label={t("library.onlyNoCover")}
-            data-testid="filter-no-cover"
-          >
-            <ImageOff aria-hidden />
-            {t("library.noCover", { count: withoutCover })}
-          </Toggle>
+          {!simple && (
+            <AdvancedFilters
+              filters={filters}
+              setFilters={setFilters}
+              withWarnings={withWarnings}
+              withoutCover={withoutCover}
+              view={view}
+              setView={setView}
+            />
+          )}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <Select value={filters.sort} onValueChange={(sort) => setFilters({ sort: sort as SortKey })}>
-              <SelectTrigger size="sm" aria-label={t("library.sort")}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sortKeys.map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {t(`library.sortBy.${key}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setFilters({ desc: !filters.desc })}
-              aria-label={filters.desc ? t("library.sortDescending") : t("library.sortAscending")}
-              aria-pressed={filters.desc}
-            >
-              {filters.desc ? <ArrowUpZA aria-hidden /> : <ArrowDownAZ aria-hidden />}
-            </Button>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              spacing={0}
-              value={view}
-              onValueChange={(value) => (value === "grid" || value === "list") && setView(value)}
-              aria-label={t("library.view")}
-            >
-              <ToggleGroupItem value="grid" aria-label={t("library.viewGrid")}>
-                <LayoutGrid aria-hidden />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label={t("library.viewList")}>
-                <List aria-hidden />
-              </ToggleGroupItem>
-            </ToggleGroup>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon-sm" onClick={rescan} disabled={isFetching} aria-label={t("library.rescan")}>
@@ -260,6 +217,35 @@ function LibraryView({
               </TooltipTrigger>
               <TooltipContent>{t("library.rescan")}</TooltipContent>
             </Tooltip>
+            {!simple && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={!data || data.games.length === 0} data-testid="library-more">
+                    {t("library.more")}
+                    <ChevronDown aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setImportOpen(true)} data-testid="import-pictures">
+                    <FolderInput aria-hidden />
+                    {t("library.importPictures")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setVerifyOpen(true)} data-testid="verify-dumps">
+                    <ShieldCheck aria-hidden />
+                    {t("library.verifyDumps")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setConvertOpen(true)}
+                    disabled={games.length === 0}
+                    title={t("library.convertShownHint")}
+                    data-testid="convert-shown"
+                  >
+                    <Replace aria-hidden />
+                    {t("library.convertShown")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -270,37 +256,6 @@ function LibraryView({
               <ImageDown aria-hidden />
               {t("library.downloadCovers")}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportOpen(true)}
-              disabled={!data || data.games.length === 0}
-              data-testid="import-pictures"
-            >
-              <FolderInput aria-hidden />
-              {t("library.importPictures")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setVerifyOpen(true)}
-              disabled={!data || data.games.length === 0}
-              data-testid="verify-dumps"
-            >
-              <ShieldCheck aria-hidden />
-              {t("library.verifyDumps")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConvertOpen(true)}
-              disabled={games.length === 0}
-              title={t("library.convertShownHint")}
-              data-testid="convert-shown"
-            >
-              <Replace aria-hidden />
-              {t("library.convertShown")}
-            </Button>
             <Button asChild size="sm">
               <Link to="/library/add">
                 <Plus aria-hidden />
@@ -310,9 +265,12 @@ function LibraryView({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="truncate font-mono" title={root}>
-            {root}
-          </span>
+          {/* The header names the device already; the path is a detail. */}
+          {!simple && (
+            <span className="truncate font-mono" title={root}>
+              {root}
+            </span>
+          )}
           {data && (
             <>
               <span data-testid="library-count">
@@ -320,7 +278,11 @@ function LibraryView({
               </span>
               <span>{formatBytes(data.games.reduce((sum, g) => sum + g.size, 0))}</span>
               {data.skipped.length > 0 && (
-                <button type="button" className="underline-offset-2 hover:underline" onClick={() => setSkippedOpen(true)}>
+                <button
+                  type="button"
+                  className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  onClick={() => setSkippedOpen(true)}
+                >
                   {t("library.skipped", { count: data.skipped.length })}
                 </button>
               )}
@@ -333,9 +295,16 @@ function LibraryView({
         <RecoveryBanner root={root} />
         {isPending && <ScanProgress root={root} />}
         {error && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-            {t("library.scanFailed", { error })}
-          </p>
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            <span className="min-w-0 flex-1 wrap-anywhere">{t("library.scanFailed", { error })}</span>
+            <Button size="sm" variant="outline" onClick={rescan} disabled={isFetching}>
+              <RefreshCw aria-hidden />
+              {t("library.retryScan")}
+            </Button>
+          </div>
         )}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
         {missingFolders.length > 0 && (
@@ -351,7 +320,7 @@ function LibraryView({
         )}
       </div>
       <PlanDialog flow={initFlow} />
-      {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} />}
+      {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} quick={simple} />}
       <ArtImportDialog root={root} open={importOpen} onOpenChange={setImportOpen} />
       {data && <VerifyDialog root={root} games={data.games} open={verifyOpen} onOpenChange={setVerifyOpen} />}
       <ConvertDialog root={root} games={games} open={convertOpen} onOpenChange={setConvertOpen} />
@@ -376,7 +345,9 @@ function LibraryView({
           </Button>
         </div>
       )}
-      {games.length > 0 && (view === "grid" ? <GameGrid games={games} /> : <GameTable games={games} />)}
+      {/* The first scan: the shape of the grid, not an empty page that jumps. */}
+      {isPending && !data && <GridSkeleton />}
+      {games.length > 0 && (shownView === "grid" ? <GameGrid games={games} /> : <GameTable games={games} />)}
 
       {data && (
         <Dialog open={skippedOpen} onOpenChange={setSkippedOpen}>
@@ -402,6 +373,107 @@ function LibraryView({
   );
 }
 
+/** Counter filters, sorting and the view: advanced mode only (UI-4). */
+function AdvancedFilters({
+  filters,
+  setFilters,
+  withWarnings,
+  withoutCover,
+  view,
+  setView,
+}: {
+  filters: LibraryFilters;
+  setFilters: (patch: Partial<LibraryFilters>) => void;
+  withWarnings: number;
+  withoutCover: number;
+  view: ViewMode;
+  setView: (view: ViewMode) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <Toggle
+        variant="outline"
+        size="sm"
+        pressed={filters.warnings}
+        onPressedChange={(warnings) => setFilters({ warnings })}
+        title={t("library.onlyWarnings")}
+      >
+        <AlertTriangle aria-hidden />
+        {t("library.warnings", { count: withWarnings })}
+      </Toggle>
+      <Toggle
+        variant="outline"
+        size="sm"
+        pressed={filters.noCover}
+        onPressedChange={(noCover) => setFilters({ noCover })}
+        title={t("library.onlyNoCover")}
+        data-testid="filter-no-cover"
+      >
+        <ImageOff aria-hidden />
+        {t("library.noCover", { count: withoutCover })}
+      </Toggle>
+      <Select value={filters.sort} onValueChange={(sort) => setFilters({ sort: sort as SortKey })}>
+        <SelectTrigger size="sm" aria-label={t("library.sort")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {sortKeys.map((key) => (
+            <SelectItem key={key} value={key}>
+              {t(`library.sortBy.${key}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        onClick={() => setFilters({ desc: !filters.desc })}
+        aria-label={filters.desc ? t("library.sortDescending") : t("library.sortAscending")}
+        aria-pressed={filters.desc}
+      >
+        {filters.desc ? <ArrowUpZA aria-hidden /> : <ArrowDownAZ aria-hidden />}
+      </Button>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        spacing={0}
+        value={view}
+        onValueChange={(value) => (value === "grid" || value === "list") && setView(value)}
+        aria-label={t("library.view")}
+      >
+        <ToggleGroupItem value="grid" aria-label={t("library.viewGrid")}>
+          <LayoutGrid aria-hidden />
+        </ToggleGroupItem>
+        <ToggleGroupItem value="list" aria-label={t("library.viewList")}>
+          <List aria-hidden />
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </>
+  );
+}
+
+/** Placeholder cards while the first scan runs; hidden from screen readers, the progress speaks. */
+function GridSkeleton() {
+  return (
+    <div
+      className="grid min-h-0 flex-1 content-start overflow-hidden px-6 py-4"
+      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))`, gap: GRID_GAP }}
+      aria-hidden
+      data-testid="grid-skeleton"
+    >
+      {Array.from({ length: 12 }, (_, index) => (
+        <div key={index} className="flex flex-col gap-2 p-2">
+          <Skeleton className="aspect-[7/10] w-full rounded-lg" />
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** The running scan of this root, from the job stream. */
 function ScanProgress({ root }: { root: string }) {
   const { t } = useTranslation();
@@ -418,7 +490,7 @@ function ScanProgress({ root }: { root: string }) {
           </span>
         )}
       </div>
-      <Progress value={value ?? 0} className={cn(value === null && "animate-pulse")} />
+      <Progress value={value ?? 0} className={cn(value === null && "animate-pulse")} aria-label={t("library.scanning")} />
     </div>
   );
 }
@@ -469,35 +541,68 @@ function useRovingFocus(count: number, columns: number, scrollTo: (index: number
   return onKeyDown;
 }
 
-function useColumns(ref: React.RefObject<HTMLElement | null>): number {
-  const [columns, setColumns] = useState(4);
-  useEffect(() => {
+/** The grid's layout for the width of `ref`'s content box, kept up to date. */
+function useGridLayout(ref: React.RefObject<HTMLElement | null>): GridLayout {
+  const [layout, setLayout] = useState<GridLayout>(() => gridLayout(4 * (GRID_MIN_COLUMN + GRID_GAP)));
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
+    const update = (width: number) => {
+      // Rem-based card parts follow the root font size the user may have changed.
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const next = gridLayout(width, rem);
+      setLayout((current) =>
+        current.columns === next.columns && current.rowHeight === next.rowHeight ? current : next,
+      );
+    };
+    update(element.clientWidth - Number.parseFloat(getComputedStyle(element).paddingLeft) * 2);
     const observer = new ResizeObserver(([entry]) => {
-      const width = entry?.contentRect.width ?? element.clientWidth;
-      setColumns(Math.max(1, Math.floor((width + GRID_GAP) / (GRID_MIN_COLUMN + GRID_GAP))));
+      if (entry) update(entry.contentRect.width);
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [ref]);
-  return columns;
+  return layout;
 }
 
 function GameGrid({ games }: { games: Game[] }) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const columns = useColumns(scrollRef);
+  const { columns, rowHeight } = useGridLayout(scrollRef);
   const rows = Math.ceil(games.length / columns);
   const virtualizer = useVirtualizer({
     count: rows,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => GRID_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 2,
   });
   const onKeyDown = useRovingFocus(games.length, columns, (index) =>
     virtualizer.scrollToIndex(Math.floor(index / columns), { align: "auto" }),
   );
+
+  // A new width changes the row height and the games per row: drop the old
+  // sizes and keep the first game on screen where it was.
+  const firstShown = useRef(0);
+  const shownLayout = useRef({ columns, rowHeight });
+  useLayoutEffect(() => {
+    const before = shownLayout.current;
+    if (before.columns === columns && before.rowHeight === rowHeight) return;
+    shownLayout.current = { columns, rowHeight };
+    virtualizer.measure();
+    if ((scrollRef.current?.scrollTop ?? 0) > 0) {
+      virtualizer.scrollToIndex(Math.floor(firstShown.current / columns), { align: "start" });
+    }
+  }, [columns, rowHeight, virtualizer]);
+  const items = virtualizer.getVirtualItems();
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => {
+      firstShown.current = Math.floor(scroller.scrollTop / shownLayout.current.rowHeight) * shownLayout.current.columns;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-grid">
@@ -508,15 +613,15 @@ function GameGrid({ games }: { games: Game[] }) {
         style={{ height: virtualizer.getTotalSize() }}
         onKeyDown={onKeyDown}
       >
-        {virtualizer.getVirtualItems().map((row) => (
+        {items.map((row) => (
           <div
             key={row.key}
             className="absolute top-0 left-0 grid w-full"
             style={{
               transform: `translateY(${row.start}px)`,
-              height: row.size,
+              height: row.size - GRID_GAP,
               gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-              gap: GRID_GAP,
+              columnGap: GRID_GAP,
             }}
           >
             {games.slice(row.index * columns, (row.index + 1) * columns).map((game, i) => (
@@ -530,7 +635,6 @@ function GameGrid({ games }: { games: Game[] }) {
 }
 
 function GameCard({ game, index }: { game: Game; index: number }) {
-  const { t } = useTranslation();
   return (
     <Link
       to={`/library/game/${encodeURIComponent(gameKey(game))}`}
@@ -539,24 +643,20 @@ function GameCard({ game, index }: { game: Game; index: number }) {
       className="group flex flex-col gap-2 rounded-lg p-2 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
       aria-label={`${game.title}, ${game.startup}`}
     >
-      <GameCover game={game} className="transition-transform group-hover:scale-[1.02]" />
-      <div className="min-w-0">
+      <GameCover game={game} className="shrink-0 transition-transform group-hover:scale-[1.02]" />
+      {/* A fixed height, part of the row height in `gridLayout`: text never spills into the next row.
+          Two lines: the title, then the ID OPL shows with the marks; the size is in the list view. */}
+      <div className="h-9 min-w-0 overflow-hidden">
         <div className="truncate text-sm font-medium" title={game.title}>
           {game.title}
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="font-mono">{game.startup}</span>
-          <span className="flex items-center gap-1 tabular-nums">
+          <span className="truncate font-mono">{game.startup}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            {game.warnings.length > 0 && <WarningMark count={game.warnings.length} />}
             {game.dump && <DumpMark game={game} />}
-            {formatBytes(game.size, 1)}
           </span>
         </div>
-        {game.warnings.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="size-3" aria-hidden />
-            {t("library.warningCount", { count: game.warnings.length })}
-          </div>
-        )}
       </div>
     </Link>
   );
@@ -608,7 +708,7 @@ function GameTable({ games }: { games: Game[] }) {
                   {game.title}
                 </span>
                 {game.warnings.length > 0 && (
-                  <Badge variant="outline" className="shrink-0 gap-1 text-amber-600 dark:text-amber-400">
+                  <Badge variant="outline" className="shrink-0 gap-1 text-amber-700 dark:text-amber-400">
                     <AlertTriangle aria-hidden />
                     {game.warnings.length}
                   </Badge>
@@ -624,6 +724,18 @@ function GameTable({ games }: { games: Game[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** Warnings as an icon; the game card lists them. */
+function WarningMark({ count }: { count: number }) {
+  const { t } = useTranslation();
+  const label = t("library.warningCount", { count });
+  return (
+    <span className="flex items-center text-amber-700 dark:text-amber-400" title={label} data-testid="warning-mark">
+      <AlertTriangle className="size-3.5" aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 

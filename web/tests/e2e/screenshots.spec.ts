@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openLibrary } from "./helpers";
+import { libraryTool, openLibrary } from "./helpers";
 
 // Screenshots for PR review (TESTING.md): both themes, both languages, two widths.
 // Saved to test-results/screenshots/ and uploaded by CI.
@@ -29,7 +29,6 @@ for (const language of ["en", "ru"] as const) {
         await page.goto("/library");
         await heading("library");
         await expect(page.getByTestId("library-count")).toBeVisible();
-        await expect(page.getByRole("status").filter({ hasText: /./ }).first()).toBeVisible();
         // Covers written by art.spec.ts show in the grid; the images must have loaded.
         await expect(page.locator('[data-testid="game-cover"][data-has-cover="true"] img').first()).toBeVisible();
         await shot("library");
@@ -44,7 +43,7 @@ for (const language of ["en", "ru"] as const) {
         await expect(page.getByTestId("art-fetch-dialog")).toBeHidden();
 
         // Picture sets with the two fixture sets picked (ART-5).
-        await page.getByTestId("import-pictures").click();
+        await libraryTool(page, "import-pictures");
         const importDialog = page.getByTestId("art-import-dialog");
         await importDialog.getByTestId("art-import-browse").click();
         const setBrowser = page.getByTestId("folder-browser");
@@ -112,6 +111,40 @@ for (const language of ["en", "ru"] as const) {
         await page.goto("/settings");
         await heading("settings");
         await expect(page.getByTestId("app-version")).toHaveText(/^\d+\.\d+\.\d+/);
+        await shot("settings");
+      });
+    }
+  }
+}
+
+// The same screens in simple mode, the app's default (UI-4).
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    for (const width of [1280, 800]) {
+      test(`simple mode screenshots ${language} ${theme} ${width}`, async ({ page, request }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await openLibrary(page, request, { language, theme, simple: true });
+        const shot = (name: string) =>
+          page.screenshot({ path: `test-results/screenshots/simple-${name}-${language}-${theme}-${width}.png` });
+
+        await page.goto("/devices");
+        await expect(page.getByTestId("device-card").first()).toBeVisible();
+        await shot("devices");
+
+        await page.goto("/library");
+        await expect(page.locator('[data-testid="game-cover"][data-has-cover="true"] img').first()).toBeVisible();
+        await shot("library");
+
+        await page.getByRole("listitem", { name: /Retail Game/ }).click();
+        await expect(page.getByTestId("game-title")).toBeVisible();
+        await shot("game");
+
+        await page.goto("/library/add");
+        await expect(page.getByTestId("drop-zone")).toBeVisible();
+        await shot("add");
+
+        await page.goto("/settings");
+        await expect(page.getByTestId("simple-mode")).toBeChecked();
         await shot("settings");
       });
     }

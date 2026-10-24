@@ -22,6 +22,7 @@ import { listenForDrops, pickFiles, pickFolder } from "@/features/add/desktop";
 import { CoverSearchPanel } from "@/features/add/CoverSearchPanel";
 import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
 import { useCoverSearch } from "@/features/add/useCoverSearch";
+import { artTypes, useFetchableTypes } from "@/features/art/kinds";
 import { enabledSources } from "@/features/art/sources";
 import { PlanDetails } from "@/features/plan/PlanDetails";
 import { usePlan } from "@/features/plan/usePlan";
@@ -84,12 +85,16 @@ export function AddGamesPage() {
   const [browserOpen, setBrowserOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
   const ids = useId();
-  const flow = usePlan({ onExecuted: () => void navigate("/jobs") });
+  // Simple mode has no jobs page: the library and the dock show the write.
+  const flow = usePlan({ onExecuted: () => void navigate(settings.simpleMode ? "/library" : "/jobs") });
   const desktop = isTauri();
   const zsoReadable = settings.profile !== "Opl110";
   const coverSources = enabledSources(settings).length > 0;
   const coversWanted = settings.coversOnAdd && coverSources;
-  const covers = useCoverSearch(root, flow.plan, coversWanted);
+  // Every type the sources have; front covers alone until they are known.
+  const fetchable = useFetchableTypes();
+  const artKinds = artTypes.filter((kind) => fetchable.types.has(kind));
+  const covers = useCoverSearch(root, flow.plan, coversWanted, artKinds.length > 0 ? artKinds : ["COV"]);
   const coverSet = coversWanted && covers.state?.status === "done" ? (covers.state.result?.id ?? null) : null;
   // A plan that needs covers comes with its search already running: no frame
   // offers to confirm it first.
@@ -242,9 +247,12 @@ export function AddGamesPage() {
             <ArrowLeft aria-hidden />
             {t("library.title")}
           </Button>
-          <span className="truncate font-mono text-xs text-muted-foreground" title={root}>
-            {root}
-          </span>
+          {/* The header names the device; the path is a detail, as in the library. */}
+          {!settings.simpleMode && (
+            <span className="truncate font-mono text-xs text-muted-foreground" title={root}>
+              {root}
+            </span>
+          )}
         </div>
 
         <section
@@ -348,8 +356,8 @@ export function AddGamesPage() {
               data-testid="titles-from-db"
             />
             <span>
-              {t("settings.titlesFromDb")}
-              <span className="block text-xs text-muted-foreground">{t("settings.titlesFromDbHint")}</span>
+              {t("add.titlesFromDb")}
+              <span className="block text-xs text-muted-foreground">{t("add.titlesFromDbHint")}</span>
             </span>
           </Label>
           <Label htmlFor={`${ids}-covers`} className="items-start font-normal">
@@ -362,9 +370,9 @@ export function AddGamesPage() {
               data-testid="covers-on-add"
             />
             <span>
-              {t("settings.coversOnAdd")}
+              {t("add.coversOnAdd")}
               <span className="block text-xs text-muted-foreground">
-                {coverSources ? t("settings.coversOnAddHint") : t("art.noSources")}
+                {coverSources ? t("add.coversOnAddHint") : t(settings.simpleMode ? "art.noSourcesSimple" : "art.noSources")}
               </span>
             </span>
           </Label>
@@ -377,8 +385,8 @@ export function AddGamesPage() {
               data-testid="check-on-add"
             />
             <span>
-              {t("settings.checkOnAdd")}
-              <span className="block text-xs text-muted-foreground">{t("settings.checkOnAddHint")}</span>
+              {t("add.checkOnAdd")}
+              <span className="block text-xs text-muted-foreground">{t("add.checkOnAddHint")}</span>
             </span>
           </Label>
           <p className="text-xs text-muted-foreground">

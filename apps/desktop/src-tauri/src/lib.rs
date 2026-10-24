@@ -62,6 +62,8 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         // Pasting a cover from the clipboard (ART-3).
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Links to web pages (sources, licences) open in the system browser.
+        .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(Api::new()))
         .manage(Subscriptions::default())
         .invoke_handler(tauri::generate_handler![rpc, subscribe, allow_art])

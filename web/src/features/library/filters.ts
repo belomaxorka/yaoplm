@@ -29,6 +29,17 @@ export const defaultFilters: LibraryFilters = {
   desc: false,
 };
 
+/**
+ * The filters in effect: simple mode has no sorting or counter filters, so
+ * those it hides do not apply, though they stay in the address and come
+ * back with the advanced mode (UI-4).
+ */
+export function effectiveFilters(filters: LibraryFilters, simple: boolean): LibraryFilters {
+  if (!simple) return filters;
+  const { warnings, noCover, sort, desc } = defaultFilters;
+  return { ...filters, warnings, noCover, sort, desc };
+}
+
 function isMedia(value: string | null): value is Media {
   return value === "CD" || value === "DVD";
 }

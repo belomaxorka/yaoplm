@@ -28,7 +28,7 @@ export function joinPath(root: string, ...names: string[]): string {
 export async function openLibrary(
   page: Page,
   request: APIRequestContext,
-  extra: { language?: "en" | "ru"; theme?: "light" | "dark"; view?: "grid" | "list" } = {},
+  extra: { language?: "en" | "ru"; theme?: "light" | "dark"; view?: "grid" | "list"; simple?: boolean } = {},
 ): Promise<string> {
   const { library, mirror } = await roots(request);
   // The picture sources read the fixture mirrors instead of the network;
@@ -40,15 +40,22 @@ export async function openLibrary(
     screenscraper: { enabled: false, mirror: "" },
   };
   await page.addInitScript(
-    ([root, language, theme, view, sources]) => {
+    ([root, language, theme, view, sources, simpleMode]) => {
       // Runs on every load, so settings a test changed survive a reload.
       const current: unknown = JSON.parse(localStorage.getItem("yaoplm.settings") ?? "{}");
       const kept = typeof current === "object" && current !== null ? current : {};
-      localStorage.setItem("yaoplm.settings", JSON.stringify({ ...kept, root, view, artSources: sources }));
+      localStorage.setItem("yaoplm.settings", JSON.stringify({ simpleMode, ...kept, root, view, artSources: sources }));
       if (language) localStorage.setItem("yaoplm.language", language);
       if (theme) localStorage.setItem("yaoplm.theme", theme);
     },
-    [library, extra.language ?? "", extra.theme ?? "", extra.view ?? "grid", artSources] as const,
+    // Most specs test the advanced tools; simple mode is the app's default.
+    [library, extra.language ?? "", extra.theme ?? "", extra.view ?? "grid", artSources, extra.simple ?? false] as const,
   );
   return library;
+}
+
+/** Runs one of the library's advanced tools from its "More" menu. */
+export async function libraryTool(page: Page, testId: "import-pictures" | "verify-dumps" | "convert-shown"): Promise<void> {
+  await page.getByTestId("library-more").click();
+  await page.getByTestId(testId).click();
 }

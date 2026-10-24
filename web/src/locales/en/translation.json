@@ -12,9 +12,8 @@
     "settings": "Settings"
   },
   "connection": {
-    "connecting": "Connecting…",
-    "open": "Connected",
-    "closed": "Disconnected"
+    "lost": "No connection to YAOPLM at {{address}}. Actions are unavailable until it is back.",
+    "retrying": "Reconnecting…"
   },
   "theme": {
     "switchToDark": "Switch to dark theme",
@@ -195,6 +194,7 @@
     "viewList": "List",
     "rescan": "Rescan",
     "addGames": "Add games",
+    "more": "More",
     "count": "{{shown}} of {{total}} games",
     "skipped_one": "{{count}} file OPL ignores",
     "skipped_other": "{{count}} files OPL ignores",
@@ -202,6 +202,7 @@
     "skippedDescription": "These files are in the game folders but OPL will not list them.",
     "scanning": "Scanning the library…",
     "scanFailed": "The scan failed: {{error}}",
+    "retryScan": "Scan again",
     "missingFolders": "Missing OPL folders: {{folders}}",
     "createFolders": "Create folders",
     "noGamesTitle": "No games yet",
@@ -365,14 +366,20 @@
     "compress": "Compress to ZSO",
     "compressHint": "Smaller on the device; OPL 1.2.0 beta and newer read ZSO. Compressing takes longer than copying.",
     "compressNotForProfile": "OPL 1.1.0 does not read ZSO. Choose another loader in Settings to compress.",
-    "coversTitle": "Covers",
-    "coversSearching": "Looking for the covers of the games being added…",
-    "coversSkip": "Skip covers",
+    "titlesFromDb": "Titles from the database",
+    "titlesFromDbHint": "Games the bundled database knows get its title; the others keep the title from the file name. A title typed in the plan is never replaced.",
+    "coversOnAdd": "Download pictures",
+    "coversOnAddHint": "Once the plan is built, every picture the sources have (covers, screenshots, logos) is looked up by game ID and written together with the games, under one confirmation. A game without pictures is still added.",
+    "checkOnAdd": "Check dumps",
+    "checkOnAddHint": "Each image is hashed while it is written and compared with the Redump DAT, so the device is not read twice. A CD added from BIN/CUE or CHD is checked by its data track, as Redump lists it.",
+    "coversTitle": "Pictures",
+    "coversSearching": "Looking for pictures of the games being added…",
+    "coversSkip": "Skip pictures",
     "coversRetry": "Search again",
-    "coversResult": "Found: {{found}}, not found: {{missing}}, already on the device: {{present}}.",
-    "coversSkipped": "The cover search was stopped: the games are added without covers. Covers can be downloaded later from the library.",
-    "coversFailed": "The cover search failed: {{error}}. The games are added without covers.",
-    "coversFailedPlain": "The cover search failed. The games are added without covers."
+    "coversResult": "Pictures found: {{found}}, not found: {{missing}}, on the device already: {{present}}.",
+    "coversSkipped": "The picture search was stopped: the games are added without pictures. Pictures can be downloaded later from the library.",
+    "coversFailed": "The picture search failed: {{error}}. The games are added without pictures.",
+    "coversFailedPlain": "The picture search failed. The games are added without pictures."
   },
   "art": {
     "fetchTitle": "Download pictures",
@@ -402,6 +409,10 @@
       "LAB": "Spine"
     },
     "fetchDescription": "Pictures are looked up by game ID at the sources below, resized to the loader’s sizes and stored as PNG. Nothing is written until you confirm the plan.",
+    "quickDescription": "Every missing picture the sources have is looked up by game ID. Nothing is written until you confirm the plan.",
+    "nothingMissing": "Nothing to download: the device has every picture type the sources offer.",
+    "searching": "Looking for pictures…",
+    "downloadAll": "Download all pictures",
     "scope": "Which games",
     "scopeMissing_one": "Only the {{count}} game without a cover",
     "scopeMissing_other": "Only the {{count}} games without a cover",
@@ -411,6 +422,7 @@
     "scopeAllHint": "Existing pictures are replaced; the old files move to the device’s backup folder.",
     "sources": "Sources",
     "noSources": "Every source is switched off.",
+    "noSourcesSimple": "Every picture source is switched off. They are in the settings, with simple mode off.",
     "mirrorUsed": "local mirror",
     "sourcesHint": "Switch sources on and off, or point one at a local mirror, in",
     "start": "Start",
@@ -455,7 +467,7 @@
   },
   "jobs": {
     "emptyTitle": "No jobs",
-    "emptyDescription": "Scans, additions, renames, deletions, conversions, cover searches and dump checks show their progress here.",
+    "emptyDescription": "Adding, renaming, deleting and converting games, picture searches and dump checks show their progress here.",
     "clearFinished": "Clear finished",
     "status": {
       "queued": "Queued",
@@ -482,6 +494,7 @@
     "log_other": "Log ({{count}} lines)",
     "logEmpty": "Nothing logged yet.",
     "cancel": "Cancel",
+    "cancelJob": "Cancel: {{title}}",
     "dismiss": "Hide",
     "txState": {
       "started": "{{title}}: started",
@@ -499,6 +512,13 @@
     "active_one": "{{count}} active job",
     "active_other": "{{count}} active jobs",
     "all": "All jobs",
+    "toast": {
+      "done": "{{title}}: done",
+      "failed": "{{title}}: failed",
+      "cancelled": "{{title}}: cancelled",
+      "journal": "The operation did not finish. Open the library to undo or finish it.",
+      "region": "Notifications"
+    },
     "artState": {
       "found": "{{startup}} {{title}}: found at {{source}}",
       "cached": "{{startup}} {{title}}: from the cache ({{source}})",
@@ -580,12 +600,8 @@
     },
     "verify": "Check IDs inside images while scanning",
     "verifyHint": "Opens every image to catch IDs that differ from the file name.",
-    "titlesFromDb": "Titles from the database when adding games",
-    "titlesFromDbHint": "Games the bundled database knows get its title; the others keep the title from the file name. A title typed in the plan is never replaced.",
     "covers": "Pictures",
     "coversDescription": "Where pictures come from, and the local cache. Each type has its own order of sources; pictures are downloaded only on request and never bundled.",
-    "coversOnAdd": "Download covers for the games being added",
-    "coversOnAddHint": "Once the plan is built, covers are looked up by game ID and written together with the games, under one confirmation. A game without a cover is still added.",
     "artSources": {
       "xlenore": "Front covers by game ID, the set PCSX2 uses. No licence stated: fetched on request only.",
       "oplm": "Every type by game ID from the last OPL Manager art backup (2024-09) on archive.org: the only open source of icons, back covers, spines and backgrounds. Its index (8.6 MB) is read once, then each picture is one request.",
@@ -596,7 +612,6 @@
     "mirrorPlaceholder": "Folder with the repository’s layout (optional)",
     "pickMirror": "Pick a mirror folder",
     "mirrorHint": "A mirror is a local copy of a source (a clone of its repository, or an unpacked OPL Manager backup): pictures are read from it instead of the network.",
-    "screenscraperUnavailable": "This build has no ScreenScraper developer key, so the source is off.",
     "screenscraperUser": "User name",
     "screenscraperPassword": "Password",
     "screenscraperAccountHint": "Optional. Kept in this app’s settings on this computer and sent only to ScreenScraper.",
@@ -604,7 +619,9 @@
     "artCacheState_one": "{{count}} object, {{size}} in {{path}}",
     "artCacheState_other": "{{count}} objects, {{size}} in {{path}}",
     "clearArtCache": "Clear cache",
-    "appearance": "Appearance",
+    "interface": "Interface",
+    "simpleMode": "Simple mode",
+    "simpleModeHint": "Hides sorting, counters, conversions, picture sets, the jobs page and technical details. Turn it off to see everything.",
     "language": "Language",
     "theme": "Theme",
     "themes": {
@@ -649,9 +666,7 @@
     "loading": "Loading…",
     "unavailable": "Unavailable",
     "dumps": "Dump checks (Redump)",
-    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer.",
-    "checkOnAdd": "Check dumps while adding games",
-    "checkOnAddHint": "Each image is hashed while it is written and compared with the Redump DAT, so the device is not read twice. A CD added from BIN/CUE or CHD is checked by its data track, as Redump lists it."
+    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer."
   },
   "languages": {
     "en": "English",
@@ -851,7 +866,7 @@
     "noPictureSet": "Pick a picture set: a folder, a .zip, .7z or .tar",
     "notAPictureSet": "{{path}} is not a picture set: pick a folder, a .zip, .7z or .tar",
     "pictureSetUnreadable": "Cannot read the picture set {{path}}: {{error}}",
-    "coversExpired": "The cover search {{id}} is no longer kept: search again",
+    "coversExpired": "The picture search {{id}} is no longer kept: search again",
     "jobGone": "No job {{id}}",
     "jobPanicked": "The job stopped on an internal error",
     "notOnDevice": "{{path}} is not on this device",

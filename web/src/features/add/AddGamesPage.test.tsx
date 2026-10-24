@@ -80,6 +80,20 @@ class FakeCore {
         return { type: "Jobs", jobs: [] };
       case "DiscardPlan":
         return { type: "Ack" };
+      case "Attribution":
+        return {
+          type: "Attribution",
+          name: "YAOPLM",
+          version: "0.0.0",
+          license: "GPL-3.0-or-later",
+          repository: "https://example.invalid",
+          data: [],
+          art: [
+            { id: "xlenore", name: "xlenore", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV"], available: true },
+            { id: "libretro", name: "libretro", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV", "SCR", "LGO"], available: true },
+          ],
+          titles: { built: "2026-10-01", libretroVersion: "1", entries: 1 },
+        };
       case "PlanImport":
         if (request.covers && this.holdPlans) await new Promise<void>((resolve) => this.#held.push(resolve));
         return this.#plan(request);
@@ -221,6 +235,8 @@ describe("AddGamesPage covers", () => {
     expect(confirm()).toBeDisabled();
     await waitFor(() => expect(core.of("FetchArt")).toHaveLength(1));
     expect(core.of("FetchArt")[0]?.import).toBe("plan-1");
+    // Every type the sources have, not only front covers.
+    expect(core.of("FetchArt")[0]?.kinds).toEqual(["COV", "SCR", "LGO"]);
 
     // Off: the job is cancelled and the plan without covers can run.
     await userEvent.click(screen.getByTestId("covers-on-add"));

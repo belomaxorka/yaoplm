@@ -125,6 +125,10 @@ enum Command {
         /// screenscraper. Repeatable.
         #[arg(long = "skip-source", value_name = "SOURCE", requires = "covers")]
         skipped: Vec<String>,
+        /// With --covers: picture types to look for, as `art fetch --kind`:
+        /// COV (default), SCR, SCR2, LGO. Repeatable.
+        #[arg(long = "kind", value_name = "TYPE", requires = "covers")]
+        kinds: Vec<String>,
         /// Title for the game (one source only).
         #[arg(long)]
         title: Option<String>,
@@ -509,6 +513,7 @@ fn main() -> anyhow::Result<ExitCode> {
             covers,
             mirrors,
             skipped,
+            kinds,
             title,
             media,
             name_style,
@@ -544,11 +549,12 @@ fn main() -> anyhow::Result<ExitCode> {
                 covers: None,
             };
             if covers {
-                let found =
-                    match find_import_covers(&api, &request, &root, &mirrors, &skipped, &apply)? {
-                        Ok(found) => found,
-                        Err(error) => return fail(&error, apply.json),
-                    };
+                let found = match find_import_covers(
+                    &api, &request, &root, &mirrors, &skipped, &kinds, &apply,
+                )? {
+                    Ok(found) => found,
+                    Err(error) => return fail(&error, apply.json),
+                };
                 if let (Some(id), Request::PlanImport { covers, .. }) = (found, &mut request) {
                     *covers = Some(id);
                 }
@@ -761,8 +767,10 @@ fn find_import_covers(
     root: &Path,
     mirrors: &[String],
     skipped: &[String],
+    kinds: &[String],
     apply: &Apply,
 ) -> anyhow::Result<Result<Option<String>, yaoplm_api::ApiError>> {
+    let kinds = parse_kinds(kinds)?;
     let plan = match api.dispatch(request.clone()) {
         Ok(Response::Plan(plan)) => plan,
         // The real planning call reports the problem.
@@ -778,7 +786,7 @@ fn find_import_covers(
             games: None,
             sources: (!sources.is_empty()).then_some(sources),
             kind: None,
-            kinds: None,
+            kinds: (!kinds.is_empty()).then_some(kinds),
             import: Some(plan.id.clone()),
         })
     });
@@ -789,7 +797,7 @@ fn find_import_covers(
                 (JobStatus::Finished, Some(JobResult::Covers(search))) => {
                     if !apply.json {
                         eprintln!(
-                            "Covers: {} found, {} not found, {} already on the device",
+                            "Pictures: {} found, {} not found, {} already on the device",
                             search.found, search.missing, search.present
                         );
                     }
@@ -841,6 +849,14 @@ fn art_sources(mirrors: &[String], skipped: &[String]) -> anyhow::Result<Vec<Art
     Ok(settings)
 }
 
+/// `--kind` values: picture types by their suffix, in any case.
+fn parse_kinds(kinds: &[String]) -> anyhow::Result<Vec<ArtType>> {
+    kinds
+        .iter()
+        .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
+        .collect()
+}
+
 fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
     match command {
         ArtCommand::Fetch {
@@ -853,10 +869,7 @@ fn art(api: &Api, command: ArtCommand) -> anyhow::Result<ExitCode> {
             apply,
         } => {
             let sources = art_sources(&mirrors, &skipped)?;
-            let kinds = kinds
-                .iter()
-                .map(|k| ArtType::parse(k).with_context(|| format!("unknown picture type {k:?}")))
-                .collect::<anyhow::Result<Vec<_>>>()?;
+            let kinds = parse_kinds(&kinds)?;
             let request = Request::FetchArt {
                 root: text(&root),
                 profile: Some(apply.profile.into()),

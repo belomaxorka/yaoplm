@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
@@ -5,6 +7,11 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use yaoplm_api::JobEvent;
 
 use crate::AppState;
+
+/// A ping this often keeps an idle stream open through proxies that close
+/// quiet connections (nginx: 60 s by default); the page treats a closed
+/// stream as a link that may be lost.
+const KEEPALIVE: Duration = Duration::from_secs(25);
 
 pub async fn handle(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     // Subscribe before the handshake completes so no event published after
@@ -14,8 +21,15 @@ pub async fn handle(State(state): State<AppState>, upgrade: WebSocketUpgrade) ->
 }
 
 async fn forward(mut socket: WebSocket, mut events: broadcast::Receiver<JobEvent>) {
+    let mut keepalive = tokio::time::interval(KEEPALIVE);
+    keepalive.tick().await;
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
             event = events.recv() => match event {
                 Ok(event) => {
                     let Ok(text) = serde_json::to_string(&event) else { continue };

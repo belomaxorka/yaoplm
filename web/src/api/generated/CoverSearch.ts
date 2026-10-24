@@ -7,8 +7,16 @@ export type CoverSearch = {
 /**
  * Pass to `PlanImport` as `covers`.
  */
-id: string, found: number, missing: number, 
+id: string, 
 /**
- * Games whose cover is on the device already.
+ * Pictures found, of every type asked for.
+ */
+found: number, 
+/**
+ * Pictures no source had.
+ */
+missing: number, 
+/**
+ * Pictures the device has already.
  */
 present: number, };

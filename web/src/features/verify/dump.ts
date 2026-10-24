@@ -17,7 +17,7 @@ export function uncheckedGames(games: readonly Game[]): Game[] {
 }
 
 export const statusColours = {
-  verified: "text-emerald-600 dark:text-emerald-400",
+  verified: "text-emerald-700 dark:text-emerald-400",
   badDump: "text-destructive",
   unknown: "text-muted-foreground",
   failed: "text-destructive",

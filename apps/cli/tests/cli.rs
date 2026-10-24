@@ -728,7 +728,7 @@ fn add_with_covers_and_dump_checks() {
     let errors = String::from_utf8_lossy(&done.stderr);
     assert!(done.status.success(), "{text}\n{errors}");
     assert!(
-        errors.contains("Covers: 1 found, 1 not found, 0 already on the device"),
+        errors.contains("Pictures: 1 found, 1 not found, 0 already on the device"),
         "{errors}"
     );
     assert!(text.contains("+ write ART/SLUS_200.62_COV.png"), "{text}");

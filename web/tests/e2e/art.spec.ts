@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { joinPath, openLibrary, roots } from "./helpers";
+import { joinPath, libraryTool, openLibrary, roots } from "./helpers";
 
 // Covers end to end against the fixture mirrors (ART-1 to ART-4, META-1):
 // one game downloads its cover from the game card, the bulk run skips the
@@ -165,7 +165,7 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
 test("picture sets fill the games on the device", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
-  await page.getByTestId("import-pictures").click();
+  await libraryTool(page, "import-pictures");
   const dialog = page.getByTestId("art-import-dialog");
   await expect(dialog.getByTestId("art-import-start")).toBeDisabled();
   await dialog.getByTestId("art-import-browse").click();
@@ -205,12 +205,13 @@ test("the About screen credits the data and cover sources", async ({ page, reque
   await expect(about.getByTestId("source-xlenore")).toContainText("no licence stated");
   await expect(about).toContainText(/Game IDs: \d{2,}, built 20\d\d-\d\d-\d\d/);
   await expect(about.getByTestId("source-oplm")).toContainText("no licence stated");
-  await expect(about.getByTestId("source-screenscraper")).toContainText("CC BY-NC-SA 4.0");
-  // The art sources and the cache are configurable; ScreenScraper needs a
-  // build with its developer key, which the test server has not.
+  // The art sources and the cache are configurable. ScreenScraper needs a
+  // build with its developer key, which the test server has not: it is
+  // shown nowhere, neither in the settings nor in the credits.
   await expect(page.getByTestId("art-source-xlenore")).toContainText("xlenore/ps2-covers");
   await expect(page.getByTestId("art-source-oplm")).toContainText("OPL Manager backup");
-  await expect(page.getByTestId("screenscraper-unavailable")).toBeVisible();
+  await expect(page.getByTestId("art-source-screenscraper")).toHaveCount(0);
+  await expect(about.getByTestId("source-screenscraper")).toHaveCount(0);
   await expect(page.getByText(/\d+ objects?, .* in /)).toBeVisible();
 });
 

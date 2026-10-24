@@ -36,7 +36,8 @@ import { artTypes } from "@/features/art/kinds";
 import { statusColours as dumpColours, statusCounts } from "@/features/verify/dump";
 import { DumpIcon } from "@/features/verify/DumpBadge";
 import { VerificationResults } from "@/features/verify/VerificationResults";
-import { useJobs } from "@/jobs/context";
+import { isUserJob, useJobs } from "@/jobs/context";
+import { useSimpleMode } from "@/settings/context";
 import { formatBytes, formatDate, formatEta, formatRate, formatTime, percent } from "@/lib/format";
 import { errorText, phraseText } from "@/lib/phrase";
 
@@ -48,7 +49,7 @@ import { errorText, phraseText } from "@/lib/phrase";
 export function JobsPage() {
   const { t } = useTranslation();
   const { jobs, dismissed, clearFinished } = useJobs();
-  const shown = jobs.filter((job) => !dismissed.has(job.id));
+  const shown = jobs.filter((job) => isUserJob(job) && !dismissed.has(job.id));
   const finished = shown.filter((job) => job.status !== "queued" && job.status !== "running");
 
   return (
@@ -86,9 +87,9 @@ const statusIcons = {
 const statusColours = {
   queued: "text-muted-foreground",
   running: "text-primary",
-  finished: "text-emerald-600 dark:text-emerald-400",
+  finished: "text-emerald-700 dark:text-emerald-400",
   failed: "text-destructive",
-  cancelled: "text-amber-600 dark:text-amber-400",
+  cancelled: "text-amber-700 dark:text-amber-400",
 } as const;
 
 export function JobStatusIcon({ job, className }: { job: JobInfo; className?: string }) {
@@ -108,7 +109,11 @@ export function JobProgressLine({ job }: { job: JobInfo }) {
   const eta = formatEta(job.done, job.total, job.rate);
   return (
     <div className="flex flex-col gap-1">
-      <Progress value={value ?? 0} className={cn("h-1.5", value === null && job.status === "running" && "animate-pulse")} />
+      <Progress
+        value={value ?? 0}
+        className={cn("h-1.5", value === null && job.status === "running" && "animate-pulse")}
+        aria-label={jobTitle(job)}
+      />
       <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground tabular-nums">
         <span className="font-mono">
           {bytes ? formatBytes(job.done) : job.done}
@@ -328,20 +333,23 @@ const kindIcons = {
 
 const stepStateColours = {
   started: "text-muted-foreground",
-  done: "text-emerald-600 dark:text-emerald-400",
+  done: "text-emerald-700 dark:text-emerald-400",
   failed: "text-destructive",
-  undone: "text-amber-600 dark:text-amber-400",
+  undone: "text-amber-700 dark:text-amber-400",
 } as const;
 
 const artStateColours = {
-  found: "text-emerald-600 dark:text-emerald-400",
-  cached: "text-emerald-600 dark:text-emerald-400",
+  found: "text-emerald-700 dark:text-emerald-400",
+  cached: "text-emerald-700 dark:text-emerald-400",
   notFound: "text-muted-foreground",
   failed: "text-destructive",
 } as const;
 
-export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
+export function JobLog({ entries: all }: { entries: readonly JobLogEntry[] }) {
   const { t } = useTranslation();
+  const simple = useSimpleMode();
+  // Each step of a write (started, done) is a detail: simple mode shows what happened to each game.
+  const entries = simple ? all.filter((entry) => entry.kind !== "step") : all;
   if (entries.length === 0) return <p className="mt-1 text-xs text-muted-foreground">{t("jobs.logEmpty")}</p>;
   return (
     <ol className="mt-1 max-h-72 overflow-auto rounded-md border bg-background p-2 font-mono text-xs" data-testid="job-log">
@@ -354,7 +362,7 @@ export function JobLog({ entries }: { entries: readonly JobLogEntry[] }) {
             entry.kind === "step" && stepStateColours[entry.state],
             entry.kind === "art" && artStateColours[entry.state],
             entry.kind === "verify" && dumpColours[entry.status],
-            entry.kind === "transaction" && entry.state === "rolledBack" && "text-amber-600 dark:text-amber-400",
+            entry.kind === "transaction" && entry.state === "rolledBack" && "text-amber-700 dark:text-amber-400",
             entry.kind === "transaction" && entry.state === "interrupted" && "text-destructive",
           )}
           data-art-state={entry.kind === "art" ? entry.state : undefined}
