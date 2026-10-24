@@ -61,6 +61,27 @@ function core(): MockTransport {
         return { type: "JobState", ...scan };
       case "Version":
         return { type: "Version", name: "YAOPLM", version: "0.0.0-mock" };
+      case "ReadCfg":
+        return {
+          type: "Cfg",
+          startup: game.startup,
+          path: "E:\\CFG\\SLUS_200.62.cfg",
+          exists: true,
+          editable: true,
+          settings: {
+            compatibility: 0,
+            dma: null,
+            altStartup: "",
+            vmc: ["", ""],
+            gsm: { perGame: false, enabled: false, vmode: 0, xOffset: 0, yOffset: 0, fieldFix: false },
+            cheats: { perGame: false, enabled: false, mode: 0 },
+            padEmu: { perGame: false, enabled: false, settings: 0 },
+          },
+          entries: [],
+          cardNames: ["SLUS_200.62_0", "SLUS_200.62_1"],
+        };
+      case "ListVmc":
+        return { type: "Vmcs", cards: [] };
       default:
         throw new RpcError({ code: "NotFound", message: `${request.type} is not faked` });
     }
@@ -120,7 +141,7 @@ describe("simple mode (UI-4)", () => {
       expect(screen.getByTestId("library-count")).toHaveTextContent("1 of 1 games");
     });
 
-    it(`game card: ${simple ? "no conversion, dump check or technical details" : "everything"}`, async () => {
+    it(`game card: ${simple ? "modes and slot 1, no conversion, dump check or technical details" : "everything"}`, async () => {
       open(`/library/game/${encodeURIComponent(gameKey(game))}`, simple);
       await screen.findByTestId("game-title");
       const actions = screen.getByRole("group", { name: "Actions" });
@@ -129,11 +150,21 @@ describe("simple mode (UI-4)", () => {
       expect(within(actions).getByRole("button", { name: "Delete" })).toBeInTheDocument();
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
       expect(screen.getByTestId("game-warnings")).toBeInTheDocument();
+      // Game settings (ADR-0036): the modes and slot 1 in both modes.
+      expect(await screen.findByTestId("cfg-modes")).toBeInTheDocument();
+      expect(screen.getByTestId("cfg-vmc-0")).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /Mode 6/ })).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: /Mode 7/ })).not.toBeInTheDocument();
       const advanced = [
         screen.queryByTestId("game-convert"),
         screen.queryByTestId("game-verify"),
         screen.queryByText(game.path),
-        screen.queryByText("Game settings (CFG)"),
+        screen.queryByTestId("cfg-vmc-1"),
+        screen.queryByTestId("cfg-gsm"),
+        screen.queryByTestId("cfg-cheats"),
+        screen.queryByTestId("cfg-pademu"),
+        screen.queryByTestId("cfg-alt-startup"),
+        screen.queryByTestId("cfg-keys"),
       ];
       for (const control of advanced) {
         if (simple) expect(control).not.toBeInTheDocument();

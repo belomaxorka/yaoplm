@@ -56,10 +56,18 @@ export function JobToasts() {
           : report?.journal
             ? t("jobs.toast.journal")
             : null;
+      // What a write found once done, e.g. a memory card in several pieces.
+      const warnings = (report?.notices ?? []).filter((notice) => notice.level !== "info");
       if (job.status === "cancelled" || report?.cancelled) {
         toast(t("jobs.toast.cancelled", { title }), { description: t("jobs.cancelledNote") });
       } else if (job.status === "failed" || problem) {
         toast.error(t("jobs.toast.failed", { title }), { description: problem ?? undefined, duration: Infinity, closeButton: true });
+      } else if (warnings.length > 0) {
+        toast.warning(t("jobs.toast.doneWithWarnings", { title }), {
+          description: warnings.map((notice) => phraseText(notice.phrase, notice.message)).join(" "),
+          duration: Infinity,
+          closeButton: true,
+        });
       } else {
         toast.success(t("jobs.toast.done", { title }));
       }

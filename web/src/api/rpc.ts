@@ -1,7 +1,9 @@
 import type { ArtCacheInfo } from "@/api/generated/ArtCacheInfo";
 import type { Attribution } from "@/api/generated/Attribution";
+import type { CfgView } from "@/api/generated/CfgView";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import type { DirListing } from "@/api/generated/DirListing";
+import type { GameRef } from "@/api/generated/GameRef";
 import type { JobId } from "@/api/generated/JobId";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { Library } from "@/api/generated/Library";
@@ -9,6 +11,7 @@ import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { PlanView } from "@/api/generated/PlanView";
 import type { RedumpInfo } from "@/api/generated/RedumpInfo";
 import type { Request } from "@/api/generated/Request";
+import type { VmcCard } from "@/api/generated/VmcCard";
 import { call, RpcError, type Transport } from "@/api/transport";
 
 /** Typed wrappers over `call`; every screen goes through these. */
@@ -89,6 +92,17 @@ export function redumpStatus(transport: Transport): Promise<RedumpInfo | null> {
 /** Downloads the DAT (at most weekly) or imports `file` instead. */
 export function updateRedump(transport: Transport, file?: string): Promise<JobId> {
   return call(transport, file ? { type: "UpdateRedump", file } : { type: "UpdateRedump" }, "Job").then((r) => r.job);
+}
+
+/** A game's CFG: its settings and every key (CFG-2). */
+export async function readCfg(transport: Transport, root: string, game: GameRef): Promise<CfgView> {
+  const { type: _type, ...view } = await call(transport, { type: "ReadCfg", root, game }, "Cfg");
+  return view;
+}
+
+/** The memory cards in VMC/, with OPL's verdict and the games using each (VMC-1). */
+export function listVmc(transport: Transport, root: string): Promise<VmcCard[]> {
+  return call(transport, { type: "ListVmc", root }, "Vmcs").then((r) => r.cards);
 }
 
 export async function attribution(transport: Transport): Promise<Attribution> {

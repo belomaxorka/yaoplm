@@ -93,7 +93,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       );
       if (stillWriting) return;
       void queryClient.invalidateQueries({ queryKey: ["library"] });
-      if (finished.kind === "executePlan") void queryClient.invalidateQueries({ queryKey: ["device"] });
+      if (finished.kind === "executePlan") {
+        void queryClient.invalidateQueries({ queryKey: ["device"] });
+        // A game's settings and the memory cards (CFG-2, VMC-1).
+        void queryClient.invalidateQueries({ queryKey: ["gameCfg"] });
+        void queryClient.invalidateQueries({ queryKey: ["vmcs"] });
+      }
     },
     [queryClient],
   );

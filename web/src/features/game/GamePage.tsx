@@ -27,6 +27,7 @@ import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
 import { ArtSlots } from "@/features/art/ArtSlots";
 import { GameCover } from "@/features/library/GameCover";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
+import { GameSettingsCard } from "@/features/game/GameSettingsCard";
 import { useLibrary } from "@/features/library/useLibrary";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
@@ -36,9 +37,6 @@ import { formatBytes } from "@/lib/format";
 import { findGame, gameRef, idKey } from "@/lib/gameKey";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import { nameStyles } from "@/settings/settings";
-
-/** OPL's compatibility modes, bit by bit (research/02 §6; 0x40/0x80 are RiptOPL's). */
-const COMPAT_BITS = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80] as const;
 
 export function GamePage() {
   const { t } = useTranslation();
@@ -107,7 +105,6 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
   // Simple mode has no technical details: only what the user can act on.
   const showDetails = !simple || knownTitle !== null || game.dump !== null;
-  const compat = game.cfg?.compatibility ?? null;
 
   return (
     <PageScroll>
@@ -284,40 +281,11 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           <ArtSlots game={game} root={root} />
         </section>
 
+        {/* Simple mode edits the modes and slot 1; the rest is advanced (ADR-0036). */}
+        <GameSettingsCard game={game} root={root} />
+
         {!simple && (
           <>
-            <section className="rounded-lg border bg-card p-4">
-              <h3 className="mb-3 text-sm font-medium">{t("game.settings")}</h3>
-              {game.cfg ? (
-                <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-                  <Fact label={t("game.cfgFile")} mono>
-                    {game.cfg.path}
-                  </Fact>
-                  {!game.cfg.oplSyntax && <Fact label={t("game.cfgSyntax")}>{t("game.cfgLibconfig")}</Fact>}
-                  <Fact label={t("game.compatibility")}>
-                    {compat === null || compat === 0 ? (
-                      t("game.compatibilityNone")
-                    ) : (
-                      <ul className="flex flex-wrap gap-1">
-                        {COMPAT_BITS.filter((bit) => (compat & bit) !== 0).map((bit) => (
-                          <li key={bit}>
-                            <Badge variant="outline">{t(`game.compatibilityModes.${bit}`)}</Badge>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </Fact>
-                  {game.cfg.vmc.map((card, slot) => (
-                    // OPL numbers the slots 1 and 2 ($VMC_0 and $VMC_1 in the CFG).
-                    <Fact key={slot} label={t("game.vmcSlot", { slot: slot + 1 })} mono>
-                      {card ?? <span className="font-sans text-muted-foreground">{t("game.vmcNone")}</span>}
-                    </Fact>
-                  ))}
-                </dl>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t("game.noCfg")}</p>
-              )}
-            </section>
             <section className="rounded-lg border bg-card p-4">
               <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
                 <Fact label={t("game.cheats")}>
