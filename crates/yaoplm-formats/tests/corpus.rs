@@ -102,3 +102,74 @@ fn community_cheat_files_parse() {
         files.len()
     );
 }
+
+/// The settings editor on every community CFG (CFG-2, ADR-0036): nothing
+/// changes when nothing is edited, and switching one mode touches only
+/// `$Compatibility` and `$ConfigSource`, whatever else the file holds
+/// (descriptions over 255 bytes, 0.9.3's bits, LF files).
+#[test]
+#[ignore = "needs YAOPLM_TESTDATA"]
+fn community_cfg_files_take_game_settings() {
+    use yaoplm_formats::LoaderProfile;
+    use yaoplm_formats::game_cfg::GameSettings;
+
+    let mut files = Vec::new();
+    for repo in [
+        "Tom-Bruise__PS2-OPL-CFG-Database",
+        "VTSTech__PS2-OPL-CFG",
+        "GDX-X__PS2-OPL-CFG-Compatibility-Database",
+    ] {
+        files_with_extension(&refs().join(repo), "cfg", &mut files);
+    }
+    assert!(
+        files.len() > 10_000,
+        "corpus missing? found {}",
+        files.len()
+    );
+
+    let mut legacy_bits = 0;
+    for path in &files {
+        let bytes = std::fs::read(path).unwrap();
+        let doc = CfgDocument::parse(&bytes);
+        let settings = GameSettings::read(&doc);
+        legacy_bits += usize::from(settings.compatibility & !0x3F != 0);
+
+        let mut same = doc.clone();
+        let changes = settings
+            .apply(&mut same, LoaderProfile::Opl120Beta)
+            .unwrap();
+        assert!(changes.is_empty(), "{}", path.display());
+        assert_eq!(same.to_bytes(), bytes, "{}", path.display());
+
+        let mut edited = doc.clone();
+        let mut wanted = settings.clone();
+        wanted.compatibility ^= 0x02;
+        let changes = wanted
+            .apply(&mut edited, LoaderProfile::Opl120Beta)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(
+            changes
+                .iter()
+                .all(|c| c.key == "$Compatibility" || c.key == "$ConfigSource"),
+            "{}: {changes:?}",
+            path.display()
+        );
+        let others = |d: &CfgDocument| {
+            d.entries()
+                .into_iter()
+                .filter(|e| e.key != "$Compatibility" && e.key != "$ConfigSource")
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(others(&edited), others(&doc), "{}", path.display());
+        assert_eq!(
+            GameSettings::read(&edited).compatibility,
+            settings.compatibility ^ 0x02,
+            "{}",
+            path.display()
+        );
+    }
+    println!(
+        "{} CFG files edited through GameSettings, {legacy_bits} with bits above mode 6 kept",
+        files.len()
+    );
+}
