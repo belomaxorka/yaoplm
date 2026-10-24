@@ -1,11 +1,13 @@
 # 18. Folders OPL reads over SMB
 
-What OPL and its forks do with a folder they read over the network, for the "folder for SMB" mode (NET-1, DEV-2, LIB-1; ADR-0043, `docs/plans/smb-folder-mode.md`). Format details are in research/02 (SMB row in §2, §3, `ul` parts); this note collects what the mode needs. Checked 2026-10-25 against:
+What OPL and its forks do with a folder they read over the network, for the "folder for SMB" mode (NET-1, DEV-2, LIB-1; ADR-0044, `docs/plans/smb-folder-mode.md`). Format details are in research/02 (SMB row in §2, §3, `ul` parts); this note collects what the mode needs. Checked 2026-10-25 against:
 - upstream OPL `ps2homebrew/Open-PS2-Loader` at `b3a21997` (2026-10-12);
 - YAOPL `belomaxorka/yaopl` at `33a2b19a` (2026-10-23);
 - RiptOPL `NathanNeurotic/RiptOPL`: C edition `main` at `04aa1369` (2026-09-17), C++ rebuild `rebuild/main` at `6edea174` (2026-10-20);
 - wOPL `ps2homebrew/wOPL` at `4ae7414` (2026-09-13);
-- the MMCE fork `ps2-mmce/Open-PS2-Loader` at `e209011` (2025-01-22).
+- the MMCE fork `ps2-mmce/Open-PS2-Loader`, branch `mmce_support`, at `e554796` (2025-11-24; `master` at `e2090114` has no MMCE code).
+
+Re-checked the same day before the implementation, on fresh shallow clones (`D:` was not connected): every commit above was still the head, and `smb.c:267`, `ethPrefix[40]`, `sbCreateFolders` and `ISO_MAX_PARTS 10` (`modules/iopcore/common/cdvd_config.h:24`) are where §1–§4 say in all six trees.
 
 Tags: [V] read in source at the commit above, [R] from a README.
 
@@ -15,6 +17,7 @@ Tags: [V] read in source at the commit above, [R] from a README.
 - **RiptOPL C edition** has an SMB2/SMB3 driver `modules/network/smb2man` over a vendored libsmb2 and the global key `smb_dialect` (`include/config.h:174`). The Network page offers SMBv1 (default) or SMB2; the choice switches both browsing and the in-game reader, so the server must speak SMB2 for the whole session [V tree, R `README.md` "SMB version"]. Its default SMB port is `1111`, not 445 [R].
 - **RiptOPL C++ rebuild** speaks SMBv1 only for now: the dialect row stays greyed until "checklist item 4" (`include/opl.h:310-312`, `src/sources/ethsupport.cpp:365-366`) [V].
 - So "SMBv1 only" is true for every build YAOPLM has a profile for except RiptOPL, where it is the default and SMB2 is an option.
+- RiptOPL C also reads a PC over the network without SMB: UDPFS (files under `CD/`/`DVD/` served by `udpfsd` or PS2-Servers) and UDPBD (a served FAT/exFAT disk image) launch through Neutrino, which reads neither ZSO nor `ul`; HTTP lists ISOs from `games.csv` and refuses compressed images (`README.md` "PS2 game source" table, `modules/network/udpfs_*`, `smap_udpbd`) [R, V tree]. The SMB mode does not cover them: they are for the network library milestone (NET-2), with their own rules.
 
 ## 2. Where OPL looks on the share
 
