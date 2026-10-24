@@ -96,12 +96,24 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
  *   installed first, which settles the question;
  * - a profile chosen for the device (or "I don't know") that its files now
  *   contradict offers to go back to auto.
+ *
+ * Neither shows on a device the storage doctor finds unusable for OPL
+ * (`usable` false): which OPL reads it does not matter there.
  */
-export function LoaderProfileHint({ loader, className }: { loader: ActiveProfile; className?: string }) {
+export function LoaderProfileHint({
+  loader,
+  usable,
+  className,
+}: {
+  loader: ActiveProfile;
+  usable: boolean;
+  className?: string;
+}) {
   const { t } = useTranslation();
   const { choose } = useChoice(loader);
   const detected = loader.detected;
   const box = cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className);
+  if (!usable) return null;
 
   if (loader.source === "detected" && detected?.confidence === "default" && detected.library) {
     return (

@@ -82,51 +82,25 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по носителю)");
 });
 
-test("a prepared device without signs asks which OPL it is for (ADR-0041)", async ({ page, request }) => {
-  await openLibrary(page, request, { language: "ru" });
+test("the question follows the doctor's verdict (ADR-0041)", async ({ page, request }) => {
+  // The fixture library has OPL's folders and no loader. On a system disk
+  // (Windows) the doctor says it does not suit OPL and nothing is asked; on
+  // a plain disk it is asked. The answers: LoaderProfileHint.test.tsx.
+  await openLibrary(page, request, { language: "en" });
+  await page.goto("/devices");
+  const card = libraryCard(page);
+  await expect(card.getByTestId("loader-profile")).toBeVisible();
+  const unusable = (await card.getAttribute("data-verdict")) === "error";
+  await expect(card.getByTestId("loader-question")).toHaveCount(unusable ? 0 : 1);
   await page.goto("/library");
   const header = page.getByTestId("loader-profile");
-  const question = page.getByTestId("loader-question");
-  await expect(question).toContainText("Какой OPL вы запускаете с этим носителем?");
-  // "I don't know" gets the rules every OPL reads.
-  await page.getByTestId("loader-answer-unknown").click();
-  await expect(question).toHaveCount(0);
-  await expect(header).toHaveAttribute("data-source", "override");
-  await expect(header.getByTestId("loader-profile-name")).toHaveText("OPL 1.1.0");
-  await expect(header.getByTestId("loader-profile-reason")).toHaveText(
-    "— версия не известна: правила, которые подходят любому OPL",
-  );
-  // Back to auto: the question comes back, and an answer sets the profile.
   await header.getByTestId("loader-profile-change").click();
-  await page.getByTestId("loader-profile-auto").click();
-  await page.getByTestId("loader-answer-RiptOpl").click();
+  await page.getByTestId("loader-profile-RiptOpl").click();
   await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
+  await expect(page.getByTestId("loader-question")).toHaveCount(0);
+  await expect(page.getByTestId("loader-conflict")).toHaveCount(0);
   await header.getByTestId("loader-profile-change").click();
   await page.getByTestId("loader-profile-auto").click();
-  await expect(question).toBeVisible();
-});
-
-test("a choice the device's files contradict offers auto again", async ({ page, request }) => {
-  const { library } = await roots(request);
-  const app = path.join(library, "APPS", "APP_RIPTOPL");
-  mkdirSync(app, { recursive: true });
-  writeFileSync(path.join(app, "settings_riptopl.cfg"), "enable_usb=1\r\n");
-  try {
-    await openLibrary(page, request, { language: "en" });
-    await page.goto("/library");
-    const header = page.getByTestId("loader-profile");
-    await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
-    await expect(page.getByTestId("loader-question")).toHaveCount(0);
-    await header.getByTestId("loader-profile-change").click();
-    await page.getByTestId("loader-profile-Opl110").click();
-    const conflict = page.getByTestId("loader-conflict");
-    await expect(conflict).toContainText("The device’s files say RiptOPL");
-    await conflict.getByTestId("loader-back-to-auto").click();
-    await expect(header).toHaveAttribute("data-source", "detected");
-    await expect(conflict).toHaveCount(0);
-  } finally {
-    rmSync(app, { recursive: true, force: true });
-  }
 });
 
 for (const language of ["en", "ru"] as const) {

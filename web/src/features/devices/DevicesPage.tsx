@@ -148,7 +148,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             </span>
           </div>
           <LoaderProfileLine loader={device.loader} className="mt-2 text-sm" />
-          <LoaderProfileHint loader={device.loader} className="mt-2" />
+          <LoaderProfileHint loader={device.loader} usable={verdict !== "error"} className="mt-2" />
           {!simple && (
             <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {device.model && (

@@ -312,7 +312,7 @@ function LibraryView({
             </Button>
           </div>
         )}
-        {loader.active && <LoaderProfileHint loader={loader.active} />}
+        {loader.active && <LoaderProfileHint loader={loader.active} usable={loader.usable} />}
         {loaderNotices.length > 0 && <NoticeList notices={loaderNotices} />}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
         {missingFolders.length > 0 && (
