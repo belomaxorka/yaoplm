@@ -1165,7 +1165,6 @@ fn loader_ls_lists_the_catalogue() {
         "official, ps2homebrew/Open-PS2-Loader @ v1.1.0 (fixed), profile OPL 1.1.0",
         "Preset fmcb: UPDT/OPL.ELF (usb), default on usb",
         "Preset app: APPS/YAOPL/OPNPS2LD.ELF (usb, mx4sio), title.cfg \"YAOPL\", default on mx4sio",
-        "Newest known build: v1.2.0-Beta-2370-33a2b19-yaopl (2026-10-23)",
     ] {
         assert!(text.contains(line), "{line}\n{text}");
     }

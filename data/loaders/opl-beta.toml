@@ -9,7 +9,6 @@ repo = "ps2homebrew/Open-PS2-Loader"
 profile = "opl-1.2"
 recommended = true
 devices = ["usb", "mx4sio"]
-history = "opl-beta"
 
 [license]
 spdx = "AFL-3.0"
@@ -73,6 +72,8 @@ title = "Open PS2 Loader"
 devices = ["usb", "mx4sio"]
 launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
 
+# Upstream betas carry no suffix after the commit.
 [fingerprints]
 elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
 settings = ["conf_opl.cfg"]
+versions = ["v1.2.0-Beta-*"]

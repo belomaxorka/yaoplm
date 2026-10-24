@@ -1,6 +1,7 @@
 //! Version strings of OPL builds: `v1.1.0`, `v1.2.0-Beta-2271-b3a2199`,
 //! `v1.2.0-Beta-2370-33a2b19-yaopl` (upstream `Makefile` `OPL_VERSION`,
-//! YAOPL `LOCALVERSION`; research/16 §1.1, §2).
+//! YAOPL `LOCALVERSION`; research/16 §1.1, §2), and the two-part releases
+//! before 1.0 (`v0.9`) that `data/loader-hashes/opl-stable.txt` names.
 //!
 //! The beta number is `git rev-list --count HEAD` + 2 of the repository the
 //! build comes from, so YAOPL and upstream reuse the same numbers for other
@@ -11,8 +12,8 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildVersion {
-    /// `1.2.0`.
-    pub release: [u32; 3],
+    /// `[1, 2, 0]`; two or three numbers.
+    pub release: Vec<u32>,
     /// The beta's build number.
     pub revision: Option<u32>,
     /// The commit after the build number, 7 hex digits.
@@ -26,12 +27,12 @@ impl BuildVersion {
     /// `latest`, a variant name with `PADEMU=1`.
     pub fn parse(text: &str) -> Option<Self> {
         let mut parts = text.strip_prefix('v')?.split('-');
-        let mut numbers = parts.next()?.split('.');
-        let mut release = [0; 3];
-        for slot in &mut release {
-            *slot = number(numbers.next()?)?;
-        }
-        if numbers.next().is_some() {
+        let release = parts
+            .next()?
+            .split('.')
+            .map(number)
+            .collect::<Option<Vec<u32>>>()?;
+        if !(2..=3).contains(&release.len()) {
             return None;
         }
         let mut rest: Vec<&str> = parts.collect();
@@ -88,8 +89,8 @@ fn number(text: &str) -> Option<u32> {
 
 impl fmt::Display for BuildVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [major, minor, patch] = self.release;
-        write!(f, "v{major}.{minor}.{patch}")?;
+        let release: Vec<String> = self.release.iter().map(u32::to_string).collect();
+        write!(f, "v{}", release.join("."))?;
         if let (Some(revision), Some(commit)) = (self.revision, &self.commit) {
             write!(f, "-Beta-{revision}-{commit}")?;
         }
@@ -117,7 +118,11 @@ mod tests {
 
         let fork = BuildVersion::parse("v1.2.0-Beta-2370-33a2b19-yaopl").unwrap();
         assert_eq!(fork.suffix, ["yaopl"]);
+        let old = BuildVersion::parse("v0.9").unwrap();
+        assert_eq!(old.release, [0, 9]);
         for text in [
+            "v0.5",
+            "v0.9.1",
             "v1.1.0",
             "v1.2.0-Beta-2271-b3a2199",
             "v1.2.0-Beta-2370-33a2b19-yaopl",
@@ -127,12 +132,27 @@ mod tests {
         }
     }
 
+    /// Every version the frozen hash table names, which detection reports.
+    #[test]
+    fn reads_every_version_of_the_frozen_table() {
+        let table = include_str!("../../../../data/loader-hashes/opl-stable.txt");
+        let versions: Vec<&str> = table
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        assert!(versions.len() > 30);
+        for version in versions {
+            assert!(BuildVersion::parse(version).is_some(), "{version}");
+        }
+    }
+
     #[test]
     fn refuses_what_is_not_a_version() {
         for text in [
             "latest",
             "1.1.0",
-            "v1.1",
+            "v1",
             "v1.1.0.1",
             "v1.2.0-Beta-2271",
             "v1.2.0-Beta-x-b3a2199",
@@ -159,5 +179,9 @@ mod tests {
             None
         );
         assert_eq!(old.channel_order(&v("v1.1.0")), Some(Ordering::Greater));
+        assert_eq!(
+            v("v0.9.1").channel_order(&v("v0.9")),
+            Some(Ordering::Greater)
+        );
     }
 }

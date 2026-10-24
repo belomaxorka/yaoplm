@@ -10,7 +10,6 @@ repo = "belomaxorka/yaopl"
 profile = "opl-1.2"
 recommended = false
 devices = ["usb", "mx4sio"]
-history = "yaopl"
 
 [license]
 spdx = "AFL-3.0"
@@ -74,7 +73,9 @@ title = "YAOPL"
 devices = ["usb", "mx4sio"]
 launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
 
+# `-yaopl` follows the commit (`LOCALVERSION`), `-nosio2man` may follow it.
 [fingerprints]
 elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
 settings = ["conf_opl.cfg"]
+versions = ["v1.2.0-Beta-*"]
 suffix = "yaopl"

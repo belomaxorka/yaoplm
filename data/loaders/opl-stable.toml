@@ -10,7 +10,6 @@ repo = "ps2homebrew/Open-PS2-Loader"
 profile = "opl-1.1"
 recommended = false
 devices = ["usb", "mx4sio"]
-history = "opl-stable"
 
 [license]
 spdx = "AFL-3.0"
@@ -79,6 +78,8 @@ title = "Open PS2 Loader"
 devices = ["usb", "mx4sio"]
 launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
 
+# The version inside the ELF names the channel (ADR-0041, ADR-0042).
 [fingerprints]
 elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
 settings = ["conf_opl.cfg"]
+versions = ["v1.1.0"]

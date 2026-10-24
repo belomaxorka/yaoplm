@@ -45,8 +45,6 @@ pub struct LoaderBuild {
     pub presets: Vec<LoaderPreset>,
     /// The preset a wizard starts with on each device.
     pub default_presets: Vec<LoaderDefaultPreset>,
-    /// The newest build in the hash history, if any.
-    pub newest_known: Option<KnownLoaderBuild>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,16 +133,6 @@ pub struct LoaderDefaultPreset {
     pub preset: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct KnownLoaderBuild {
-    pub version: String,
-    pub sha256: String,
-    /// `YYYY-MM-DD`.
-    pub date: String,
-}
-
 fn target(target: Target) -> LoaderTarget {
     match target {
         Target::Usb => LoaderTarget::Usb,
@@ -221,11 +209,6 @@ fn build(build: &Build) -> LoaderBuild {
                 preset: preset.clone(),
             })
             .collect(),
-        newest_known: build.newest_known().map(|known| KnownLoaderBuild {
-            version: known.version.clone(),
-            sha256: known.sha256.clone(),
-            date: known.date.clone(),
-        }),
     }
 }
 
@@ -263,10 +246,6 @@ mod tests {
         assert_eq!(usb.preset, "fmcb");
         let yaopl = &catalog.builds[2];
         assert_eq!(yaopl.publisher, LoaderPublisher::Fork);
-        assert_eq!(
-            yaopl.newest_known.as_ref().unwrap().version,
-            "v1.2.0-Beta-2370-33a2b19-yaopl"
-        );
         let json = serde_json::to_value(beta).unwrap();
         assert_eq!(json["defaultPresets"][0]["device"], "usb");
         assert_eq!(json["presets"][2]["launchers"][1], "ps2bblMx4sio");

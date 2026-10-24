@@ -1,4 +1,4 @@
-//! Entries of `data/loaders/<id>.toml` (SPEC §5.10.1, ADR-0038, ADR-0040).
+//! Entries of `data/loaders/<id>.toml` (SPEC §5.10.1, ADR-0038, ADR-0042).
 //! Parsing is strict: an unknown field is an error, so a typo in the data
 //! fails the tests instead of silently dropping a rule. New fields bump
 //! `schema` in `index.toml`.
@@ -9,7 +9,6 @@ use serde::{Deserialize, Deserializer};
 use yaoplm_device::RelPath;
 use yaoplm_formats::LoaderProfile;
 
-use super::history::{self, KnownBuild};
 use super::version::BuildVersion;
 use super::{CatalogError, SCHEMA};
 use crate::detect::Family;
@@ -50,8 +49,6 @@ pub struct Build {
     #[serde(default)]
     pub recommended: bool,
     pub devices: Vec<Target>,
-    /// `data/loader-hashes/<history>.txt`.
-    pub history: String,
     pub license: License,
     /// What the build is good at, for the build cards.
     pub summary: Texts,
@@ -62,9 +59,6 @@ pub struct Build {
     pub channel: Channel,
     pub layout: Layout,
     pub fingerprints: Fingerprints,
-    /// Builds of this channel by SHA-256, from the history file.
-    #[serde(skip)]
-    pub known: Vec<KnownBuild>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -273,7 +267,11 @@ pub struct Fingerprints {
     /// ELF names, `*` for any text, case does not matter.
     pub elf: Vec<String>,
     pub settings: Vec<String>,
-    /// The last part of the build's version strings (`yaopl`).
+    /// Version strings of this channel, `*` for any text: the version
+    /// inside an ELF names its channel (ADR-0041, ADR-0042).
+    pub versions: Vec<String>,
+    /// What a fork appends after the commit (`yaopl`); without it the
+    /// version must have no suffix at all.
     #[serde(default)]
     pub suffix: Option<String>,
 }
@@ -286,6 +284,10 @@ fn profile<'de, D: Deserializer<'de>>(d: D) -> Result<LoaderProfile, D::Error> {
         "riptopl" => Ok(LoaderProfile::RiptOpl),
         other => Err(serde::de::Error::custom(format!("unknown profile {other}"))),
     }
+}
+
+fn is_sha256(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// `*` matches any text, nothing else is special.
@@ -318,7 +320,7 @@ pub fn glob_match(pattern: &str, text: &str, ignore_case: bool) -> bool {
 
 impl Catalog {
     /// Reads a catalogue through `read`, which gets paths under `data/`
-    /// (`loaders/index.toml`, `loaders/<id>.toml`, `loader-hashes/<id>.txt`).
+    /// (`loaders/index.toml`, `loaders/<id>.toml`).
     pub fn parse(mut read: impl FnMut(&str) -> Option<String>) -> Result<Self, CatalogError> {
         const INDEX: &str = "loaders/index.toml";
         let text = read(INDEX).ok_or_else(|| CatalogError::new(INDEX, "missing"))?;
@@ -340,7 +342,7 @@ impl Catalog {
                 return Err(CatalogError::new(INDEX, format!("{id} is listed twice")));
             }
             let text = read(&file).ok_or_else(|| CatalogError::new(&file, "missing"))?;
-            let mut build: Build =
+            let build: Build =
                 toml::from_str(&text).map_err(|e| CatalogError::new(&file, e.to_string()))?;
             if &build.id != id {
                 return Err(CatalogError::new(
@@ -351,10 +353,6 @@ impl Catalog {
             build
                 .check()
                 .map_err(|message| CatalogError::new(&file, message))?;
-            let history_file = format!("loader-hashes/{}.txt", build.history);
-            let text =
-                read(&history_file).ok_or_else(|| CatalogError::new(&history_file, "missing"))?;
-            build.known = history::parse(&history_file, &text)?;
             builds.push(build);
         }
         if builds.iter().filter(|b| b.recommended).count() != 1 {
@@ -386,13 +384,13 @@ impl Catalog {
         })
     }
 
-    /// Every build whose history has this SHA-256.
-    pub fn known(&self, sha256: &str) -> Vec<(&Build, &KnownBuild)> {
+    /// The channel a build of `family` with this version belongs to: what
+    /// the version inside an ELF says (LDR-4). `None` for versions no
+    /// channel takes, such as OPL 1.0.0.
+    pub fn channel_of_version(&self, family: Family, version: &BuildVersion) -> Option<&Build> {
         self.builds
             .iter()
-            .flat_map(|b| b.known.iter().map(move |k| (b, k)))
-            .filter(|(_, k)| k.sha256.eq_ignore_ascii_case(sha256))
-            .collect()
+            .find(|b| b.family == family && b.takes_version(version))
     }
 }
 
@@ -406,22 +404,20 @@ impl Build {
         self.preset(self.layout.defaults.get(&target)?)
     }
 
-    /// The newest build in the history, by build number.
-    pub fn newest_known(&self) -> Option<&KnownBuild> {
-        let mut newest: Option<(&KnownBuild, BuildVersion)> = None;
-        for known in &self.known {
-            let Some(version) = known.parsed_version() else {
-                continue;
-            };
-            let newer = match &newest {
-                None => true,
-                Some((_, best)) => version.channel_order(best) == Some(std::cmp::Ordering::Greater),
-            };
-            if newer {
-                newest = Some((known, version));
-            }
-        }
-        newest.map(|(known, _)| known)
+    /// The version is one of this channel's: a pattern of
+    /// `fingerprints.versions` and exactly the channel's fork suffix.
+    pub fn takes_version(&self, version: &BuildVersion) -> bool {
+        let suffix_fits = match &self.fingerprints.suffix {
+            Some(suffix) => version.suffix.first() == Some(suffix),
+            None => version.suffix.is_empty(),
+        };
+        let text = version.to_string();
+        suffix_fits
+            && self
+                .fingerprints
+                .versions
+                .iter()
+                .any(|p| glob_match(p, &text, false))
     }
 
     /// Rules the data must keep; the message names the field.
@@ -431,8 +427,8 @@ impl Build {
                 && s.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         };
-        if !ascii_name(&self.id) || !ascii_name(&self.history) {
-            return Err("id and history must be plain ASCII names".into());
+        if !ascii_name(&self.id) {
+            return Err("id must be a plain ASCII name".into());
         }
         if self.name.trim().is_empty() {
             return Err("name is empty".into());
@@ -483,6 +479,10 @@ impl Build {
         if self.fingerprints.elf.is_empty() {
             return Err("fingerprints.elf is empty".into());
         }
+        let versions = &self.fingerprints.versions;
+        if versions.is_empty() || versions.iter().any(|p| !p.starts_with('v')) {
+            return Err("fingerprints.versions must be version patterns".into());
+        }
         Ok(())
     }
 
@@ -513,7 +513,7 @@ impl Build {
             ));
         }
         let sums = &channel.checksums;
-        if let Some((name, sha)) = sums.pinned.iter().find(|(_, sha)| !history::is_sha256(sha)) {
+        if let Some((name, sha)) = sums.pinned.iter().find(|(_, sha)| !is_sha256(sha)) {
             return Err(format!(
                 "channel.checksums.pinned {name} = {sha} is not a lowercase SHA-256"
             ));
@@ -596,6 +596,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::loaders::version::BuildVersion;
     use crate::loaders::{BUILT_IN, built_in};
 
     fn data_dir() -> &'static Path {
@@ -631,22 +632,18 @@ mod tests {
 
     #[test]
     fn every_data_file_is_compiled_in() {
-        let mut on_disk = files_in("loaders", ".toml");
-        on_disk.extend(files_in("loader-hashes", ".txt"));
+        let on_disk = files_in("loaders", ".toml");
         let compiled: BTreeSet<String> = BUILT_IN.iter().map(|(p, _)| (*p).to_owned()).collect();
         assert_eq!(on_disk, compiled);
         for (path, text) in BUILT_IN {
             let disk = std::fs::read_to_string(data_dir().join(path)).unwrap();
             assert_eq!(disk, text, "{path}");
         }
-        // And every history file belongs to a build.
-        let catalog = built_in().unwrap();
-        for path in files_in("loader-hashes", ".txt") {
-            let id = path
-                .trim_start_matches("loader-hashes/")
-                .trim_end_matches(".txt");
-            assert!(catalog.builds.iter().any(|b| b.history == id), "{path}");
-        }
+        // The only hash table is the frozen one detection reads (ADR-0042).
+        assert_eq!(
+            files_in("loader-hashes", ".txt"),
+            BTreeSet::from(["loader-hashes/opl-stable.txt".to_owned()])
+        );
     }
 
     #[test]
@@ -696,7 +693,7 @@ mod tests {
 
     #[test]
     fn presets_follow_the_owner_decisions() {
-        // ADR-0040: FreeMcBoot's UPDT/OPL.ELF on a stick, an app folder on
+        // ADR-0042: FreeMcBoot's UPDT/OPL.ELF on a stick, an app folder on
         // MX4SIO, PS2BBL's APPS/OPNPS2LD.ELF beside them.
         for build in &built_in().unwrap().builds {
             let usb = build.default_preset(Target::Usb).unwrap();
@@ -743,58 +740,61 @@ mod tests {
     }
 
     #[test]
-    fn histories_name_their_channel() {
+    fn the_version_inside_an_elf_names_its_channel() {
         let catalog = built_in().unwrap();
-        let stable = catalog.build("opl-stable").unwrap();
-        assert!(
-            stable
-                .known
-                .iter()
-                .all(|k| k.version == "v1.0.0" || k.version == "v1.1.0")
-        );
-        // The ELF in the pinned 1.1.0 archive (research/17 §7.3).
-        let elf = "dd6036a06a5c3ec6482625f2e4687af76448fe46a1b58049c00ea35741499520";
-        let found = catalog.known(elf);
-        assert_eq!(found.len(), 1);
-        assert_eq!(
-            (found[0].0.id.as_str(), found[0].1.version.as_str()),
-            ("opl-stable", "v1.1.0")
-        );
-        let suffix = |b: &Build| {
-            b.fingerprints
-                .suffix
-                .clone()
-                .map(|s| vec![s])
-                .unwrap_or_default()
+        let channel = |text: &str| {
+            catalog
+                .channel_of_version(Family::Opl, &BuildVersion::parse(text).unwrap())
+                .map(|b| b.id.as_str())
         };
-        for build in catalog.builds.iter().filter(|b| b.channel.floating) {
-            assert!(!build.known.is_empty(), "{}", build.id);
-            for known in &build.known {
-                let version = known.parsed_version().unwrap();
-                assert!(
-                    version.revision.is_some(),
-                    "{}: {}",
-                    build.id,
-                    known.version
-                );
-                assert_eq!(
-                    version.suffix,
-                    suffix(build),
-                    "{}: {}",
-                    build.id,
-                    known.version
-                );
+        // The three ELFs downloaded for the catalogue (research/17 §7.3).
+        assert_eq!(channel("v1.1.0"), Some("opl-stable"));
+        assert_eq!(channel("v1.2.0-Beta-2271-b3a2199"), Some("opl-beta"));
+        assert_eq!(channel("v1.2.0-Beta-2370-33a2b19-yaopl"), Some("yaopl"));
+        // YAOPL's A/B build is still YAOPL; another fork is no channel.
+        assert_eq!(
+            channel("v1.2.0-Beta-2370-33a2b19-yaopl-nosio2man"),
+            Some("yaopl")
+        );
+        assert_eq!(channel("v1.2.0-Beta-4257-55261de-riptopl"), None);
+        // Releases without a profile have no channel either (SPEC §5.10.2).
+        assert_eq!(channel("v1.0.0"), None);
+        assert_eq!(channel("v0.9.3"), None);
+        let version = BuildVersion::parse("v1.2.0-Beta-2271-b3a2199").unwrap();
+        assert!(
+            catalog
+                .channel_of_version(Family::RiptOpl, &version)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn every_channel_takes_its_own_releases_versions() {
+        let catalog = built_in().unwrap();
+        for build in &catalog.builds {
+            if let VersionRule::Tag = build.channel.version {
+                let version = BuildVersion::parse(&build.channel.tag).unwrap();
+                assert!(build.takes_version(&version), "{}", build.id);
+            }
+            // Channels never overlap: a version names one channel at most.
+            for other in catalog.builds.iter().filter(|o| o.id != build.id) {
+                for pattern in &build.fingerprints.versions {
+                    let sample = pattern.replace('*', "2271-b3a2199");
+                    let sample = match &build.fingerprints.suffix {
+                        Some(suffix) => format!("{sample}-{suffix}"),
+                        None => sample,
+                    };
+                    let version = BuildVersion::parse(&sample).unwrap();
+                    assert!(build.takes_version(&version), "{}: {sample}", build.id);
+                    assert!(
+                        !other.takes_version(&version),
+                        "{} and {}: {sample}",
+                        build.id,
+                        other.id
+                    );
+                }
             }
         }
-        assert_eq!(
-            catalog
-                .build("yaopl")
-                .unwrap()
-                .newest_known()
-                .unwrap()
-                .version,
-            "v1.2.0-Beta-2370-33a2b19-yaopl"
-        );
     }
 
     #[test]
@@ -834,11 +834,9 @@ mod tests {
     }
 
     fn catalog_with(build: &str) -> Result<Catalog, CatalogError> {
-        let history = "loader-hashes/x.txt";
         Catalog::parse(|path| match path {
             "loaders/index.toml" => Some("schema = 1\nbuilds = [\"x\"]\n".to_owned()),
             "loaders/x.toml" => Some(build.to_owned()),
-            p if p == history => Some(String::new()),
             _ => None,
         })
     }
@@ -851,7 +849,6 @@ mod tests {
             .unwrap()
             .1
             .replace("id = \"yaopl\"", "id = \"x\"")
-            .replace("history = \"yaopl\"", "history = \"x\"")
             .replace("recommended = false", "recommended = true")
     }
 
@@ -881,6 +878,11 @@ mod tests {
                 "owner/name",
             ),
             ("recommended = true", "recommended = false", "recommended"),
+            (
+                "versions = [\"v1.2.0-Beta-*\"]\n",
+                "",
+                "missing field `versions`",
+            ),
             (
                 "releases = [\"latest\", \"v*-yaopl\"]",
                 "releases = [\"v*-yaopl\"]",

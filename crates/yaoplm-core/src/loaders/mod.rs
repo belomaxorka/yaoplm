@@ -1,6 +1,7 @@
-//! The loader catalogue (SPEC LDR-1, §5.10.1, ADR-0022, ADR-0040): the
-//! builds YAOPLM installs, as data in `data/loaders/`, and the hash history
-//! of each build in `data/loader-hashes/`.
+//! The loader catalogue (SPEC LDR-1, §5.10.1, ADR-0022, ADR-0042): the
+//! builds YAOPLM installs, as data in `data/loaders/`. There is no hash
+//! history of new builds: the version inside an ELF (ADR-0041) names the
+//! build and, through `fingerprints`, its channel.
 //!
 //! A build is a family plus a channel: OPL 1.1.0 (`v1.1.0`), OPL 1.2.0 beta
 //! (`latest`) and YAOPL (`latest`) are three builds of the OPL family. A copy
@@ -9,7 +10,6 @@
 //! Release facts the entries rely on are in research/17 §6–§7.
 
 pub mod catalog;
-pub mod history;
 pub mod version;
 
 use std::sync::OnceLock;
@@ -18,7 +18,6 @@ pub use catalog::{
     Build, Catalog, Channel, Checksums, Doc, DocKind, ElfSource, Launcher, Layout, License, Preset,
     Publisher, SettingsLocation, Target, VersionRule,
 };
-pub use history::KnownBuild;
 pub use version::BuildVersion;
 
 /// The newest catalogue schema this program reads.
@@ -44,7 +43,7 @@ impl CatalogError {
 
 /// The catalogue files compiled into the program, by their path under
 /// `data/`. `catalog::tests` checks that this is every file there.
-const BUILT_IN: [(&str, &str); 7] = [
+const BUILT_IN: [(&str, &str); 4] = [
     (
         "loaders/index.toml",
         include_str!("../../../../data/loaders/index.toml"),
@@ -60,18 +59,6 @@ const BUILT_IN: [(&str, &str); 7] = [
     (
         "loaders/yaopl.toml",
         include_str!("../../../../data/loaders/yaopl.toml"),
-    ),
-    (
-        "loader-hashes/opl-stable.txt",
-        include_str!("../../../../data/loader-hashes/opl-stable.txt"),
-    ),
-    (
-        "loader-hashes/opl-beta.txt",
-        include_str!("../../../../data/loader-hashes/opl-beta.txt"),
-    ),
-    (
-        "loader-hashes/yaopl.txt",
-        include_str!("../../../../data/loader-hashes/yaopl.txt"),
     ),
 ];
 

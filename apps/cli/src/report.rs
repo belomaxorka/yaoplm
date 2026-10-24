@@ -789,18 +789,6 @@ pub fn loaders(catalog: &LoaderCatalog, lang: &str) -> String {
             }
             let _ = writeln!(out);
         }
-        match &build.newest_known {
-            Some(known) => {
-                let _ = writeln!(
-                    out,
-                    "  Newest known build: {} ({})",
-                    known.version, known.date
-                );
-            }
-            None => {
-                let _ = writeln!(out, "  Newest known build: none yet");
-            }
-        }
         let _ = writeln!(
             out,
             "  Licence: {}, {} ({})",

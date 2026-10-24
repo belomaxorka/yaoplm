@@ -1,7 +1,0 @@
-# Upstream OPL 1.2.0 beta, pre-release `latest` of ps2homebrew/Open-PS2-Loader.
-# The tag is re-published in place, so every build seen is kept here: the
-# GitHub `digest` of the `OPNPS2LD.ELF` asset, its version from the versioned
-# asset names and its upload date. .github/workflows/loader-hashes.yml appends
-# new builds once a day (SPEC §5.10.1, ADR-0022).
-# Columns: version sha256 release-date file. Lines are only ever added.
-v1.2.0-Beta-2271-b3a2199 4b6d36eff917bbeb3d860fea7ca0b3dd38502c4f5b008803a1edf3f0edf12290 2026-10-13 OPNPS2LD.ELF
