@@ -437,6 +437,7 @@ version = "0.1.0"
 dependencies = [
  "crc32fast",
  "lz4_flex",
+ "lzma-rust2 0.23.0",
  "sevenz-rust2",
  "thiserror",
  "zip",

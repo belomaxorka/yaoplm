@@ -6767,6 +6767,7 @@ dependencies = [
  "chd",
  "crc32fast",
  "lz4_flex",
+ "lzma-rust2 0.23.0",
  "proptest",
  "sevenz-rust2",
  "tempfile",
