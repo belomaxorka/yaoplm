@@ -10,6 +10,7 @@ import { requestSources } from "@/features/art/sources";
 import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 export interface CoverSearchState {
   /** Tells searches apart: each one runs its own job. */
@@ -77,6 +78,7 @@ export function useCoverSearch(
 ) {
   const { transport } = useApi();
   const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const { cancel } = useJobs();
   const [store, setStore] = useState<Store>({ started: 0, search: null, skip: null });
   const state = store.search;
@@ -106,7 +108,7 @@ export function useCoverSearch(
         const id = await fetchArt(transport, {
           type: "FetchArt",
           root,
-          profile: settings.profile,
+          profile: loaderProfile,
           sources: requestSources(settings),
           kinds: [...kinds],
           import: plan,

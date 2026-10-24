@@ -26,6 +26,7 @@ import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /** The file name at the end of a URL or a path, with `%20` and the like decoded. */
 function fileName(origin: string): string {
@@ -88,6 +89,7 @@ function VariantsBody({
   const { t } = useTranslation();
   const { transport } = useApi();
   const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const { jobs, cancel } = useJobs();
   const [jobId, setJobId] = useState<JobId | null>(null);
   const [variants, setVariants] = useState<ArtVariant[] | null>(null);
@@ -104,7 +106,7 @@ function VariantsBody({
           root,
           startup: game.startup,
           kind,
-          profile: settings.profile,
+          profile: loaderProfile,
           sources: requestSources(settings),
         });
         if (poll.signal.aborted) {
@@ -132,7 +134,7 @@ function VariantsBody({
       poll.abort();
       if (job !== null) void cancel(job).catch(() => undefined);
     };
-  }, [transport, root, game.startup, kind, settings, cancel]);
+  }, [transport, root, game.startup, kind, loaderProfile, settings, cancel]);
 
   const job = jobId === null ? undefined : jobs.find((j) => j.id === jobId);
   const running = variants === null && error === null;

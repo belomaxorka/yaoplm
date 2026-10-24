@@ -21,6 +21,7 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { gameRef } from "@/lib/gameKey";
 import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /**
  * Convert games between ISO, ZSO and `ul` (GAME-4). The core plans it; the
@@ -87,8 +88,9 @@ function ConvertBody({
 }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const ids = useId();
-  const zsoReadable = settings.profile !== "Opl110";
+  const zsoReadable = loaderProfile !== "Opl110";
   const [target, setTarget] = useState<ConvertTarget>(() => suggestTarget(games, zsoReadable));
   const single = games.length === 1 ? games[0] : undefined;
   const changing = games.filter((game) => game.format !== formatOf[target]);
@@ -138,7 +140,7 @@ function ConvertBody({
               root,
               games: changing.map(gameRef),
               target,
-              profile: settings.profile,
+              profile: loaderProfile,
               nameStyle: settings.nameStyle,
             })
           }

@@ -22,7 +22,7 @@ import { imageBlobToPng, readClipboardImage } from "@/features/art/clipboard";
 import { artAspect, artTypes, useFetchableTypes } from "@/features/art/kinds";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
-import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /**
  * The game's pictures, one slot per type OPL themes load (ART-2, ART-3,
@@ -33,7 +33,7 @@ import { useSettings } from "@/settings/context";
  */
 export function ArtSlots({ game, root }: { game: Game; root: string }) {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const fetchable = useFetchableTypes();
   // Every disabled Download has the same reason at any one time.
   const unavailable = fetchable.blocked?.text ?? t("art.noSourceForKind");
@@ -54,7 +54,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
       startup: game.startup,
       kind,
       input,
-      profile: settings.profile,
+      profile: loaderProfile,
       overwrite: true,
     });
   };
