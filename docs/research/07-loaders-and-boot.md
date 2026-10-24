@@ -267,6 +267,22 @@ Sources: config keys in each `include/config.h`, `src/*support.c` file lists, RE
 - PS2BBL's 2023 `kelf` pre-release *does* have a digest, so the field seems to depend on when the asset was (re)uploaded [V observation; cause U].
 - Rolling tags (`latest`, `rolling*`) replace assets in place. The same tag name can point to a different digest an hour later [V: RiptOPL `rolling` published 2026-10-22T13:07Z].
 
+### 1.11 Picking a version: what each repository keeps (2026-10-24)
+
+For the version picker of SPEC LDR-6 (§5.10.2, ADR-0038). All [V] (gh api `releases` and `tags`, 2026-10-24) unless marked.
+- **Upstream OPL:**
+  - releases: `latest` (pre-release, re-published in place, last 2026-10-13, `v1.2.0-Beta-2271-b3a2199`), `v1.1.0` (2021-09-09), `v1.0.0` (2021-01-06), `v1.0.0-rc1` (pre-release) and `0.5`–`0.9.3` (all uploaded 2016-10-26). No earlier 1.2.0 beta is kept on GitHub;
+  - release text: `latest` has a commit list grouped by type with links (about 0.6 KB); `v1.1.0` has a hand-written "New in OPL v1.1.0" section plus every commit (about 20 KB);
+  - `v1.1.0` has no bare ELF asset: the ELF is inside `OPNPS2LD-v1.1.0.7z` (= `OPNPS2LD.7z`), and every asset has `digest: null`;
+  - the README says every build dispatched to the release section is also uploaded to a MEGA folder "since 05/07/2021" [R README]. MEGA is not a GitHub release and needs its own client, so YAOPLM does not download from it (ADR-0038).
+- **YAOPL** (`belomaxorka/yaopl`): one pre-release `latest` (2026-10-23, `v1.2.0-Beta-2370-33a2b19-yaopl`); its text names the commit and points to `FORK.md` and `SHA256SUMS`. `FORK.md`: "Only the build of the current tip of `master` is published." The tag list shows upstream's tags, inherited through git, without releases.
+- **RiptOPL** (`NathanNeurotic/Open-PS2-Loader`):
+  - releases: `rolling` and `rolling-korium` (rebuilt on every push, last 2026-10-24), `rolling-ra` (pre-release, 2026-10-12), `current-fan-favorite` (2026-09-04);
+  - tags without releases: `rolling-alpha`, `rebuild-66`, `rebuild-74`, `rebuild-91`, `pops-bundle`, `checkpoint/2026-08-15-zack-approved-v2582`;
+  - release text (3.5–6.5 KB) starts with the build type, the commit link and the version string, then a `<details>` changelog of the last 10 commits.
+- **wOPL**: `latest` (pre-release, 2026-07-23), `v1.1-351-…` (2026-05-14), `pre-vv1.0-287-…` (2026-04-16), `beta` (pre-release, 2025-03-01).
+- **What this means for LDR-6:** a version picker works for upstream (`latest`, `v1.1.0`), wOPL and the MMCE fork (§1.1). RiptOPL can only offer its flavours. YAOPL needs immutable versioned releases next to `latest` in its CI.
+
 ---
 
 ## 2. Boot setups: where the loader ELF must live
