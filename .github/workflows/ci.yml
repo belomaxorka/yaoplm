@@ -73,7 +73,7 @@ jobs:
       - run: cargo test --workspace
 
   oracles:
-    name: OPL cross-checks (USBA_crc32 in C, ziso.py), fuzz targets build
+    name: OPL cross-checks (USBA_crc32 in C, ziso.py, genvmc), fuzz targets build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -85,12 +85,15 @@ jobs:
       - name: Install Rust (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - name: Fetch OPL src/system.c and pc/ziso.py
+      - name: Fetch OPL src/system.c, pc/ziso.py and pc/genvmc
         run: |
-          mkdir -p "$RUNNER_TEMP/opl/src" "$RUNNER_TEMP/opl/pc"
+          mkdir -p "$RUNNER_TEMP/opl/src" "$RUNNER_TEMP/opl/pc/genvmc/src"
           base="https://raw.githubusercontent.com/ps2homebrew/Open-PS2-Loader/$OPL_COMMIT"
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/opl/src/system.c" "$base/src/system.c"
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/opl/pc/ziso.py" "$base/pc/ziso.py"
+          for f in genvmc.c genvmc.h; do
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/opl/pc/genvmc/src/$f" "$base/pc/genvmc/src/$f"
+          done
       - name: Python with lz4 for ziso.py
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
