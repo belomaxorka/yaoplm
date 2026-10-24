@@ -1,4 +1,4 @@
-//! Per-OS volume queries and file preallocation.
+//! Per-OS volume queries, file preallocation and fragment counts.
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -16,7 +16,16 @@ pub use macos::{list_volumes, volume_for_path};
 #[cfg(unix)]
 pub use unix::preallocate;
 #[cfg(windows)]
-pub use windows::{list_volumes, preallocate, volume_for_path};
+pub use windows::{fragments, list_volumes, preallocate, volume_for_path};
+
+/// Linux (`FIEMAP`) and macOS come with the fragmentation check (IMP-7b).
+#[cfg(not(windows))]
+pub fn fragments(_file: &std::fs::File) -> std::io::Result<u32> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "fragment counts are not implemented on this OS",
+    ))
+}
 
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub use fallback::{list_volumes, volume_for_path};
