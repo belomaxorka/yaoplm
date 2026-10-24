@@ -21,7 +21,8 @@ import { profiles } from "@/settings/settings";
 function useReason(loader: ActiveProfile): string {
   const { t } = useTranslation();
   if (loader.source === "override") return t("loader.byOverride");
-  if (loader.source === "setting") return t("loader.bySetting");
+  // Only the CLI forces a profile for every device (ADR-0040).
+  if (loader.source === "explicit") return t("loader.byExplicit");
   if (!loader.detected) return t("loader.unreadable");
   return phraseText(loader.detected.reason, loader.detected.reasonText);
 }
@@ -62,9 +63,7 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup value={chosen} onValueChange={choose}>
             <DropdownMenuRadioItem value="auto" data-testid="loader-profile-auto">
-              {settings.loaderProfile === "auto"
-                ? t("loader.auto")
-                : t("loader.asSettings", { profile: t(`settings.profiles.${settings.loaderProfile}`) })}
+              {t("loader.auto")}
             </DropdownMenuRadioItem>
             {profiles.map((profile) => (
               <DropdownMenuRadioItem key={profile} value={profile} data-testid={`loader-profile-${profile}`}>
