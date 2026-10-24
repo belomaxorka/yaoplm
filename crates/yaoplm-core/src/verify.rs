@@ -103,6 +103,7 @@ mod tests {
             cfg: None,
             art: Vec::new(),
             cheats: None,
+            fragments: None,
             warnings: Vec::new(),
         }
     }

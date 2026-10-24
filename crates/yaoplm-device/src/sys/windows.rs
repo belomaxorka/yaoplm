@@ -1,9 +1,9 @@
 //! Windows: volume queries through kernel32, preallocation and the
 //! fragment count of a file.
 //!
-//! The only module with `unsafe` (ADR-0019): thin wrappers around
-//! documented Win32 calls, with every buffer owned and sized on the Rust
-//! side. None needs administrator rights. The volume device is opened with
+//! One of the modules with `unsafe` (ADR-0019, ADR-0037): thin wrappers
+//! around documented Win32 calls, with every buffer owned and sized on the
+//! Rust side. None needs administrator rights. The volume device is opened with
 //! access 0, which still allows `IOCTL_STORAGE_QUERY_PROPERTY` and
 //! `IOCTL_DISK_GET_PARTITION_INFO_EX` (research/06 §2.1).
 #![allow(unsafe_code)]
@@ -39,6 +39,7 @@ use windows_sys::Win32::System::WindowsProgramming::{
     DRIVE_CDROM, DRIVE_FIXED, DRIVE_REMOTE, DRIVE_REMOVABLE,
 };
 
+use super::runs::Runs;
 use crate::volume::{Bus, FsKind, PartitionInfo, PartitionStyle, Volume, VolumeKind};
 
 /// MAX_PATH + 1: the documented size for volume and file-system names.
@@ -348,8 +349,7 @@ pub fn fragments(file: &File) -> io::Result<u32> {
     let mut input = STARTING_VCN_INPUT_BUFFER { StartingVcn: 0 };
     // u64 keeps the buffer aligned the way the file system expects.
     let mut out = vec![0u64; 1024];
-    let mut runs = 0u32;
-    let mut last_end = None;
+    let mut runs = Runs::default();
     loop {
         let mut returned = 0u32;
         // SAFETY: the handle belongs to `file`, which outlives the call;
@@ -371,7 +371,7 @@ pub fn fragments(file: &File) -> io::Result<u32> {
             let err = io::Error::last_os_error();
             match err.raw_os_error() {
                 // No clusters at all: an empty file.
-                Some(ERROR_HANDLE_EOF) => return Ok(runs),
+                Some(ERROR_HANDLE_EOF) => return Ok(runs.count()),
                 Some(ERROR_MORE_DATA) => true,
                 _ => return Err(err),
             }
@@ -389,32 +389,19 @@ pub fn fragments(file: &File) -> io::Result<u32> {
         let extents: Vec<(i64, i64)> = (0..count)
             .map(|index| (at(HEADER + index * 16), at(HEADER + index * 16 + 8)))
             .collect();
-        let vcn = merge_runs(at(8), &extents, &mut runs, &mut last_end);
+        // Extents are (next VCN, LCN): each one ends where the next begins.
+        let mut vcn = at(8);
+        for &(next_vcn, lcn) in &extents {
+            // LCN -1: a hole or a compressed run.
+            let start = u64::try_from(lcn).ok();
+            runs.add(start, u64::try_from(next_vcn - vcn).unwrap_or(0));
+            vcn = next_vcn;
+        }
         if !more || count == 0 {
-            return Ok(runs);
+            return Ok(runs.count());
         }
         input.StartingVcn = vcn;
     }
-}
-
-/// Counts runs in `(next_vcn, lcn)` extents that start at `vcn`: an extent
-/// that begins where the last one ended on disk continues its run. Returns
-/// the VCN after the last extent.
-fn merge_runs(
-    mut vcn: i64,
-    extents: &[(i64, i64)],
-    runs: &mut u32,
-    last_end: &mut Option<i64>,
-) -> i64 {
-    for &(next_vcn, lcn) in extents {
-        // LCN -1: a hole or compressed run, never contiguous with anything.
-        if !(lcn >= 0 && *last_end == Some(lcn)) {
-            *runs += 1;
-        }
-        *last_end = (lcn >= 0).then(|| lcn + (next_vcn - vcn));
-        vcn = next_vcn;
-    }
-    vcn
 }
 
 /// Reserves `len` bytes for `file` without changing its size, so a
@@ -438,22 +425,5 @@ pub fn preallocate(file: &File, len: u64) -> io::Result<()> {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::merge_runs;
-
-    #[test]
-    fn extents_that_continue_on_disk_are_one_run() {
-        let mut runs = 0;
-        let mut last = None;
-        // 0..16 at 100, 16..32 at 116 (continues), 32..40 at 500.
-        let end = merge_runs(0, &[(16, 100), (32, 116), (40, 500)], &mut runs, &mut last);
-        assert_eq!((runs, end, last), (2, 40, Some(508)));
-        // The next answer of a long list carries on.
-        merge_runs(40, &[(48, 508), (50, -1)], &mut runs, &mut last);
-        assert_eq!((runs, last), (3, None));
     }
 }

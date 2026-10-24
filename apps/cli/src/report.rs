@@ -7,7 +7,8 @@ use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable};
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
-    GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice, Platform,
+    Fragments, GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice,
+    Platform,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
@@ -63,6 +64,31 @@ fn relative<'a>(path: &'a str, root: &str) -> &'a str {
         .unwrap_or(path)
 }
 
+const FRAGMENTS_UNKNOWN: &str =
+    "unknown: the system does not say where files lie on this device (on Linux, only root can ask)";
+
+/// Pieces of a game on a FAT32 or exFAT device and OPL's rule (IMP-7b).
+fn fragments(fragments: &Fragments) -> String {
+    match fragments {
+        Fragments::Known {
+            total,
+            limit: Some(limit),
+            ..
+        } => format!("{total} (OPL loads up to {limit} per game)"),
+        Fragments::Known {
+            total,
+            files,
+            limit: None,
+        } if files.iter().all(|&n| n <= 1) => {
+            format!("{total}: each file in one piece, as OPL 1.1.0 needs")
+        }
+        Fragments::Known {
+            total, limit: None, ..
+        } => format!("{total}: not every file is in one piece, and OPL 1.1.0 needs each to be"),
+        Fragments::Unknown => FRAGMENTS_UNKNOWN.to_owned(),
+    }
+}
+
 fn notices(out: &mut String, indent: &str, notices: &[Notice]) {
     for notice in notices {
         let _ = writeln!(out, "{indent}! {}", notice.message);
@@ -80,12 +106,18 @@ pub fn library(lib: &Library) -> String {
     let _ = writeln!(out, "Folders: {}", folders.join(", "));
 
     let _ = writeln!(out, "\nGames ({}):", lib.games.len());
+    // A column of pieces on the device, on FAT32 and exFAT only (IMP-7b).
+    let pieces = lib.games.iter().any(|g| g.fragments.is_some());
     if !lib.games.is_empty() {
-        let _ = writeln!(
+        let _ = write!(
             out,
-            "  {:<5} {:<4} {:<12} {:>10}  TITLE",
+            "  {:<5} {:<4} {:<12} {:>10}  ",
             "MEDIA", "FMT", "ID", "SIZE"
         );
+        if pieces {
+            let _ = write!(out, "{:>6}  ", "PIECES");
+        }
+        let _ = writeln!(out, "TITLE");
     }
     for game in &lib.games {
         let mut title = game.title.clone();
@@ -97,16 +129,31 @@ pub fn library(lib: &Library) -> String {
                 if parts == 1 { "" } else { "s" }
             );
         }
-        let _ = writeln!(
+        let _ = write!(
             out,
-            "  {:<5} {:<4} {:<12} {:>10}  {}",
+            "  {:<5} {:<4} {:<12} {:>10}  ",
             media(game.media),
             format(game.format),
             game.startup,
             size(game.size),
-            title
         );
+        if pieces {
+            let count = match &game.fragments {
+                Some(Fragments::Known { total, .. }) => total.to_string(),
+                Some(Fragments::Unknown) => "?".to_owned(),
+                None => String::new(),
+            };
+            let _ = write!(out, "{count:>6}  ");
+        }
+        let _ = writeln!(out, "{title}");
         notices(&mut out, "      ", &game.warnings);
+    }
+    if lib
+        .games
+        .iter()
+        .any(|g| g.fragments == Some(Fragments::Unknown))
+    {
+        let _ = writeln!(out, "  Pieces ?: {FRAGMENTS_UNKNOWN}");
     }
 
     if !lib.apps.is_empty() {
@@ -205,6 +252,9 @@ pub fn image(info: &ImageDetails) -> String {
             "Layers:",
             &format!("dual (DVD-9), layer 1 at sector {start}"),
         );
+    }
+    if let Some(pieces) = &info.fragments {
+        line(&mut out, "Pieces:", &fragments(pieces));
     }
     for (label, value) in [
         ("BOOT2:", &info.boot2),
@@ -882,5 +932,57 @@ mod tests {
         assert_eq!(date(951_868_800_000), "2000-03-01");
         assert_eq!(date(1_709_164_800_000), "2024-02-29");
         assert_eq!(date(1_798_761_599_999), "2026-12-31");
+    }
+
+    fn game(id: &str, fragments: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "title": "Game", "startup": id, "media": "DVD", "format": "ISO",
+            "path": format!("E:/DVD/{id}.iso"), "parts": [], "size": 1u64 << 30,
+            "art": [], "warnings": [], "fragments": fragments,
+        })
+    }
+
+    #[test]
+    fn pieces_on_bdm_devices() {
+        let lib: Library = serde_json::from_value(serde_json::json!({
+            "root": "E:/", "profile": "Opl120Beta", "folders": [], "apps": [],
+            "skipped": [], "warnings": [],
+            "games": [
+                game("SLUS_200.62", serde_json::json!({"kind": "known", "total": 70, "files": [70], "limit": 64})),
+                game("SLUS_212.18", serde_json::json!({"kind": "unknown"})),
+            ],
+        }))
+        .unwrap();
+        let text = library(&lib);
+        assert!(text.contains("PIECES  TITLE"), "{text}");
+        assert!(text.contains("    70  Game"), "{text}");
+        assert!(text.contains("     ?  Game"), "{text}");
+        assert!(text.contains("Pieces ?: unknown"), "{text}");
+
+        // Off BDM there is no column at all.
+        let lib: Library = serde_json::from_value(serde_json::json!({
+            "root": "C:/lib", "profile": "Opl120Beta", "folders": [], "apps": [],
+            "skipped": [], "warnings": [],
+            "games": [game("SLUS_200.62", serde_json::Value::Null)],
+        }))
+        .unwrap();
+        assert!(!library(&lib).contains("PIECES"));
+
+        assert_eq!(
+            fragments(&Fragments::Known {
+                total: 2,
+                files: vec![1, 1],
+                limit: None
+            }),
+            "2: each file in one piece, as OPL 1.1.0 needs"
+        );
+        assert!(
+            fragments(&Fragments::Known {
+                total: 2,
+                files: vec![2],
+                limit: None
+            })
+            .starts_with("2: not every file")
+        );
     }
 }

@@ -193,7 +193,7 @@ The HDD has its own optional cache: `pfs0:games.bin` (`hdd_game_list_cache=1`), 
 - At launch OPL asks the driver for each part's fragment list (`USBMASS_IOCTL_GET_FRAGLIST`).
 - All parts of a game share **one array of `BDM_MAX_FRAGS` = 64 fragments** (`settings->frags[]`), so the **total fragments across all ul parts must be ≤ 64**. Otherwise OPL shows "Error, the game is fragmented."
 - The README attributes 64-fragment tolerance to rev1893 (PR #673, June 2022) [R]. Older builds needed fully contiguous files.
-- **Recommendation:** write each image (or chunk) with a single preallocated, sequential write to a freshly formatted or defragmented volume, then **verify fragment count ≤64 per game** (Windows `FSCTL_GET_RETRIEVAL_POINTERS`, Linux `FIEMAP`).
+- **Recommendation:** write each image (or chunk) with a single preallocated, sequential write to a freshly formatted or defragmented volume, then **verify fragment count ≤64 per game** (Windows `FSCTL_GET_RETRIEVAL_POINTERS`, Linux `FIBMAP` as root — vfat and exfat have no `FIEMAP`, macOS `F_LOG2PHYS_EXT`). Upstream checks the limit per part only; OPL 1.1.0 wants each file in one piece (research/06 §1.11).
 
 ---
 

@@ -219,6 +219,25 @@ fn same_name(a: &RelPath, b: &RelPath) -> bool {
     a.as_str().to_lowercase() == b.as_str().to_lowercase()
 }
 
+/// The images and `ul` chunks `steps` leave on the device, under the names
+/// later renames give them, for the fragment check (IMP-7b).
+fn written_files(steps: &[Step]) -> Vec<RelPath> {
+    let mut files: Vec<RelPath> = Vec::new();
+    for step in steps {
+        match step {
+            Step::WriteFile { path, .. } | Step::WriteZso { path, .. } => files.push(path.clone()),
+            Step::Rename { from, to } => {
+                for file in files.iter_mut().filter(|f| same_name(f, from)) {
+                    *file = to.clone();
+                }
+            }
+            Step::Remove { path, .. } => files.retain(|f| !same_name(f, path)),
+            _ => {}
+        }
+    }
+    files
+}
+
 fn remove_if_exists(fs: &dyn DeviceFs, path: &RelPath) -> Result<(), ExecError> {
     if exists(fs, path)?.is_some() {
         fs.remove_file(path)
@@ -968,6 +987,9 @@ pub fn execute_with_events(
         found: Vec::new(),
     };
     runner.current.total = runner.total;
+    // OPL's fragment limits hold on BDM only (IMP-7b).
+    let bdm = crate::fragments::applies(ctx.fs);
+    let profile = plan.profile.unwrap_or_default();
 
     for (index, tx) in plan.transactions.iter().enumerate() {
         if ctx.cancel.is_cancelled() {
@@ -1040,6 +1062,16 @@ pub fn execute_with_events(
                 journal.progress[index].state = TxState::Done;
                 report.outcomes[index] = Outcome::Done;
                 runner.tx_event(TxEvent::Done);
+                let written = if bdm {
+                    written_files(&tx.steps)
+                } else {
+                    Vec::new()
+                };
+                if !written.is_empty() {
+                    runner
+                        .found
+                        .extend(crate::fragments::written_notice(ctx.fs, &written, profile));
+                }
                 if let Some((source, checked)) = runner.checked.take() {
                     (runner.events)(Event::Checked {
                         transaction: index,

@@ -124,4 +124,4 @@ Conflicting hints (XA but bigger than a CD) give a warning.
 - **Console:**
   - does a small DVD game work from `CD/`, and a CD game from `DVD/`?
   - does Mode 1 behave differently there?
-- **Fragmentation:** the 64-fragment total per game is not checked yet (IMP-7b, v0.2).
+- **Fragmentation:** the 64-fragment total per game is checked after every write and in the library (IMP-7b, ADR-0037; research/06 §1.11).

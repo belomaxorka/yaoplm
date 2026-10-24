@@ -108,6 +108,21 @@ pub(crate) fn scan_error(err: &yaoplm_core::ScanError) -> ApiError {
     ApiError::phrased(code, &err.phrase())
 }
 
+/// How an image lies on its device, when that is a FAT32 or exFAT volume
+/// (IMP-7b).
+fn image_fragments(
+    path: &std::path::Path,
+    profile: yaoplm_core::LoaderProfile,
+) -> Option<library::Fragments> {
+    let fs = HostFs::new(path.parent()?).ok()?;
+    if !yaoplm_core::fragments::applies(&fs) {
+        return None;
+    }
+    let name = RelPath::new(path.file_name()?.to_str()?).ok()?;
+    let fragments = yaoplm_core::fragments::count(&fs, &[name]).ok()?;
+    Some(library::Fragments::from_core(&fragments, profile))
+}
+
 /// A path the core refuses as a device path.
 pub(crate) fn path_error(err: &yaoplm_device::PathError) -> ApiError {
     ApiError::phrased(ErrorCode::BadRequest, &err.phrase())
@@ -290,12 +305,24 @@ impl Api {
                     Some(root),
                     Queue::Read,
                     move |ctx| {
-                        let library =
+                        let mut library =
                             yaoplm_core::scan_library_with(&path, &options, &mut |done, total| {
                                 ctx.progress(done, Some(total), None);
                                 !ctx.is_cancelled()
                             })
                             .map_err(|err| scan_error(&err))?;
+                        // Off a FAT32 or exFAT volume the check does nothing.
+                        if let Ok(fs) = HostFs::new(&path) {
+                            yaoplm_core::fragments::check_library(
+                                &fs,
+                                &mut library,
+                                options.profile,
+                                &|| ctx.is_cancelled(),
+                            );
+                        }
+                        if ctx.is_cancelled() {
+                            return Err(scan_error(&yaoplm_core::ScanError::Cancelled));
+                        }
                         let mut wire = Library::from_core(&library, profile);
                         verify::attach_checks(&mut wire, &library, &net);
                         Ok(JobResult::Library(Box::new(wire)))
@@ -318,7 +345,9 @@ impl Api {
                         &Said::error("system").with("error", err.to_string()),
                     )
                 })?;
-                Ok(Response::ImageInfo(Box::new(ImageDetails::from(&info))))
+                let mut details = ImageDetails::from(&info);
+                details.fragments = image_fragments(&path, profile.into());
+                Ok(Response::ImageInfo(Box::new(details)))
             }
             Request::ListDir { path } => {
                 let listing = match path {

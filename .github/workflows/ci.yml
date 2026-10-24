@@ -140,13 +140,56 @@ jobs:
         env:
           YAOPLM_FAT32_DIR: /mnt/fat32
           YAOPLM_EXFAT_DIR: /mnt/exfat
+          # vfat and exfat have no FIEMAP; FIBMAP answers root only (IMP-7b).
+          YAOPLM_FRAGMENTS_KNOWN: "0"
         run: cargo test -p yaoplm-core --test real_fs -- --ignored --nocapture
+      - name: Fragment counts without root (unknown)
+        env:
+          YAOPLM_FAT32_DIR: /mnt/fat32
+          YAOPLM_EXFAT_DIR: /mnt/exfat
+          YAOPLM_FRAGMENTS_KNOWN: "0"
+        run: cargo test -p yaoplm-device --test fragments -- --ignored fragments_on_real_drivers --nocapture
+      - name: Fragment counts as root (FIBMAP)
+        env:
+          YAOPLM_FAT32_DIR: /mnt/fat32
+          YAOPLM_EXFAT_DIR: /mnt/exfat
+          YAOPLM_FRAGMENTS_KNOWN: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: sudo -E
+        run: cargo test -p yaoplm-device --test fragments -- --ignored fragments_on_real_drivers --nocapture
       - name: Check the images with fsck
         if: ${{ !cancelled() }}
         run: |
           sudo umount /mnt/fat32 /mnt/exfat
           sudo fsck.vfat -n /mnt/fat32.img
           sudo fsck.exfat -n /mnt/exfat.img
+
+  real-fs-macos:
+    name: Fragment counts on attached FAT32 and exFAT images (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # Image files only, never a real drive (CLAUDE.md rule 1).
+      - name: Create and attach the images
+        run: |
+          hdiutil create -size 512m -fs "MS-DOS FAT32" -volname YFAT32 -layout MBRSPUD "$RUNNER_TEMP/fat32.dmg"
+          hdiutil create -size 512m -fs ExFAT -volname YEXFAT -layout MBRSPUD "$RUNNER_TEMP/exfat.dmg"
+          hdiutil attach "$RUNNER_TEMP/fat32.dmg"
+          hdiutil attach "$RUNNER_TEMP/exfat.dmg"
+          mount | grep -E 'YFAT32|YEXFAT'
+      - name: Count the runs of files (F_LOG2PHYS_EXT)
+        env:
+          YAOPLM_FAT32_DIR: /Volumes/YFAT32
+          YAOPLM_EXFAT_DIR: /Volumes/YEXFAT
+        run: cargo test -p yaoplm-device --test fragments -- --ignored fragments_on_real_drivers --nocapture
+      - name: Detach the images
+        if: ${{ !cancelled() }}
+        run: |
+          hdiutil detach /Volumes/YFAT32
+          hdiutil detach /Volumes/YEXFAT
 
   web:
     name: Web (lint, typecheck, unit tests, build)

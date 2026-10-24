@@ -28,6 +28,7 @@ function game(overrides: Partial<Game>): Game {
     warnings: [],
     knownTitle: null,
     dump: null,
+    fragments: null,
     ...overrides,
   };
 }
