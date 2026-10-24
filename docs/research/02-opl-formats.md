@@ -327,11 +327,11 @@ Path `"%sCFG%s%s.cfg"` (prefix, separator, ID) [V] `sbPopulateConfig`.
 | `$Compatibility` | Integer bitmask (table below) |
 | `$DMA` | HDD only, 0–7. 0–2 = MDMA 0–2 (`dma_type 0x20`), 3–7 = UDMA 0–4 (`dma_type 0x40`, mode − 3). Default 7, which is not stored |
 | `$DNAS` | Disc ID as hex. The first 10 hex digits become 5 bytes; non-hex separators are ignored (`configGetDiscIDBinary`) |
-| `$AltStartup` | Alternate boot ELF on the disc, used instead of the SYSTEM.CNF ID (`cdrom0:\<value>;1`). ≤31 chars, uppercased by the UI. For apps it is reused as argv1 |
+| `$AltStartup` | Alternate boot ELF on the disc, used instead of the SYSTEM.CNF ID (`cdrom0:\<value>;1`). The menu takes 31 chars and uppercases a–z, but the path is built in `ElfPath[32]`, so **21 chars** fit (research/15 §1.2). For apps it is reused as argv1 |
 | `$VMC_0`, `$VMC_1` | VMC base name for slot 1 / slot 2 (file `VMC/<name>.bin`). ≤31 chars |
-| `$ConfigSource` | Read-only marker: 1 = user-customised, 2 = downloaded defaults (`CONFIG_SOURCE_USER`/`DLOAD`) |
+| `$ConfigSource` | 1 = user-customised, 2 = downloaded defaults (`CONFIG_SOURCE_USER`/`DLOAD`). The menu's save writes 1 when it set any key but the VMC slots; OPL's compatibility-list update skips games with 1 (research/15 §1.1) |
 | `$ParentalLock` | `1` = locked |
-| `$GSMSource` | 0 = global (`conf_game.cfg`), 1 = per-game |
+| `$GSMSource` | Absent = global (`conf_game.cfg`), `1` = per-game. **A launch checks only that the key exists**, so `$GSMSource=0` means per-game (`src/gsm.c:42`; the same for `$CheatsSource`, `$PADEMUSource`) |
 | `$EnableGSM` | 0/1 |
 | `$GSMVMode` | 0–28. 0 NTSC, 1 NTSC non-interlaced, 2 PAL, 3 PAL NI, 4 PAL@60, 5 PAL@60 NI, 6 PS1 NTSC (480p), 7 PS1 PAL (576p), 8 480p, 9 576p, 10 720p, 11 1080i, 12 1080i NI, 13–17 VGA 640x480 @60/72/75/85 and 640x960i, 18–22 VGA 800x600 @56/60/72/75/85, 23–26 VGA 1024x768 @60/70/75/85, 27–28 VGA 1280x1024 @60/75 |
 | `$GSMXOffset`, `$GSMYOffset` | Integers |
@@ -490,7 +490,7 @@ Superblock (cluster 0, 512 bytes) [V] field list, [D] offsets:
 | 0x028 | u16 | page_size | 512 |
 | 0x02A | u16 | pages_per_cluster | 2 |
 | 0x02C | u16 | pages_per_block | 16 |
-| 0x02E | u16 | (0xFF00) | |
+| 0x02E | u16 | 0 from genvmc (Sony and mymc write 0xFF00) | |
 | 0x030 | u32 | clusters_per_card | size_MB × 1024 (8 MB → 8192) |
 | 0x034 | u32 | alloc_offset (first allocatable cluster) | after the IFC and FAT clusters |
 | 0x038 | u32 | alloc_end | clusters up to the two backup blocks, minus alloc_offset |
@@ -503,7 +503,7 @@ Superblock (cluster 0, 512 bytes) [V] field list, [D] offsets:
 | 0x151 | u8 | card_flags | 0x2B |
 | 0x154 | u32 | cluster_size | 1024 |
 | 0x158 | u32 | (0x100) | |
-| 0x15C | u32 | size_in_megs | |
+| 0x15C | u32 | size_in_megs per `mcemu.h`; genvmc writes `clusters_per_block` (8) here | |
 | 0x170 | u32 | max_used / allocatable | about 97% |
 | 0x180–0x1FF | | reserved | 0xFF fill |
 
@@ -513,7 +513,7 @@ Other layout details [V]:
 - The root directory cluster holds the `.` and `..` entries (512-byte `McFsEntry`; mode includes exists, subdir, rwx; `..` is hidden).
 - Timestamps come from the CDVD RTC (fallback 2000-03-04).
 
-A PC tool can generate identical cards with any correct ps2mc-format writer (e.g. a mymc-style implementation) [U]. It must write no ECC, an exact size, and the file must be contiguous on BDM.
+A PC tool can generate identical cards with any correct ps2mc-format writer (e.g. a mymc-style implementation) [U]. It must write no ECC, an exact size, and the file must be contiguous on BDM. The full genvmc layout, field by field, and YAOPLM's byte-exact cross-check against OPL's `pc/genvmc` are in research/15 §2.
 
 ---
 
