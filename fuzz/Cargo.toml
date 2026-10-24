@@ -45,6 +45,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ps2_elf"
+path = "fuzz_targets/ps2_elf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "zso"
 path = "fuzz_targets/zso.rs"
 test = false

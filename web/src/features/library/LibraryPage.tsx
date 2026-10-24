@@ -66,7 +66,7 @@ import { gameKey } from "@/lib/gameKey";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
-import { LoaderProfileLine } from "@/features/devices/LoaderProfile";
+import { LoaderProfileHint, LoaderProfileLine } from "@/features/devices/LoaderProfile";
 import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 const LIST_ROW_HEIGHT = 56;
@@ -312,6 +312,7 @@ function LibraryView({
             </Button>
           </div>
         )}
+        {loader.active && <LoaderProfileHint loader={loader.active} usable={loader.usable} />}
         {loaderNotices.length > 0 && <NoticeList notices={loaderNotices} />}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
         {missingFolders.length > 0 && (

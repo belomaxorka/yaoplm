@@ -4,24 +4,21 @@ import { profileChoice, readSettings } from "@/settings/settings";
 
 const save = (value: object) => window.localStorage.setItem("yaoplm.settings", JSON.stringify(value));
 
-describe("the loader profile setting (LIB-1)", () => {
+describe("the loader profile per device (LIB-1, ADR-0040)", () => {
   afterEach(() => window.localStorage.clear());
 
-  it("is auto by default", () => {
-    expect(readSettings().loaderProfile).toBe("auto");
+  it("has no overrides by default", () => {
     expect(readSettings().profileOverrides).toEqual({});
   });
 
-  it("turns the old saved default into auto and keeps a deliberate choice", () => {
-    save({ profile: "Opl120Beta" });
-    expect(readSettings().loaderProfile).toBe("auto");
-    save({ profile: "Opl110" });
-    expect(readSettings().loaderProfile).toBe("Opl110");
-    save({ profile: "RiptOpl" });
-    expect(readSettings().loaderProfile).toBe("RiptOpl");
-    // The new key wins over the old one.
-    save({ profile: "Opl110", loaderProfile: "auto" });
-    expect(readSettings().loaderProfile).toBe("auto");
+  it("drops the old global profile, whatever it held", () => {
+    for (const old of [{ profile: "Opl110" }, { loaderProfile: "RiptOpl" }, { loaderProfile: "auto" }]) {
+      save({ ...old, profileOverrides: { "serial:A": "Opl110" } });
+      const settings = readSettings();
+      expect(settings).not.toHaveProperty("loaderProfile");
+      expect(settings).not.toHaveProperty("profile");
+      expect(settings.profileOverrides).toEqual({ "serial:A": "Opl110" });
+    }
   });
 
   it("keeps only valid overrides", () => {
@@ -29,10 +26,18 @@ describe("the loader profile setting (LIB-1)", () => {
     expect(readSettings().profileOverrides).toEqual({ "serial:7E1CD2C5": "Opl110" });
   });
 
-  it("asks the core with the setting only when it is not auto", () => {
-    expect(profileChoice({ loaderProfile: "auto", profileOverrides: { "serial:A": "RiptOpl" } })).toEqual({
+  it("keeps \"I don't know\" and sends it as the rules every OPL reads (ADR-0041)", () => {
+    save({ profileOverrides: { "serial:A": "unknown" } });
+    expect(readSettings().profileOverrides).toEqual({ "serial:A": "unknown" });
+    expect(profileChoice({ profileOverrides: { "serial:A": "unknown" } })).toEqual({
+      overrides: [{ key: "serial:A", profile: "Opl110" }],
+    });
+  });
+
+  it("asks the core with the overrides only, never a profile for every device", () => {
+    expect(profileChoice({ profileOverrides: { "serial:A": "RiptOpl" } })).toEqual({
       overrides: [{ key: "serial:A", profile: "RiptOpl" }],
     });
-    expect(profileChoice({ loaderProfile: "Opl110", profileOverrides: {} })).toEqual({ profile: "Opl110", overrides: [] });
+    expect(profileChoice({ profileOverrides: {} })).toEqual({ overrides: [] });
   });
 });

@@ -112,8 +112,9 @@ pub enum Request {
     /// Mounted volumes with the storage doctor's verdict (DEV-1, DEV-2).
     /// The server lists its library roots only.
     ListDevices {
-        /// The profile chosen in the settings for every device; absent:
-        /// auto, each device by its files (LIB-1).
+        /// A profile forced for every device in this request (the CLI's
+        /// `--profile`); absent: auto, each device by its files (LIB-1,
+        /// ADR-0040). The interface never sends it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         profile: Option<LoaderProfile>,

@@ -1,8 +1,8 @@
-import { ChevronDown } from "lucide-react";
+import { cn } from "cn";
+import { ChevronDown, CircleHelp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ActiveProfile } from "@/api/generated/ActiveProfile";
-import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,13 +15,27 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
-import { profiles } from "@/settings/settings";
+import { type ProfileOverrideValue, profiles } from "@/settings/settings";
+
+/** The device's choice and a way to change it (`auto` drops the choice). */
+function useChoice(loader: ActiveProfile) {
+  const { settings, update } = useSettings();
+  const chosen: ProfileOverrideValue | "auto" = settings.profileOverrides[loader.key] ?? "auto";
+  const choose = (value: string) => {
+    const { [loader.key]: _old, ...others } = settings.profileOverrides;
+    update({
+      profileOverrides: value === "auto" ? others : { ...others, [loader.key]: value as ProfileOverrideValue },
+    });
+  };
+  return { chosen, choose };
+}
 
 /** Why the profile is in force, to follow it after a dash. */
-function useReason(loader: ActiveProfile): string {
+function useReason(loader: ActiveProfile, chosen: ProfileOverrideValue | "auto"): string {
   const { t } = useTranslation();
-  if (loader.source === "override") return t("loader.byOverride");
-  if (loader.source === "setting") return t("loader.bySetting");
+  if (loader.source === "override") return t(chosen === "unknown" ? "loader.byUnknown" : "loader.byOverride");
+  // Only the CLI forces a profile for every device (ADR-0040).
+  if (loader.source === "explicit") return t("loader.byExplicit");
   if (!loader.detected) return t("loader.unreadable");
   return phraseText(loader.detected.reason, loader.detected.reasonText);
 }
@@ -33,13 +47,8 @@ function useReason(loader: ActiveProfile): string {
  */
 export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile; className?: string }) {
   const { t } = useTranslation();
-  const { settings, update } = useSettings();
-  const reason = useReason(loader);
-  const chosen = settings.profileOverrides[loader.key] ?? "auto";
-  const choose = (value: string) => {
-    const { [loader.key]: _old, ...others } = settings.profileOverrides;
-    update({ profileOverrides: value === "auto" ? others : { ...others, [loader.key]: value as LoaderProfile } });
-  };
+  const { chosen, choose } = useChoice(loader);
+  const reason = useReason(loader, chosen);
   return (
     <div className={className} data-testid="loader-profile" data-source={loader.source}>
       <span className="text-muted-foreground">{t("loader.title")}: </span>
@@ -62,18 +71,91 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup value={chosen} onValueChange={choose}>
             <DropdownMenuRadioItem value="auto" data-testid="loader-profile-auto">
-              {settings.loaderProfile === "auto"
-                ? t("loader.auto")
-                : t("loader.asSettings", { profile: t(`settings.profiles.${settings.loaderProfile}`) })}
+              {t("loader.auto")}
             </DropdownMenuRadioItem>
             {profiles.map((profile) => (
               <DropdownMenuRadioItem key={profile} value={profile} data-testid={`loader-profile-${profile}`}>
                 {t(`settings.profiles.${profile}`)}
               </DropdownMenuRadioItem>
             ))}
+            <DropdownMenuRadioItem value="unknown" data-testid="loader-profile-unknown">
+              {t("loader.unknown")}
+            </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
   );
+}
+
+/**
+ * What the loader line cannot say in a few words (ADR-0041):
+ * - a device prepared for OPL that shows no sign of its loader (OPL starts
+ *   from the memory card, the console has not listed the device yet) asks
+ *   which OPL it is for. An empty or foreign device does not: it gets OPL
+ *   installed first, which settles the question;
+ * - a profile chosen for the device (or "I don't know") that its files now
+ *   contradict offers to go back to auto.
+ *
+ * Neither shows on a device the storage doctor finds unusable for OPL
+ * (`usable` false): which OPL reads it does not matter there.
+ */
+export function LoaderProfileHint({
+  loader,
+  usable,
+  className,
+}: {
+  loader: ActiveProfile;
+  usable: boolean;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const { choose } = useChoice(loader);
+  const detected = loader.detected;
+  const box = cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className);
+  if (!usable) return null;
+
+  if (loader.source === "detected" && detected?.confidence === "default" && detected.library) {
+    return (
+      <div className={box} role="group" aria-labelledby={`loader-question-${loader.key}`} data-testid="loader-question">
+        <div className="flex items-center gap-2 font-medium" id={`loader-question-${loader.key}`}>
+          <CircleHelp className="size-4 text-muted-foreground" aria-hidden />
+          {t("loader.question")}
+        </div>
+        <p className="text-muted-foreground">{t("loader.questionHint")}</p>
+        <div className="flex flex-wrap gap-2">
+          {profiles.map((profile) => (
+            <Button key={profile} size="sm" variant="outline" onClick={() => choose(profile)} data-testid={`loader-answer-${profile}`}>
+              {t(`loader.answers.${profile}`)}
+            </Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={() => choose("unknown")} data-testid="loader-answer-unknown">
+            {t("loader.unknown")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    loader.source === "override" &&
+    detected &&
+    detected.confidence !== "default" &&
+    detected.profile !== loader.profile
+  ) {
+    return (
+      <div className={cn(box, "flex-row flex-wrap items-center")} data-testid="loader-conflict">
+        <span className="min-w-0 flex-1">
+          {t("loader.filesSay", {
+            profile: t(`settings.profiles.${detected.profile}`),
+            reason: phraseText(detected.reason, detected.reasonText),
+          })}
+        </span>
+        <Button size="sm" variant="outline" onClick={() => choose("auto")} data-testid="loader-back-to-auto">
+          {t("loader.backToAuto")}
+        </Button>
+      </div>
+    );
+  }
+  return null;
 }

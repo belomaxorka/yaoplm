@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { pickFolder } from "@/features/add/desktop";
@@ -28,7 +27,7 @@ import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { formatBytes } from "@/lib/format";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
-import { artSourceIds, nameStyles, profiles, type ProfileSetting } from "@/settings/settings";
+import { artSourceIds, nameStyles } from "@/settings/settings";
 import { useTheme } from "@/theme/context";
 import { isTheme, themes } from "@/theme/theme";
 
@@ -113,21 +112,6 @@ export function SettingsPage() {
             <CardDescription>{t("settings.libraryDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <SettingRow label={t("settings.profile")} hint={t("settings.profileHint")} htmlFor={`${ids}-profile`}>
-              <Select value={settings.loaderProfile} onValueChange={(value) => update({ loaderProfile: value as ProfileSetting })}>
-                <SelectTrigger id={`${ids}-profile`} className="w-56" aria-label={t("settings.profile")}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{t("loader.auto")}</SelectItem>
-                  {profiles.map((profile) => (
-                    <SelectItem key={profile} value={profile}>
-                      {t(`settings.profiles.${profile}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium" id={`${ids}-style-label`}>
                 {t("settings.nameStyle")}

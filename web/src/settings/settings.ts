@@ -4,8 +4,10 @@ import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import { readStorage, writeStorage } from "@/lib/storage";
 
 export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies readonly LoaderProfile[];
-/** The loader profile setting: `auto` reads each device (LIB-1, ADR-0023). */
-export type ProfileSetting = LoaderProfile | "auto";
+/** A profile chosen for one device, or `unknown`: the user does not know which OPL they run (ADR-0041). */
+export type ProfileOverrideValue = LoaderProfile | "unknown";
+/** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
+export const UNKNOWN_RULES: LoaderProfile = "Opl110";
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
@@ -34,12 +36,11 @@ export interface Settings {
    */
   simpleMode: boolean;
   /**
-   * The loader devices are prepared for (SPEC §4): `auto` reads each
-   * device's files (LIB-1); a profile here applies to every device.
+   * Profiles chosen for single devices, by `ActiveProfile.key`. Every other
+   * device gets the profile its files say (LIB-1); there is no global
+   * profile (ADR-0040).
    */
-  loaderProfile: ProfileSetting;
-  /** Profiles chosen for single devices, by `ActiveProfile.key`. */
-  profileOverrides: Record<string, LoaderProfile>;
+  profileOverrides: Record<string, ProfileOverrideValue>;
   /** `ID.Title.iso` (ADR-0006) or `Title.iso`. */
   nameStyle: NameStyle;
   /** The library root currently open. */
@@ -61,7 +62,6 @@ export interface Settings {
 
 export const defaultSettings: Settings = {
   simpleMode: true,
-  loaderProfile: "auto",
   profileOverrides: {},
   nameStyle: "idTitle",
   root: null,
@@ -85,30 +85,24 @@ function isProfile(value: unknown): value is LoaderProfile {
   return profiles.includes(value as LoaderProfile);
 }
 
-/**
- * Before LIB-1 the setting was `profile`, and OPL 1.2.0 beta was saved
- * by every settings change whether chosen or not: it becomes `auto`; a
- * deliberate 1.1.0 or RiptOPL stays.
- */
-function readProfileSetting(p: Record<string, unknown>): ProfileSetting {
-  if (p.loaderProfile === "auto" || isProfile(p.loaderProfile)) return p.loaderProfile;
-  if (p.profile === "Opl110" || p.profile === "RiptOpl") return p.profile;
-  return "auto";
-}
-
-function readOverrides(value: unknown): Record<string, LoaderProfile> {
+// Saved settings may still hold the old global `loaderProfile` (or the
+// older `profile`): both are ignored, the device decides (ADR-0040).
+function readOverrides(value: unknown): Record<string, ProfileOverrideValue> {
   if (typeof value !== "object" || value === null) return {};
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, LoaderProfile] => isProfile(entry[1])));
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, ProfileOverrideValue] => isProfile(entry[1]) || entry[1] === "unknown",
+    ),
+  );
 }
 
 /** What `ListDevices` and `InspectDevice` need to pick each device's profile. */
-export function profileChoice(settings: Pick<Settings, "loaderProfile" | "profileOverrides">): {
-  profile?: LoaderProfile;
-  overrides: ProfileOverride[];
-} {
+export function profileChoice(settings: Pick<Settings, "profileOverrides">): { overrides: ProfileOverride[] } {
   return {
-    ...(settings.loaderProfile === "auto" ? {} : { profile: settings.loaderProfile }),
-    overrides: Object.entries(settings.profileOverrides).map(([key, profile]) => ({ key, profile })),
+    overrides: Object.entries(settings.profileOverrides).map(([key, value]) => ({
+      key,
+      profile: value === "unknown" ? UNKNOWN_RULES : value,
+    })),
   };
 }
 
@@ -152,7 +146,6 @@ export function readSettings(): Settings {
     const p = parsed as Record<string, unknown>;
     return {
       simpleMode: typeof p.simpleMode === "boolean" ? p.simpleMode : defaultSettings.simpleMode,
-      loaderProfile: readProfileSetting(p),
       profileOverrides: readOverrides(p.profileOverrides),
       nameStyle: isNameStyle(p.nameStyle) ? p.nameStyle : defaultSettings.nameStyle,
       root: typeof p.root === "string" && p.root.length > 0 ? p.root : null,

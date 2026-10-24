@@ -27,8 +27,9 @@ import type { Transfer } from "./Transfer";
  */
 export type Request = { "type": "Ping" } | { "type": "Version" } | { "type": "ListDevices", 
 /**
- * The profile chosen in the settings for every device; absent:
- * auto, each device by its files (LIB-1).
+ * A profile forced for every device in this request (the CLI's
+ * `--profile`); absent: auto, each device by its files (LIB-1,
+ * ADR-0040). The interface never sends it.
  */
 profile?: LoaderProfile, 
 /**

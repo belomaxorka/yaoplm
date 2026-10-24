@@ -265,11 +265,12 @@ fn the_loader_profile_of_a_device() {
         "APPS/APP_RIPTOPL/settings_riptopl.cfg, which only RiptOPL writes"
     );
 
-    // A profile chosen in the settings beats the files, an override beats both.
+    // A profile forced by the request (the CLI's --profile) beats the files,
+    // an override beats both.
     let loader = inspect(json!({"profile": "Opl110"}));
     assert_eq!(
         (&loader["profile"], &loader["source"]),
-        (&json!("Opl110"), &json!("setting"))
+        (&json!("Opl110"), &json!("explicit"))
     );
     let loader = inspect(json!({
         "profile": "Opl110",

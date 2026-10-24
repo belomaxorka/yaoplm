@@ -242,7 +242,7 @@ impl Api {
             }),
             Request::ListDevices { profile, overrides } => {
                 let choice = ProfileChoice {
-                    setting: profile,
+                    explicit: profile,
                     overrides: overrides.as_deref().unwrap_or_default(),
                 };
                 let devices = match &self.paths {
@@ -270,7 +270,7 @@ impl Api {
                 let (path, fs) = self.root(&root)?;
                 let volume = yaoplm_device::volume_for_path(&path).map_err(io_error)?;
                 let choice = ProfileChoice {
-                    setting: profile,
+                    explicit: profile,
                     overrides: overrides.as_deref().unwrap_or_default(),
                 };
                 let mut info =
