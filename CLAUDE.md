@@ -128,6 +128,7 @@ Update this section if they change.
 - For UI work, run `yaoplm-server` or the Vite dev server through `.claude/launch.json`. Check it in the browser preview or with Playwright, and attach screenshots (light/dark, en/ru) to the PR.
 - PR description: summary, requirement IDs, how it was tested, **PS2 test checklist** for the user.
 - After merge: tick ROADMAP checkboxes and add an ADR if a decision was made.
+- Before a release tag (`v0.N.0`), and after PRs that change the device card, the library header, the storage doctor or the "what next" hints: run the UI consistency pass in `docs/plans/release-ui-consistency.md` (one story per device, no actions that cannot work, one main button, visible reasons, axe on every state).
 
 ## Environment (developer machine)
 - Windows 11, PowerShell plus Git Bash. VS Build Tools 2026 and WebView2 are installed.
