@@ -135,19 +135,6 @@ fn own_source(
             }
             _ => {
                 let all = sources::candidates(source, kind, &entry.serial, &names, false);
-                if source == SourceId::Libretro && all.is_empty() && !names.is_empty() {
-                    // The region policy left no name to ask.
-                    let any =
-                        sources::candidates(source, ArtKind::Scr, &entry.serial, &names, false);
-                    other_market |= any.iter().any(|c| {
-                        let file = c.path.rsplit('/').next().unwrap_or_default();
-                        let folder = match kind {
-                            ArtKind::Cov => "Named_Boxarts",
-                            _ => "Named_Snaps",
-                        };
-                        lists.files[&source].contains(&format!("{folder}/{file}"))
-                    });
-                }
                 all.iter().any(|c| lists.files[&source].contains(&c.path))
             }
         };

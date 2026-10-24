@@ -312,18 +312,6 @@ impl ArtService {
             _ => {}
         }
         let candidates = Self::candidates(request, config.id, variants);
-        if candidates.is_empty()
-            && config.id.needs_redump_name()
-            && !request.redump_names.is_empty()
-            && config.id.kinds().contains(&request.kind)
-        {
-            // Every name is another market's release.
-            attempts.push(attempt(
-                config.id,
-                request.redump_names.join(" | "),
-                AttemptResult::OtherMarket,
-            ));
-        }
         let mut found = Vec::new();
         for candidate in &candidates {
             if let Some(cover) = self
