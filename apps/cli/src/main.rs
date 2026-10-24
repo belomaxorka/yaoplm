@@ -312,6 +312,63 @@ enum LoaderCommand {
         #[arg(long)]
         json: bool,
     },
+    /// What a download of BUILD would be: version, date, size, SHA-256 and
+    /// what confirms it, licence and the start of the change list.
+    Release {
+        build: String,
+        #[command(flatten)]
+        from: ReleaseFrom,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download BUILD into the loader store; no device is touched. Prints
+    /// what it would be first and asks, unless --yes.
+    Download {
+        build: String,
+        #[command(flatten)]
+        from: ReleaseFrom,
+        /// Download without asking.
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Keep your own loader ELF, or a zip or 7z with one (no network).
+    Import {
+        file: PathBuf,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// The loader ELFs YAOPLM keeps.
+    Files {
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the loader catalogue on YAOPLM's main branch; it is kept only
+    /// when it reads.
+    UpdateCatalog {
+        /// A folder with the repository's layout (`data/loaders/`) instead
+        /// of the network.
+        #[arg(long, value_name = "DIR")]
+        mirror: Option<PathBuf>,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+struct ReleaseFrom {
+    /// One of the channel's releases; its own tag by default.
+    #[arg(long)]
+    tag: Option<String>,
+    /// A folder with GitHub's layout instead of the network.
+    #[arg(long, value_name = "DIR")]
+    mirror: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1016,15 +1073,161 @@ fn main() -> anyhow::Result<ExitCode> {
                 other => print_json(other, true),
             })
         }
-        Command::Loader {
-            command: LoaderCommand::Ls { lang, json },
-        } => {
+        Command::Loader { command } => loader(&api, command),
+    }
+}
+
+/// Runs a loader job and returns what it ended with.
+fn loader_job(api: &Api, request: Request) -> Result<JobResult, yaoplm_api::ApiError> {
+    let job = match api.dispatch(request)? {
+        Response::Job { job } => job,
+        other => {
+            return Err(yaoplm_api::ApiError::internal(format!(
+                "unexpected answer {other:?}"
+            )));
+        }
+    };
+    let info = wait_job(api, job, false);
+    match (info.result, info.error) {
+        (Some(result), _) => Ok(result),
+        (None, Some(error)) => Err(error),
+        (None, None) => Err(yaoplm_api::ApiError::internal(
+            "the job ended without a result",
+        )),
+    }
+}
+
+fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
+    match command {
+        LoaderCommand::Ls { lang, json } => {
             let response = api.dispatch(Request::LoaderCatalog);
             show(response, json, |response| match response {
                 Response::LoaderCatalog(catalog) => print!("{}", report::loaders(catalog, &lang)),
                 other => print_json(other, true),
             })
         }
+        LoaderCommand::Release { build, from, json } => {
+            match loader_job(api, release_request(&build, &from)) {
+                Ok(JobResult::LoaderOffer(offer)) => {
+                    if json {
+                        print_json(&offer, true);
+                    } else {
+                        print!("{}", report::loader_offer(&offer));
+                    }
+                    Ok(ExitCode::SUCCESS)
+                }
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => fail(&error, json),
+            }
+        }
+        LoaderCommand::Download {
+            build,
+            from,
+            yes,
+            json,
+        } => {
+            let offer = match loader_job(api, release_request(&build, &from)) {
+                Ok(JobResult::LoaderOffer(offer)) => offer,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return fail(&error, json),
+            };
+            if !json {
+                print!("{}", report::loader_offer(&offer));
+            }
+            let go = if yes {
+                true
+            } else if io::stdin().is_terminal() && !json {
+                eprint!(
+                    "Download {} ({})? [y/N] ",
+                    offer.file.name,
+                    report::size(offer.file.size)
+                );
+                io::stderr().flush()?;
+                let mut answer = String::new();
+                io::stdin().lock().read_line(&mut answer)?;
+                matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
+            } else {
+                if json {
+                    print_json(&offer, true);
+                }
+                eprintln!("yaoplm: nothing downloaded; add --yes to download");
+                return Ok(ExitCode::SUCCESS);
+            };
+            if !go {
+                eprintln!("yaoplm: nothing downloaded");
+                return Ok(ExitCode::SUCCESS);
+            }
+            let request = Request::DownloadLoader {
+                build,
+                tag: Some(offer.tag.clone()),
+                // Held to the hash just printed: a rebuilt tag is refused.
+                sha256: offer.file.sha256.clone(),
+                mirror: from.mirror.as_deref().map(absolute),
+            };
+            loader_file(loader_job(api, request), json)
+        }
+        LoaderCommand::Import { file, json } => loader_file(
+            loader_job(
+                api,
+                Request::ImportLoader {
+                    file: absolute(&file),
+                },
+            ),
+            json,
+        ),
+        LoaderCommand::Files { json } => {
+            let response = api.dispatch(Request::LoaderFiles);
+            show(response, json, |response| match response {
+                Response::LoaderFiles { files } => print!("{}", report::loader_files(files)),
+                other => print_json(other, true),
+            })
+        }
+        LoaderCommand::UpdateCatalog { mirror, json } => {
+            let request = Request::UpdateLoaderCatalog {
+                mirror: mirror.as_deref().map(absolute),
+            };
+            match loader_job(api, request) {
+                Ok(JobResult::LoaderCatalog(catalog)) => {
+                    if json {
+                        print_json(&catalog, true);
+                    } else {
+                        println!(
+                            "The catalogue from main is in force: {} builds.",
+                            catalog.builds.len()
+                        );
+                    }
+                    Ok(ExitCode::SUCCESS)
+                }
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => fail(&error, json),
+            }
+        }
+    }
+}
+
+fn release_request(build: &str, from: &ReleaseFrom) -> Request {
+    Request::LoaderRelease {
+        build: build.to_owned(),
+        tag: from.tag.clone(),
+        mirror: from.mirror.as_deref().map(absolute),
+    }
+}
+
+fn loader_file(
+    result: Result<JobResult, yaoplm_api::ApiError>,
+    json: bool,
+) -> anyhow::Result<ExitCode> {
+    match result {
+        Ok(JobResult::LoaderFile(file)) => {
+            if json {
+                print_json(&file, true);
+            } else {
+                print!("{}", report::loader_file(&file));
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => fail(&error, json),
     }
 }
 

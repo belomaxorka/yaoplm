@@ -7,11 +7,15 @@ import {
   CircleX,
   Clock,
   Database,
+  Download,
+  FileInput,
+  FileSearch,
   FolderInput,
   History,
   ImageDown,
   ListChecks,
   Loader2,
+  RefreshCw,
   ScanSearch,
   ShieldCheck,
   X,
@@ -22,6 +26,7 @@ import { Link } from "react-router";
 
 import type { ArtType } from "@/api/generated/ArtType";
 import type { JobInfo } from "@/api/generated/JobInfo";
+import type { JobKind } from "@/api/generated/JobKind";
 import type { JobLogEntry } from "@/api/generated/JobLogEntry";
 import type { TxOutcome } from "@/api/generated/TxOutcome";
 import { EmptyState } from "@/components/EmptyState";
@@ -161,7 +166,7 @@ function JobCard({ job }: { job: JobInfo }) {
   const pendingPlan = job.result?.type === "Plan" && !executedPlans.has(job.result.id) ? job.result : null;
   const KindIcon = kindIcons[job.kind];
   // Plans, cover searches and dump checks keep a log; the rest only report progress.
-  const plan = job.kind !== "scanLibrary" && job.kind !== "updateRedump";
+  const plan = !noLog.has(job.kind);
   const flow = usePlan();
 
   // ListJobs leaves results and logs out; a finished plan fetches its own once.
@@ -332,7 +337,21 @@ const kindIcons = {
   verifyGames: ShieldCheck,
   updateRedump: Database,
   importArt: FolderInput,
+  updateLoaderCatalog: RefreshCw,
+  loaderRelease: FileSearch,
+  downloadLoader: Download,
+  importLoader: FileInput,
 } as const;
+
+/** Jobs that only report progress: no log to fetch once they end. */
+const noLog: ReadonlySet<JobKind> = new Set<JobKind>([
+  "scanLibrary",
+  "updateRedump",
+  "updateLoaderCatalog",
+  "loaderRelease",
+  "downloadLoader",
+  "importLoader",
+]);
 
 const stepStateColours = {
   started: "text-muted-foreground",

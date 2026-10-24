@@ -9,7 +9,7 @@ use crate::devices::{DeviceInfo, DeviceMode, ModeOverride, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
-use crate::loaders::LoaderCatalog;
+use crate::loaders::{LoaderCatalog, LoaderFile};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
@@ -511,8 +511,49 @@ pub enum Request {
     /// Deletes the art cache; nothing on any device changes.
     ClearArtCache,
     /// The loader builds YAOPLM installs, with their channels and presets
-    /// (LDR-1).
+    /// (LDR-1): the catalogue last read from `main`, else the built-in one.
     LoaderCatalog,
+    /// A job that reads the catalogue on YAOPLM's `main` (or `mirror`) and
+    /// keeps it when it reads (LDR-1). Ends with the catalogue.
+    UpdateLoaderCatalog {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mirror: Option<String>,
+    },
+    /// A job that says what a download of `build` would be: version, date,
+    /// size, SHA-256 and what confirms it, licence, change list (LDR-2,
+    /// LDR-6). `tag` is one of the channel's releases, the channel's own
+    /// by default; `mirror` is a folder with GitHub's layout.
+    LoaderRelease {
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        tag: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mirror: Option<String>,
+    },
+    /// A job that downloads `build` and keeps its ELF (LDR-2). `sha256` is
+    /// the hash `LoaderRelease` showed: a release rebuilt since is refused.
+    DownloadLoader {
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        tag: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        sha256: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mirror: Option<String>,
+    },
+    /// A job that reads a loader ELF, or a zip or 7z with one, the user
+    /// has and keeps the ELF (LDR-2, no network).
+    ImportLoader {
+        file: String,
+    },
+    /// The loader ELFs YAOPLM keeps, newest first.
+    LoaderFiles,
 }
 
 /// The successful answer to a [`Request`].
@@ -553,6 +594,9 @@ pub enum Response {
         cards: Vec<VmcCard>,
     },
     LoaderCatalog(Box<LoaderCatalog>),
+    LoaderFiles {
+        files: Vec<LoaderFile>,
+    },
 }
 
 /// Identifies a long-running job for its whole lifetime.

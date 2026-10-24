@@ -11,6 +11,7 @@ pub mod dat;
 pub mod fatimg;
 pub mod fixtures;
 pub mod iso;
+pub mod loaders;
 pub mod memfs;
 pub mod packed;
 pub mod sources;

@@ -1225,3 +1225,115 @@ fn loader_ls_lists_the_catalogue() {
     assert_eq!(value["type"], "LoaderCatalog");
     assert_eq!(value["builds"].as_array().unwrap().len(), 3);
 }
+
+#[test]
+fn loader_release_download_import_and_files() {
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf, sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    ReleaseMirror::new(&mirror).official().unwrap();
+    let data = dir.path().join("data");
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let m = mirror.as_os_str();
+    let release = cli(&[
+        "loader".as_ref(),
+        "release".as_ref(),
+        "yaopl".as_ref(),
+        "--mirror".as_ref(),
+        m,
+    ]);
+    assert!(
+        release.status.success(),
+        "{}",
+        String::from_utf8_lossy(&release.stderr)
+    );
+    let text = stdout(&release);
+    let yaopl = opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl");
+    for line in [
+        "yaopl v1.2.0-Beta-2370-33a2b19-yaopl (release latest, 2026-10-23)",
+        &format!(
+            "SHA-256: {} (from GitHub digest and the release's SHA256SUMS)",
+            sha256(&yaopl)
+        ),
+        "Licence: AFL-3.0",
+        "No change list was published.",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+
+    // Without --yes and without a terminal nothing is downloaded.
+    let dry = cli(&[
+        "loader".as_ref(),
+        "download".as_ref(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+    ]);
+    assert!(dry.status.success());
+    assert!(String::from_utf8_lossy(&dry.stderr).contains("add --yes"));
+    let files = cli(&["loader".as_ref(), "files".as_ref()]);
+    assert_eq!(stdout(&files), "No loader stored yet.");
+
+    let got = cli(&[
+        "loader".as_ref(),
+        "download".as_ref(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        got.status.success(),
+        "{}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let beta = sha256(&opl_elf("v1.2.0-Beta-2271-b3a2199"));
+    assert!(
+        stdout(&got).contains(&format!("SHA-256: {beta}")),
+        "{}",
+        stdout(&got)
+    );
+    assert!(stdout(&got).contains("confirmed by its release before the download"));
+
+    let own = dir.path().join("OPL.ELF");
+    std::fs::write(&own, opl_elf("v1.2.0-Beta-1990-0123abc")).unwrap();
+    let imported = cli(&["loader".as_ref(), "import".as_ref(), own.as_os_str()]);
+    assert!(
+        imported.status.success(),
+        "{}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    assert!(
+        stdout(&imported).contains("opl-beta v1.2.0-Beta-1990-0123abc"),
+        "{}",
+        stdout(&imported)
+    );
+    assert!(stdout(&imported).contains("your own file; nothing vouches for it"));
+
+    let listed = cli(&["loader".as_ref(), "files".as_ref(), "--json".as_ref()]);
+    let value: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(value["files"].as_array().unwrap().len(), 2);
+
+    // A substituted 1.1.0 archive fails, with the reason, and exit 1.
+    let bad = cli(&[
+        "loader".as_ref(),
+        "download".as_ref(),
+        "opl-stable".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("does not match its SHA-256"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}

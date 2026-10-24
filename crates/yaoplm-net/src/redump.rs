@@ -344,7 +344,7 @@ impl RedumpStore {
 
 /// Writes `<path>.part`, syncs it and renames it over `path`: after a crash
 /// `path` holds the old bytes or the new ones, never a mix.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), NetError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), NetError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".part");
     let tmp = PathBuf::from(tmp);

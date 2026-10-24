@@ -93,7 +93,7 @@ pub(crate) fn op_error(err: OpError) -> ApiError {
     ApiError::phrased(code, &err.phrase())
 }
 
-fn io_error(err: std::io::Error) -> ApiError {
+pub(crate) fn io_error(err: std::io::Error) -> ApiError {
     ApiError::phrased(
         ErrorCode::Internal,
         &Said::error("system").with("error", err.to_string()),
@@ -991,8 +991,96 @@ impl Api {
             Request::Attribution => Ok(Response::Attribution(Box::new(art::attribution()?))),
             Request::ArtCache => Ok(Response::ArtCache(self.net.cache_info()?)),
             Request::ClearArtCache => self.net.clear_cache().map(|()| Response::Ack),
-            Request::LoaderCatalog => Ok(Response::LoaderCatalog(Box::new(loaders::catalog()?))),
+            Request::LoaderCatalog => Ok(Response::LoaderCatalog(Box::new(loaders::catalog(
+                &self.net.loader_store(),
+            )?))),
+            Request::LoaderFiles => Ok(Response::LoaderFiles {
+                files: loaders::files(&self.net.loader_store()),
+            }),
+            Request::UpdateLoaderCatalog { mirror } => {
+                let mirror = self.mirror(mirror)?;
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::UpdateLoaderCatalog,
+                    &Said::title("updateLoaderCatalog"),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::update_catalog_job(&net, &mirror),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::LoaderRelease { build, tag, mirror } => {
+                let params = loaders::ReleaseParams {
+                    mirror: self.mirror(mirror)?,
+                    build,
+                    tag,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::LoaderRelease,
+                    &Said::title("loaderRelease").with("build", &params.build),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::release_job(&net, &params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::DownloadLoader {
+                build,
+                tag,
+                sha256,
+                mirror,
+            } => {
+                let params = loaders::DownloadParams {
+                    release: loaders::ReleaseParams {
+                        mirror: self.mirror(mirror)?,
+                        build,
+                        tag,
+                    },
+                    sha256,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::DownloadLoader,
+                    &Said::title("downloadLoader").with("build", &params.release.build),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::download_job(&net, &params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::ImportLoader { file } => {
+                let path = self.paths.resolve(&file)?;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::ImportLoader,
+                    &Said::title("importLoader").with("file", name),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::import_job(&net, &path),
+                );
+                Ok(Response::Job { job })
+            }
         }
+    }
+
+    /// A mirror folder of a request, inside the allowed roots on the server.
+    fn mirror(&self, mirror: Option<String>) -> Result<Option<PathBuf>, ApiError> {
+        let Some(raw) = mirror else {
+            return Ok(None);
+        };
+        let dir = self.paths.resolve(&raw)?;
+        if !dir.is_dir() {
+            return Err(ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("notAFolder").with("path", &raw),
+            ));
+        }
+        Ok(Some(PathBuf::from(display_path(&dir))))
     }
 
     /// Parses a JSON request and dispatches it.
