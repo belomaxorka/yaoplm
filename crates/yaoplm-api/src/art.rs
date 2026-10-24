@@ -623,37 +623,36 @@ fn other_releases(startup: &str, kind: ArtKind) -> Vec<OtherRelease> {
     others
 }
 
-/// Why nothing was found for a picture, for the log and the plan: no
-/// source has the type, every source is off, the game has no Redump name
-/// to look up, only another market's release, nothing at the sources
-/// asked, or errors.
-fn why_missing<'a>(
+/// Each source once, in the order asked: other releases ask again.
+fn once(sources: Vec<&str>) -> Vec<&str> {
+    let mut seen = std::collections::HashSet::new();
+    sources.into_iter().filter(|s| seen.insert(*s)).collect()
+}
+
+/// Why nothing was found for a picture, for the plan: no source has the
+/// type, every source is off, the game has no Redump name to look up, only
+/// another market's release, nothing at the sources asked, or errors. For
+/// errors the plan names the sources only: a plan without network lists
+/// every game, and each source's URL and message would bury it.
+fn why_missing(
     kind: ArtKind,
     sources: &[SourceConfig],
     redump_names: &[String],
-    attempts: &'a [yaoplm_net::Attempt],
+    attempts: &[yaoplm_net::Attempt],
 ) -> (ArtLogState, Said) {
-    let errors: Vec<String> = attempts
-        .iter()
-        .filter_map(|a| match &a.result {
-            AttemptResult::Error(e) => Some(format!("{}: {e}", a.source)),
-            _ => None,
-        })
-        .collect();
-    if !errors.is_empty() {
+    let failed = once(
+        attempts
+            .iter()
+            .filter(|a| matches!(a.result, AttemptResult::Error(_)))
+            .map(|a| a.source.as_str())
+            .collect(),
+    );
+    if !failed.is_empty() {
         return (
             ArtLogState::Failed,
-            Said::notice("artFailed").with("errors", errors.join("; ")),
+            Said::notice("artFailed").with("sources", failed.join(", ")),
         );
     }
-    // Each source once, in the order asked: other releases ask again.
-    let once = |sources: Vec<&'a str>| {
-        let mut seen = std::collections::HashSet::new();
-        sources
-            .into_iter()
-            .filter(|s| seen.insert(*s))
-            .collect::<Vec<_>>()
-    };
     let tried = once(attempts.iter().map(|a| a.source.as_str()).collect());
     let other_market = once(
         attempts
@@ -687,6 +686,22 @@ fn why_missing<'a>(
         Said::notice("noSourceForKind").with("kind", kind_name(kind))
     };
     (ArtLogState::NotFound, phrase)
+}
+
+/// What the job log says about a missing picture: the plan's reason, or for
+/// errors each source's own message, URL included.
+fn log_reason(state: ArtLogState, reason: &Said, attempts: &[yaoplm_net::Attempt]) -> Said {
+    if state != ArtLogState::Failed {
+        return reason.clone();
+    }
+    let errors: Vec<String> = attempts
+        .iter()
+        .filter_map(|a| match &a.result {
+            AttemptResult::Error(e) => Some(format!("{}: {e}", a.source)),
+            _ => None,
+        })
+        .collect();
+    Said::notice("artErrors").with("errors", errors.join("; "))
 }
 
 /// The body of a `FetchArt` job.
@@ -795,6 +810,9 @@ pub(crate) fn fetch_job(
                 (state, None, Some(phrase))
             }
         };
+        let logged = detail
+            .as_ref()
+            .map(|reason| log_reason(state, reason, &outcome.attempts));
         ctx.log(JobLogEntry::Art {
             at: now_ms(),
             startup: target.startup.clone(),
@@ -807,8 +825,8 @@ pub(crate) fn fetch_job(
                 .cover
                 .as_ref()
                 .map(|cover| cover.origin.clone())
-                .or_else(|| detail.as_ref().map(Said::english)),
-            detail_phrase: detail.as_ref().map(Phrase::from),
+                .or_else(|| logged.as_ref().map(Said::english)),
+            detail_phrase: logged.as_ref().map(Phrase::from),
         });
         match outcome.cover {
             Some(cover) => items.push(ArtItem {
@@ -981,7 +999,8 @@ pub(crate) fn find_job(
         });
     }
     if variants.is_empty() {
-        let (state, phrase) = why_missing(params.kind, &params.sources, &names, &attempts);
+        let (state, reason) = why_missing(params.kind, &params.sources, &names, &attempts);
+        let logged = log_reason(state, &reason, &attempts);
         ctx.log(JobLogEntry::Art {
             at: now_ms(),
             startup: game.startup.clone(),
@@ -989,8 +1008,8 @@ pub(crate) fn find_job(
             art: params.kind.suffix().to_owned(),
             state,
             source: None,
-            detail: Some(phrase.english()),
-            detail_phrase: Some(Phrase::from(&phrase)),
+            detail: Some(logged.english()),
+            detail_phrase: Some(Phrase::from(&logged)),
         });
     }
     ctx.progress(1, Some(1), None);
@@ -1173,17 +1192,30 @@ mod tests {
         );
         assert_eq!(code, "notices.artNotFound");
         assert!(text.contains("oplm"), "{text}");
-        // Errors win.
-        let (state, code, _) = key(
-            ArtKind::Ico,
-            &all,
-            &names,
-            &[tried("oplm", AttemptResult::Error("HTTP 500".into()))],
-        );
+        // Errors win. The plan names the sources; the log keeps each
+        // message.
+        let failing = [
+            tried("xlenore", AttemptResult::Missing),
+            tried(
+                "oplm",
+                AttemptResult::Error("https://a.example/x: HTTP 500".into()),
+            ),
+            tried(
+                "oplm",
+                AttemptResult::Error("https://a.example/y: HTTP 500".into()),
+            ),
+        ];
+        let (state, code, text) = key(ArtKind::Ico, &all, &names, &failing);
         assert_eq!(
             (state, code.as_str()),
             (ArtLogState::Failed, "notices.artFailed")
         );
+        assert!(text.contains("oplm") && !text.contains("xlenore"), "{text}");
+        assert!(!text.contains("https://"), "{text}");
+        let (_, reason) = why_missing(ArtKind::Ico, &all, &names, &failing);
+        let logged = log_reason(state, &reason, &failing);
+        assert_eq!(logged.key, "notices.artErrors");
+        assert!(logged.english().contains("https://a.example/y: HTTP 500"));
         // Only libretro has the type and has nowhere to look.
         let libretro = [SourceConfig::remote(SourceId::Libretro)];
         let (_, code, _) = key(ArtKind::Scr, &libretro, &[], &[]);
