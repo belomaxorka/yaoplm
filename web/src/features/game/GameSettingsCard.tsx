@@ -30,7 +30,8 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { errorText, phraseText } from "@/lib/phrase";
 import { gameKey, gameRef } from "@/lib/gameKey";
-import { useSettings, useSimpleMode } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
+import { useSimpleMode } from "@/settings/context";
 
 /** OPL's compatibility modes, bit by bit (research/02 §6.3); 0x40 and 0x80 are RiptOPL's. */
 const MODE_BITS = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80] as const;
@@ -65,7 +66,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
   const { t } = useTranslation();
   const { transport } = useApi();
   const simple = useSimpleMode();
-  const { settings: app } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const ref = gameRef(game);
   const cfg = useQuery({
     queryKey: ["gameCfg", root, gameKey(game), game.startup],
@@ -132,7 +133,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
   const offsetOutOfRange = (["xOffset", "yOffset"] as const).some(
     (axis) => current.gsm[axis] !== base.gsm[axis] && Math.abs(current.gsm[axis]) > GSM_OFFSET_MAX,
   );
-  const shownBits = app.profile === "RiptOpl" ? MODE_BITS : MODE_BITS.slice(0, 6);
+  const shownBits = loaderProfile === "RiptOpl" ? MODE_BITS : MODE_BITS.slice(0, 6);
   let shownMask = 0;
   for (const bit of shownBits) shownMask |= bit;
   const otherBits = current.compatibility & ~shownMask;
@@ -381,7 +382,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
                 type: "WriteCfg",
                 root,
                 game: ref,
-                profile: app.profile,
+                profile: loaderProfile,
                 settings: current,
                 ...(pending.length > 0 ? { cards: pending } : {}),
               })

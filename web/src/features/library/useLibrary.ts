@@ -4,15 +4,21 @@ import { useCallback, useEffect } from "react";
 import { useApi } from "@/api/context";
 import { scanLibrary } from "@/api/rpc";
 import type { Transport } from "@/api/transport";
+import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import { allowArt } from "@/features/add/desktop";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 import { useSettings } from "@/settings/context";
-import type { Settings } from "@/settings/settings";
 
-function libraryQuery(transport: Transport, { root, profile, verify }: Pick<Settings, "root" | "profile" | "verify">) {
+/**
+ * The scan of `root` under the device's loader profile (LIB-1). It waits
+ * for the profile, so a device read as OPL 1.1.0 is never scanned as 1.2.
+ */
+function libraryQuery(transport: Transport, root: string | null, verify: boolean, loader: { profile: LoaderProfile; ready: boolean }) {
+  const { profile } = loader;
   return {
     queryKey: ["library", root, profile, verify],
     queryFn: ({ signal }: { signal: AbortSignal }) => scanLibrary(transport, root ?? "", profile, verify, signal),
-    enabled: root !== null,
+    enabled: root !== null && loader.ready,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   } as const;
@@ -24,8 +30,9 @@ export function useLibrary() {
   const { settings } = useSettings();
   const queryClient = useQueryClient();
   const { root } = settings;
+  const loader = useLoaderProfile();
 
-  const query = useQuery(libraryQuery(transport, settings));
+  const query = useQuery(libraryQuery(transport, root, settings.verify, loader));
 
   const rescan = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ["library", root] }),
@@ -51,6 +58,7 @@ export function useLibrary() {
 export function LibraryKeeper() {
   const { transport } = useApi();
   const { settings } = useSettings();
-  useQuery(libraryQuery(transport, settings));
+  const loader = useLoaderProfile();
+  useQuery(libraryQuery(transport, settings.root, settings.verify, loader));
   return null;
 }

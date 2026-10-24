@@ -29,6 +29,7 @@ import { usePlan } from "@/features/plan/usePlan";
 import { baseName } from "@/lib/format";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 interface Override {
   title?: string;
@@ -76,6 +77,7 @@ export function AddGamesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { settings, update } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const root = settings.root;
   const [sources, setSources] = useState<string[]>([]);
   const [move, setMove] = useState(false);
@@ -88,7 +90,7 @@ export function AddGamesPage() {
   // Simple mode has no jobs page: the library and the dock show the write.
   const flow = usePlan({ onExecuted: () => void navigate(settings.simpleMode ? "/library" : "/jobs") });
   const desktop = isTauri();
-  const zsoReadable = settings.profile !== "Opl110";
+  const zsoReadable = loaderProfile !== "Opl110";
   const coverSources = enabledSources(settings).length > 0;
   const coversWanted = settings.coversOnAdd && coverSources;
   // Every type the sources have; front covers alone until they are known.
@@ -116,7 +118,7 @@ export function AddGamesPage() {
       type: "PlanImport",
       root,
       sources,
-      profile: settings.profile,
+      profile: loaderProfile,
       nameStyle: settings.nameStyle,
       transfer: move ? "move" : "copy",
       layout: alwaysUl ? "ul" : "auto",
@@ -130,7 +132,7 @@ export function AddGamesPage() {
     root,
     sources,
     overrides,
-    settings.profile,
+    loaderProfile,
     settings.nameStyle,
     move,
     alwaysUl,
@@ -391,7 +393,7 @@ export function AddGamesPage() {
           </Label>
           <p className="text-xs text-muted-foreground">
             {t("add.usingSettings", {
-              profile: t(`settings.profiles.${settings.profile}`),
+              profile: t(`settings.profiles.${loaderProfile}`),
               style: t(`settings.nameStyles.${settings.nameStyle}`),
             })}
           </p>

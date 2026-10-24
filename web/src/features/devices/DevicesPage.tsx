@@ -22,10 +22,14 @@ import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
+import { profileChoice } from "@/settings/settings";
+
+import { LoaderProfileLine } from "./LoaderProfile";
 
 /**
- * Device picker (DEV-1, DEV-2): every volume with the storage doctor's
- * verdict for the chosen loader profile. The server lists its roots.
+ * Device picker (DEV-1, DEV-2): every volume with its loader profile
+ * (LIB-1) and the storage doctor's verdict for it. The server lists its
+ * roots.
  */
 export function DevicesPage() {
   const { t } = useTranslation();
@@ -34,9 +38,10 @@ export function DevicesPage() {
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(transport.kind === "http");
   const switchId = useId();
+  const choice = profileChoice(settings);
   const devices = useQuery({
-    queryKey: ["devices", settings.profile],
-    queryFn: () => listDevices(transport, settings.profile),
+    queryKey: ["devices", choice],
+    queryFn: () => listDevices(transport, choice),
   });
   const shown = (devices.data ?? []).filter((d) => showAll || (d.external && !d.system));
 
@@ -50,7 +55,7 @@ export function DevicesPage() {
       <div className="mx-auto flex max-w-4xl flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <p className="flex-1 text-sm text-muted-foreground">
-            {t("devices.intro", { profile: t(`settings.profiles.${settings.profile}`) })}
+            {t("devices.intro")}
           </p>
           {transport.kind !== "http" && (
             <Label htmlFor={switchId} className="font-normal">
@@ -109,8 +114,13 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const { t } = useTranslation();
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
-  // Simple mode keeps the advice that explains the verdict.
-  const advice = simple ? device.advice.filter((notice) => notice.level !== "info") : device.advice;
+  // Simple mode keeps the advice that explains the verdict; what the loader
+  // detection found (several loaders, JPG art) shows in both, unless a
+  // profile was chosen instead.
+  const advice = [
+    ...(simple ? device.advice.filter((notice) => notice.level !== "info") : device.advice),
+    ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
+  ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
   return (
     <li
@@ -137,6 +147,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
               {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
             </span>
           </div>
+          <LoaderProfileLine loader={device.loader} className="mt-2 text-sm" />
           {!simple && (
             <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {device.model && (

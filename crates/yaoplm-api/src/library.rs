@@ -23,6 +23,16 @@ pub enum LoaderProfile {
     RiptOpl,
 }
 
+impl From<core::LoaderProfile> for LoaderProfile {
+    fn from(profile: core::LoaderProfile) -> Self {
+        match profile {
+            core::LoaderProfile::Opl120Beta => Self::Opl120Beta,
+            core::LoaderProfile::Opl110 => Self::Opl110,
+            core::LoaderProfile::RiptOpl => Self::RiptOpl,
+        }
+    }
+}
+
 impl From<LoaderProfile> for core::LoaderProfile {
     fn from(profile: LoaderProfile) -> Self {
         match profile {

@@ -29,7 +29,7 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /** What the user chose in the form. */
 interface ImportForm {
@@ -131,7 +131,7 @@ function ImportBody({
 }) {
   const { t } = useTranslation();
   const { transport } = useApi();
-  const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const { jobs, cancel } = useJobs();
   const ids = useId();
   const desktop = isTauri();
@@ -167,7 +167,7 @@ function ImportBody({
         type: "ImportArt",
         root,
         sources: sets,
-        profile: settings.profile,
+        profile: loaderProfile,
         kinds,
         overwrite: replace,
       });

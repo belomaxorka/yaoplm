@@ -27,7 +27,7 @@ import { VerificationResults } from "@/features/verify/VerificationResults";
 import { useJobs } from "@/jobs/context";
 import { gameRef } from "@/lib/gameKey";
 import { errorText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 type Scope = "unchecked" | "all";
 
@@ -88,7 +88,7 @@ function VerifyBody({
 }) {
   const { t } = useTranslation();
   const { transport } = useApi();
-  const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const { jobs, cancel } = useJobs();
   const ids = useId();
   const unchecked = uncheckedGames(only ? [only] : games);
@@ -111,7 +111,7 @@ function VerifyBody({
       const id = await verifyGames(transport, {
         type: "VerifyGames",
         root,
-        profile: settings.profile,
+        profile: loaderProfile,
         ...(chosen ? { games: chosen.map(gameRef) } : {}),
         ...(md5 ? { md5 } : {}),
         ...(fresh ? { fresh } : {}),

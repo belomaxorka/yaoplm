@@ -15,6 +15,7 @@ pub mod archives;
 pub mod art;
 pub mod checks;
 pub mod convert;
+pub mod detect;
 pub mod device;
 pub mod exec;
 pub mod fragments;

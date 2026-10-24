@@ -169,7 +169,12 @@
     "vmcFragmented": "{{path}} lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Delete it, free some space and create the card again; if it still comes out in pieces, copy the files to the computer, format the device and copy them back",
     "gameFragmented": "The game lies on the device in {{fragments}} pieces, more than the {{limit}} OPL loads over USB, MX4SIO or iLink: it will not start. Copy the games to the computer, format the device and add them back",
     "gameFragmentedOpl110": "Files of the game lie on the device in several pieces ({{fragments}} in all): OPL 1.1.0 starts a game over USB, MX4SIO or iLink only when each file is one piece. Copy the games to the computer, format the device and add them back",
-    "vmcSlotFragmented": "VMC slot {{slot}}: VMC/{{name}}.bin lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Copy the files to the computer, format the device and copy them back"
+    "vmcSlotFragmented": "VMC slot {{slot}}: VMC/{{name}}.bin lies on the device in several pieces ({{fragments}}): OPL offers the memory card instead. Copy the files to the computer, format the device and copy them back",
+    "severalLoaders": "Several loaders are on the device: {{loaders}}. If the profile is wrong, choose one for this device",
+    "zsoHiddenFromOpl110": "OPL 1.1.0 does not show ZSO images ({{images}} on the device): convert them to ISO or choose another profile for this device",
+    "jpgArtHint": "Pictures in ART/ are JPG ({{files}}): OPL 1.2 betas from build 2169 on do not load them. If this device is for OPL 1.1.0, choose that profile for it",
+    "listedByOldOpl": "The games on this device were last listed by OPL 1.1.0 or an old beta. If OPL starts from elsewhere, such as the memory card, choose the profile for this device",
+    "listedByNewOpl": "The games on this device were last listed by OPL 1.2 (a beta from build 2017 on) or a fork. If OPL starts from elsewhere, such as the memory card, choose the profile for this device"
   },
   "library": {
     "title": "Library",
@@ -543,8 +548,18 @@
       "failed": "{{startup}} {{title}}: check failed"
     }
   },
+  "loader": {
+    "title": "Loader",
+    "byOverride": "chosen for this device",
+    "bySetting": "set in Settings",
+    "unreadable": "the device could not be read",
+    "change": "Change",
+    "forThisDevice": "Profile for this device",
+    "auto": "Auto (by device)",
+    "asSettings": "As in Settings ({{profile}})"
+  },
   "devices": {
-    "intro": "Volumes and folders, checked for {{profile}}. Open one to see its games.",
+    "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
     "showAll": "Show all volumes",
     "refresh": "Refresh",
     "openFolder": "Open folder…",
@@ -594,7 +609,7 @@
     "library": "Library",
     "libraryDescription": "How games are named and checked for the loader you use.",
     "profile": "Loader profile",
-    "profileHint": "Sets the rules for file systems, ZSO and art.",
+    "profileHint": "Sets the rules for file systems, ZSO, art and fragments. Auto reads each device: its loader, settings files, exFAT and ZSO.",
     "profiles": {
       "Opl120Beta": "OPL 1.2.0 beta",
       "Opl110": "OPL 1.1.0",
@@ -998,7 +1013,18 @@
     "cfgValueChars": "the value of {{key}} has a line break or NUL",
     "vmcNameEmpty": "the name is empty",
     "vmcNameTooLong": "{{name}} is too long (at most {{max}} characters)",
-    "vmcNameChars": "{{name}} has characters outside ASCII or ones a file name cannot hold"
+    "vmcNameChars": "{{name}} has characters outside ASCII or ones a file name cannot hold",
+    "profileByChecksum": "{{loader}} at {{path}}, known by its checksum",
+    "profileByVersion": "{{loader}} “{{version}}” at {{path}}",
+    "profileByLoader": "{{loader}} at {{path}}",
+    "profileByFiles": "{{file}}, which only {{loader}} writes",
+    "profileByOpl12Keys": "{{file}} has keys only OPL 1.2 writes",
+    "profileByOpl110Keys": "{{file}} has none of the keys OPL 1.2 always writes",
+    "profileByOldGamesBin": "{{file}} was last written by OPL 1.1.0 or a beta up to build 2016",
+    "profileByNewGamesBin": "{{file}} was last written by a beta from build 2017 on or a fork of OPL 1.2",
+    "profileByExfat": "the device is exFAT, which OPL 1.1.0 cannot read",
+    "profileByZso": "ZSO images ({{images}}), which OPL 1.1.0 does not show",
+    "profileNoSigns": "no signs of a loader on the device"
   },
   "cfg": {
     "heading": "Game settings",

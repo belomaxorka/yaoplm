@@ -66,6 +66,8 @@ import { gameKey } from "@/lib/gameKey";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
+import { LoaderProfileLine } from "@/features/devices/LoaderProfile";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 const LIST_ROW_HEIGHT = 56;
 
@@ -134,6 +136,9 @@ function LibraryView({
   const withWarnings = data?.games.filter((g) => g.warnings.length > 0).length ?? 0;
   const withoutCover = data?.games.filter((g) => !hasCover(g)).length ?? 0;
   const missingFolders = data?.folders.filter((f) => !f.present) ?? [];
+  const loader = useLoaderProfile();
+  // What the detection found: ZSO 1.1.0 cannot show, JPG art, several loaders.
+  const loaderNotices = loader.active?.source === "detected" ? (loader.active.detected?.notices ?? []) : [];
   const initFlow = usePlan();
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
@@ -271,6 +276,7 @@ function LibraryView({
               {root}
             </span>
           )}
+          {loader.active && <LoaderProfileLine loader={loader.active} className="text-xs" />}
           {data && (
             <>
               <span data-testid="library-count">
@@ -306,6 +312,7 @@ function LibraryView({
             </Button>
           </div>
         )}
+        {loaderNotices.length > 0 && <NoticeList notices={loaderNotices} />}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
         {missingFolders.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 text-sm">

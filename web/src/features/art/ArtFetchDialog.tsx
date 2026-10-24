@@ -33,6 +33,7 @@ import { usePlan } from "@/features/plan/usePlan";
 import { useJobs } from "@/jobs/context";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /** What the user chose in the form. */
 interface FetchForm {
@@ -144,6 +145,7 @@ function FetchBody({
   const { t } = useTranslation();
   const { transport } = useApi();
   const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const { jobs, cancel } = useJobs();
   const ids = useId();
   const { kinds } = form;
@@ -173,7 +175,7 @@ function FetchBody({
       const id = await fetchArt(transport, {
         type: "FetchArt",
         root,
-        profile: settings.profile,
+        profile: loaderProfile,
         scope,
         kinds: chosen,
         ...(only ? { games: [only.startup] } : {}),
@@ -356,6 +358,7 @@ function QuickBody({
   const { t } = useTranslation();
   const { transport } = useApi();
   const { settings } = useSettings();
+  const { profile: loaderProfile } = useLoaderProfile();
   const simple = useSimpleMode();
   const { jobs, cancel } = useJobs();
   const fetchable = useFetchableTypes();
@@ -381,7 +384,7 @@ function QuickBody({
         const id = await fetchArt(transport, {
           type: "FetchArt",
           root,
-          profile: settings.profile,
+          profile: loaderProfile,
           scope: "missing",
           kinds,
           ...(only ? { games: [only.startup] } : {}),

@@ -6,7 +6,6 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
-import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { NameStyle } from "@/api/generated/NameStyle";
 import type { SourceEntry } from "@/api/generated/SourceEntry";
 import { artCache, attribution, clearArtCache } from "@/api/rpc";
@@ -29,7 +28,7 @@ import { RedumpPanel } from "@/features/verify/RedumpPanel";
 import { formatBytes } from "@/lib/format";
 import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
-import { artSourceIds, nameStyles, profiles } from "@/settings/settings";
+import { artSourceIds, nameStyles, profiles, type ProfileSetting } from "@/settings/settings";
 import { useTheme } from "@/theme/context";
 import { isTheme, themes } from "@/theme/theme";
 
@@ -115,11 +114,12 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <SettingRow label={t("settings.profile")} hint={t("settings.profileHint")} htmlFor={`${ids}-profile`}>
-              <Select value={settings.profile} onValueChange={(value) => update({ profile: value as LoaderProfile })}>
-                <SelectTrigger id={`${ids}-profile`} className="w-48" aria-label={t("settings.profile")}>
+              <Select value={settings.loaderProfile} onValueChange={(value) => update({ loaderProfile: value as ProfileSetting })}>
+                <SelectTrigger id={`${ids}-profile`} className="w-56" aria-label={t("settings.profile")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="auto">{t("loader.auto")}</SelectItem>
                   {profiles.map((profile) => (
                     <SelectItem key={profile} value={profile}>
                       {t(`settings.profiles.${profile}`)}

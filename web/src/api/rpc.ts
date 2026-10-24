@@ -9,6 +9,7 @@ import type { JobInfo } from "@/api/generated/JobInfo";
 import type { Library } from "@/api/generated/Library";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { PlanView } from "@/api/generated/PlanView";
+import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import type { RedumpInfo } from "@/api/generated/RedumpInfo";
 import type { Request } from "@/api/generated/Request";
 import type { VmcCard } from "@/api/generated/VmcCard";
@@ -16,16 +17,18 @@ import { call, RpcError, type Transport } from "@/api/transport";
 
 /** Typed wrappers over `call`; every screen goes through these. */
 
-export function listDevices(transport: Transport, profile: LoaderProfile): Promise<DeviceInfo[]> {
-  return call(transport, { type: "ListDevices", profile }, "Devices").then((r) => r.devices);
+/** The settings' profile (absent: auto) and the per-device overrides (LIB-1). */
+export interface ProfileChoice {
+  profile?: LoaderProfile;
+  overrides: ProfileOverride[];
 }
 
-export async function inspectDevice(
-  transport: Transport,
-  root: string,
-  profile: LoaderProfile,
-): Promise<DeviceInfo> {
-  const { type: _type, ...device } = await call(transport, { type: "InspectDevice", root, profile }, "Device");
+export function listDevices(transport: Transport, choice: ProfileChoice): Promise<DeviceInfo[]> {
+  return call(transport, { type: "ListDevices", ...choice }, "Devices").then((r) => r.devices);
+}
+
+export async function inspectDevice(transport: Transport, root: string, choice: ProfileChoice): Promise<DeviceInfo> {
+  const { type: _type, ...device } = await call(transport, { type: "InspectDevice", root, ...choice }, "Device");
   return device;
 }
 
