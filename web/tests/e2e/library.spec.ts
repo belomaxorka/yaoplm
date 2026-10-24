@@ -179,17 +179,12 @@ test("the jobs page lists finished jobs and clears them", async ({ page, request
   await expect(page.getByText("No jobs")).toBeVisible();
 });
 
-test("settings change the profile and name style", async ({ page, request }) => {
+test("settings change the name style", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/settings");
-  await page.getByRole("combobox", { name: "Loader profile" }).click();
-  await page.getByRole("option", { name: "OPL 1.1.0" }).click();
   await page.getByRole("radio", { name: /^Title\.iso/ }).click();
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Loader profile" })).toHaveText("OPL 1.1.0");
   await expect(page.getByRole("radio", { name: /^Title\.iso/ })).toBeChecked();
-  // Back to the defaults for the tests that follow.
-  await page.getByRole("combobox", { name: "Loader profile" }).click();
-  await page.getByRole("option", { name: "OPL 1.2.0 beta" }).click();
+  // Back to the default for the tests that follow.
   await page.getByRole("radio", { name: /^ID\.Title\.iso/ }).click();
 });

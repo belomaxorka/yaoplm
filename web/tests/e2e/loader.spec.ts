@@ -5,8 +5,8 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { openLibrary, roots } from "./helpers";
 
-// The loader profile per device (LIB-1, ADR-0023). The fixture library has
-// no loader and no ZSO, so auto falls back to OPL 1.2.0 beta.
+// The loader profile per device (LIB-1, ADR-0023, ADR-0040). The fixture
+// library has no loader and no ZSO, so auto falls back to OPL 1.2.0 beta.
 
 function libraryCard(page: Page) {
   return page
@@ -63,17 +63,23 @@ test("a loader's settings file on the device decides the profile", async ({ page
   }
 });
 
-test("the settings offer auto first and a profile for every device", async ({ page, request }) => {
+test("there is no global profile: an old saved one is ignored (ADR-0040)", async ({ page, request }) => {
+  // Settings saved before ADR-0040 still hold a profile for every device.
+  await page.addInitScript(() => {
+    const current: unknown = JSON.parse(localStorage.getItem("yaoplm.settings") ?? "{}");
+    const kept = typeof current === "object" && current !== null ? current : {};
+    localStorage.setItem("yaoplm.settings", JSON.stringify({ ...kept, loaderProfile: "RiptOpl" }));
+  });
   await openLibrary(page, request, { language: "ru" });
   await page.goto("/settings");
-  const select = page.getByRole("combobox", { name: "Профиль загрузчика" });
-  await expect(select).toHaveText("Авто (по носителю)");
-  await select.click();
-  await page.getByRole("option", { name: "RiptOPL" }).click();
+  await expect(page.getByText("Профиль загрузчика определяется по файлам каждого носителя")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Профиль загрузчика" })).toHaveCount(0);
   await page.goto("/library");
   const header = page.getByTestId("loader-profile");
-  await expect(header).toHaveAttribute("data-source", "setting");
-  await expect(header.getByTestId("loader-profile-reason")).toHaveText("— задан в настройках");
+  await expect(header).toHaveAttribute("data-source", "detected");
+  await expect(header.getByTestId("loader-profile-name")).toHaveText("OPL 1.2.0 beta");
+  await header.getByTestId("loader-profile-change").click();
+  await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по носителю)");
 });
 
 for (const language of ["en", "ru"] as const) {
@@ -91,6 +97,11 @@ for (const language of ["en", "ru"] as const) {
       await expect(page.getByTestId("loader-profile-Opl110")).toBeVisible();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `test-results/screenshots/loader-library-${language}-${theme}.png` });
+      // The settings have no profile any more (ADR-0040).
+      await page.keyboard.press("Escape");
+      await page.goto("/settings");
+      await expect(page.getByTestId("simple-mode")).toBeVisible();
+      await page.screenshot({ path: `test-results/screenshots/loader-settings-${language}-${theme}.png` });
     });
   }
 }

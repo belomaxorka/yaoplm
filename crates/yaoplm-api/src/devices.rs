@@ -210,15 +210,15 @@ pub enum ProfileConfidence {
     Default,
 }
 
-/// Where the profile in force comes from (ADR-0023).
+/// Where the profile in force comes from (ADR-0023, ADR-0040).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum ProfileSource {
     /// Chosen for this device.
     Override,
-    /// A profile chosen in the settings for every device.
-    Setting,
+    /// Forced for every device by the request (the CLI's `--profile`).
+    Explicit,
     /// Read from the device.
     Detected,
 }
@@ -302,12 +302,13 @@ pub struct ActiveProfile {
     pub detected: Option<DetectedProfile>,
 }
 
-/// How a front end chooses the profile: `setting` is the profile chosen in
-/// the settings for every device (`None`: auto), `overrides` those chosen
-/// per device.
+/// How a front end chooses the profile: `overrides` are those chosen per
+/// device in the interface, `explicit` one forced for every device by the
+/// CLI's `--profile` (`None`: auto). The interface has no global profile
+/// (ADR-0040).
 #[derive(Debug, Clone, Copy)]
 pub struct ProfileChoice<'a> {
-    pub setting: Option<LoaderProfile>,
+    pub explicit: Option<LoaderProfile>,
     pub overrides: &'a [ProfileOverride],
 }
 
@@ -321,7 +322,8 @@ impl ActiveProfile {
     }
 
     /// Reads the device at `root` and applies the front end's choice: an
-    /// override for the device, then the setting, then the detection.
+    /// override for the device, then an explicit profile, then the
+    /// detection.
     pub fn resolve(volume: &Volume, root: &std::path::Path, choice: ProfileChoice<'_>) -> Self {
         let key = Self::key_for(volume, &display_path(root));
         let detected = yaoplm_device::HostFs::new(root)
@@ -331,8 +333,8 @@ impl ActiveProfile {
         let (profile, source) = if let Some(chosen) = choice.overrides.iter().find(|o| o.key == key)
         {
             (chosen.profile, ProfileSource::Override)
-        } else if let Some(setting) = choice.setting {
-            (setting, ProfileSource::Setting)
+        } else if let Some(explicit) = choice.explicit {
+            (explicit, ProfileSource::Explicit)
         } else {
             let detected_profile = detected.as_ref().map(|d| d.profile);
             (

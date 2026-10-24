@@ -372,7 +372,7 @@
     "moveHint": "Each source file is deleted once its game is on the device; archives are kept.",
     "alwaysUl": "Always store as ul chunks",
     "alwaysUlHint": "By default only FAT32 games over 4 GiB are split.",
-    "usingSettings": "Profile: {{profile}}. File names: {{style}}. Change them in Settings.",
+    "usingSettings": "Profile for this device: {{profile}}. File names: {{style}}, set in Settings.",
     "preview": "Preview plan",
     "planHint": "Adjust a title or CD/DVD below; the plan updates. Nothing is written until you confirm.",
     "title": "Title",
@@ -551,12 +551,11 @@
   "loader": {
     "title": "Loader",
     "byOverride": "chosen for this device",
-    "bySetting": "set in Settings",
+    "byExplicit": "chosen for every device",
     "unreadable": "the device could not be read",
     "change": "Change",
     "forThisDevice": "Profile for this device",
-    "auto": "Auto (by device)",
-    "asSettings": "As in Settings ({{profile}})"
+    "auto": "Auto (by device)"
   },
   "devices": {
     "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
@@ -607,9 +606,7 @@
   },
   "settings": {
     "library": "Library",
-    "libraryDescription": "How games are named and checked for the loader you use.",
-    "profile": "Loader profile",
-    "profileHint": "Sets the rules for file systems, ZSO, art and fragments. Auto reads each device: its loader, settings files, exFAT and ZSO.",
+    "libraryDescription": "How games are named and checked. The loader profile is read from each device’s files; change it on the device’s card.",
     "profiles": {
       "Opl120Beta": "OPL 1.2.0 beta",
       "Opl110": "OPL 1.1.0",

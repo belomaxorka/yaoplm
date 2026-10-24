@@ -17,9 +17,8 @@ import { call, RpcError, type Transport } from "@/api/transport";
 
 /** Typed wrappers over `call`; every screen goes through these. */
 
-/** The settings' profile (absent: auto) and the per-device overrides (LIB-1). */
+/** The profiles chosen per device; every other device is read (LIB-1, ADR-0040). */
 export interface ProfileChoice {
-  profile?: LoaderProfile;
   overrides: ProfileOverride[];
 }
 

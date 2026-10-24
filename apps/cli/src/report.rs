@@ -346,7 +346,7 @@ pub fn loader_line(loader: &ActiveProfile) -> String {
     let name = profile_name(loader.profile);
     match (loader.source, &loader.detected) {
         (ProfileSource::Override, _) => format!("{name} (chosen for this device)"),
-        (ProfileSource::Setting, _) => format!("{name} (--profile)"),
+        (ProfileSource::Explicit, _) => format!("{name} (--profile)"),
         (ProfileSource::Detected, Some(detected)) => {
             format!("{name}: {} (auto)", detected.reason.english())
         }
