@@ -13,7 +13,8 @@
 //!   written ([`SourceFs`]).
 //!
 //! Synchronous by design: no tokio, tauri or axum (ADR-0003). OS calls are
-//! made directly (ADR-0019); `unsafe` is confined to `sys/windows.rs`.
+//! made directly (ADR-0019); `unsafe` is confined to `sys/windows.rs`,
+//! `sys/fiemap.rs` and `sys/log2phys.rs` (ADR-0037).
 
 pub mod advice;
 pub mod copy;
