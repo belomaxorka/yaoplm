@@ -42,6 +42,8 @@
 
 - **Профиль загрузчика (LIB-1):** признаки и их порядок — модульные тесты `crates/yaoplm-core/src/detect.rs` на `MemFs` (контрольная сумма с подменной таблицей, файлы семейств, `games.bin` обоих поколений, ключи `conf_opl.cfg`, exFAT/ZSO, спорящие загрузчики); переопределение, явный `--profile` и ключ носителя — `the_loader_profile_of_a_device` в `crates/yaoplm-api/tests/plans.rs`; вывод CLI — `devices_and_device_doctor`; интерфейс — `web/tests/e2e/loader.spec.ts` (кладёт `settings_riptopl.cfg` в фикстуру на время теста) и `web/tests/unit/settings.test.ts` (старая глобальная настройка не действует, ADR-0040). Таблица хешей OPL 1.0.0/1.1.0 проверена на настоящем ELF из официального архива (`D:\yaoplm-testdata\downloads\opl-v1.1.0\`). Версия внутри ELF — модульные тесты `crates/yaoplm-formats/src/ps2_elf.rs` (упакованные и неупакованные ELF, обрезанные и испорченные копии); на настоящих сборках — `loader_elfs` (451 ELF из 98 релизных ассетов OPL, форков, NHDDL и Neutrino; версии сверяются со списком из имён релизов и истории git; на каждую папку релиза — испорченные копии: обрезка, заголовки, свойства LZMA, байты потока) и `loader_corpus` (определение на тех же ELF: чистая установка, переименованный ELF, остатки другого форка, обрезанный файл, два ELF разных поколений). Выборка собирается `scripts/loader-corpus.py`, только в `D:\yaoplm-testdata\downloads\loaders`. Fuzz-цель `ps2_elf`.
 
+- **Каталог загрузчиков (LDR-1, ADR-0042):** модульные тесты `crates/yaoplm-core/src/loaders/` — каталог читается, каждый файл `data/loaders/` вшит в программу байт в байт, тексты `summary` и `limits` есть на каждом языке `web/src/locales/*` и следуют типографике, пресеты и каналы соответствуют решениям владельца, версия даёт канал, строки версий всех выпусков из `opl-stable.txt` разбираются, испорченные записи и новая схема отвергаются; `crates/yaoplm-api/tests/loaders.rs` и `loader_ls_lists_the_catalogue` в `apps/cli/tests/cli.rs`. Факты каталога (раскладка 7z, хеши ассетов и архивов 1.1.0, версии внутри ELF) сверены со скачанными релизами в `D:\yaoplm-testdata\loaders\` (research/17 §7.3).
+
 ## Сбои и восстановление
 
 `crates/yaoplm-core/tests/recovery.rs` (ADR-0021):
@@ -77,6 +79,7 @@ D:\yaoplm-testdata\
 ├─ iso\         # собственные дампы пользователя (не скачиваются агентом)
 ├─ homebrew\    # свободные homebrew-ELF/ISO для тестов
 ├─ opl\         # официальные сборки OPL с GitHub releases (1.1.0 и 1.2.0 beta), справочно
+├─ loaders\     # файлы официальных релизов для ручных проверок установщика (LDR-1…LDR-7): <сборка>-<тег>\<ассет>, скачаны с разрешения владельца
 ├─ images\      # образы FAT32/exFAT для интеграционных тестов
 ├─ refs\        # клоны эталонных репозиториев (ADR-0015, research/REFERENCES.md)
 └─ out\         # результаты прогонов

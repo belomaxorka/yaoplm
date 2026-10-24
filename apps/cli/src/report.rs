@@ -12,6 +12,7 @@ use yaoplm_api::library::{
     Fragments, GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice,
     Platform,
 };
+use yaoplm_api::loaders::{LoaderCatalog, LoaderPublisher, LoaderTarget};
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
 use yaoplm_api::verify::{
@@ -718,6 +719,86 @@ pub fn art_line(entry: &JobLogEntry) -> String {
 }
 
 /// The About screen as text.
+fn target_name(target: LoaderTarget) -> &'static str {
+    match target {
+        LoaderTarget::Usb => "usb",
+        LoaderTarget::Mx4sio => "mx4sio",
+    }
+}
+
+/// `yaoplm loader ls`: one block per build, texts in `lang`.
+pub fn loaders(catalog: &LoaderCatalog, lang: &str) -> String {
+    let mut out = String::new();
+    for build in &catalog.builds {
+        let text = |texts: &std::collections::BTreeMap<String, String>| {
+            texts
+                .get(lang)
+                .or_else(|| texts.get("en"))
+                .cloned()
+                .unwrap_or_default()
+        };
+        let publisher = match build.publisher {
+            LoaderPublisher::Official => "official",
+            LoaderPublisher::Fork => "fork",
+        };
+        let channel = if build.channel.floating {
+            "rebuilt in place"
+        } else {
+            "fixed"
+        };
+        let _ = writeln!(
+            out,
+            "{}  {}{}",
+            build.id,
+            build.name,
+            if build.recommended {
+                "  [recommended]"
+            } else {
+                ""
+            }
+        );
+        let _ = writeln!(
+            out,
+            "  {publisher}, {} @ {} ({channel}), profile {}",
+            build.repo,
+            build.channel.tag,
+            profile_name(build.profile)
+        );
+        let _ = writeln!(out, "  {}", text(&build.summary));
+        let _ = writeln!(out, "  Limits: {}", text(&build.limits));
+        for preset in &build.presets {
+            let devices: Vec<&str> = preset.devices.iter().map(|d| target_name(*d)).collect();
+            let defaults: Vec<&str> = build
+                .default_presets
+                .iter()
+                .filter(|d| d.preset == preset.id)
+                .map(|d| target_name(d.device))
+                .collect();
+            let _ = write!(
+                out,
+                "  Preset {}: {} ({})",
+                preset.id,
+                preset.path,
+                devices.join(", ")
+            );
+            if let Some(title) = &preset.title {
+                let _ = write!(out, ", title.cfg \"{title}\"");
+            }
+            if !defaults.is_empty() {
+                let _ = write!(out, ", default on {}", defaults.join(", "));
+            }
+            let _ = writeln!(out);
+        }
+        let _ = writeln!(
+            out,
+            "  Licence: {}, {} ({})",
+            build.license.spdx, build.license.authors, build.license.url
+        );
+        let _ = writeln!(out);
+    }
+    out
+}
+
 pub fn about(about: &Attribution) -> String {
     let mut out = String::new();
     let _ = writeln!(
