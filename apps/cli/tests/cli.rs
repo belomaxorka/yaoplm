@@ -983,3 +983,142 @@ fn art_import_from_a_folder_set() {
     );
     assert!(s.root.join("ART/SLUS_200.62_ICO.png").is_file());
 }
+
+#[test]
+fn cfg_shows_and_changes_a_games_settings() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.join("Retail.iso").as_os_str(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+    std::fs::write(
+        s.root.join("CFG/SLUS_200.62.cfg"),
+        "Title=Retail\r\n$Compatibility=1\r\n",
+    )
+    .unwrap();
+
+    let show = run(&["cfg".as_ref(), s.root.as_os_str(), "SLUS_200.62".as_ref()]);
+    assert!(show.status.success());
+    let text = stdout(&show);
+    assert!(text.contains("Modes:        1 (accurate reads)"), "{text}");
+    assert!(text.contains("VMC slot 1:   -"), "{text}");
+    assert!(text.contains("Title=Retail"), "{text}");
+
+    let change = [
+        "cfg".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--mode".as_ref(),
+        "2".as_ref(),
+        "--no-mode".as_ref(),
+        "1".as_ref(),
+        "--set".as_ref(),
+        "Genre=Action".as_ref(),
+    ];
+    let dry = run(&change);
+    let text = stdout(&dry);
+    assert!(text.contains("$Compatibility: 1 -> 2"), "{text}");
+    assert!(text.contains("Genre: (none) -> Action"), "{text}");
+    assert!(String::from_utf8_lossy(&dry.stderr).contains("--yes"));
+    let done = run(&[&change[..], &["--yes".as_ref()]].concat());
+    assert!(
+        done.status.success(),
+        "{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert_eq!(
+        std::fs::read(s.root.join("CFG/SLUS_200.62.cfg")).unwrap(),
+        b"Title=Retail\r\n$Compatibility=2\r\n$ConfigSource=1\r\nGenre=Action\r\n"
+    );
+
+    // Mode 7 is RiptOPL's.
+    let refused = run(&[
+        "cfg".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--mode".as_ref(),
+        "7".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("OPL cannot use this setting"));
+}
+
+#[test]
+fn vmc_create_assign_and_list() {
+    let s = stick();
+    let add = run(&[
+        "add".as_ref(),
+        s.root.as_os_str(),
+        s.games.join("Retail.iso").as_os_str(),
+        "--yes".as_ref(),
+    ]);
+    assert!(add.status.success());
+
+    let create = run(&[
+        "vmc".as_ref(),
+        "create".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62_0".as_ref(),
+        "--game".as_ref(),
+        "SLUS_200.62".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        create.status.success(),
+        "{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+    let text = stdout(&create);
+    assert!(
+        text.contains("+ format memory card VMC/SLUS_200.62_0.bin  8.0 MiB"),
+        "{text}"
+    );
+    assert!(text.contains("$VMC_0: (none) -> SLUS_200.62_0"), "{text}");
+    let card = std::fs::read(s.root.join("VMC/SLUS_200.62_0.bin")).unwrap();
+    assert_eq!(
+        yaoplm_formats::vmc::opl_check(&card, card.len() as u64),
+        Ok(8)
+    );
+
+    let list = run(&["vmc".as_ref(), "ls".as_ref(), s.root.as_os_str()]);
+    let text = stdout(&list);
+    assert!(
+        text.contains("SLUS_200.62_0  8 MiB, 0 saves  used by SLUS_200.62 slot 1"),
+        "{text}"
+    );
+
+    // The name is taken: only --replace makes a new card, and the old one is kept.
+    let again = [
+        "vmc".as_ref(),
+        "create".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62_0".as_ref(),
+        "--size".as_ref(),
+        "16".as_ref(),
+        "--yes".as_ref(),
+    ];
+    let refused = run(&again);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("already exists"));
+    let replaced = run(&[&again[..], &["--replace".as_ref()]].concat());
+    assert!(replaced.status.success());
+    assert_eq!(
+        std::fs::metadata(s.root.join("VMC/SLUS_200.62_0.bin"))
+            .unwrap()
+            .len(),
+        16 << 20
+    );
+    let bad = run(&[
+        "vmc".as_ref(),
+        "create".as_ref(),
+        s.root.as_os_str(),
+        "x".as_ref(),
+        "--size".as_ref(),
+        "12".as_ref(),
+    ]);
+    assert_eq!(bad.status.code(), Some(2), "clap refuses the size");
+}
