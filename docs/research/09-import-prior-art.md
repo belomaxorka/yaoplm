@@ -118,6 +118,16 @@ Conflicting hints (XA but bigger than a CD) give a warning.
 - Temp files sit next to their target.
 - A journal on the device marks transactions with a commit point: before it a crash is undone, after it finished (ADR-0021, `crates/yaoplm-core/src/exec.rs`).
 
+### 5.3 Renames and removals on Windows FAT (2026-10-26)
+Source: Microsoft's FAT driver sample, `microsoft/Windows-driver-samples` at `bb68ed5e77`, `filesys/fastfat/`. exFAT's `exfat.sys` is closed but grew from the same code.
+- **Flushing a folder does nothing** on FAT. Only the root folder is special: flushing it flushes the whole volume (`flush.c`, `FatCommonFlushBuffers`, case `UserDirectoryOpen`: "Flush a directory does nothing", the root DCB falls through to `UserVolumeOpen`). A directory fsync, as on Linux, has no Windows FAT equivalent other than the volume root.
+- **Metadata goes to the stick at once only on hot-pluggable devices with write caching off.** `strucsup.c` sets `VCB_STATE_FLAG_DEFERRED_FLUSH` for hot-pluggable media unless `WriteCacheEnableOverride` is set, which is what the "Better performance" removal policy does. With the flag, `FatUnpinRepinnedBcbs` (`cachesup.c`) writes the dirents of a rename through. Without it, a rename or a delete sits in the cache until a flush or the lazy writer.
+- **A rename over an existing file is not atomic on FAT.** The old entry is removed, then the new one is renamed in. A stick pulled in between loses both names but keeps the new file's data under its temporary name.
+- **What YAOPLM does** (`yaoplm-device` `sys::windows::sync_dir`):
+  - after every rename and removal of a plan, it flushes the folder and then the root of its volume;
+  - a folder that cannot be opened for writing or flushed (the root of a system disk for a standard user, some network redirectors) is left as it is.
+- **Journal temp file:** `journal::load_all` takes a `<id>.json.yaoplm-tmp` without its `.json` as the journal, and `journal::clean_temp` renames it back instead of deleting it.
+
 ## 6. Still open
 
 - **Real dumps:** single-track and multi-track PS2 CD BIN/CUE files are needed to confirm the Redump layout (MODE2/2352 is assumed).
