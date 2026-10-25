@@ -32,27 +32,32 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
-import { deviceModes } from "@/settings/settings";
+import { deviceModes, profiles } from "@/settings/settings";
 
+import { LoaderProfileLine } from "./LoaderProfile";
 import { smbStep } from "./smbStep";
+import { useProfileChoice } from "./useLoaderProfile";
 
 /** The folder a whole system disk's library goes into by default. */
 const SHARE_FOLDER = "PS2";
 
 /**
- * "Connection to the PS2: over the network (SMB) — a folder on the
- * computer's disk", with a menu to choose the mode for this device or go
- * back to auto (ADR-0045). Shown wherever the version question can be.
+ * What the device is for, in two lines (ADR-0045): "Connection to the PS2:
+ * over the network (SMB) — a folder on the computer's disk" and "OPL
+ * version: OPL 1.2.0 beta — why". One "Change" menu sets both for this
+ * device or goes back to auto. While the version question shows, it stands
+ * for the version line. Shown wherever the question can be.
  */
-export function DeviceModeLine({ device, className }: { device: DeviceInfo; className?: string }) {
+export function DeviceLines({ device, className }: { device: DeviceInfo; className?: string }) {
   const { t } = useTranslation();
   const { settings, update } = useSettings();
   const key = device.loader.key;
-  const chosen: DeviceMode | "auto" = settings.modeOverrides[key] ?? "auto";
-  const choose = (value: string) => {
+  const chosenMode: DeviceMode | "auto" = settings.modeOverrides[key] ?? "auto";
+  const chooseMode = (value: string) => {
     const { [key]: _old, ...others } = settings.modeOverrides;
     update({ modeOverrides: value === "auto" ? others : { ...others, [key]: value as DeviceMode } });
   };
+  const profile = useProfileChoice(device.loader);
   const { mode } = device;
   const reason =
     mode.source === "override"
@@ -61,38 +66,55 @@ export function DeviceModeLine({ device, className }: { device: DeviceInfo; clas
         ? t("devices.modeByExplicit")
         : phraseText(mode.place, mode.placeText);
   return (
-    <div className={className} data-testid="device-mode" data-mode={mode.mode} data-source={mode.source}>
-      <span className="text-muted-foreground">{t("devices.connection")}: </span>
-      <span className="font-medium" data-testid="device-mode-name">
-        {t(`devices.modes.${mode.mode}`)}
-      </span>
-      <span className="text-muted-foreground" data-testid="device-mode-reason">
-        {" "}
-        — {reason}
-      </span>{" "}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="link" size="sm" className="h-auto p-0 align-baseline text-xs" data-testid="device-mode-change">
-            {t("loader.change")}
-            <ChevronDown aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-max">
-          <DropdownMenuLabel>{t("devices.modeForThisDevice")}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuRadioGroup value={chosen} onValueChange={choose}>
-            <DropdownMenuRadioItem value="auto" data-testid="device-mode-auto">
-              {t("devices.modeAuto")}
-            </DropdownMenuRadioItem>
-            {deviceModes.map((value) => (
-              <DropdownMenuRadioItem key={value} value={value} data-testid={`device-mode-${value}`}>
-                {t(`devices.modeOptions.${value}`)}
+    <>
+      <div className={className} data-testid="device-mode" data-mode={mode.mode} data-source={mode.source}>
+        <span className="text-muted-foreground">{t("devices.connection")}: </span>
+        <span className="font-medium" data-testid="device-mode-name">
+          {t(`devices.modes.${mode.mode}`)}
+        </span>
+        <span className="text-muted-foreground" data-testid="device-mode-reason">
+          {" "}
+          — {reason}
+        </span>{" "}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="link" size="sm" className="h-auto p-0 align-baseline text-xs" data-testid="device-choice-change">
+              {t("loader.change")}
+              <ChevronDown aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-max">
+            <DropdownMenuLabel>{t("devices.modeForThisDevice")}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={chosenMode} onValueChange={chooseMode}>
+              <DropdownMenuRadioItem value="auto" data-testid="device-mode-auto">
+                {t("devices.modeAuto")}
               </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+              {deviceModes.map((value) => (
+                <DropdownMenuRadioItem key={value} value={value} data-testid={`device-mode-${value}`}>
+                  {t(`devices.modeOptions.${value}`)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{t("loader.forThisDevice")}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={profile.chosen} onValueChange={profile.choose}>
+              <DropdownMenuRadioItem value="auto" data-testid="loader-profile-auto">
+                {t("loader.auto")}
+              </DropdownMenuRadioItem>
+              {profiles.map((value) => (
+                <DropdownMenuRadioItem key={value} value={value} data-testid={`loader-profile-${value}`}>
+                  {t(`settings.profiles.${value}`)}
+                </DropdownMenuRadioItem>
+              ))}
+              <DropdownMenuRadioItem value="unknown" data-testid="loader-profile-unknown">
+                {t("loader.unknown")}
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {!device.askProfile && <LoaderProfileLine loader={device.loader} className={className} />}
+    </>
   );
 }
 

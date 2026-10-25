@@ -28,6 +28,11 @@ pub enum DeviceMode {
 pub enum Place {
     /// A USB stick or disk, an SD card: what users plug into a PS2.
     Removable,
+    /// A USB hard disk on a file system OPL cannot read over USB (NTFS,
+    /// ext4, APFS): only the network brings it to the console. A stick or
+    /// SD card on one stays `Removable`: those are for the console, and the
+    /// doctor says to prepare them (owner's decision 2026-10-25, ADR-0045).
+    UsbDisk(FsKind),
     /// A folder on an internal disk of the computer.
     ComputerDisk,
     /// A network share the OS mounted.
@@ -43,10 +48,11 @@ impl Place {
     /// into Docker, where `/sys` is hidden) is removable media too: computers
     /// keep their own disks on other file systems.
     pub fn of(volume: &Volume, server: bool) -> Self {
-        let unplaced_stick = volume.kind == VolumeKind::Unknown
-            && !volume.system
-            && matches!(volume.fs, FsKind::Fat32 | FsKind::Fat16 | FsKind::ExFat);
-        if volume.is_external() || unplaced_stick {
+        let bdm_fs = matches!(volume.fs, FsKind::Fat32 | FsKind::Fat16 | FsKind::ExFat);
+        let unplaced_stick = volume.kind == VolumeKind::Unknown && !volume.system && bdm_fs;
+        if volume.is_external() && volume.kind != VolumeKind::Removable && !bdm_fs {
+            Self::UsbDisk(volume.fs)
+        } else if volume.is_external() || unplaced_stick {
             Self::Removable
         } else if volume.kind == VolumeKind::Remote {
             Self::NetworkFolder
@@ -60,18 +66,22 @@ impl Place {
     pub fn mode(self) -> DeviceMode {
         match self {
             Self::Removable => DeviceMode::Ps2,
-            Self::ComputerDisk | Self::NetworkFolder | Self::ServerFolder => DeviceMode::Smb,
+            Self::UsbDisk(_) | Self::ComputerDisk | Self::NetworkFolder | Self::ServerFolder => {
+                DeviceMode::Smb
+            }
         }
     }
 
     /// To follow a dash after the mode (`reasons.*`).
     pub fn phrase(self) -> Phrase {
-        Phrase::reason(match self {
-            Self::Removable => "placeRemovable",
-            Self::ComputerDisk => "placeComputerDisk",
-            Self::NetworkFolder => "placeNetworkFolder",
-            Self::ServerFolder => "placeServerFolder",
-        })
+        match self {
+            Self::UsbDisk(FsKind::Other) => Phrase::reason("placeUsbDiskOther"),
+            Self::UsbDisk(fs) => Phrase::reason("placeUsbDisk").with("fs", fs.to_string()),
+            Self::Removable => Phrase::reason("placeRemovable"),
+            Self::ComputerDisk => Phrase::reason("placeComputerDisk"),
+            Self::NetworkFolder => Phrase::reason("placeNetworkFolder"),
+            Self::ServerFolder => Phrase::reason("placeServerFolder"),
+        }
     }
 }
 
@@ -115,10 +125,21 @@ mod tests {
     fn the_place_gives_the_mode() {
         let cases = [
             (VolumeKind::Removable, None, false, Place::Removable),
-            // A USB disk, or an internal disk in a USB adapter: the OS
-            // reports the USB bus, and it goes into the console.
-            (VolumeKind::Fixed, Some(Bus::Usb), false, Place::Removable),
-            (VolumeKind::Fixed, Some(Bus::Sd), true, Place::Removable),
+            // A USB disk on NTFS: only the network brings it to the console.
+            (
+                VolumeKind::Fixed,
+                Some(Bus::Usb),
+                false,
+                Place::UsbDisk(FsKind::Ntfs),
+            ),
+            // An NTFS stick is still for the console: it gets prepared.
+            (
+                VolumeKind::Removable,
+                Some(Bus::Usb),
+                false,
+                Place::Removable,
+            ),
+            (VolumeKind::Removable, Some(Bus::Sd), true, Place::Removable),
             (
                 VolumeKind::Fixed,
                 Some(Bus::Nvme),
@@ -144,6 +165,14 @@ mod tests {
                 "{kind:?} {bus:?}"
             );
         }
+        // A USB disk, or an internal disk in a USB adapter, on FAT32 or
+        // exFAT: the OS reports the USB bus, and it goes into the console.
+        let mut usb_disk = volume(VolumeKind::Fixed, Some(Bus::Usb));
+        usb_disk.fs = FsKind::ExFat;
+        assert_eq!(Place::of(&usb_disk, false), Place::Removable);
+        usb_disk.fs = FsKind::Other;
+        assert_eq!(Place::of(&usb_disk, true), Place::UsbDisk(FsKind::Other));
+        assert_eq!(Place::UsbDisk(FsKind::Ntfs).mode(), DeviceMode::Smb);
         // A stick passed into Docker: no bus, but FAT32 or exFAT.
         let mut stick = volume(VolumeKind::Unknown, None);
         for fs in [FsKind::Fat32, FsKind::ExFat] {
@@ -166,6 +195,8 @@ mod tests {
     fn every_place_renders() {
         for place in [
             Place::Removable,
+            Place::UsbDisk(FsKind::Ntfs),
+            Place::UsbDisk(FsKind::Other),
             Place::ComputerDisk,
             Place::NetworkFolder,
             Place::ServerFolder,

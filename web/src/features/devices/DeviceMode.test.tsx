@@ -17,7 +17,7 @@ import { JobsProvider } from "@/jobs/JobsProvider";
 import { SettingsProvider } from "@/settings/SettingsProvider";
 import { readSettings } from "@/settings/settings";
 
-import { DeviceModeLine, SmbFolderHint } from "./DeviceMode";
+import { DeviceLines, SmbFolderHint } from "./DeviceMode";
 import { detected, KEY, loader, mode, smbMode, testDevice } from "./testDevice";
 
 const systemRoot = {
@@ -92,19 +92,35 @@ describe("how the PS2 reads a device (ADR-0045)", () => {
   afterEach(() => window.localStorage.clear());
 
   it("shows the mode and its place, and switches it for this device", async () => {
-    show(<DeviceModeLine device={emptyFolder()} />);
+    show(<DeviceLines device={emptyFolder({ askProfile: false })} />);
     const line = screen.getByTestId("device-mode");
     expect(line).toHaveTextContent("Connection to the PS2: over the network (SMB) — a folder on the computer’s disk");
-    await userEvent.click(screen.getByTestId("device-mode-change"));
+    // The rules YAOPLM writes for, not a loader found on the device.
+    expect(screen.getByTestId("loader-profile")).toHaveTextContent("OPL version: OPL 1.2.0 beta — no signs of a loader");
+    await userEvent.click(screen.getByTestId("device-choice-change"));
     await userEvent.click(await screen.findByTestId("device-mode-ps2"));
     expect(readSettings().modeOverrides).toEqual({ [KEY]: "ps2" });
   });
 
+  it("one menu also sets the OPL version", async () => {
+    show(<DeviceLines device={emptyFolder({ askProfile: false })} />);
+    await userEvent.click(screen.getByTestId("device-choice-change"));
+    await userEvent.click(await screen.findByTestId("loader-profile-Opl110"));
+    expect(readSettings().profileOverrides).toEqual({ [KEY]: "Opl110" });
+    expect(screen.getAllByTestId("device-choice-change")).toHaveLength(1);
+  });
+
+  it("the question stands for the version line while it shows", () => {
+    show(<DeviceLines device={emptyFolder()} />);
+    expect(screen.getByTestId("device-mode")).toBeVisible();
+    expect(screen.queryByTestId("loader-profile")).toBeNull();
+  });
+
   it("a choice is shown as one and goes back to auto", async () => {
     window.localStorage.setItem("yaoplm.settings", JSON.stringify({ modeOverrides: { [KEY]: "smb" } }));
-    show(<DeviceModeLine device={testDevice({ mode: mode({ mode: "smb", source: "override" }) })} />);
+    show(<DeviceLines device={testDevice({ mode: mode({ mode: "smb", source: "override" }) })} />);
     expect(screen.getByTestId("device-mode-reason")).toHaveTextContent("chosen for this device");
-    await userEvent.click(screen.getByTestId("device-mode-change"));
+    await userEvent.click(screen.getByTestId("device-choice-change"));
     await userEvent.click(await screen.findByTestId("device-mode-auto"));
     expect(readSettings().modeOverrides).toEqual({});
   });

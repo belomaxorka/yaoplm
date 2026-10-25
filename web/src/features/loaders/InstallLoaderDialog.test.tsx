@@ -84,6 +84,14 @@ function device(patch: Partial<DeviceInfo> = {}): DeviceInfo {
     appleDouble: null,
     unfinished: [],
     loader: { profile: "Opl120Beta", source: "detected", key: "serial:3C761797", detected: null },
+    mode: {
+      mode: "ps2",
+      source: "detected",
+      detected: "ps2",
+      place: { key: "reasons.placeRemovable", params: {} },
+      placeText: "a removable device",
+    },
+    askProfile: false,
     ...patch,
   };
 }

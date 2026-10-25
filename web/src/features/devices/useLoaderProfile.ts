@@ -5,6 +5,20 @@ import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import { useDevice } from "@/features/recovery/useDevice";
 import { worstLevel } from "@/lib/notices";
 import { useSettings } from "@/settings/context";
+import type { ProfileOverrideValue } from "@/settings/settings";
+
+/** The profile chosen for the device and a way to change it (`auto` drops the choice). */
+export function useProfileChoice(loader: ActiveProfile) {
+  const { settings, update } = useSettings();
+  const chosen: ProfileOverrideValue | "auto" = settings.profileOverrides[loader.key] ?? "auto";
+  const choose = (value: string) => {
+    const { [loader.key]: _old, ...others } = settings.profileOverrides;
+    update({
+      profileOverrides: value === "auto" ? others : { ...others, [loader.key]: value as ProfileOverrideValue },
+    });
+  };
+  return { chosen, choose };
+}
 
 /**
  * The loader profile of the open library (LIB-1, ADR-0040): an override for

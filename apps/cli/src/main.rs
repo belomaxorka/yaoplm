@@ -745,7 +745,7 @@ fn main() -> anyhow::Result<ExitCode> {
                     mode_overrides: None,
                 }) {
                     if common.profile.explicit().is_none() {
-                        println!("Profile: {}", report::loader_line(&device.loader));
+                        println!("OPL: {}", report::loader_line(&device.loader));
                     }
                     println!("Mode: {}", report::mode_line(&device.mode));
                 }

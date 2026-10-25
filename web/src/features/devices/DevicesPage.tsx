@@ -25,8 +25,8 @@ import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import { deviceChoice } from "@/settings/settings";
 
-import { DeviceModeLine, SmbFolderHint } from "./DeviceMode";
-import { LoaderProfileHint, LoaderProfileLine } from "./LoaderProfile";
+import { DeviceLines, SmbFolderHint } from "./DeviceMode";
+import { LoaderProfileHint } from "./LoaderProfile";
 import { smbStep } from "./smbStep";
 
 /**
@@ -164,8 +164,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
               {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
             </span>
           </div>
-          <DeviceModeLine device={device} className="mt-2 text-sm" />
-          <LoaderProfileLine loader={device.loader} className="mt-1 text-sm" />
+          <div className="mt-2 flex flex-col gap-1 text-sm">
+            <DeviceLines device={device} />
+          </div>
           <SmbFolderHint device={device} className="mt-2" />
           <LoaderProfileHint device={device} className="mt-2" />
           {!simple && (

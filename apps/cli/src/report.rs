@@ -430,7 +430,7 @@ pub fn device(device: &DeviceInfo) -> String {
         let _ = writeln!(out, "Partition:  {line}");
     }
     let _ = writeln!(out, "Mode:       {}", mode_line(&device.mode));
-    let _ = writeln!(out, "Loader:     {}", loader_line(&device.loader));
+    let _ = writeln!(out, "OPL:        {}", loader_line(&device.loader));
     if let Some(detected) = &device.loader.detected {
         for loader in &detected.loaders {
             let mut found = loader.family.clone();

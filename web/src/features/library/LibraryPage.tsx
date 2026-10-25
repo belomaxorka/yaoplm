@@ -66,8 +66,8 @@ import { gameKey } from "@/lib/gameKey";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
-import { DeviceModeLine, SmbFolderHint } from "@/features/devices/DeviceMode";
-import { LoaderProfileHint, LoaderProfileLine } from "@/features/devices/LoaderProfile";
+import { DeviceLines, SmbFolderHint } from "@/features/devices/DeviceMode";
+import { LoaderProfileHint } from "@/features/devices/LoaderProfile";
 import { smbStep } from "@/features/devices/smbStep";
 import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
@@ -281,8 +281,7 @@ function LibraryView({
               {root}
             </span>
           )}
-          {loader.device && <DeviceModeLine device={loader.device} className="text-xs" />}
-          {loader.active && <LoaderProfileLine loader={loader.active} className="text-xs" />}
+          {loader.device && <DeviceLines device={loader.device} className="text-xs" />}
           {data && (
             <>
               <span data-testid="library-count">

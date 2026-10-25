@@ -99,6 +99,7 @@
     "imageDeletedAfterUl": "The image is deleted once the ul chunks and ul.cfg are complete",
     "journalUnreadable": "Journal {{file}} cannot be read ({{error}}); check the device by hand",
     "largeGamesAsUl": "FAT32 holds files up to 4 GiB: larger games are split into 1 GiB ul chunks",
+    "lowSpace": "Little free space left: {{free, bytes}} of {{total, bytes}}",
     "mediaConflict": "The image is marked as a CD but holds {{sectors}} sectors, more than a CD; check CD or DVD",
     "misaligned": "The partition starts at byte {{offset}}, not on a 1 MiB boundary (slower writes)",
     "nameIdMismatch": "The file name says {{name}} but SYSTEM.CNF says {{image}}; OPL uses {{name}}",
@@ -563,13 +564,13 @@
     }
   },
   "loader": {
-    "title": "Loader",
+    "title": "OPL version",
     "byOverride": "chosen for this device",
     "byExplicit": "chosen for every device",
     "unreadable": "the device could not be read",
     "change": "Change",
-    "forThisDevice": "Profile for this device",
-    "auto": "Auto (by device)",
+    "forThisDevice": "OPL version of this device",
+    "auto": "Auto (by its files)",
     "byUnknown": "version not known: rules every OPL can read",
     "unknown": "I don’t know (rules for any OPL)",
     "question": "Which OPL do you start with this device?",
@@ -1202,6 +1203,8 @@
     "profileNoSigns": "no signs of a loader on the device",
     "profileByCopy": "{{reason}} (a copy: over SMB the console starts OPL from a memory card or stick)",
     "placeRemovable": "a removable device",
+    "placeUsbDisk": "a USB disk with {{fs}}: the console reads it only over the network",
+    "placeUsbDiskOther": "a USB disk OPL cannot read over USB: the console reads it only over the network",
     "placeComputerDisk": "a folder on the computer’s disk",
     "placeNetworkFolder": "a network folder",
     "placeServerFolder": "a folder on the server"

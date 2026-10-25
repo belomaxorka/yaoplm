@@ -71,6 +71,12 @@ pub enum Advice {
     /// A whole system disk shared as the library: a separate folder is
     /// cleaner (OPL creates its folders at the share's root).
     SystemRoot(String),
+    /// Less than a tenth of the volume, or less than a single-layer DVD,
+    /// is free (owner's decision 2026-10-25, ADR-0045).
+    LowSpace {
+        free: u64,
+        total: u64,
+    },
     /// FatFs in OPL is built for 512-byte sectors only.
     SectorSize(u32),
     ClusterTooLarge(u32),
@@ -103,6 +109,7 @@ impl Advice {
             | Self::ClusterTooLarge(_)
             | Self::NoPartitionTable
             | Self::SystemRoot(_)
+            | Self::LowSpace { .. }
             | Self::AppleDouble(_) => Level::Warning,
             Self::LargeGamesAsUl
             | Self::ExfatRecommended
@@ -126,6 +133,7 @@ impl Advice {
             Self::Smb { smb2: false } => "smbRules",
             Self::Smb { smb2: true } => "smbRulesSmb2",
             Self::SystemRoot(_) => "systemRoot",
+            Self::LowSpace { .. } => "lowSpace",
             Self::SectorSize(_) => "sectorSize",
             Self::ClusterTooLarge(_) => "clusterTooLarge",
             Self::ClusterSmall(_) => "clusterSmall",
@@ -155,6 +163,7 @@ impl Advice {
             Self::Misaligned(offset) => phrase.with("offset", *offset),
             Self::AppleDouble(files) => phrase.with("files", *files),
             Self::SystemRoot(folder) => phrase.with("folder", folder),
+            Self::LowSpace { free, total } => phrase.with("free", *free).with("total", *total),
             Self::SystemVolume
             | Self::ReadOnly
             | Self::ExfatNeedsOpl12
@@ -180,6 +189,17 @@ const MIB: u64 = 1 << 20;
 /// The folder a whole system disk's warning suggests sharing instead.
 pub const SHARE_FOLDER: &str = "PS2";
 
+/// A single-layer DVD: less free space than this takes no more DVD games.
+const DVD5_BYTES: u64 = 4_700_000_000;
+
+/// Little free space, on any device in either mode. A volume nothing can be
+/// written to fills no further.
+fn low_space(volume: &Volume) -> Option<Advice> {
+    let (free, total) = (volume.free_bytes, volume.total_bytes);
+    (!volume.read_only && total > 0 && (free < DVD5_BYTES || free.saturating_mul(10) < total))
+        .then_some(Advice::LowSpace { free, total })
+}
+
 /// Everything worth telling about `volume` for `options`, worst first.
 pub fn diagnose(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     match options.mode {
@@ -195,6 +215,7 @@ fn diagnose_smb(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     if volume.read_only {
         found.push(Advice::ReadOnly);
     }
+    found.extend(low_space(volume));
     // A disk nothing can be written to gets no folder of its own either.
     if volume.system && options.whole_volume && !volume.read_only {
         found.push(Advice::SystemRoot(
@@ -219,6 +240,7 @@ fn diagnose_ps2(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     if volume.read_only {
         found.push(Advice::ReadOnly);
     }
+    found.extend(low_space(volume));
     match volume.fs {
         FsKind::Fat32 | FsKind::Fat16 => {
             found.push(Advice::LargeGamesAsUl);
@@ -518,6 +540,42 @@ mod tests {
     }
 
     #[test]
+    fn little_free_space_in_either_mode() {
+        let gib: u64 = 1 << 30;
+        let mut volume = stick(FsKind::ExFat, 128 * 1024);
+        // The owner's sticks and disks on 2026-10-25.
+        for (free, total, low) in [
+            (3 * gib + gib / 3, 7 * gib + gib / 2, true), // E: 3.3 of 7.5 GiB
+            (57 * gib, 57 * gib + gib / 2, false),        // F:, empty
+            (13 * gib, 476 * gib, true),                  // C:, 2.7 % free
+            (124 * gib, 466 * gib, false),                // D:
+        ] {
+            volume.free_bytes = free;
+            volume.total_bytes = total;
+            for options in [OPL12, SMB] {
+                assert_eq!(
+                    codes(&volume, options).contains(&"lowSpace"),
+                    low,
+                    "{free} of {total}"
+                );
+            }
+        }
+        volume.free_bytes = 2 * gib;
+        let advice = Advice::LowSpace {
+            free: volume.free_bytes,
+            total: volume.total_bytes,
+        };
+        assert_eq!(advice.level(), Level::Warning);
+        assert_eq!(
+            advice.phrase().english(),
+            "Little free space left: 2.0 GiB of 466.0 GiB"
+        );
+        // Nothing more can be written to a read-only volume anyway.
+        volume.read_only = true;
+        assert!(!codes(&volume, OPL12).contains(&"lowSpace"));
+    }
+
+    #[test]
     fn apple_double_files() {
         let dir = tempfile::tempdir().unwrap();
         for path in [
@@ -551,6 +609,10 @@ mod phrase_tests {
             Advice::Smb { smb2: false },
             Advice::Smb { smb2: true },
             Advice::SystemRoot(r"C:\PS2".into()),
+            Advice::LowSpace {
+                free: 3 << 30,
+                total: 8 << 30,
+            },
             Advice::SectorSize(4096),
             Advice::ClusterTooLarge(256 * 1024),
             Advice::ClusterSmall(4 * 1024),

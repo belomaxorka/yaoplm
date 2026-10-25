@@ -367,7 +367,7 @@ fn devices_and_device_doctor() {
     // the question is asked even though it is empty.
     let text = stdout(&device);
     assert!(
-        text.contains("Loader:     OPL 1.2.0 beta: no signs of a loader on the device (auto)"),
+        text.contains("OPL:        OPL 1.2.0 beta: no signs of a loader on the device (auto)"),
         "{text}"
     );
     assert!(
@@ -414,7 +414,7 @@ fn devices_and_device_doctor() {
     let text = stdout(&device);
     assert!(
         text.contains(
-            "Loader:     RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (a copy: over SMB the console starts OPL from a memory card or stick) (auto)"
+            "OPL:        RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (a copy: over SMB the console starts OPL from a memory card or stick) (auto)"
         ),
         "{text}"
     );
@@ -426,7 +426,7 @@ fn devices_and_device_doctor() {
     ]);
     let text = stdout(&device);
     assert!(
-        text.contains("Loader:     RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (auto)"),
+        text.contains("OPL:        RiptOPL: RiptOPL at APPS/APP_RIPTOPL/RIPTOPL.ELF (auto)"),
         "{text}"
     );
     assert!(
@@ -439,7 +439,7 @@ fn devices_and_device_doctor() {
         "--profile".as_ref(),
         "opl-1.1".as_ref(),
     ]);
-    assert!(stdout(&given).contains("Loader:     OPL 1.1.0 (--profile)"));
+    assert!(stdout(&given).contains("OPL:        OPL 1.1.0 (--profile)"));
 }
 
 #[test]
