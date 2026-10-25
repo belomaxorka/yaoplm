@@ -147,7 +147,31 @@ impl ReleaseMirror {
             json_string(&format!("https://github.com/{repo}/releases/tag/{tag}")),
             list.join(","),
         );
-        fs::write(tags.join(format!("{tag}.json")), json)
+        fs::write(tags.join(format!("{tag}.json")), json)?;
+        self.list(repo)
+    }
+
+    /// `repos/<repo>/releases.json`: every release written so far, newest
+    /// first, as `GET /repos/{owner}/{repo}/releases` lists them.
+    fn list(&self, repo: &str) -> io::Result<()> {
+        let dir = self.root.join("repos").join(repo).join("releases");
+        let mut releases = Vec::new();
+        for entry in fs::read_dir(dir.join("tags"))? {
+            let text = fs::read_to_string(entry?.path())?;
+            let published = text
+                .split("\"published_at\":\"")
+                .nth(1)
+                .and_then(|rest| rest.get(..20))
+                .unwrap_or_default()
+                .to_owned();
+            releases.push((published, text));
+        }
+        releases.sort_by(|a, b| b.cmp(a));
+        let list: Vec<String> = releases.into_iter().map(|(_, text)| text).collect();
+        fs::write(
+            self.root.join("repos").join(repo).join("releases.json"),
+            format!("[{}]", list.join(",")),
+        )
     }
 
     /// A file of the catalogue on `main`: `loaders/index.toml`.
@@ -159,6 +183,32 @@ impl ReleaseMirror {
         fs::write(file, text)
     }
 
+    /// Upstream's `latest` rebuilt as `version` (`v1.2.0-Beta-2271-b3a2199`),
+    /// uploaded on `date`: the ELF, its 7z under both names and the
+    /// language pack, all with digests.
+    pub fn beta(&self, version: &str, date: &str) -> io::Result<()> {
+        let elf = opl_elf(version);
+        let member = format!("OPNPS2LD/OPNPS2LD-{version}.ELF");
+        let packed = crate::packed::seven_zip(&[(member.as_str(), &elf)])?;
+        let commit = version.rsplit('-').next().unwrap_or_default();
+        let versioned = format!("OPNPS2LD-{version}.7z");
+        self.release(
+            "ps2homebrew/Open-PS2-Loader",
+            "latest",
+            "latest",
+            &format!(
+                "## Documentation\n* Add a note by @someone in https://github.com/ps2homebrew/Open-PS2-Loader/commit/{commit}\n"
+            ),
+            date,
+            &[
+                MirrorAsset { name: "OPNPS2LD.ELF", bytes: &elf, digest: true },
+                MirrorAsset { name: "OPNPS2LD.7z", bytes: &packed, digest: true },
+                MirrorAsset { name: &versioned, bytes: &packed, digest: true },
+                MirrorAsset { name: "OPNPS2LD-LANGS.7z", bytes: &beta_langs()?, digest: true },
+            ],
+        )
+    }
+
     /// The three catalogue builds as GitHub publishes them (research/17
     /// §6–§7), with test ELFs: `latest` of upstream (digests), `latest` of
     /// YAOPL (digests and `SHA256SUMS`) and upstream's `v1.1.0` (no
@@ -166,22 +216,7 @@ impl ReleaseMirror {
     /// the catalogue pins the real one's hash, so tests that download it
     /// pin this one through a catalogue of their own.
     pub fn official(&self) -> io::Result<Vec<u8>> {
-        let beta = opl_elf("v1.2.0-Beta-2271-b3a2199");
-        let beta_7z =
-            crate::packed::seven_zip(&[("OPNPS2LD/OPNPS2LD-v1.2.0-Beta-2271-b3a2199.ELF", &beta)])?;
-        self.release(
-            "ps2homebrew/Open-PS2-Loader",
-            "latest",
-            "latest",
-            "## Documentation\n* Add a note by @someone in https://github.com/ps2homebrew/Open-PS2-Loader/commit/b3a2199\n",
-            "2026-10-13",
-            &[
-                MirrorAsset { name: "OPNPS2LD.ELF", bytes: &beta, digest: true },
-                MirrorAsset { name: "OPNPS2LD.7z", bytes: &beta_7z, digest: true },
-                MirrorAsset { name: "OPNPS2LD-v1.2.0-Beta-2271-b3a2199.7z", bytes: &beta_7z, digest: true },
-                MirrorAsset { name: "OPNPS2LD-LANGS.7z", bytes: &beta_langs()?, digest: true },
-            ],
-        )?;
+        self.beta("v1.2.0-Beta-2271-b3a2199", "2026-10-13")?;
         let yaopl = opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl");
         let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&yaopl));
         self.release(

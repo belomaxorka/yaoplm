@@ -44,7 +44,7 @@ describe("the loader profile per device (LIB-1, ADR-0040)", () => {
   });
 });
 
-describe("the mode per device (ADR-0045)", () => {
+describe("the mode per device (ADR-0047)", () => {
   afterEach(() => window.localStorage.clear());
 
   it("reads old settings without modes and keeps only valid ones", () => {

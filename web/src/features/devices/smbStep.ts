@@ -2,7 +2,7 @@ import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import { worstLevel } from "@/lib/notices";
 
 /**
- * The next step of a folder read over SMB (ADR-0045): a whole system disk
+ * The next step of a folder read over SMB (ADR-0047): a whole system disk
  * gets a folder of its own, an empty folder gets OPL's folders. Neither
  * needs a loader: the console starts OPL from its memory card or stick.
  */

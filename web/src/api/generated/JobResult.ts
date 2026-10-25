@@ -5,9 +5,11 @@ import type { ExecutionReport } from "./ExecutionReport";
 import type { Library } from "./Library";
 import type { LoaderCatalog } from "./LoaderCatalog";
 import type { LoaderFile } from "./LoaderFile";
+import type { LoaderImpact } from "./LoaderImpact";
 import type { LoaderOffer } from "./LoaderOffer";
+import type { LoaderReleaseList } from "./LoaderReleaseList";
 import type { PlanView } from "./PlanView";
 import type { RedumpResult } from "./RedumpResult";
 import type { VerificationReport } from "./VerificationReport";
 
-export type JobResult = { "type": "Library" } & Library | { "type": "Execution" } & ExecutionReport | { "type": "Plan" } & PlanView | { "type": "Covers" } & CoverSearch | { "type": "ArtVariants" } & ArtVariants | { "type": "Verification" } & VerificationReport | { "type": "Redump" } & RedumpResult | { "type": "LoaderCatalog" } & LoaderCatalog | { "type": "LoaderOffer" } & LoaderOffer | { "type": "LoaderFile" } & LoaderFile;
+export type JobResult = { "type": "Library" } & Library | { "type": "Execution" } & ExecutionReport | { "type": "Plan" } & PlanView | { "type": "Covers" } & CoverSearch | { "type": "ArtVariants" } & ArtVariants | { "type": "Verification" } & VerificationReport | { "type": "Redump" } & RedumpResult | { "type": "LoaderCatalog" } & LoaderCatalog | { "type": "LoaderOffer" } & LoaderOffer | { "type": "LoaderFile" } & LoaderFile | { "type": "LoaderReleases" } & LoaderReleaseList | { "type": "LoaderImpact" } & LoaderImpact;

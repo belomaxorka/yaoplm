@@ -141,7 +141,7 @@ function LibraryView({
   const loader = useLoaderProfile();
   // What the detection found: ZSO 1.1.0 cannot show, JPG art, several loaders.
   const loaderNotices = loader.active?.source === "detected" ? (loader.active.detected?.notices ?? []) : [];
-  // A folder read over SMB gets its own next step (ADR-0045): a whole system
+  // A folder read over SMB gets its own next step (ADR-0047): a whole system
   // disk is not filled with OPL's folders.
   const smbNext = loader.device ? smbStep(loader.device) : null;
   const initFlow = usePlan();

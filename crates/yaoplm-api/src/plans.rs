@@ -81,6 +81,12 @@ pub enum PlanKind {
     Vmc,
     /// A loader build put on the device (LDR-3).
     InstallLoader,
+    /// A newer build of the installed loader's channel (LDR-4).
+    UpdateLoader,
+    /// A loader's backup put back (LDR-4).
+    RollbackLoader,
+    /// Another build in place of the installed one (LDR-7).
+    ReplaceLoader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,6 +223,9 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Settings => PlanKind::Settings,
         core::PlanKind::Vmc => PlanKind::Vmc,
         core::PlanKind::InstallLoader => PlanKind::InstallLoader,
+        core::PlanKind::UpdateLoader => PlanKind::UpdateLoader,
+        core::PlanKind::RollbackLoader => PlanKind::RollbackLoader,
+        core::PlanKind::ReplaceLoader => PlanKind::ReplaceLoader,
     }
 }
 
@@ -364,7 +373,7 @@ pub struct StoredPlan {
     pub plan: core::Plan,
     pub root: PathBuf,
     /// The device's mode the plan was made for; `None`: its place's
-    /// (ADR-0045).
+    /// (ADR-0047).
     pub mode: Option<yaoplm_device::DeviceMode>,
     created: Instant,
 }

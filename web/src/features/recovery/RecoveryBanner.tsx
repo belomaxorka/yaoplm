@@ -16,7 +16,7 @@ export function RecoveryBanner({ root }: { root: string }) {
   const device = useDevice(root);
   const flow = usePlan();
   const unfinished = device.data?.unfinished ?? [];
-  // A resumed copy is checked as OPL reads the device (ADR-0045).
+  // A resumed copy is checked as OPL reads the device (ADR-0047).
   const mode = device.data ? { mode: device.data.mode.mode } : {};
   if (unfinished.length === 0) return null;
 

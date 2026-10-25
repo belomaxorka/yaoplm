@@ -42,7 +42,7 @@ import { useProfileChoice } from "./useLoaderProfile";
 const SHARE_FOLDER = "PS2";
 
 /**
- * What the device is for, in two lines (ADR-0045): "Connection to the PS2:
+ * What the device is for, in two lines (ADR-0047): "Connection to the PS2:
  * over the network (SMB) — a folder on the computer's disk" and "OPL
  * version: OPL 1.2.0 beta — why". One "Change" menu sets both for this
  * device or goes back to auto. While the version question shows, it stands

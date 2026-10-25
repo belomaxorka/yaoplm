@@ -32,7 +32,7 @@ fn volume(path: &Path) -> io::Result<Volume> {
         flags & MNT_ROOTFS != 0 || root == Path::new("/") || root.starts_with("/System/Volumes");
     // Without DiskArbitration the bus is unknown. A FAT, exFAT or NTFS
     // volume under `/Volumes` is external media (a stick, an SD card, a USB
-    // disk), which the device's mode needs (ADR-0045); APFS and HFS+ there
+    // disk), which the device's mode needs (ADR-0047); APFS and HFS+ there
     // are the Mac's own disks, Time Machine and images.
     let fs = FsKind::from_os_name(&fs_name);
     let kind = if flags & MNT_LOCAL == 0 {

@@ -40,7 +40,7 @@ profile?: LoaderProfile,
  */
 overrides?: Array<ProfileOverride>, 
 /**
- * Modes chosen per device, by the same key (ADR-0045); every
+ * Modes chosen per device, by the same key (ADR-0047); every
  * other device gets its place's.
  */
 modeOverrides?: Array<ModeOverride>, } | { "type": "InspectDevice", root: string, 
@@ -55,7 +55,7 @@ bootFromDevice?: boolean,
 /**
  * A mode for this request (the CLI's `--mode`); an override for the
  * device still wins, as with `profile`. Absent: an override, else
- * the device's place (ADR-0045).
+ * the device's place (ADR-0047).
  */
 mode?: DeviceMode, 
 /**
@@ -73,7 +73,7 @@ profile?: LoaderProfile,
 verify?: boolean, 
 /**
  * How OPL reads the device (`DeviceInfo.mode`); absent: by its
- * place. Over SMB the fragment rule does not apply (ADR-0045).
+ * place. Over SMB the fragment rule does not apply (ADR-0047).
  */
 mode?: DeviceMode, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, folder?: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
 /**
@@ -187,4 +187,4 @@ fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file
 /**
  * Also the release's language pack (LDR-3).
  */
-languages?: boolean, } | { "type": "ImportLoader", file: string, } | { "type": "LoaderFiles" } | { "type": "LoaderLanguages", sha256: string, } | { "type": "PlanInstallLoader", root: string, build: string, sha256: string, presets: Array<string>, path?: string, device: LoaderTarget, language?: string, starterSettings?: boolean, replaceForeign?: boolean, } | { "type": "LoaderBootHints", build: string, presets: Array<string>, path?: string, device: LoaderTarget, };
+languages?: boolean, } | { "type": "ImportLoader", file: string, } | { "type": "LoaderFiles" } | { "type": "LoaderLanguages", sha256: string, } | { "type": "PlanInstallLoader", root: string, build: string, sha256: string, presets: Array<string>, path?: string, device: LoaderTarget, language?: string, starterSettings?: boolean, replaceForeign?: boolean, } | { "type": "LoaderBootHints", build: string, presets: Array<string>, path?: string, device: LoaderTarget, } | { "type": "PlanUpdateLoader", root: string, path: string, sha256: string, } | { "type": "PlanRollbackLoader", root: string, path: string, } | { "type": "CachedLoaderRelease", build: string, } | { "type": "LoaderReleases", build: string, mirror?: string, } | { "type": "LoaderImpact", root: string, build: string, profile?: LoaderProfile, } | { "type": "PlanReplaceLoader", root: string, build: string, sha256: string, presets: Array<string>, path?: string, device: LoaderTarget, language?: string, starterSettings?: boolean, replaceForeign?: boolean, profile?: LoaderProfile, convert: Array<string>, reencodeArt: boolean, retire: Array<string>, };

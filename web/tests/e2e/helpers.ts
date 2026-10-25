@@ -1,3 +1,6 @@
+import { readdirSync, rmSync } from "node:fs";
+import path from "node:path";
+
 import type { APIRequestContext, Page } from "@playwright/test";
 
 interface Device {
@@ -63,4 +66,84 @@ export async function openLibrary(
 export async function libraryTool(page: Page, testId: "import-pictures" | "verify-dumps" | "convert-shown"): Promise<void> {
   await page.getByTestId("library-more").click();
   await page.getByTestId(testId).click();
+}
+
+export function stickCard(page: Page) {
+  return page
+    .getByTestId("device-card")
+    .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]stick$/ }) })
+    .first();
+}
+
+const isStick = (root: unknown) => typeof root === "string" && /[\\/]stick$/.test(root);
+
+/**
+ * The stick is a temp folder on this machine's system disk, where no loader
+ * may go (§5.10.1); the device list shows it as the FAT32 USB stick it
+ * stands for. The plan and everything after it are the server's own.
+ */
+export async function stickAsUsb(page: Page): Promise<void> {
+  await page.route("**/api/rpc", async (route) => {
+    const body = route.request().postDataJSON() as { type?: string } | null;
+    if (body?.type !== "ListDevices") return route.fallback();
+    const response = await route.fetch();
+    const json = (await response.json()) as { devices: Record<string, unknown>[] };
+    for (const device of json.devices.filter((d) => isStick(d.root))) {
+      Object.assign(device, {
+        fileSystem: "FAT32",
+        fsName: "FAT32",
+        kind: "removable",
+        bus: "usb",
+        external: true,
+        system: false,
+        readOnly: false,
+        model: null,
+        serial: null,
+        partition: null,
+        advice: [],
+        // A USB stick is plugged into the console (ADR-0047); empty, it is
+        // not asked about its OPL.
+        mode: {
+          mode: "ps2",
+          source: "detected",
+          detected: "ps2",
+          place: { key: "reasons.placeRemovable", params: {} },
+          placeText: "a removable device",
+        },
+        askProfile: false,
+      });
+    }
+    await route.fulfill({ response, json });
+  });
+}
+
+/** Every test starts from an empty stick. */
+export async function emptyStick(request: APIRequestContext): Promise<string> {
+  const { stick } = await roots(request);
+  for (const name of readdirSync(stick)) rmSync(path.join(stick, name), { recursive: true, force: true });
+  return stick;
+}
+
+export interface Answer {
+  type: string;
+  [key: string]: unknown;
+}
+
+/** One request to the server's API. */
+export async function rpc(request: APIRequestContext, body: object): Promise<Answer> {
+  const response = await request.post("/api/rpc", { data: body });
+  const json = (await response.json()) as Answer;
+  if (!response.ok()) throw new Error(`${JSON.stringify(body)}: ${JSON.stringify(json)}`);
+  return json;
+}
+
+/** Runs a job to its end. */
+export async function job(request: APIRequestContext, body: object): Promise<Answer> {
+  const { job } = await rpc(request, body);
+  for (;;) {
+    const info = await rpc(request, { type: "GetJob", job });
+    if (info.status === "finished") return info;
+    if (info.status === "failed" || info.status === "cancelled") throw new Error(JSON.stringify(info));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }

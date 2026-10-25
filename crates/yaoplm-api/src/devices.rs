@@ -6,7 +6,10 @@ use ts_rs::TS;
 use yaoplm_device::advice::{self, Advice, DiagnoseOptions};
 use yaoplm_device::{Bus, FsKind, PartitionStyle, Place, Volume, VolumeKind};
 
+use yaoplm_core::loaders::installed;
+
 use crate::library::LoaderProfile;
+use crate::loaders::{LoaderContext, LoaderTarget};
 use crate::paths::display_path;
 use crate::phrase::Phrase;
 use crate::plans::{NoticeLevel, PlanNotice};
@@ -110,14 +113,133 @@ pub struct DeviceInfo {
     /// The loader profile in force and why (LIB-1); the doctor's verdict
     /// above is for this profile.
     pub loader: ActiveProfile,
-    /// How OPL reads the device and why (ADR-0045); the verdict is for this
+    /// How OPL reads the device and why (ADR-0047); the verdict is for this
     /// mode too.
     pub mode: ActiveMode,
-    /// Ask which OPL the device is for (ADR-0041, ADR-0045): no signs, a
+    /// Ask which OPL the device is for (ADR-0041, ADR-0047): no signs, a
     /// usable device, and either OPL's folders or a folder read over SMB,
     /// where the console leaves no other sign. A whole system disk without
     /// OPL's folders is not asked: its next step is a folder of its own.
     pub ask_profile: bool,
+    /// The loaders on the device as the catalogue knows them, with what
+    /// YAOPLM knows of newer builds, without the network (LDR-4).
+    pub installed: Vec<InstalledLoader>,
+}
+
+/// How YAOPLM knows which build a loader is (LDR-4, ADR-0040).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum LoaderKnownBy {
+    /// YAOPLM installed it, and the file is still the one it installed.
+    Manifest,
+    /// The SHA-256 of a frozen upstream release.
+    Checksum,
+    /// The version string inside the ELF.
+    Version,
+    /// Only its name: the family, not the build.
+    Name,
+}
+
+/// How an installed build stands against the newest of its channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum LoaderFreshness {
+    /// Nothing newer is known.
+    Current,
+    /// The channel has a newer build: `latest`.
+    Update,
+    /// No release was read yet, the build is not in the catalogue, or the
+    /// versions do not order.
+    Unknown,
+}
+
+/// What "Roll back" would put back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderBackup {
+    pub file: String,
+    /// `OPL`; `null`: not a loader YAOPLM knows.
+    pub family: Option<String>,
+    pub version: Option<String>,
+}
+
+/// A loader on the device (LDR-4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledLoader {
+    pub path: String,
+    /// `OPL`, `RiptOPL`.
+    pub family: String,
+    pub version: Option<String>,
+    pub sha256: String,
+    /// The catalogue build, when known.
+    pub build: Option<String>,
+    pub known_by: LoaderKnownBy,
+    /// The manifest names another file here: it was replaced without
+    /// YAOPLM.
+    pub manifest_stale: bool,
+    /// From the manifest, while it holds.
+    pub preset: Option<String>,
+    pub device: Option<LoaderTarget>,
+    pub language: Option<String>,
+    /// The newest version of the build's channel YAOPLM read.
+    pub latest: Option<String>,
+    /// When that was read, milliseconds since 1970.
+    pub checked_at: Option<u64>,
+    pub freshness: LoaderFreshness,
+    pub backup: Option<LoaderBackup>,
+}
+
+impl InstalledLoader {
+    fn new(loader: &installed::Installed, context: &LoaderContext) -> Self {
+        let latest = loader
+            .build
+            .as_ref()
+            .and_then(|build| context.latest.get(build));
+        let freshness = match installed::freshness(
+            loader.version.as_deref(),
+            latest.map(|l| l.version.as_str()),
+        ) {
+            installed::Freshness::Current => LoaderFreshness::Current,
+            installed::Freshness::Update(_) => LoaderFreshness::Update,
+            installed::Freshness::Unknown => LoaderFreshness::Unknown,
+        };
+        let entry = loader.entry.as_ref();
+        Self {
+            path: loader.path.clone(),
+            family: loader.family.name().to_owned(),
+            version: loader.version.clone(),
+            sha256: loader.sha256.clone(),
+            build: loader.build.clone(),
+            known_by: match loader.known_by {
+                installed::KnownBy::Manifest => LoaderKnownBy::Manifest,
+                installed::KnownBy::Checksum => LoaderKnownBy::Checksum,
+                installed::KnownBy::Version => LoaderKnownBy::Version,
+                installed::KnownBy::Name => LoaderKnownBy::Name,
+            },
+            manifest_stale: loader.manifest_stale,
+            preset: entry.and_then(|e| e.preset.clone()),
+            device: entry.map(|e| match e.device.as_str() {
+                "mx4sio" => LoaderTarget::Mx4sio,
+                _ => LoaderTarget::Usb,
+            }),
+            language: entry.and_then(|e| e.language.clone()),
+            latest: latest.map(|l| l.version.clone()),
+            checked_at: latest
+                .and_then(|l| l.checked_at)
+                .map(|s| s.saturating_mul(1000)),
+            freshness,
+            backup: loader.backup.as_ref().map(|b| LoaderBackup {
+                file: b.file.clone(),
+                family: b.family.map(|f| f.name().to_owned()),
+                version: b.version.clone(),
+            }),
+        }
+    }
 }
 
 fn notice(advice: &Advice) -> PlanNotice {
@@ -141,11 +263,40 @@ impl DeviceInfo {
         root: &std::path::Path,
         choice: DeviceChoice<'_>,
         boot_from_device: bool,
+        loaders: Option<&LoaderContext>,
     ) -> Self {
         let key = ActiveProfile::key_for(volume, &display_path(root));
         let mode = ActiveMode::resolve(volume, &key, choice.mode);
         let smb = mode.mode == DeviceMode::Smb;
-        let loader = ActiveProfile::resolve(volume, root, choice.profile, smb);
+        let fs = yaoplm_device::HostFs::new(root)
+            .ok()
+            .map(|fs| fs.with_mode(mode.mode.into()));
+        // In a folder read over SMB the loader's files are copies, and the
+        // reason says so (research/18 §3).
+        let detection = fs
+            .as_ref()
+            .and_then(|fs| yaoplm_core::detect::detect_profile(fs).ok())
+            .map(|mut d| {
+                if smb && d.by_loader_files {
+                    d.reason =
+                        yaoplm_core::Phrase::reason("profileByCopy").with("reason", d.reason);
+                }
+                d
+            });
+        let loader = ActiveProfile::resolve(volume, root, choice.profile, detection.as_ref());
+        let installed = match (&fs, &detection, loaders) {
+            (Some(fs), Some(detection), Some(context)) => {
+                installed::installed(fs, detection, &context.catalog)
+                    .map(|found| {
+                        found
+                            .iter()
+                            .map(|l| InstalledLoader::new(l, context))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
         let options = DiagnoseOptions {
             profile: loader.profile.into(),
             boot_from_device,
@@ -206,6 +357,7 @@ impl DeviceInfo {
             loader,
             mode,
             ask_profile,
+            installed,
         }
     }
 
@@ -346,32 +498,17 @@ impl ActiveProfile {
         }
     }
 
-    /// Reads the device at `root` and applies the front end's choice: an
-    /// override for the device, then an explicit profile, then the
-    /// detection. In a folder read over SMB (`smb`) the loader's files are
-    /// copies, and the reason says so (research/18 §3).
+    /// Applies the front end's choice to what the device at `root` says:
+    /// an override for the device, then an explicit profile, then the
+    /// detection (`None`: the device could not be read).
     pub fn resolve(
         volume: &Volume,
         root: &std::path::Path,
         choice: ProfileChoice<'_>,
-        smb: bool,
+        detection: Option<&yaoplm_core::detect::Detection>,
     ) -> Self {
         let key = Self::key_for(volume, &display_path(root));
-        let mode = if smb {
-            yaoplm_device::DeviceMode::Smb
-        } else {
-            yaoplm_device::DeviceMode::Ps2
-        };
-        let detected = yaoplm_device::HostFs::new(root)
-            .ok()
-            .and_then(|fs| yaoplm_core::detect::detect_profile(&fs.with_mode(mode)).ok())
-            .map(|mut d| {
-                if smb && d.by_loader_files {
-                    d.reason =
-                        yaoplm_core::Phrase::reason("profileByCopy").with("reason", d.reason);
-                }
-                DetectedProfile::from(&d)
-            });
+        let detected = detection.map(DetectedProfile::from);
         let (profile, source) = if let Some(chosen) = choice.overrides.iter().find(|o| o.key == key)
         {
             (chosen.profile, ProfileSource::Override)
@@ -393,7 +530,7 @@ impl ActiveProfile {
     }
 }
 
-/// How OPL reads a device (ADR-0045).
+/// How OPL reads a device (ADR-0047).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -445,7 +582,7 @@ pub struct ModeOverride {
     pub mode: DeviceMode,
 }
 
-/// The mode in force for a device and why (ADR-0045).
+/// The mode in force for a device and why (ADR-0047).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]

@@ -71,6 +71,8 @@ fn request<'a>(build: &'a Build, s: &Setup, targets: Vec<InstallTarget>) -> Inst
         language: None,
         starter_settings: false,
         replace_foreign: false,
+        update: false,
+        retire: Vec::new(),
         now: NOW,
     }
 }

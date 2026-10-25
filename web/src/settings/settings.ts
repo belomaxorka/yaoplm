@@ -10,7 +10,7 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export type ProfileOverrideValue = LoaderProfile | "unknown";
 /** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
 export const UNKNOWN_RULES: LoaderProfile = "Opl110";
-/** How OPL reads a device (ADR-0045). */
+/** How OPL reads a device (ADR-0047). */
 export const deviceModes = ["ps2", "smb"] as const satisfies readonly DeviceMode[];
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
@@ -46,7 +46,7 @@ export interface Settings {
    */
   profileOverrides: Record<string, ProfileOverrideValue>;
   /**
-   * Modes chosen for single devices, by the same key (ADR-0045). Every other
+   * Modes chosen for single devices, by the same key (ADR-0047). Every other
    * device gets its place's: removable media plugged into the PS2, folders
    * on the computer and network folders read over SMB.
    */
@@ -70,6 +70,10 @@ export interface Settings {
   screenscraper: ScreenScraperAccount;
   /** A folder with GitHub's layout for loader releases (tests, offline use); empty: GitHub. */
   loaderMirror: string;
+  /** Show "Update available" when a device's loader has a newer build in the cache (LDR-4). */
+  offerLoaderUpdates: boolean;
+  /** `<device key>|<installed SHA-256>` pairs already offered: "Not now" holds per pair. */
+  loaderUpdatesOffered: string[];
 }
 
 export const defaultSettings: Settings = {
@@ -91,6 +95,8 @@ export const defaultSettings: Settings = {
   },
   screenscraper: { user: "", password: "" },
   loaderMirror: "",
+  offerLoaderUpdates: true,
+  loaderUpdatesOffered: [],
 };
 
 const STORAGE_KEY = "yaoplm.settings";
@@ -185,6 +191,11 @@ export function readSettings(): Settings {
       artSources: readArtSources(p.artSources),
       screenscraper: readAccount(p.screenscraper),
       loaderMirror: typeof p.loaderMirror === "string" ? p.loaderMirror : "",
+      offerLoaderUpdates:
+        typeof p.offerLoaderUpdates === "boolean" ? p.offerLoaderUpdates : defaultSettings.offerLoaderUpdates,
+      loaderUpdatesOffered: Array.isArray(p.loaderUpdatesOffered)
+        ? p.loaderUpdatesOffered.filter((k): k is string => typeof k === "string")
+        : [],
     };
   } catch {
     return defaultSettings;

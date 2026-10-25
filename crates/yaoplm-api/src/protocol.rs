@@ -9,7 +9,7 @@ use crate::devices::{DeviceInfo, DeviceMode, ModeOverride, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
-use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderTarget};
+use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderOffer, LoaderTarget};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
@@ -122,7 +122,7 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ProfileOverride>>,
-        /// Modes chosen per device, by the same key (ADR-0045); every
+        /// Modes chosen per device, by the same key (ADR-0047); every
         /// other device gets its place's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -144,7 +144,7 @@ pub enum Request {
         boot_from_device: Option<bool>,
         /// A mode for this request (the CLI's `--mode`); an override for the
         /// device still wins, as with `profile`. Absent: an override, else
-        /// the device's place (ADR-0045).
+        /// the device's place (ADR-0047).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -167,7 +167,7 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
         /// How OPL reads the device (`DeviceInfo.mode`); absent: by its
-        /// place. Over SMB the fragment rule does not apply (ADR-0045).
+        /// place. Over SMB the fragment rule does not apply (ADR-0047).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -190,7 +190,7 @@ pub enum Request {
     },
     /// Plans creating the missing OPL folders (LIB-3). With `folder`, a
     /// folder of that name inside `root` with the OPL folders in it: a
-    /// library of its own for a whole system disk (ADR-0045).
+    /// library of its own for a whole system disk (ADR-0047).
     PlanInit {
         root: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -597,6 +597,76 @@ pub enum Request {
         path: Option<String>,
         device: LoaderTarget,
     },
+    /// Plans updating the loader at `path` on `root` to the stored ELF
+    /// `sha256`, a build of the same channel (LDR-4): the ELF, its language
+    /// pack and the manifest, with a backup of the old ELF.
+    PlanUpdateLoader {
+        root: String,
+        path: String,
+        sha256: String,
+    },
+    /// Plans putting back the newest backup of the loader at `path` (LDR-4);
+    /// what is there becomes the newest backup.
+    PlanRollbackLoader {
+        root: String,
+        path: String,
+    },
+    /// The newest release of `build`'s channel as it was last read, without
+    /// the network (LDR-4): what the "Update available" window shows.
+    CachedLoaderRelease {
+        build: String,
+    },
+    /// A job that lists the releases of `build`'s channel the catalogue
+    /// allows (LDR-6, "Another version…").
+    LoaderReleases {
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mirror: Option<String>,
+    },
+    /// A job that says what replacing the loader on `root` by `build`
+    /// changes for the games (LDR-7): the library is scanned with `build`'s
+    /// profile; `profile` is the device's now.
+    LoaderImpact {
+        root: String,
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+    },
+    /// Plans replacing the loader on `root` by a stored ELF of `build`
+    /// (LDR-7): the ZSO images in `convert` to ISO, JPG and BMP pictures to
+    /// PNG when `reencodeArt`, then the install as `PlanInstallLoader`, the
+    /// loaders at `retire` moved into the backup folder.
+    PlanReplaceLoader {
+        root: String,
+        build: String,
+        sha256: String,
+        #[serde(default)]
+        presets: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        path: Option<String>,
+        device: LoaderTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        language: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        starter_settings: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        replace_foreign: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default)]
+        convert: Vec<String>,
+        #[serde(default)]
+        reencode_art: bool,
+        #[serde(default)]
+        retire: Vec<String>,
+    },
 }
 
 /// The successful answer to a [`Request`].
@@ -645,6 +715,10 @@ pub enum Response {
     },
     LoaderBootHints {
         hints: Vec<LoaderBootHint>,
+    },
+    /// `None`: no release of the channel was read yet.
+    CachedLoaderRelease {
+        offer: Option<Box<LoaderOffer>>,
     },
 }
 

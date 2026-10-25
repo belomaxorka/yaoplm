@@ -6,7 +6,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { openLibrary, roots } from "./helpers";
 
 // The loader profile per device (LIB-1, ADR-0023, ADR-0040) and the device's
-// mode (ADR-0045). The fixture library has no loader and no ZSO, so auto
+// mode (ADR-0047). The fixture library has no loader and no ZSO, so auto
 // falls back to OPL 1.2.0 beta; it is a server folder read over SMB, so the
 // version is asked, and the question stands for the "OPL version" line.
 
@@ -64,7 +64,7 @@ test("a loader's settings file on the device decides the profile", async ({ page
     const header = page.getByTestId("loader-profile");
     await expect(header).toContainText("Версия OPL: RiptOPL");
     // The fixture is a folder read over SMB: the loader's files there are a
-    // copy of what the console runs (ADR-0045).
+    // copy of what the console runs (ADR-0047).
     await expect(header.getByTestId("loader-profile-reason")).toHaveText(
       "— APPS/APP_RIPTOPL/settings_riptopl.cfg, который пишет только RiptOPL (копия: по SMB консоль запускает OPL с карты памяти или флешки)",
     );
@@ -94,7 +94,7 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   await expect(page.getByTestId("loader-profile-auto")).toHaveAttribute("data-state", "checked");
 });
 
-test("a server folder is read over SMB and asked about its OPL (ADR-0045)", async ({ page, request }) => {
+test("a server folder is read over SMB and asked about its OPL (ADR-0047)", async ({ page, request }) => {
   // The answers: LoaderProfileHint.test.tsx.
   await openLibrary(page, request, { language: "en" });
   await page.goto("/devices");
@@ -139,7 +139,7 @@ test("a server folder is read over SMB and asked about its OPL (ADR-0045)", asyn
   await expect(page.getByTestId("loader-question")).toBeVisible();
 });
 
-test("the mode is switched per device and goes back to auto (ADR-0045)", async ({ page, request }) => {
+test("the mode is switched per device and goes back to auto (ADR-0047)", async ({ page, request }) => {
   await openLibrary(page, request, { language: "ru" });
   await page.goto("/devices");
   const card = libraryCard(page);
@@ -174,7 +174,7 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/devices");
       await expect(libraryCard(page).getByTestId("device-mode")).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/loader-devices-${language}-${theme}.png` });
-      // How the PS2 reads the folder and which OPL: one menu (ADR-0045).
+      // How the PS2 reads the folder and which OPL: one menu (ADR-0047).
       await libraryCard(page).getByTestId("device-choice-change").click();
       await expect(page.getByTestId("device-mode-ps2")).toBeVisible();
       await page.waitForTimeout(300);

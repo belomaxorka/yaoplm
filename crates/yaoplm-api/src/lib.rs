@@ -187,7 +187,7 @@ impl Api {
     }
 
     /// How OPL reads the device at `path`: the mode a front end sends, else
-    /// its place's (ADR-0045).
+    /// its place's (ADR-0047).
     fn mode_at(&self, path: &Path, mode: Option<DeviceMode>) -> yaoplm_device::DeviceMode {
         match mode {
             Some(mode) => mode.into(),
@@ -287,17 +287,24 @@ impl Api {
                         server: self.server(),
                     },
                 };
+                let context = loaders::context(&self.net.loader_store());
                 let devices = match &self.paths {
                     PathPolicy::Any => yaoplm_device::list_volumes()
                         .iter()
-                        .map(|v| DeviceInfo::new(v, &v.root, choice, false))
+                        .map(|v| DeviceInfo::new(v, &v.root, choice, false, context.as_ref()))
                         .collect(),
                     // A server shows its library roots, never the host's disks.
                     PathPolicy::Within(roots) => roots
                         .iter()
                         .filter_map(|root| {
                             let volume = yaoplm_device::volume_for_path(root).ok()?;
-                            Some(DeviceInfo::new(&volume, root, choice, false))
+                            Some(DeviceInfo::new(
+                                &volume,
+                                root,
+                                choice,
+                                false,
+                                context.as_ref(),
+                            ))
                         })
                         .collect(),
                 };
@@ -324,8 +331,14 @@ impl Api {
                         server: self.server(),
                     },
                 };
-                let mut info =
-                    DeviceInfo::new(&volume, &path, choice, boot_from_device.unwrap_or(false));
+                let context = loaders::context(&self.net.loader_store());
+                let mut info = DeviceInfo::new(
+                    &volume,
+                    &path,
+                    choice,
+                    boot_from_device.unwrap_or(false),
+                    context.as_ref(),
+                );
                 info.add_apple_double(count_apple_double(&path));
                 let (journals, unreadable) =
                     yaoplm_core::journal::load_all(&fs).map_err(io_error)?;
@@ -1025,6 +1038,88 @@ impl Api {
                 let plan = loaders::plan_install(&self.net, &fs, &params)?;
                 Ok(self.store(root, plan))
             }
+            Request::PlanUpdateLoader { root, path, sha256 } => {
+                let (root, fs) = self.root(&root)?;
+                let plan = loaders::plan_update(&self.net, &fs, &path, &sha256)?;
+                Ok(self.store(root, plan))
+            }
+            Request::PlanRollbackLoader { root, path } => {
+                let (root, fs) = self.root(&root)?;
+                let plan = loaders::plan_rollback(&self.net, &fs, &path)?;
+                Ok(self.store(root, plan))
+            }
+            Request::LoaderReleases { build, mirror } => {
+                let params = loaders::ReleaseParams {
+                    mirror: self.mirror(mirror)?,
+                    build,
+                    tag: None,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::LoaderReleases,
+                    &Said::title("loaderReleases").with("build", &params.build),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::releases_job(&net, &params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::LoaderImpact {
+                root,
+                build,
+                profile,
+            } => {
+                let (path, _) = self.root(&root)?;
+                let net = Arc::clone(&self.net);
+                let from = profile.unwrap_or_default();
+                let shown = display_path(&path);
+                let job = self.jobs.spawn(
+                    JobKind::LoaderImpact,
+                    &Said::title("loaderImpact").with("build", &build),
+                    Some(shown),
+                    Queue::Read,
+                    move |_| loaders::impact_job(&net, &path, &build, from),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::PlanReplaceLoader {
+                root,
+                build,
+                sha256,
+                presets,
+                path,
+                device,
+                language,
+                starter_settings,
+                replace_foreign,
+                profile,
+                convert,
+                reencode_art,
+                retire,
+            } => {
+                let (root, fs) = self.root(&root)?;
+                let params = loaders::ReplaceParams {
+                    install: loaders::InstallParams {
+                        build,
+                        sha256,
+                        presets,
+                        path,
+                        device,
+                        language,
+                        starter_settings: starter_settings.unwrap_or(false),
+                        replace_foreign: replace_foreign.unwrap_or(false),
+                    },
+                    from: profile.unwrap_or_default(),
+                    convert,
+                    reencode_art,
+                    retire,
+                };
+                let plan = loaders::plan_replace(&self.net, &root, &fs, &params)?;
+                Ok(self.store(root, plan))
+            }
+            Request::CachedLoaderRelease { build } => Ok(Response::CachedLoaderRelease {
+                offer: loaders::cached_release(&self.net.loader_store(), &build)?.map(Box::new),
+            }),
             Request::LoaderBootHints {
                 build,
                 presets,

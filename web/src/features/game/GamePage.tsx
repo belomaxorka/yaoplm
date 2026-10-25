@@ -102,7 +102,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const flow = usePlan({
     onExecuted: () => void navigate(afterPlan.current, { replace: true }),
   });
-  // Over SMB a renamed ul game needs OPL restarted (ADR-0045).
+  // Over SMB a renamed ul game needs OPL restarted (ADR-0047).
   const { mode } = useLoaderProfile();
   const otherMedia: Media = game.media === "CD" ? "DVD" : "CD";
   const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;

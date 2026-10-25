@@ -1,69 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-import { openLibrary, roots } from "./helpers";
+import { emptyStick, openLibrary, stickAsUsb, stickCard } from "./helpers";
 
 // Installing a loader (LDR-3, BOOT-1, ADR-0044) on the fixture's empty
 // stick, from the fixture's release mirror: the wizard, the plan, the
 // launcher's lines, and what lands on the device.
-
-function stickCard(page: Page) {
-  return page
-    .getByTestId("device-card")
-    .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]stick$/ }) })
-    .first();
-}
-
-const isStick = (root: unknown) => typeof root === "string" && /[\\/]stick$/.test(root);
-
-/**
- * The stick is a temp folder on this machine's system disk, where no loader
- * may go (§5.10.1); the device list shows it as the FAT32 USB stick it
- * stands for. The plan and everything after it are the server's own.
- */
-async function stickAsUsb(page: Page): Promise<void> {
-  await page.route("**/api/rpc", async (route) => {
-    const body = route.request().postDataJSON() as { type?: string } | null;
-    if (body?.type !== "ListDevices") return route.fallback();
-    const response = await route.fetch();
-    const json = (await response.json()) as { devices: Record<string, unknown>[] };
-    for (const device of json.devices.filter((d) => isStick(d.root))) {
-      Object.assign(device, {
-        fileSystem: "FAT32",
-        fsName: "FAT32",
-        kind: "removable",
-        bus: "usb",
-        external: true,
-        system: false,
-        readOnly: false,
-        model: null,
-        serial: null,
-        partition: null,
-        advice: [],
-        // A USB stick is plugged into the console (ADR-0045); empty, it is
-        // not asked about its OPL.
-        mode: {
-          mode: "ps2",
-          source: "detected",
-          detected: "ps2",
-          place: { key: "reasons.placeRemovable", params: {} },
-          placeText: "a removable device",
-        },
-        askProfile: false,
-      });
-    }
-    await route.fulfill({ response, json });
-  });
-}
-
-/** Every test starts from an empty stick. */
-async function emptyStick(request: Parameters<typeof roots>[0]): Promise<string> {
-  const { stick } = await roots(request);
-  for (const name of readdirSync(stick)) rmSync(path.join(stick, name), { recursive: true, force: true });
-  return stick;
-}
 
 test("the recommended build goes onto a fresh stick, and the card names it", async ({ page, request }) => {
   const stick = await emptyStick(request);
@@ -108,16 +52,16 @@ test("the recommended build goes onto a fresh stick, and the card names it", asy
 
 test("a program that is not OPL is replaced only when ticked, and kept as a backup", async ({ page, request }) => {
   const stick = await emptyStick(request);
-  mkdirSync(path.join(stick, "APPS"), { recursive: true });
-  // wLaunchELF where PS2BBL looks first.
-  const foreign = Buffer.concat([Buffer.from("\x7fELF", "latin1"), Buffer.from("wLaunchELF 4.43a")]);
-  writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), foreign);
-
   await openLibrary(page, request, { language: "ru" });
   await stickAsUsb(page);
   await page.goto("/devices");
   await stickCard(page).getByTestId("device-install-loader").click();
   const dialog = page.getByTestId("loader-install-dialog");
+  // wLaunchELF where PS2BBL looks first, put there while the wizard is
+  // open: the plan reads the stick, the card has not seen it.
+  mkdirSync(path.join(stick, "APPS"), { recursive: true });
+  const foreign = Buffer.concat([Buffer.from("\x7fELF", "latin1"), Buffer.from("wLaunchELF 4.43a")]);
+  writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), foreign);
   await dialog.getByTestId("loader-method-ps2bbl").click();
   await expect(dialog.getByTestId("loader-offer")).toBeVisible();
   await dialog.getByTestId("loader-install-start").click();
@@ -145,9 +89,6 @@ for (const language of ["en", "ru"] as const) {
   for (const theme of ["light", "dark"] as const) {
     test(`loader install screenshots ${language} ${theme}`, async ({ page, request }) => {
       const stick = await emptyStick(request);
-      // Something else where PS2BBL looks: the plan stops at it.
-      mkdirSync(path.join(stick, "APPS"), { recursive: true });
-      writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), "\x7fELF wLaunchELF");
       await page.setViewportSize({ width: 1280, height: 900 });
       await openLibrary(page, request, { language, theme });
       await stickAsUsb(page);
@@ -159,6 +100,9 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/devices");
       await stickCard(page).getByTestId("device-install-loader").click();
       const dialog = page.getByTestId("loader-install-dialog");
+      // Something else where PS2BBL looks: the plan stops at it.
+      mkdirSync(path.join(stick, "APPS"), { recursive: true });
+      writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), "\x7fELF wLaunchELF");
       await expect(dialog.getByTestId("loader-offer")).toBeVisible();
       await shot("loader-install");
 

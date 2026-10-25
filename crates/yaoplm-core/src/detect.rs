@@ -170,6 +170,8 @@ pub struct FoundLoader {
     pub exact: bool,
     /// `version` is the string inside the ELF.
     pub version_in_elf: bool,
+    /// Of the ELF: the install manifest is held to it (ADR-0040).
+    pub sha256: String,
 }
 
 impl FoundLoader {
@@ -212,7 +214,7 @@ pub struct Detection {
     /// The profile comes from the loader's own files (its ELF, `title.cfg`,
     /// settings), not from `games.bin` or the images. In a folder read over
     /// SMB those files are only copies: the console runs the OPL on its
-    /// memory card or stick (research/18 §3, ADR-0045).
+    /// memory card or stick (research/18 §3, ADR-0047).
     pub by_loader_files: bool,
 }
 
@@ -431,6 +433,7 @@ impl Scan<'_> {
             path: path.to_owned(),
             exact: false,
             version_in_elf: false,
+            sha256: sha.clone(),
         };
         if family == Family::Opl
             && let Some(known) = self.known.iter().find(|k| k.sha256 == sha)

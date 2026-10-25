@@ -24,7 +24,7 @@ export function useProfileChoice(loader: ActiveProfile) {
  * The loader profile of the open library (LIB-1, ADR-0040): an override for
  * the device or what the device's files say. Until the device answers,
  * `ready` is false, `profile` is the default, OPL 1.2.0 beta, and `mode`
- * is null (the core then goes by the device's place, ADR-0045). `usable`
+ * is null (the core then goes by the device's place, ADR-0047). `usable`
  * is false when the storage doctor finds the device unusable for OPL.
  */
 export function useLoaderProfile(): {

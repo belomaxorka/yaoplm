@@ -12,7 +12,7 @@ import { useSettings } from "@/settings/context";
 
 /**
  * The scan of `root` under the device's loader profile (LIB-1) and mode
- * (ADR-0045: no fragment rule over SMB). It waits for both, so a device read
+ * (ADR-0047: no fragment rule over SMB). It waits for both, so a device read
  * as OPL 1.1.0 is never scanned as 1.2.
  */
 function libraryQuery(

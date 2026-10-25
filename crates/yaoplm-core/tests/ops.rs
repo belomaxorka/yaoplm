@@ -383,7 +383,7 @@ fn init_creates_the_missing_folders() {
 
 #[test]
 fn init_folder_makes_a_library_inside_the_root() {
-    // A whole system disk shared over SMB gets a folder of its own (ADR-0045).
+    // A whole system disk shared over SMB gets a folder of its own (ADR-0047).
     let fs = MemFs::new(FsKind::Ntfs);
     fs.insert_file("Windows/explorer.exe", b"x");
     let plan = plan_init_folder(&fs, " PS2 ").unwrap();

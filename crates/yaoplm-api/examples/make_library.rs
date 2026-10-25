@@ -11,9 +11,15 @@
 //! picture each (ART-1, ADR-0035), so the art screens work without the
 //! network, and a
 //! Redump DAT that verifies some of the games and not others (GAME-5),
-//! `sets/` with two picture sets to import (ART-5) and `loaders/`, the
-//! catalogue builds' GitHub releases with test ELFs (LDR-2, LDR-3);
-//! `<folder>/stick` is an empty device to install a loader on. Pass
+//! `sets/` with two picture sets to import (ART-5), `loaders/`, the
+//! catalogue builds' GitHub releases with test ELFs (LDR-2, LDR-3), and
+//! `loaders-next/`, the same with upstream's beta rebuilt as build 2280
+//! (LDR-4: "Check for updates" against it finds an update), and `own/`
+//! with OPL 1.1.0's ELF to add as the user's own file (LDR-7: the catalogue
+//! pins the real 1.1.0 archive, which no fixture has);
+//! `<folder>/stick` is an empty device to install a loader on, and
+//! `<folder>/extras/` holds games to copy onto it: a ZSO and an ISO with a
+//! JPG cover (LDR-7). Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -300,6 +306,39 @@ fn main() -> ExitCode {
     ReleaseMirror::new(&mirror.join("loaders"))
         .official()
         .expect("loader releases");
+    let next = ReleaseMirror::new(&mirror.join("loaders-next"));
+    next.official().expect("loader releases");
+    next.beta("v1.2.0-Beta-2280-0123abc", "2026-10-20")
+        .expect("a newer beta");
+    write(
+        &mirror.join("own/OPNPS2LD-v1.1.0.ELF"),
+        &yaoplm_test_support::loaders::opl_elf("v1.1.0"),
+    );
+    // Games for a stick whose loader is replaced: a ZSO OPL 1.1.0 cannot
+    // show, an ISO with a JPG cover the betas cannot load.
+    let extras = dir.join("extras");
+    let _ = fs::remove_dir_all(&extras);
+    let retail_iso = Variant::Retail.build().to_vec();
+    let mut packed = Cursor::new(Vec::new());
+    yaoplm_formats::zso::compress(
+        &mut Cursor::new(&retail_iso),
+        retail_iso.len() as u64,
+        &mut packed,
+        &mut |_| {},
+    )
+    .expect("a ZSO");
+    write(
+        &extras.join("DVD/SLUS_200.62.Retail Game.zso"),
+        &packed.into_inner(),
+    );
+    write(
+        &extras.join("CD/SLUS_212.18.Lf Game.iso"),
+        &Variant::LfOnly.build().to_vec(),
+    );
+    write(
+        &extras.join("ART/SLUS_212.18_COV.jpg"),
+        &cover(140, 200, 90, image::ImageFormat::Jpeg),
+    );
 
     // A ul game, written the way YAOPLM writes it.
     let staged = dir.join("staging");

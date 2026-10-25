@@ -341,6 +341,8 @@ const kindIcons = {
   loaderRelease: FileSearch,
   downloadLoader: Download,
   importLoader: FileInput,
+  loaderReleases: History,
+  loaderImpact: ScanSearch,
 } as const;
 
 /** Jobs that only report progress: no log to fetch once they end. */
@@ -351,6 +353,8 @@ const noLog: ReadonlySet<JobKind> = new Set<JobKind>([
   "loaderRelease",
   "downloadLoader",
   "importLoader",
+  "loaderReleases",
+  "loaderImpact",
 ]);
 
 const stepStateColours = {

@@ -141,7 +141,7 @@ pub fn remove(fs: &dyn DeviceFs, id: &str) -> io::Result<()> {
         other => other?,
     }
     // Nothing of YAOPLM's stays behind once the operation is done: a whole
-    // system disk shared over SMB must not keep `.yaoplm/` (ADR-0045). The
+    // system disk shared over SMB must not keep `.yaoplm/` (ADR-0047). The
     // folders go only when empty; backups and other journals keep them.
     for dir in [JOURNAL_DIR, DATA_DIR] {
         let dir = rel(dir)?;

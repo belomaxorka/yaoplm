@@ -12,12 +12,15 @@
 pub mod boot;
 pub mod catalog;
 pub mod download;
+pub mod impact;
 pub mod install;
+pub mod installed;
 pub mod languages;
 pub mod local;
 pub mod manifest;
 pub mod notes;
 pub mod release;
+pub mod rollback;
 pub mod version;
 
 use std::sync::OnceLock;

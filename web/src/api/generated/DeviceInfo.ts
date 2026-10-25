@@ -4,6 +4,7 @@ import type { ActiveProfile } from "./ActiveProfile";
 import type { DriveBus } from "./DriveBus";
 import type { DriveKind } from "./DriveKind";
 import type { FileSystem } from "./FileSystem";
+import type { InstalledLoader } from "./InstalledLoader";
 import type { Partition } from "./Partition";
 import type { PlanNotice } from "./PlanNotice";
 
@@ -37,14 +38,19 @@ unfinished: Array<string>,
  */
 loader: ActiveProfile, 
 /**
- * How OPL reads the device and why (ADR-0045); the verdict is for this
+ * How OPL reads the device and why (ADR-0047); the verdict is for this
  * mode too.
  */
 mode: ActiveMode, 
 /**
- * Ask which OPL the device is for (ADR-0041, ADR-0045): no signs, a
+ * Ask which OPL the device is for (ADR-0041, ADR-0047): no signs, a
  * usable device, and either OPL's folders or a folder read over SMB,
  * where the console leaves no other sign. A whole system disk without
  * OPL's folders is not asked: its next step is a folder of its own.
  */
-askProfile: boolean, };
+askProfile: boolean, 
+/**
+ * The loaders on the device as the catalogue knows them, with what
+ * YAOPLM knows of newer builds, without the network (LDR-4).
+ */
+installed: Array<InstalledLoader>, };

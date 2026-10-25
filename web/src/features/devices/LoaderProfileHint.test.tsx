@@ -20,7 +20,7 @@ function show(device: DeviceInfo) {
   );
 }
 
-describe("the loader profile question (ADR-0041, ADR-0045)", () => {
+describe("the loader profile question (ADR-0041, ADR-0047)", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
   });

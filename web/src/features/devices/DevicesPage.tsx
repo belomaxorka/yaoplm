@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
-import { CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 import { useApi } from "@/api/context";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { InstalledLoader } from "@/api/generated/InstalledLoader";
 import { listDevices } from "@/api/rpc";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeIcon, NoticeList } from "@/components/Notices";
@@ -18,7 +19,9 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { pickFolder } from "@/features/add/desktop";
+import { InstalledLoaderRow } from "@/features/loaders/InstalledLoader";
 import { InstallLoaderDialog } from "@/features/loaders/InstallLoaderDialog";
+import { UpdateLoaderDialog } from "@/features/loaders/UpdateLoaderDialog";
 import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
@@ -31,7 +34,7 @@ import { smbStep } from "./smbStep";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
- * (LIB-1), how the PS2 reads it (ADR-0045) and the storage doctor's verdict
+ * (LIB-1), how the PS2 reads it (ADR-0047) and the storage doctor's verdict
  * for both. The server lists its roots.
  */
 export function DevicesPage() {
@@ -47,6 +50,12 @@ export function DevicesPage() {
     queryFn: () => listDevices(transport, choice),
   });
   const shown = (devices.data ?? []).filter((d) => showAll || (d.external && !d.system));
+  // "Update available" opens by itself once per device and installed build
+  // (SPEC §5.10.1); whatever closes it counts as "Not now". Once open it
+  // stays until closed, while the update it starts changes the list.
+  const pending = settings.offerLoaderUpdates ? pendingOffer(shown, settings.loaderUpdatesOffered) : undefined;
+  const [offer, setOffer] = useState<Offer | null>(null);
+  if (offer === null && pending) setOffer(pending);
 
   const open = (root: string) => {
     update({ root });
@@ -109,8 +118,50 @@ export function DevicesPage() {
           ))}
         </ul>
       </div>
+      {offer && (
+        <UpdateLoaderDialog
+          key={offer.key}
+          device={offer.device}
+          loader={offer.loader}
+          offered
+          open
+          onOpenChange={(next) => {
+            if (next) return;
+            update({ loaderUpdatesOffered: [...settings.loaderUpdatesOffered, offer.key].slice(-100) });
+            setOffer(null);
+          }}
+        />
+      )}
     </PageScroll>
   );
+}
+
+/**
+ * No loader can work from a system disk, a read-only volume or a device OPL
+ * cannot use (§5.10.1). A folder read over SMB needs none: the console starts
+ * OPL from its memory card or stick, and a loader there is a copy (ADR-0047).
+ */
+function installable(device: DeviceInfo): boolean {
+  return (
+    device.mode.mode === "ps2" && !device.system && !device.readOnly && worstLevel(device.advice) !== "error"
+  );
+}
+
+interface Offer {
+  key: string;
+  device: DeviceInfo;
+  loader: InstalledLoader;
+}
+
+/** The first update on these devices not offered yet. */
+function pendingOffer(devices: readonly DeviceInfo[], offered: readonly string[]): Offer | undefined {
+  for (const device of devices.filter(installable)) {
+    for (const loader of device.installed) {
+      const key = `${device.loader.key}|${loader.sha256}`;
+      if (loader.freshness === "update" && !offered.includes(key)) return { key, device, loader };
+    }
+  }
+  return undefined;
 }
 
 function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
@@ -119,11 +170,12 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
   const [installing, setInstalling] = useState(false);
-  // No loader can work from a system disk, a read-only volume or a device
-  // OPL cannot use (§5.10.1): no install there. A folder read over SMB needs
-  // none: the console starts OPL from its memory card or stick (ADR-0045).
-  const installable =
-    device.mode.mode === "ps2" && !device.system && !device.readOnly && verdict !== "error";
+  const [replacing, setReplacing] = useState(false);
+  const canInstall = installable(device);
+  const known = device.installed.find((l) => l.build !== null);
+  // §5.10.1: no loader, "Install…"; a known build, "Reinstall…" and
+  // "Replace…"; only the family known, "Replace…" alone.
+  const present = known ?? device.installed[0];
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.
@@ -132,7 +184,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
-  // A folder read over SMB may sit on the system disk (ADR-0045): the badge
+  // A folder read over SMB may sit on the system disk (ADR-0047): the badge
   // is a fact there, not a verdict.
   const smb = device.mode.mode === "smb";
   // One main button: the folder's next step comes before opening it. A
@@ -169,6 +221,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           </div>
           <SmbFolderHint device={device} className="mt-2" />
           <LoaderProfileHint device={device} className="mt-2" />
+          {device.installed.map((loader) => (
+            <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
+          ))}
           {!simple && (
             <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {device.model && (
@@ -220,16 +275,32 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <Button onClick={onOpen} variant={verdict === "error" || stepShown ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
-          {installable && (
+          {canInstall && (present === undefined || known) && (
             <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
               <Cpu aria-hidden />
-              {t("devices.installLoader")}
+              {present ? t("devices.reinstallLoader") : t("devices.installLoader")}
+            </Button>
+          )}
+          {canInstall && present && (
+            <Button variant="outline" size="sm" onClick={() => setReplacing(true)} data-testid="device-replace-loader">
+              <ArrowLeftRight aria-hidden />
+              {t("devices.replaceLoader")}
             </Button>
           )}
         </div>
       </div>
       {advice.length > 0 && <NoticeList notices={advice} className="mt-3 border-t pt-3" />}
-      {installable && <InstallLoaderDialog device={device} open={installing} onOpenChange={setInstalling} />}
+      {canInstall && (
+        <InstallLoaderDialog
+          device={device}
+          open={installing}
+          onOpenChange={setInstalling}
+          initial={known ? { build: known.build, preset: known.preset } : undefined}
+        />
+      )}
+      {canInstall && present && replacing && (
+        <InstallLoaderDialog device={device} open={replacing} onOpenChange={setReplacing} replace={present} />
+      )}
     </li>
   );
 }

@@ -85,7 +85,7 @@ const emptyFolder = (patch: Partial<DeviceInfo> = {}) =>
     ...patch,
   });
 
-describe("how the PS2 reads a device (ADR-0045)", () => {
+describe("how the PS2 reads a device (ADR-0047)", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
   });

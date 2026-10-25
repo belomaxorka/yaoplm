@@ -1,4 +1,4 @@
-//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0045,
+//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0047,
 //! research/18).
 //!
 //! A folder on an internal disk can reach a PS2 only over the network, so
@@ -31,7 +31,7 @@ pub enum Place {
     /// A USB hard disk on a file system OPL cannot read over USB (NTFS,
     /// ext4, APFS): only the network brings it to the console. A stick or
     /// SD card on one stays `Removable`: those are for the console, and the
-    /// doctor says to prepare them (owner's decision 2026-10-25, ADR-0045).
+    /// doctor says to prepare them (owner's decision 2026-10-25, ADR-0047).
     UsbDisk(FsKind),
     /// A folder on an internal disk of the computer.
     ComputerDisk,

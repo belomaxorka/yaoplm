@@ -35,7 +35,7 @@ export function mode(patch: Partial<ActiveMode> = {}): ActiveMode {
   };
 }
 
-/** A folder on the computer's disk, read over SMB (ADR-0045). */
+/** A folder on the computer's disk, read over SMB (ADR-0047). */
 export const smbMode = mode({
   mode: "smb",
   detected: "smb",
@@ -68,6 +68,7 @@ export function testDevice(patch: Partial<DeviceInfo> = {}): DeviceInfo {
     loader: loader(),
     mode: mode(),
     askProfile: true,
+    installed: [],
     ...patch,
   };
 }

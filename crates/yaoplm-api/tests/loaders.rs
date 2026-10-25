@@ -1,6 +1,6 @@
-//! Loaders through `dispatch` (LDR-1, LDR-2): the catalogue, what a download
-//! would be, downloads held to the hash the user saw, the user's own files
-//! and the catalogue from `main`. Releases come from a mirror folder with
+//! Loaders through `dispatch` (LDR-1 to LDR-4): the catalogue, what a
+//! download would be, downloads held to the hash the user saw, the user's
+//! own files, the catalogue from `main`, installs, updates and rollbacks. Releases come from a mirror folder with
 //! GitHub's layout: no test goes out (CI sets `YAOPLM_OFFLINE`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -756,4 +756,168 @@ fn install_requests_name_what_is_stored_and_where_it_may_go() {
         codes(&no).contains(&"loaderPathReserved".to_owned()),
         "{no}"
     );
+}
+
+fn inspect(api: &Api, root: &str) -> Value {
+    call(api, json!({"type": "InspectDevice", "root": root})).unwrap()
+}
+
+#[test]
+fn the_card_learns_of_an_update_from_the_cache_and_rolls_it_back() {
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    let old = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": old.sha256,
+               "presets": ["fmcb"], "device": "usb"}),
+    )
+    .unwrap();
+    assert_eq!(execute(&s.api, &plan).status, JobStatus::Finished);
+
+    let card = inspect(&s.api, &root);
+    let loader = &card["installed"][0];
+    assert_eq!(loader["path"], "UPDT/OPL.ELF");
+    assert_eq!(loader["build"], "opl-beta");
+    assert_eq!(loader["knownBy"], "manifest");
+    assert_eq!(loader["version"], "v1.2.0-Beta-2271-b3a2199");
+    assert_eq!(loader["preset"], "fmcb");
+    assert_eq!(loader["device"], "usb");
+    // The download read the release: the card knows it is the newest.
+    assert_eq!(loader["freshness"], "current");
+    assert_eq!(loader["latest"], "v1.2.0-Beta-2271-b3a2199");
+    assert!(loader["checkedAt"].as_u64().is_some());
+    assert_eq!(loader["backup"], Value::Null);
+
+    // `latest` is rebuilt; the card does not ask GitHub on its own.
+    ReleaseMirror::new(&s.root)
+        .beta("v1.2.0-Beta-2280-0123abc", "2026-10-20")
+        .unwrap();
+    assert_eq!(
+        inspect(&s.api, &root)["installed"][0]["freshness"],
+        "current"
+    );
+    // "Check for updates" reads the release; from then on the card knows.
+    let checked = offer(run(
+        &s.api,
+        json!({"type": "LoaderRelease", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    assert_eq!(checked.version, "v1.2.0-Beta-2280-0123abc");
+    let loader = inspect(&s.api, &root)["installed"][0].clone();
+    assert_eq!(loader["freshness"], "update");
+    assert_eq!(loader["latest"], "v1.2.0-Beta-2280-0123abc");
+    let cached = call(
+        &s.api,
+        json!({"type": "CachedLoaderRelease", "build": "opl-beta"}),
+    )
+    .unwrap();
+    assert_eq!(cached["offer"]["version"], "v1.2.0-Beta-2280-0123abc");
+    assert_eq!(cached["offer"]["offline"], false);
+    assert_eq!(
+        cached["offer"]["changelog"][0]["link"],
+        "https://github.com/ps2homebrew/Open-PS2-Loader/commit/0123abc"
+    );
+
+    // The update: the newer ELF, held to the hash the window showed.
+    let new = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "sha256": cached["offer"]["file"]["sha256"],
+               "mirror": s.mirror}),
+    ));
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanUpdateLoader", "root": root, "path": "UPDT/OPL.ELF", "sha256": new.sha256}),
+    )
+    .unwrap();
+    assert_eq!(plan["kind"], "updateLoader");
+    assert_eq!(
+        plan["title"],
+        "Update OPL 1.2.0 beta to v1.2.0-Beta-2280-0123abc"
+    );
+    assert_eq!(execute(&s.api, &plan).status, JobStatus::Finished);
+    let at = |p: &str| std::fs::read(device.path().join(p)).unwrap();
+    assert_eq!(at("UPDT/OPL.ELF"), opl_elf("v1.2.0-Beta-2280-0123abc"));
+    let loader = inspect(&s.api, &root)["installed"][0].clone();
+    assert_eq!(loader["version"], "v1.2.0-Beta-2280-0123abc");
+    assert_eq!(loader["freshness"], "current");
+    assert_eq!(loader["backup"]["version"], "v1.2.0-Beta-2271-b3a2199");
+    assert_eq!(loader["backup"]["family"], "OPL");
+
+    // Roll back: the older build is back, and the card offers the update again.
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanRollbackLoader", "root": root, "path": "UPDT/OPL.ELF"}),
+    )
+    .unwrap();
+    assert_eq!(plan["kind"], "rollbackLoader");
+    assert_eq!(execute(&s.api, &plan).status, JobStatus::Finished);
+    assert_eq!(at("UPDT/OPL.ELF"), opl_elf("v1.2.0-Beta-2271-b3a2199"));
+    let loader = inspect(&s.api, &root)["installed"][0].clone();
+    assert_eq!(loader["version"], "v1.2.0-Beta-2271-b3a2199");
+    assert_eq!(loader["knownBy"], "manifest");
+    assert_eq!(loader["freshness"], "update");
+    assert_eq!(loader["backup"]["version"], "v1.2.0-Beta-2280-0123abc");
+}
+
+#[test]
+fn an_update_stays_in_the_channel_of_what_is_installed() {
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    let beta = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    let yaopl = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "yaopl", "mirror": s.mirror}),
+    ));
+    let key = |err: yaoplm_api::ApiError| err.phrase.unwrap().key;
+
+    // Nothing at the path yet.
+    let err = call(
+        &s.api,
+        json!({"type": "PlanUpdateLoader", "root": root, "path": "UPDT/OPL.ELF", "sha256": beta.sha256}),
+    )
+    .unwrap_err();
+    assert_eq!(key(err), "errors.loaderNotInstalled");
+
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": beta.sha256,
+               "presets": ["fmcb"], "device": "usb"}),
+    )
+    .unwrap();
+    assert_eq!(execute(&s.api, &plan).status, JobStatus::Finished);
+    // YAOPL is another channel: "Replace…", never "Update".
+    let err = call(
+        &s.api,
+        json!({"type": "PlanUpdateLoader", "root": root, "path": "UPDT/OPL.ELF", "sha256": yaopl.sha256}),
+    )
+    .unwrap_err();
+    assert_eq!(key(err), "errors.loaderFileOtherBuild");
+    // No backup yet: the rollback plan says so and cannot run.
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanRollbackLoader", "root": root, "path": "UPDT/OPL.ELF"}),
+    )
+    .unwrap();
+    assert_eq!(plan["executable"], false);
+    assert_eq!(codes(&plan), ["loaderNoBackup"]);
+    // A device without loaders, and a build with no release read yet.
+    let empty = tempfile::tempdir().unwrap();
+    assert_eq!(
+        inspect(&s.api, &empty.path().to_string_lossy())["installed"],
+        json!([])
+    );
+    let cached = call(
+        &s.api,
+        json!({"type": "CachedLoaderRelease", "build": "opl-stable"}),
+    )
+    .unwrap();
+    assert_eq!(cached["offer"], Value::Null);
 }

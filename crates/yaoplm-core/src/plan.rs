@@ -471,6 +471,46 @@ pub enum PlanKind {
     Vmc,
     /// A loader build put on the device (LDR-3).
     InstallLoader,
+    /// A newer build of the installed loader's channel (LDR-4).
+    UpdateLoader,
+    /// The newest backup of a loader's path put back (LDR-4).
+    RollbackLoader,
+    /// Another build in place of the installed one, after the conversions
+    /// and pictures its rules need (LDR-7).
+    ReplaceLoader,
+}
+
+impl Step {
+    /// The same step reading source `n + base` instead of `n`: a plan that
+    /// takes in another's sources after its own (recovery, LDR-7).
+    pub fn shifted(&self, base: usize) -> Step {
+        match self {
+            Step::WriteFile {
+                path,
+                source,
+                offset,
+                len,
+            } => Step::WriteFile {
+                path: path.clone(),
+                source: source + base,
+                offset: *offset,
+                len: *len,
+            },
+            Step::WriteZso {
+                path,
+                source,
+                max_len,
+            } => Step::WriteZso {
+                path: path.clone(),
+                source: source + base,
+                max_len: *max_len,
+            },
+            Step::RemoveSource { source } => Step::RemoveSource {
+                source: source + base,
+            },
+            other => other.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -516,6 +556,25 @@ impl Plan {
             notices: Vec::new(),
             free_bytes,
             profile: None,
+        }
+    }
+
+    /// Appends `other` after this plan: its sources after these (its steps
+    /// renumbered), its transactions after these, its skips and notices.
+    /// One plan then runs both in order (LDR-7: conversions, pictures, then
+    /// the loader). Both must be planned for the same device.
+    pub fn absorb(&mut self, other: Plan) {
+        let base = self.sources.len();
+        self.sources.extend(other.sources);
+        for mut tx in other.transactions {
+            tx.steps = tx.steps.iter().map(|step| step.shifted(base)).collect();
+            self.transactions.push(tx);
+        }
+        self.skipped.extend(other.skipped);
+        for notice in other.notices {
+            if !self.notices.contains(&notice) {
+                self.notices.push(notice);
+            }
         }
     }
 

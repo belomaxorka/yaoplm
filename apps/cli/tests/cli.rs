@@ -363,7 +363,7 @@ fn devices_and_device_doctor() {
     let device = run(&["device".as_ref(), s.root.as_os_str()]);
     assert!(device.status.success());
     // The loader profile is read from the device by default (LIB-1); a temp
-    // folder is on the computer, so OPL reads it over SMB (ADR-0045) and
+    // folder is on the computer, so OPL reads it over SMB (ADR-0047) and
     // the question is asked even though it is empty.
     let text = stdout(&device);
     assert!(
@@ -1423,4 +1423,228 @@ fn loader_install_writes_through_a_plan_and_says_how_to_start_it() {
         "{text}"
     );
     assert!(!text.contains("FreeMcBoot"), "{text}");
+}
+
+#[test]
+fn loader_update_and_rollback_through_plans() {
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    let releases = ReleaseMirror::new(&mirror);
+    releases.official().unwrap();
+    let data = dir.path().join("data");
+    let stick = dir.path().join("stick");
+    std::fs::create_dir_all(&stick).unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let (m, at) = (mirror.as_os_str(), stick.as_os_str());
+    let ok = |out: &std::process::Output| {
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            stdout(out),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout(out).to_owned()
+    };
+    // Nothing to update yet.
+    let none = cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+    ]);
+    assert!(!none.status.success());
+    assert!(String::from_utf8_lossy(&none.stderr).contains("no loader YAOPLM knows"));
+
+    ok(&cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        at,
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("Installed:  opl-beta v1.2.0-Beta-2271-b3a2199 at UPDT/OPL.ELF (installed by YAOPLM); up to date"),
+        "{text}"
+    );
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+    ]));
+    assert!(
+        text.contains("is the newest build of its channel"),
+        "{text}"
+    );
+
+    releases
+        .beta("v1.2.0-Beta-2280-0123abc", "2026-10-20")
+        .unwrap();
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Update OPL 1.2.0 beta to v1.2.0-Beta-2280-0123abc"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.2.0-Beta-2280-0123abc")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("v1.2.0-Beta-2280-0123abc at UPDT/OPL.ELF (installed by YAOPLM); up to date; backup v1.2.0-Beta-2271-b3a2199: `yaoplm loader rollback`"),
+        "{text}"
+    );
+
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "rollback".as_ref(),
+        at,
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Roll back the loader in UPDT/OPL.ELF"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.2.0-Beta-2271-b3a2199")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("update to v1.2.0-Beta-2280-0123abc: `yaoplm loader update`"),
+        "{text}"
+    );
+}
+
+#[test]
+fn loader_replace_says_what_changes_and_converts_first() {
+    use std::io::Cursor;
+    use yaoplm_formats::zso;
+    use yaoplm_test_support::Variant;
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    ReleaseMirror::new(&mirror).official().unwrap();
+    let data = dir.path().join("data");
+    let stick = dir.path().join("stick");
+    let iso = Variant::Retail.build().to_vec();
+    let mut packed = Cursor::new(Vec::new());
+    zso::compress(
+        &mut Cursor::new(&iso),
+        iso.len() as u64,
+        &mut packed,
+        &mut |_| {},
+    )
+    .unwrap();
+    std::fs::create_dir_all(stick.join("DVD")).unwrap();
+    std::fs::write(
+        stick.join("DVD/SLUS_200.62.Retail Game.zso"),
+        packed.into_inner(),
+    )
+    .unwrap();
+    let stable = dir.path().join("OPNPS2LD-v1.1.0.ELF");
+    std::fs::write(&stable, opl_elf("v1.1.0")).unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let (m, at) = (mirror.as_os_str(), stick.as_os_str());
+    let ok = |out: &std::process::Output| {
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            stdout(out),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout(out).to_owned()
+    };
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "releases".as_ref(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+    ]));
+    assert!(text.contains("latest  v1.2.0-Beta-2271-b3a2199"), "{text}");
+    assert!(text.contains("(default)"), "{text}");
+
+    ok(&cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        at,
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    // A dry run shows what changes and the plan, and writes nothing.
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "replace".as_ref(),
+        at,
+        "opl-stable".as_ref(),
+        "--file".as_ref(),
+        stable.as_os_str(),
+        "--dry-run".as_ref(),
+    ]));
+    for line in [
+        "What changes for the games:",
+        "ZSO the new build cannot show, converted to ISO first (--keep-zso leaves them): 1",
+        "SLUS_200.62 Retail Game",
+        "Replace OPL 1.2.0 beta with OPL 1.1.0",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+    assert!(stick.join("DVD/SLUS_200.62.Retail Game.zso").exists());
+
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "replace".as_ref(),
+        at,
+        "opl-stable".as_ref(),
+        "--file".as_ref(),
+        stable.as_os_str(),
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Replace OPL 1.2.0 beta with OPL 1.1.0"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("DVD/SLUS_200.62.Retail Game.iso")).unwrap(),
+        iso
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.1.0")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("Installed:  opl-stable v1.1.0 at UPDT/OPL.ELF"),
+        "{text}"
+    );
 }
