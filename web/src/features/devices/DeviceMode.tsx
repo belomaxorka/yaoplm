@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
+import { wroteAll } from "@/jobs/outcome";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 import { deviceModes, profiles } from "@/settings/settings";
@@ -143,7 +144,8 @@ export function SmbFolderHint({ device, className }: { device: DeviceInfo; class
       opening.current = null;
       if (folder === null) return;
       void waitForJob(transport, job).then((info) => {
-        if (info.status !== "finished") return;
+        // Rolled back: nothing to open; the notification says why.
+        if (!wroteAll(info)) return;
         update({ root: childPath(device.root, folder) });
         void navigate("/library");
       });
