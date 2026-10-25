@@ -1337,3 +1337,90 @@ fn loader_release_download_import_and_files() {
         String::from_utf8_lossy(&bad.stderr)
     );
 }
+
+#[test]
+fn loader_install_writes_through_a_plan_and_says_how_to_start_it() {
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    ReleaseMirror::new(&mirror).official().unwrap();
+    let data = dir.path().join("data");
+    let stick = dir.path().join("stick");
+    std::fs::create_dir_all(&stick).unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let m = mirror.as_os_str();
+    // Without --yes: the download is offered, nothing is written.
+    let dry = cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        stick.as_os_str(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+    ]);
+    assert!(
+        dry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert!(!stick.join("UPDT").exists());
+
+    let done = cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        stick.as_os_str(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--language".as_ref(),
+        "Russian".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    assert!(
+        done.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.2.0-Beta-2271-b3a2199")
+    );
+    assert!(stick.join("LNG/lang_Russian.lng").is_file());
+    assert!(stick.join(".yaoplm/manifest.json").is_file());
+    for line in [
+        "How to start it on the PS2:",
+        "FreeMcBoot: its stock config starts mass:/UPDT/OPL.ELF; nothing to edit.",
+        "turn on the USB device",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+
+    let mx = dir.path().join("sd");
+    std::fs::create_dir_all(&mx).unwrap();
+    let done = cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        mx.as_os_str(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--mx4sio".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    let text = stdout(&done);
+    assert!(done.status.success(), "{text}");
+    assert!(mx.join("APPS/OPL/OPNPS2LD.ELF").is_file() && mx.join("APPS/OPL/title.cfg").is_file());
+    assert!(
+        text.contains("LK_AUTO_E1 = massX:/APPS/OPL/OPNPS2LD.ELF"),
+        "{text}"
+    );
+    assert!(!text.contains("FreeMcBoot"), "{text}");
+}

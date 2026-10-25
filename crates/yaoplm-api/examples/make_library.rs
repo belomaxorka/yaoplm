@@ -10,8 +10,10 @@
 //! `<folder>/mirror` holds local mirrors of three picture sources with a
 //! picture each (ART-1, ADR-0035), so the art screens work without the
 //! network, and a
-//! Redump DAT that verifies some of the games and not others (GAME-5), and
-//! `sets/` with two picture sets to import (ART-5). Pass
+//! Redump DAT that verifies some of the games and not others (GAME-5),
+//! `sets/` with two picture sets to import (ART-5) and `loaders/`, the
+//! catalogue builds' GitHub releases with test ELFs (LDR-2, LDR-3);
+//! `<folder>/stick` is an empty device to install a loader on. Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -28,6 +30,7 @@ use yaoplm_api::{Api, Layout, Request, Response};
 use yaoplm_test_support::Variant;
 use yaoplm_test_support::bincue::{RawMode, cue_sheet, to_bin};
 use yaoplm_test_support::dat::DatBuilder;
+use yaoplm_test_support::loaders::ReleaseMirror;
 use yaoplm_test_support::packed;
 
 fn write(path: &Path, bytes: &[u8]) {
@@ -112,9 +115,12 @@ fn main() -> ExitCode {
     let library = dir.join("library");
     let sources = dir.join("sources");
     let mirror = dir.join("mirror");
+    let stick = dir.join("stick");
     let _ = fs::remove_dir_all(&library);
     let _ = fs::remove_dir_all(&sources);
     let _ = fs::remove_dir_all(&mirror);
+    let _ = fs::remove_dir_all(&stick);
+    fs::create_dir_all(&stick).unwrap();
     for folder in ["CD", "DVD", "CFG", "ART", "VMC"] {
         fs::create_dir_all(library.join(folder)).unwrap();
     }
@@ -290,6 +296,11 @@ fn main() -> ExitCode {
     );
     write(&sources.join("notes.txt"), b"not an image\n");
 
+    // Loader releases: the installer reads them instead of GitHub.
+    ReleaseMirror::new(&mirror.join("loaders"))
+        .official()
+        .expect("loader releases");
+
     // A ul game, written the way YAOPLM writes it.
     let staged = dir.join("staging");
     let _ = fs::remove_dir_all(&staged);
@@ -306,5 +317,6 @@ fn main() -> ExitCode {
     println!("library: {}", library.display());
     println!("sources: {}", sources.display());
     println!("mirror: {}", mirror.display());
+    println!("stick: {}", stick.display());
     ExitCode::SUCCESS
 }

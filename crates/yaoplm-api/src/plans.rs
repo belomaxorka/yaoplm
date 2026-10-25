@@ -79,6 +79,8 @@ pub enum PlanKind {
     Settings,
     /// Memory cards (VMC-1).
     Vmc,
+    /// A loader build put on the device (LDR-3).
+    InstallLoader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +115,8 @@ pub enum RemovalKind {
     Cache,
     /// Leftovers of this operation.
     Ours,
+    /// An older backup of a replaced loader (the newest three stay).
+    Backup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +216,7 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::Convert => PlanKind::Convert,
         core::PlanKind::Settings => PlanKind::Settings,
         core::PlanKind::Vmc => PlanKind::Vmc,
+        core::PlanKind::InstallLoader => PlanKind::InstallLoader,
     }
 }
 
@@ -277,6 +282,7 @@ pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
                 Removal::UserData => RemovalKind::UserData,
                 Removal::Cache => RemovalKind::Cache,
                 Removal::Ours | Removal::OursZso { .. } => RemovalKind::Ours,
+                Removal::Backup => RemovalKind::Backup,
             }),
             ..base(StepOp::Remove, path)
         },

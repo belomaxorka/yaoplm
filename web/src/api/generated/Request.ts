@@ -12,6 +12,7 @@ import type { ImportOverride } from "./ImportOverride";
 import type { JobId } from "./JobId";
 import type { Layout } from "./Layout";
 import type { LoaderProfile } from "./LoaderProfile";
+import type { LoaderTarget } from "./LoaderTarget";
 import type { Media } from "./Media";
 import type { ModeOverride } from "./ModeOverride";
 import type { NameStyle } from "./NameStyle";
@@ -182,4 +183,8 @@ md5?: boolean,
  * Read every image even when its hashes are cached: finds damage
  * that left a file's size and time alone.
  */
-fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" } | { "type": "LoaderCatalog" } | { "type": "UpdateLoaderCatalog", mirror?: string, } | { "type": "LoaderRelease", build: string, tag?: string, mirror?: string, } | { "type": "DownloadLoader", build: string, tag?: string, sha256?: string, mirror?: string, } | { "type": "ImportLoader", file: string, } | { "type": "LoaderFiles" };
+fresh?: boolean, } | { "type": "RedumpStatus" } | { "type": "UpdateRedump", file?: string, } | { "type": "Attribution" } | { "type": "ArtCache" } | { "type": "ClearArtCache" } | { "type": "LoaderCatalog" } | { "type": "UpdateLoaderCatalog", mirror?: string, } | { "type": "LoaderRelease", build: string, tag?: string, mirror?: string, } | { "type": "DownloadLoader", build: string, tag?: string, sha256?: string, mirror?: string, 
+/**
+ * Also the release's language pack (LDR-3).
+ */
+languages?: boolean, } | { "type": "ImportLoader", file: string, } | { "type": "LoaderFiles" } | { "type": "LoaderLanguages", sha256: string, } | { "type": "PlanInstallLoader", root: string, build: string, sha256: string, presets: Array<string>, path?: string, device: LoaderTarget, language?: string, starterSettings?: boolean, replaceForeign?: boolean, } | { "type": "LoaderBootHints", build: string, presets: Array<string>, path?: string, device: LoaderTarget, };

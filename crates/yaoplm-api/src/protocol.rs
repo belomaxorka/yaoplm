@@ -9,7 +9,7 @@ use crate::devices::{DeviceInfo, DeviceMode, ModeOverride, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
-use crate::loaders::{LoaderCatalog, LoaderFile};
+use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderTarget};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
@@ -546,6 +546,10 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mirror: Option<String>,
+        /// Also the release's language pack (LDR-3).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        languages: Option<bool>,
     },
     /// A job that reads a loader ELF, or a zip or 7z with one, the user
     /// has and keeps the ELF (LDR-2, no network).
@@ -554,6 +558,45 @@ pub enum Request {
     },
     /// The loader ELFs YAOPLM keeps, newest first.
     LoaderFiles,
+    /// The languages of the pack kept with a stored ELF (LDR-3).
+    LoaderLanguages {
+        sha256: String,
+    },
+    /// Plans installing a stored ELF of `build` on `root` (LDR-3): the
+    /// build's folders, the ELF at each preset (and `path`), a backup of
+    /// what it replaces, the manifest, and on request the language pack
+    /// and starter settings. `replaceForeign` confirms replacing a file
+    /// of another program the plan named.
+    PlanInstallLoader {
+        root: String,
+        build: String,
+        sha256: String,
+        #[serde(default)]
+        presets: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        path: Option<String>,
+        device: LoaderTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        language: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        starter_settings: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        replace_foreign: Option<bool>,
+    },
+    /// How the console starts `build` at those places (BOOT-1).
+    LoaderBootHints {
+        build: String,
+        #[serde(default)]
+        presets: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        path: Option<String>,
+        device: LoaderTarget,
+    },
 }
 
 /// The successful answer to a [`Request`].
@@ -596,6 +639,12 @@ pub enum Response {
     LoaderCatalog(Box<LoaderCatalog>),
     LoaderFiles {
         files: Vec<LoaderFile>,
+    },
+    LoaderLanguages {
+        languages: Vec<String>,
+    },
+    LoaderBootHints {
+        hints: Vec<LoaderBootHint>,
     },
 }
 

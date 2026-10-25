@@ -14,7 +14,8 @@ use yaoplm_api::library::{
     Platform,
 };
 use yaoplm_api::loaders::{
-    LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderOffer, LoaderPublisher, LoaderTarget,
+    LoaderBootHint, LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderLauncher, LoaderOffer,
+    LoaderPublisher, LoaderTarget,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
@@ -911,6 +912,54 @@ pub fn loader_offer(offer: &LoaderOffer) -> String {
     if let Some(sha) = &offer.stored {
         let _ = writeln!(out, "  Already stored: {sha}");
     }
+    out
+}
+
+/// `yaoplm loader install`: how the console starts what was installed.
+pub fn boot_hints(hints: &[LoaderBootHint], device: LoaderTarget) -> String {
+    let mut out = String::from("How to start it on the PS2:\n");
+    for hint in hints {
+        let name = match hint.launcher {
+            LoaderLauncher::Fmcb => "FreeMcBoot",
+            LoaderLauncher::Ps2bbl => "PS2BBL",
+            LoaderLauncher::Ps2bblMx4sio => "PS2BBL (MX4SIO build)",
+            LoaderLauncher::Osdmenu => "OSDMenu",
+            LoaderLauncher::OplApps => "OPL's Apps page",
+        };
+        match (&hint.ps2_path, hint.stock) {
+            (None, _) => {
+                let _ = writeln!(
+                    out,
+                    "  {name}: from another copy of OPL, open Apps and start \"{}\".",
+                    hint.title.as_deref().unwrap_or_default()
+                );
+            }
+            (Some(path), true) => {
+                let _ = writeln!(
+                    out,
+                    "  {name}: its stock config starts {path}; nothing to edit."
+                );
+            }
+            (Some(path), false) => {
+                let _ = writeln!(
+                    out,
+                    "  {name}: starts {path} once you add to {}:",
+                    hint.config.as_deref().unwrap_or("its config")
+                );
+                for line in &hint.lines {
+                    let _ = writeln!(out, "      {line}");
+                }
+            }
+        }
+    }
+    let device = match device {
+        LoaderTarget::Usb => "the USB device (USB start mode: Auto)",
+        LoaderTarget::Mx4sio => "MX4SIO",
+    };
+    let _ = writeln!(
+        out,
+        "  Then, in OPL's settings, turn on {device} and save: OPL lists games only on a device that is on."
+    );
     out
 }
 

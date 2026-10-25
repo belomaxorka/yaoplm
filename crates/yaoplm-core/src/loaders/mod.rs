@@ -9,9 +9,13 @@
 //! same parser and checks, so a broken file can never replace a good copy.
 //! Release facts the entries rely on are in research/17 §6–§7.
 
+pub mod boot;
 pub mod catalog;
 pub mod download;
+pub mod install;
+pub mod languages;
 pub mod local;
+pub mod manifest;
 pub mod notes;
 pub mod release;
 pub mod version;
