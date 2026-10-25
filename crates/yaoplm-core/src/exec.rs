@@ -497,7 +497,17 @@ impl Runner<'_, '_> {
                 let ours = match what {
                     Removal::Ours => *len == 0 || meta.len == *len,
                     Removal::OursZso { iso_len } => holds_zso(fs, path, *iso_len),
-                    Removal::UserData | Removal::Cache | Removal::Backup => true,
+                    // OPL rebuilds its cache whatever it holds now.
+                    Removal::Cache => true,
+                    Removal::UserData | Removal::Backup if meta.len != *len => {
+                        // Planned at another size: what the user confirmed
+                        // is gone, this file came later and stays.
+                        self.found.push(Notice::warning(
+                            Phrase::notice("changedKept").with("path", path.to_string()),
+                        ));
+                        return Ok(());
+                    }
+                    Removal::UserData | Removal::Backup => true,
                 };
                 if !ours {
                     // Not the file this operation created: leave it.
