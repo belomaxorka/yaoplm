@@ -114,6 +114,7 @@ fn request<'a>(
         starter_settings: false,
         replace_foreign: false,
         update: false,
+        retire: Vec::new(),
         now,
     }
 }

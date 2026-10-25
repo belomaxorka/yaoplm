@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
-import { emptyStick, joinPath, openLibrary, roots, stickAsUsb, stickCard } from "./helpers";
+import { emptyStick, job, joinPath, openLibrary, roots, rpc, stickAsUsb, stickCard } from "./helpers";
 
 // Updates and rollbacks of an installed loader (LDR-4, ADR-0045) on the
 // fixture's stick: OPL 1.2.0 beta 2271 from `mirror/loaders`, and 2280
@@ -11,29 +11,6 @@ import { emptyStick, joinPath, openLibrary, roots, stickAsUsb, stickCard } from 
 
 const OLD = "v1.2.0-Beta-2271-b3a2199";
 const NEW = "v1.2.0-Beta-2280-0123abc";
-
-interface Answer {
-  type: string;
-  [key: string]: unknown;
-}
-
-async function rpc(request: APIRequestContext, body: object): Promise<Answer> {
-  const response = await request.post("/api/rpc", { data: body });
-  const json = (await response.json()) as Answer;
-  if (!response.ok()) throw new Error(`${JSON.stringify(body)}: ${JSON.stringify(json)}`);
-  return json;
-}
-
-/** Runs a job to its end. */
-async function job(request: APIRequestContext, body: object): Promise<Answer> {
-  const { job } = await rpc(request, body);
-  for (;;) {
-    const info = await rpc(request, { type: "GetJob", job });
-    if (info.status === "finished") return info;
-    if (info.status === "failed" || info.status === "cancelled") throw new Error(JSON.stringify(info));
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
 
 /** Build 2271 at FreeMcBoot's path, through the server, as the install screen would. */
 async function installOld(request: APIRequestContext, stick: string, mirror: string): Promise<void> {

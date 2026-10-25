@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
-import { CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -161,8 +161,12 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
   const [installing, setInstalling] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const canInstall = installable(device);
   const known = device.installed.find((l) => l.build !== null);
+  // §5.10.1: no loader, "Install…"; a known build, "Reinstall…" and
+  // "Replace…"; only the family known, "Replace…" alone.
+  const present = known ?? device.installed[0];
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.
@@ -252,10 +256,16 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <Button onClick={onOpen} variant={verdict === "error" ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
-          {canInstall && (
+          {canInstall && (present === undefined || known) && (
             <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
               <Cpu aria-hidden />
-              {device.installed.length > 0 ? t("devices.reinstallLoader") : t("devices.installLoader")}
+              {present ? t("devices.reinstallLoader") : t("devices.installLoader")}
+            </Button>
+          )}
+          {canInstall && present && (
+            <Button variant="outline" size="sm" onClick={() => setReplacing(true)} data-testid="device-replace-loader">
+              <ArrowLeftRight aria-hidden />
+              {t("devices.replaceLoader")}
             </Button>
           )}
         </div>
@@ -268,6 +278,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           onOpenChange={setInstalling}
           initial={known ? { build: known.build, preset: known.preset } : undefined}
         />
+      )}
+      {canInstall && present && replacing && (
+        <InstallLoaderDialog device={device} open={replacing} onOpenChange={setReplacing} replace={present} />
       )}
     </li>
   );

@@ -12,6 +12,7 @@
 pub mod boot;
 pub mod catalog;
 pub mod download;
+pub mod impact;
 pub mod install;
 pub mod installed;
 pub mod languages;

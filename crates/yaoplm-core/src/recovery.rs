@@ -34,35 +34,6 @@ pub enum RecoveryAction {
     Resume,
 }
 
-fn remap(step: &Step, base: usize) -> Step {
-    match step {
-        Step::WriteFile {
-            path,
-            source,
-            offset,
-            len,
-        } => Step::WriteFile {
-            path: path.clone(),
-            source: source + base,
-            offset: *offset,
-            len: *len,
-        },
-        Step::WriteZso {
-            path,
-            source,
-            max_len,
-        } => Step::WriteZso {
-            path: path.clone(),
-            source: source + base,
-            max_len: *max_len,
-        },
-        Step::RemoveSource { source } => Step::RemoveSource {
-            source: source + base,
-        },
-        other => other.clone(),
-    }
-}
-
 fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
     let base = plan.sources.len();
     plan.sources.extend(journal.plan.sources.iter().cloned());
@@ -112,9 +83,9 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
         recovery.game = tx.game.clone();
         for (i, step) in steps.iter().enumerate() {
             if i < commit {
-                recovery.push(remap(step, base));
+                recovery.push(step.shifted(base));
             } else {
-                recovery.then(remap(step, base));
+                recovery.then(step.shifted(base));
             }
         }
         if progress.state == TxState::Committed && action == RecoveryAction::Rollback {

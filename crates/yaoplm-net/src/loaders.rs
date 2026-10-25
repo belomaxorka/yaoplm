@@ -5,6 +5,8 @@
 //! - a release's description, `GET /repos/<repo>/releases/tags/<tag>`,
 //!   asked with the `ETag` of the last answer (a 304 costs nothing against
 //!   GitHub's 60 requests an hour, research/07 §5);
+//! - the list of a repository's releases, `GET /repos/<repo>/releases`, the
+//!   same way, for "Another version…" (LDR-6);
 //! - files of that release, only from
 //!   `https://github.com/<repo>/releases/download/` (GitHub redirects to
 //!   its CDN);
@@ -14,6 +16,7 @@
 //!
 //! ```text
 //! <mirror>/repos/<owner>/<repo>/releases/tags/<tag>.json
+//! <mirror>/repos/<owner>/<repo>/releases.json
 //! <mirror>/<owner>/<repo>/releases/download/<tag>/<asset>
 //! <mirror>/data/loaders/<file>
 //! ```
@@ -23,6 +26,7 @@
 //! ```text
 //! loaders/releases/<owner>__<repo>/<tag>.json   the last answer, with .etag;
 //!                                               its time is the last check (LDR-4)
+//! loaders/releases/<owner>__<repo>.list.json    the last list of releases, with .etag
 //! loaders/catalog/<file>                        the catalogue from main, once it read
 //! loaders/elf/<sha256>.elf, <sha256>.json       ELFs ready to install and what they are
 //! ```
@@ -195,14 +199,22 @@ impl LoaderStore {
             .join(format!("{}.json", plain_tag(tag)?)))
     }
 
+    fn list_path(&self, repo: &str) -> Result<PathBuf, NetError> {
+        let (owner, name) = repo_parts(repo)?;
+        Ok(self
+            .dir
+            .join("releases")
+            .join(format!("{owner}__{name}.list.json")))
+    }
+
     /// The last answer for a release and its `ETag`.
     pub fn cached_release(&self, repo: &str, tag: &str) -> Result<Option<CachedRelease>, NetError> {
-        let path = self.release_path(repo, tag)?;
-        let Ok(json) = fs::read(&path) else {
-            return Ok(None);
-        };
-        let etag = fs::read_to_string(path.with_extension("etag")).ok();
-        Ok(Some((json, etag)))
+        Ok(cached_at(&self.release_path(repo, tag)?))
+    }
+
+    /// The last list of a repository's releases and its `ETag`.
+    pub fn cached_list(&self, repo: &str) -> Result<Option<CachedRelease>, NetError> {
+        Ok(cached_at(&self.list_path(repo)?))
     }
 
     /// When the release was last read, Unix seconds: the device card says
@@ -225,20 +237,11 @@ impl LoaderStore {
         json: &[u8],
         etag: Option<&str>,
     ) -> Result<(), NetError> {
-        let path = self.release_path(repo, tag)?;
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(NetError::io(dir))?;
-        }
-        write_atomic(&path, json)?;
-        let etag_path = path.with_extension("etag");
-        match etag {
-            Some(etag) => write_atomic(&etag_path, etag.as_bytes()),
-            None => match fs::remove_file(&etag_path) {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(NetError::io(&etag_path)(e)),
-            },
-        }
+        put_at(&self.release_path(repo, tag)?, json, etag)
+    }
+
+    fn put_list(&self, repo: &str, json: &[u8], etag: Option<&str>) -> Result<(), NetError> {
+        put_at(&self.list_path(repo)?, json, etag)
     }
 
     fn catalog_dir(&self) -> PathBuf {
@@ -395,6 +398,30 @@ impl LoaderStore {
     }
 }
 
+/// A stored answer and its `ETag`.
+fn cached_at(path: &Path) -> Option<CachedRelease> {
+    let json = fs::read(path).ok()?;
+    let etag = fs::read_to_string(path.with_extension("etag")).ok();
+    Some((json, etag))
+}
+
+/// Stores an answer and its `ETag` (none: the old one goes).
+fn put_at(path: &Path, json: &[u8], etag: Option<&str>) -> Result<(), NetError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(NetError::io(dir))?;
+    }
+    write_atomic(path, json)?;
+    let etag_path = path.with_extension("etag");
+    match etag {
+        Some(etag) => write_atomic(&etag_path, etag.as_bytes()),
+        None => match fs::remove_file(&etag_path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(NetError::io(&etag_path)(e)),
+        },
+    }
+}
+
 /// A release's description and where it came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseJson {
@@ -461,6 +488,56 @@ impl LoaderNet<'_> {
                             self.store.put_release(repo, tag, &json, etag.as_deref())?;
                             Ok(ReleaseJson { json, cached: true })
                         }
+                        None => Err(NetError::Http(format!(
+                            "{url}: 304 without a cached answer"
+                        ))),
+                    },
+                    Fetched::NotFound => Err(NetError::Status { url, status: 404 }),
+                }
+            }
+        }
+    }
+
+    /// Every release of `repo`, newest first (LDR-6): GitHub's first page of
+    /// a hundred, which holds every release the catalogue offers.
+    pub async fn releases(&self, repo: &str) -> Result<ReleaseJson, NetError> {
+        let (owner, name) = repo_parts(repo)?;
+        match self.source {
+            ReleaseSource::Mirror(dir) => {
+                let path = below(dir, &format!("repos/{owner}/{name}/releases.json"))
+                    .ok_or_else(|| NetError::Http(format!("{repo}: not a repository")))?;
+                let json = fs::read(&path).map_err(NetError::io(&path))?;
+                self.store.put_list(repo, &json, None)?;
+                Ok(ReleaseJson {
+                    json,
+                    cached: false,
+                })
+            }
+            ReleaseSource::Remote { api, .. } => {
+                let url = format!(
+                    "{}/repos/{owner}/{name}/releases?per_page=100",
+                    api.trim_end_matches('/')
+                );
+                let cached = self.store.cached_list(repo)?;
+                let validators = Validators {
+                    etag: cached.as_ref().and_then(|(_, etag)| etag.clone()),
+                    last_modified: None,
+                };
+                match self
+                    .http
+                    .get_large(LIMIT_API, &url, &validators, MAX_JSON)
+                    .await?
+                {
+                    Fetched::Ok(body) => {
+                        self.store
+                            .put_list(repo, &body.bytes, body.etag.as_deref())?;
+                        Ok(ReleaseJson {
+                            json: body.bytes,
+                            cached: false,
+                        })
+                    }
+                    Fetched::NotModified => match cached {
+                        Some((json, _)) => Ok(ReleaseJson { json, cached: true }),
                         None => Err(NetError::Http(format!(
                             "{url}: 304 without a cached answer"
                         ))),

@@ -565,6 +565,57 @@ pub enum Request {
     CachedLoaderRelease {
         build: String,
     },
+    /// A job that lists the releases of `build`'s channel the catalogue
+    /// allows (LDR-6, "Another version…").
+    LoaderReleases {
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mirror: Option<String>,
+    },
+    /// A job that says what replacing the loader on `root` by `build`
+    /// changes for the games (LDR-7): the library is scanned with `build`'s
+    /// profile; `profile` is the device's now.
+    LoaderImpact {
+        root: String,
+        build: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+    },
+    /// Plans replacing the loader on `root` by a stored ELF of `build`
+    /// (LDR-7): the ZSO images in `convert` to ISO, JPG and BMP pictures to
+    /// PNG when `reencodeArt`, then the install as `PlanInstallLoader`, the
+    /// loaders at `retire` moved into the backup folder.
+    PlanReplaceLoader {
+        root: String,
+        build: String,
+        sha256: String,
+        #[serde(default)]
+        presets: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        path: Option<String>,
+        device: LoaderTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        language: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        starter_settings: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        replace_foreign: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default)]
+        convert: Vec<String>,
+        #[serde(default)]
+        reencode_art: bool,
+        #[serde(default)]
+        retire: Vec<String>,
+    },
 }
 
 /// The successful answer to a [`Request`].

@@ -186,7 +186,8 @@
     "starterSettingsMx4sio": "No starter settings for MX4SIO: OPL does not read them there until MX4SIO is turned on in its settings",
     "starterSettingsCard": "OPL reads this file only while the memory card holds no conf_opl.cfg of its own",
     "loaderNothingToDo": "Everything is in place already",
-    "loaderNoBackup": "There is no backup of {{path}} to put back"
+    "loaderNoBackup": "There is no backup of {{path}} to put back",
+    "replaceExfatOpl110": "OPL 1.1.0 cannot read exFAT: on this device it would show no games. Keep the current build, or prepare the device again in FAT32 after copying the games to the computer"
   },
   "library": {
     "title": "Library",
@@ -667,7 +668,13 @@
       "site": "Website",
       "wiki": "Wiki",
       "fork": "About the fork"
-    }
+    },
+    "limits": "Limits: {{text}}",
+    "otherVersion": "Another version…",
+    "versionLegend": "Release",
+    "loadingReleases": "Reading the releases…",
+    "defaultRelease": "default",
+    "onlyRelease": "The channel has no other release."
   },
   "loaderUpdate": {
     "title": "Update the loader",
@@ -697,6 +704,30 @@
     "rollbackTo": "Put back {{version}}",
     "rollbackFile": "Put back the previous file",
     "newest": "This is the newest build of its channel"
+  },
+  "loaderReplace": {
+    "title": "Replace the loader",
+    "description": "Now: {{build}} {{version}} in {{path}} on {{root}}. Games, covers, CFG, VMC and cheats stay.",
+    "installed": "Installed",
+    "impactLegend": "What changes for the games",
+    "impactLoading": "Checking the games with the new build’s rules…",
+    "nothing": "Nothing changes for the games: the rules are the same.",
+    "zsoTitle": "ZSO games the new build cannot show: {{count}}",
+    "zsoHint": "Ticked games are converted to ISO before the loader is replaced (on FAT32, above 4 GiB to ul chunks); each ZSO is deleted once its ISO is complete. An unticked game stays ZSO and will not be visible.",
+    "fragmentedTitle": "Games in several pieces, which OPL 1.1.0 will not start: {{count}}",
+    "fragmentedHint": "Copy these games to the computer, format the device and add them back (OPL’s README). YAOPLM does not defragment.",
+    "unknownTitle": "Games whose pieces cannot be counted: {{count}}",
+    "unknownHint": "This system does not say how files lie on the device; OPL 1.1.0 starts a game only when each of its files is one piece.",
+    "artTitle": "Re-encode JPG and BMP pictures to PNG: {{count}}",
+    "artHint": "The new build loads PNG only; the old files are kept in a backup folder.",
+    "artFiles": "Files",
+    "pieces": "pieces: {{count}}",
+    "retire": "Move the previous {{path}} into the backup folder",
+    "retireHint": "Otherwise both loaders stay on the device.",
+    "replace": "Replace",
+    "downloadAndReplace": "Download and replace",
+    "replaced": "Loader replaced",
+    "nothingAffected": "The new build’s rules differ, but none of the games on this device is affected."
   },
   "devices": {
     "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
@@ -745,7 +776,8 @@
     "open": "Open library",
     "changeDevice": "Change device",
     "installLoader": "Install loader…",
-    "reinstallLoader": "Reinstall loader…"
+    "reinstallLoader": "Reinstall loader…",
+    "replaceLoader": "Replace loader…"
   },
   "settings": {
     "library": "Library",
@@ -993,7 +1025,11 @@
     "writeStarterSettings": "Starter settings in conf_opl.cfg",
     "updateLoader": "Update {{build}} to {{version}}",
     "rollbackLoader": "Roll back the loader in {{path}}",
-    "restoreLoader": "Put {{backup}} back as {{path}}"
+    "restoreLoader": "Put {{backup}} back as {{path}}",
+    "retireLoader": "Move {{path}} into the backup folder",
+    "replaceLoader": "Replace {{from}} with {{to}}",
+    "loaderReleases": "Releases of {{build}}",
+    "loaderImpact": "What changes for the games with {{build}}"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
