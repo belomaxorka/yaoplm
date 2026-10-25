@@ -52,6 +52,32 @@ fn interrupted_split() -> (MemFs, VirtualSources, yaoplm_test_support::VirtualIs
 }
 
 #[test]
+fn a_damaged_journal_is_reported_not_a_panic() {
+    let (fs, _sources, _) = interrupted_split();
+    let (path, _) = fs
+        .files()
+        .into_iter()
+        .find(|(p, _)| p.starts_with(".yaoplm/journal/") && p.ends_with(".json"))
+        .unwrap();
+    let text = String::from_utf8(fs.bytes(&path).unwrap()).unwrap();
+    // The ul.cfg write keeps its content as hex; a byte out of place on
+    // the stick splits a character across two hex digits.
+    let key = "\"content\": \"";
+    let at = text.find(key).expect("the ul.cfg write is journalled") + key.len();
+    fs.insert_file(
+        &path,
+        format!("{}aéb{}", &text[..at], &text[at..]).as_bytes(),
+    );
+    let plan = plan_recovery(&fs, RecoveryAction::Rollback).unwrap();
+    assert!(
+        plan.notices.iter().any(|n| n.code == "journalUnreadable"),
+        "{:?}",
+        plan.notices
+    );
+    assert!(!plan.is_executable());
+}
+
+#[test]
 fn pulled_stick_is_rolled_back_from_the_journal() {
     let (fs, sources, _) = interrupted_split();
     // Two finished chunks and a partial one; OPL sees nothing yet.
