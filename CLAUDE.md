@@ -128,6 +128,7 @@ Update this section if they change.
 - One branch per milestone or task: `m<N>/<slug>`.
 - Conventional Commits in English with requirement IDs: `feat(formats): ul.cfg writer (IMP-5)`.
 - Before every commit: fmt, clippy, tests. Before every PR: the full CI set locally where possible.
+- Every bug fix is proven (owner's rule, 2026-10-26): first a test that reproduces the bug and fails, then the fix, then the same test green, and the affected suites rerun more than once. Check the fix against upstream OPL and the other official repos in `refs/` before and after (rule 6), take their handling of the case where they have one, and say in the PR how it was verified.
 - For UI work, run `yaoplm-server` or the Vite dev server through `.claude/launch.json`. Check it in the browser preview or with Playwright, and attach screenshots (light/dark, en/ru) to the PR.
 - PR description: summary, requirement IDs, how it was tested, **PS2 test checklist** for the user.
 - After merge: tick ROADMAP checkboxes and add an ADR if a decision was made.
@@ -135,9 +136,10 @@ Update this section if they change.
 
 ## Environment (developer machine)
 - Windows 11, PowerShell plus Git Bash. VS Build Tools 2026 and WebView2 are installed.
+- Hardware (since 2026-10-25): 64 GB RAM, 12 cores / 16 threads, 2 TB system SSD. Builds, test suites and E2E can run side by side. Cargo locks one target dir per run, so a parallel run gets its own: `CARGO_TARGET_DIR=target\e2e` for `pnpm -C web e2e` while `cargo test` runs. Timings on this machine: first build of the workspace with tests about 4 min, `cargo test --workspace` about 2.5 min, E2E about 7 min, `loader_corpus` about 8 min.
 - Rust via rustup (`stable-x86_64-pc-windows-msvc`; the repo pins its version in `rust-toolchain.toml`), in `%USERPROFILE%\.cargo\bin`.
 - Node 26 no longer bundles corepack: it is installed with `npm install -g corepack`, then `corepack enable pnpm`. Set `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` in non-interactive shells.
-- Python 3.14, Go, git, `gh` (account `belomaxorka`).
+- Python 3.15 (with `PyYAML` and `lz4` for the scripts and OPL cross-checks), Go, git, `gh` (account `belomaxorka`). Rust nightly and `cargo-fuzz` for fuzzing.
 - Docker is not local: Docker images build in CI.
 - Test data lives in `D:\yaoplm-testdata\` (outside the repo). Never commit game images or anything from that folder.
 - The user's PS2 hardware (FMCB card, memory card emulator, MX4SIO, USB sticks) and the console test matrix are in `docs/TESTING.md`. When the user connects a device, inspect it read-only first; write only after a plan, the user's confirmation and a re-check of the disk identity. D: is the user's data drive: write only under `D:\yaoplm-testdata`.
