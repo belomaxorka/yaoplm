@@ -23,7 +23,7 @@ use yaoplm_i18n::{Param, Phrase};
 use crate::device::DeviceState;
 use crate::exec::undo;
 use crate::journal::{self, Journal, TxState};
-use crate::plan::{Notice, Plan, PlanKind, Step, Transaction};
+use crate::plan::{Notice, Plan, PlanKind, Removal, Step, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecoveryAction {
@@ -42,6 +42,7 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
     } else {
         action
     };
+    let mut writes = false;
     for (tx, progress) in journal.plan.transactions.iter().zip(&journal.progress) {
         let done = progress.done.min(tx.steps.len());
         // Steps before the commit point stay undoable in the recovery: a
@@ -93,9 +94,36 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
                 .notices
                 .push(Notice::info(Phrase::notice("alreadyCommitted")));
         }
+        writes |= verb != "recoveryUndo";
         plan.transactions.push(recovery);
     }
     let mut drop = Transaction::titled(Phrase::title("closeJournal").with("id", &journal.id));
+    // The plan drops OPL's games.bin once, with the first game written into
+    // a folder (IMP-8; OPL looks games up in it by file name, research/02
+    // §4.6, src/supportbase.c at b3a2199). A resumed recovery goes on past a
+    // game it rolls back, so the drop may never run while later games
+    // change the folder: it runs again here, once the journal is settled.
+    if writes {
+        let caches = journal
+            .plan
+            .transactions
+            .iter()
+            .flat_map(|t| &t.steps)
+            .filter(|s| {
+                matches!(
+                    s,
+                    Step::Remove {
+                        what: Removal::Cache,
+                        ..
+                    }
+                )
+            });
+        for step in caches {
+            if !drop.steps.contains(step) {
+                drop.then(step.clone());
+            }
+        }
+    }
     drop.then(Step::DropJournal {
         id: journal.id.clone(),
     });

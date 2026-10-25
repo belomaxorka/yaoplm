@@ -29,6 +29,7 @@ import { GameCover } from "@/features/library/GameCover";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { GameSettingsCard } from "@/features/game/GameSettingsCard";
 import { useLibrary } from "@/features/library/useLibrary";
+import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { DumpBadge } from "@/features/verify/DumpBadge";
@@ -101,6 +102,8 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const flow = usePlan({
     onExecuted: () => void navigate(afterPlan.current, { replace: true }),
   });
+  // Over SMB a renamed ul game needs OPL restarted (ADR-0047).
+  const { mode } = useLoaderProfile();
   const otherMedia: Media = game.media === "CD" ? "DVD" : "CD";
   const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
   // Simple mode has no technical details: only what the user can act on.
@@ -334,6 +337,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             title,
             ...(startup ? { startup } : {}),
             nameStyle,
+            ...(mode ? { mode } : {}),
           });
         }}
       />

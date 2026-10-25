@@ -105,13 +105,25 @@ impl From<Bytes> for String {
 impl TryFrom<String> for Bytes {
     type Error = String;
 
+    /// Byte by byte: a journal comes from the device, and a damaged one
+    /// may hold anything (a multi-byte character, a sign `from_str_radix`
+    /// would take).
     fn try_from(hex: String) -> Result<Self, String> {
         if !hex.len().is_multiple_of(2) {
             return Err("odd hex length".into());
         }
-        (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+        let digit = |b: u8| char::from(b).to_digit(16).map(|d| d as u8);
+        hex.as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[high, low]| match (digit(high), digit(low)) {
+                (Some(high), Some(low)) => Ok(high << 4 | low),
+                _ => Err(format!(
+                    "not a hex byte: {:?}",
+                    String::from_utf8_lossy(&[high, low])
+                )),
+            })
             .collect::<Result<Vec<u8>, String>>()
             .map(Bytes)
     }
@@ -123,12 +135,16 @@ impl TryFrom<String> for Bytes {
 pub enum Expect {
     Absent,
     Content(Bytes),
-    /// Recovery only: whatever is there is replaced.
+    /// Recovery only: whatever is there is replaced. Journals of older
+    /// versions undo with it; undo now uses [`Expect::Written`].
     Any,
+    /// Undo only: the file still holds what the plan wrote. Anything else
+    /// is a newer change, by OPL or another manager, and stays.
+    Written(Bytes),
 }
 
 /// Why a file is removed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Removal {
     /// The user's data: an image, chunks, CFG, art. Shown highlighted and
@@ -146,6 +162,10 @@ pub enum Removal {
     /// `iso_len` bytes, so a file someone else put there stays.
     #[serde(rename_all = "camelCase")]
     OursZso { iso_len: u64 },
+    /// A copy of `from` this operation made (rollback of `CopyFile`):
+    /// removed only while it holds the same bytes, so a file that was
+    /// there before and refused the copy stays.
+    Copied { from: RelPath },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,7 +244,7 @@ impl Step {
         ) && !matches!(
             self,
             Self::PutFile {
-                expect: Expect::Any,
+                expect: Expect::Any | Expect::Written(_),
                 ..
             }
         )
@@ -688,6 +708,18 @@ mod tests {
         // Paths are validated again when read back.
         let bad = json.replace("CD/a.iso", "../a.iso");
         assert!(serde_json::from_str::<Vec<Step>>(&bad).is_err());
+    }
+
+    #[test]
+    fn damaged_hex_is_refused_not_a_panic() {
+        // A journal comes from the device: anything may be in it.
+        for bad in ["aéb", "é0", "0é", "zz", "abc", "+f", "-1"] {
+            assert!(Bytes::try_from(bad.to_owned()).is_err(), "{bad:?}");
+        }
+        assert_eq!(
+            Bytes::try_from("0aFf".to_owned()),
+            Ok(Bytes(vec![0x0a, 0xff]))
+        );
     }
 
     #[test]

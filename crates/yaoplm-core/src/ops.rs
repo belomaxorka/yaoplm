@@ -34,6 +34,7 @@ use crate::import::image_name;
 use crate::journal::{self, BACKUP_DIR};
 use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction};
 use crate::reasons;
+use crate::scan::OPL_FOLDERS;
 
 /// Which game a request is about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -456,7 +457,7 @@ pub fn plan_rename(
                 }
             }
             tx.push(ul_cfg_with(&state, *index, Some(&renamed))?);
-            if state.info.remote {
+            if state.info.smb {
                 notices.push(Notice::info(Phrase::notice("restartOpl")));
             }
             tx.set_title(
@@ -724,6 +725,47 @@ pub fn plan_init(fs: &dyn DeviceFs) -> io::Result<Plan> {
         for step in steps {
             tx.push(step);
         }
+        plan.transactions.push(tx);
+    }
+    Ok(plan)
+}
+
+/// Plans a folder `name` at the root with the standard OPL folders in it: a
+/// library of its own, for a whole system disk shared over SMB (ADR-0047).
+/// A folder that exists already only gets the OPL folders it lacks.
+pub fn plan_init_folder(fs: &dyn DeviceFs, name: &str) -> Result<Plan, OpError> {
+    let folder = RelPath::root()
+        .join(name.trim())
+        .map_err(|e| invalid(e.phrase()))?;
+    let state = DeviceState::read(fs)?;
+    let title = Phrase::title("createLibraryFolder").with("folder", folder.as_str());
+    let mut plan = new_plan(PlanKind::InitLibrary, title.clone(), &state);
+    let mut tx = Transaction::titled(title);
+    let present = match fs.metadata(&folder)? {
+        Some(meta) if !meta.is_dir => {
+            return Err(OpError::Conflict(
+                Phrase::error("alreadyExists").with("path", folder.as_str()),
+            ));
+        }
+        Some(_) => list_or_empty(fs, &folder)?,
+        None => {
+            tx.push(Step::CreateDir {
+                path: folder.clone(),
+            });
+            Vec::new()
+        }
+    };
+    for name in OPL_FOLDERS {
+        if find_entry(&present, name).is_none_or(|e| !e.is_dir) {
+            tx.push(Step::CreateDir {
+                path: join(&folder, name)?,
+            });
+        }
+    }
+    if tx.steps.is_empty() {
+        plan.notices
+            .push(Notice::info(Phrase::notice("foldersPresent")));
+    } else {
         plan.transactions.push(tx);
     }
     Ok(plan)

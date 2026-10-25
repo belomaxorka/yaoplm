@@ -26,14 +26,16 @@ import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
-import { profileChoice } from "@/settings/settings";
+import { deviceChoice } from "@/settings/settings";
 
-import { LoaderProfileHint, LoaderProfileLine } from "./LoaderProfile";
+import { DeviceLines, SmbFolderHint } from "./DeviceMode";
+import { LoaderProfileHint } from "./LoaderProfile";
+import { smbStep } from "./smbStep";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
- * (LIB-1) and the storage doctor's verdict for it. The server lists its
- * roots.
+ * (LIB-1), how the PS2 reads it (ADR-0047) and the storage doctor's verdict
+ * for both. The server lists its roots.
  */
 export function DevicesPage() {
   const { t } = useTranslation();
@@ -42,7 +44,7 @@ export function DevicesPage() {
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(transport.kind === "http");
   const switchId = useId();
-  const choice = profileChoice(settings);
+  const choice = deviceChoice(settings);
   const devices = useQuery({
     queryKey: ["devices", choice],
     queryFn: () => listDevices(transport, choice),
@@ -134,9 +136,15 @@ export function DevicesPage() {
   );
 }
 
-/** No loader can work from a system disk, a read-only volume or a device OPL cannot use (§5.10.1). */
+/**
+ * No loader can work from a system disk, a read-only volume or a device OPL
+ * cannot use (§5.10.1). A folder read over SMB needs none: the console starts
+ * OPL from its memory card or stick, and a loader there is a copy (ADR-0047).
+ */
 function installable(device: DeviceInfo): boolean {
-  return !device.system && !device.readOnly && worstLevel(device.advice) !== "error";
+  return (
+    device.mode.mode === "ps2" && !device.system && !device.readOnly && worstLevel(device.advice) !== "error"
+  );
 }
 
 interface Offer {
@@ -158,6 +166,7 @@ function pendingOffer(devices: readonly DeviceInfo[], offered: readonly string[]
 
 function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
   const { t } = useTranslation();
+  const { transport } = useApi();
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
   const [installing, setInstalling] = useState(false);
@@ -175,6 +184,13 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
+  // A folder read over SMB may sit on the system disk (ADR-0047): the badge
+  // is a fact there, not a verdict.
+  const smb = device.mode.mode === "smb";
+  // One main button: the folder's next step comes before opening it. A
+  // server's system disk shows no step (its roots are the administrator's).
+  const step = smbStep(device);
+  const stepShown = step === "init" || (step === "folder" && transport.kind !== "http");
   return (
     <li
       className={cn("rounded-lg border bg-card p-4", current && "ring-2 ring-ring/40")}
@@ -190,7 +206,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
             {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
             {!simple && <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>}
-            {device.system && <Badge variant="destructive">{t("devices.systemDisk")}</Badge>}
+            {device.system && <Badge variant={smb ? "outline" : "destructive"}>{t("devices.systemDisk")}</Badge>}
             {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
             {current && <Badge>{t("devices.current")}</Badge>}
           </div>
@@ -200,8 +216,11 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
               {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
             </span>
           </div>
-          <LoaderProfileLine loader={device.loader} className="mt-2 text-sm" />
-          <LoaderProfileHint loader={device.loader} usable={verdict !== "error"} className="mt-2" />
+          <div className="mt-2 flex flex-col gap-1 text-sm">
+            <DeviceLines device={device} />
+          </div>
+          <SmbFolderHint device={device} className="mt-2" />
+          <LoaderProfileHint device={device} className="mt-2" />
           {device.installed.map((loader) => (
             <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
           ))}
@@ -253,7 +272,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             )}
             {t(`devices.verdict.${verdict ?? "ok"}`)}
           </span>
-          <Button onClick={onOpen} variant={verdict === "error" ? "outline" : "default"} data-testid="device-open">
+          <Button onClick={onOpen} variant={verdict === "error" || stepShown ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
           {canInstall && (present === undefined || known) && (

@@ -1,4 +1,6 @@
+import type { DeviceMode } from "@/api/generated/DeviceMode";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
+import type { ModeOverride } from "@/api/generated/ModeOverride";
 import type { NameStyle } from "@/api/generated/NameStyle";
 import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import { readStorage, writeStorage } from "@/lib/storage";
@@ -8,6 +10,8 @@ export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies r
 export type ProfileOverrideValue = LoaderProfile | "unknown";
 /** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
 export const UNKNOWN_RULES: LoaderProfile = "Opl110";
+/** How OPL reads a device (ADR-0047). */
+export const deviceModes = ["ps2", "smb"] as const satisfies readonly DeviceMode[];
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
@@ -41,6 +45,12 @@ export interface Settings {
    * profile (ADR-0040).
    */
   profileOverrides: Record<string, ProfileOverrideValue>;
+  /**
+   * Modes chosen for single devices, by the same key (ADR-0047). Every other
+   * device gets its place's: removable media plugged into the PS2, folders
+   * on the computer and network folders read over SMB.
+   */
+  modeOverrides: Record<string, DeviceMode>;
   /** `ID.Title.iso` (ADR-0006) or `Title.iso`. */
   nameStyle: NameStyle;
   /** The library root currently open. */
@@ -69,6 +79,7 @@ export interface Settings {
 export const defaultSettings: Settings = {
   simpleMode: true,
   profileOverrides: {},
+  modeOverrides: {},
   nameStyle: "idTitle",
   root: null,
   view: "grid",
@@ -105,13 +116,26 @@ function readOverrides(value: unknown): Record<string, ProfileOverrideValue> {
   );
 }
 
-/** What `ListDevices` and `InspectDevice` need to pick each device's profile. */
-export function profileChoice(settings: Pick<Settings, "profileOverrides">): { overrides: ProfileOverride[] } {
+function readModeOverrides(value: unknown): Record<string, DeviceMode> {
+  if (typeof value !== "object" || value === null) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, DeviceMode] =>
+      deviceModes.includes(entry[1] as DeviceMode),
+    ),
+  );
+}
+
+/** What `ListDevices` and `InspectDevice` need to pick each device's profile and mode. */
+export function deviceChoice(settings: Pick<Settings, "profileOverrides" | "modeOverrides">): {
+  overrides: ProfileOverride[];
+  modeOverrides: ModeOverride[];
+} {
   return {
     overrides: Object.entries(settings.profileOverrides).map(([key, value]) => ({
       key,
       profile: value === "unknown" ? UNKNOWN_RULES : value,
     })),
+    modeOverrides: Object.entries(settings.modeOverrides).map(([key, mode]) => ({ key, mode })),
   };
 }
 
@@ -156,6 +180,7 @@ export function readSettings(): Settings {
     return {
       simpleMode: typeof p.simpleMode === "boolean" ? p.simpleMode : defaultSettings.simpleMode,
       profileOverrides: readOverrides(p.profileOverrides),
+      modeOverrides: readModeOverrides(p.modeOverrides),
       nameStyle: isNameStyle(p.nameStyle) ? p.nameStyle : defaultSettings.nameStyle,
       root: typeof p.root === "string" && p.root.length > 0 ? p.root : null,
       view: isViewMode(p.view) ? p.view : defaultSettings.view,

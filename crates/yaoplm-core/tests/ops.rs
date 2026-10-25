@@ -9,7 +9,8 @@ use common::{files, run};
 use yaoplm_core::Media;
 use yaoplm_core::exec::Outcome;
 use yaoplm_core::ops::{
-    DeleteOptions, GameRef, OpError, RenameOptions, plan_delete, plan_init, plan_move, plan_rename,
+    DeleteOptions, GameRef, OpError, RenameOptions, plan_delete, plan_init, plan_init_folder,
+    plan_move, plan_rename,
 };
 use yaoplm_core::plan::Step;
 use yaoplm_device::{FsKind, RelPath};
@@ -326,6 +327,31 @@ fn deleting_keeps_settings_unless_asked() {
 }
 
 #[test]
+fn a_file_replaced_after_planning_is_kept() {
+    let fs = library();
+    let src = VirtualSources::new();
+    let plan = plan_delete(
+        &fs,
+        &image("CD/SLUS_200.62.Retail.iso"),
+        &DeleteOptions::default(),
+    )
+    .unwrap();
+    // Before the plan runs, the user copies another image under the name.
+    let other = b"another image, copied over the planned one".to_vec();
+    fs.insert_file("CD/SLUS_200.62.Retail.iso", &other);
+    let report = run(&plan, &fs, &src);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert_eq!(fs.bytes("CD/SLUS_200.62.Retail.iso").unwrap(), other);
+    assert!(
+        report.notices.iter().any(|(_, n)| n.code == "changedKept"),
+        "{:?}",
+        report.notices
+    );
+    // games.bin is OPL's cache: it goes whatever it holds now.
+    assert!(!fs.exists("CD/games.bin"));
+}
+
+#[test]
 fn deleting_a_ul_game_drops_its_record_first() {
     let (fs, before) = ul_library();
     let plan = plan_delete(
@@ -378,4 +404,47 @@ fn init_creates_the_missing_folders() {
     );
     assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
     assert!(plan_init(&fs).unwrap().transactions.is_empty());
+}
+
+#[test]
+fn init_folder_makes_a_library_inside_the_root() {
+    // A whole system disk shared over SMB gets a folder of its own (ADR-0047).
+    let fs = MemFs::new(FsKind::Ntfs);
+    fs.insert_file("Windows/explorer.exe", b"x");
+    let plan = plan_init_folder(&fs, " PS2 ").unwrap();
+    let steps = &plan.transactions[0].steps;
+    assert_eq!(steps.len(), 10, "the folder and the nine OPL folders");
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    for name in ["PS2/CD", "PS2/DVD", "PS2/APPS", "PS2/VMC"] {
+        assert!(fs.exists(name), "{name}");
+    }
+    assert!(!fs.exists("CD"), "nothing at the root itself");
+    assert!(
+        plan_init_folder(&fs, "PS2")
+            .unwrap()
+            .transactions
+            .is_empty()
+    );
+
+    // An existing folder only gets what it lacks; a file or a path is refused.
+    fs.insert_file("Games/dvd/x.iso", b"x");
+    assert_eq!(
+        plan_init_folder(&fs, "Games").unwrap().transactions[0]
+            .steps
+            .len(),
+        8
+    );
+    assert!(matches!(
+        plan_init_folder(&fs, "Windows/explorer.exe"),
+        Err(OpError::Invalid(_))
+    ));
+    fs.insert_file("notes.txt", b"x");
+    assert!(matches!(
+        plan_init_folder(&fs, "notes.txt"),
+        Err(OpError::Conflict(_))
+    ));
+    assert!(matches!(
+        plan_init_folder(&fs, ".."),
+        Err(OpError::Invalid(_))
+    ));
 }

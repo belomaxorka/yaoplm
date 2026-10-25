@@ -81,6 +81,7 @@ fn import(root: &Path, sources: &[PathBuf], layout: Layout) {
             layout: Some(layout),
             overrides: None,
             compress: None,
+            mode: None,
         })
         .unwrap()
     else {

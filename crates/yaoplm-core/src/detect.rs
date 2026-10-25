@@ -211,6 +211,11 @@ pub struct Detection {
     /// about; an empty or foreign device gets a loader installed first
     /// (SPEC §5.11.2).
     pub library: bool,
+    /// The profile comes from the loader's own files (its ELF, `title.cfg`,
+    /// settings), not from `games.bin` or the images. In a folder read over
+    /// SMB those files are only copies: the console runs the OPL on its
+    /// memory card or stick (research/18 §3, ADR-0047).
+    pub by_loader_files: bool,
 }
 
 /// Strength of a sign, strongest first.
@@ -232,6 +237,9 @@ struct Sign {
     /// The family a loader's ELF or a family's file names; `None` for signs
     /// of the whole device.
     family: Option<(Family, String)>,
+    /// OPL writes it while listing the device, over SMB too (`games.bin`,
+    /// RiptOPL's `ART/art_cache.bin`), so it is never a copy (research/18 §3).
+    trace: bool,
 }
 
 struct KnownElf {
@@ -347,6 +355,13 @@ impl Scan<'_> {
         }
     }
 
+    /// The last sign is a trace of the console listing the device.
+    fn mark_trace(&mut self) {
+        if let Some(sign) = self.signs.last_mut() {
+            sign.trace = true;
+        }
+    }
+
     fn starts_with(&self, path: &str, magic: &[u8]) -> io::Result<bool> {
         Ok(self.read(path)?.starts_with(magic))
     }
@@ -357,6 +372,7 @@ impl Scan<'_> {
             profile,
             reason,
             family: None,
+            trace: false,
         });
     }
 
@@ -374,6 +390,7 @@ impl Scan<'_> {
             profile,
             reason,
             family: Some((family, path.to_owned())),
+            trace: false,
         });
     }
 
@@ -572,6 +589,7 @@ impl Scan<'_> {
                     .with("version", &version)
                     .with("path", &loader.path),
                 family: Some((Family::RiptOpl, loader.path.clone())),
+                trace: false,
             });
         }
         Ok(())
@@ -604,6 +622,10 @@ impl Scan<'_> {
             let path = join("ART", &cache.name);
             if !cache.is_dir && self.starts_with(&path, b"ARC\0")? {
                 self.by_file(Family::RiptOpl, &path);
+                // Written next to `art.tar` on whatever device RiptOPL reads
+                // it from, `smb0:` included (`src/tar.c`, `tarWriteCache`,
+                // NathanNeurotic/RiptOPL@04aa136).
+                self.mark_trace();
             }
         }
         Ok(())
@@ -632,6 +654,7 @@ impl Scan<'_> {
                 profile,
                 Phrase::reason(key).with("file", &path),
             );
+            self.mark_trace();
             found = match found {
                 None => Some(generation),
                 Some(other) if other == generation => Some(generation),
@@ -689,7 +712,10 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
     } = scan;
 
     let images = zso_images(fs)?;
-    let exfat = fs.info().is_ok_and(|info| info.kind == FsKind::ExFat);
+    // Over SMB OPL never sees the computer's file system.
+    let exfat = fs
+        .info()
+        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb);
     // exFAT and ZSO beat what weaker signs say about 1.1.0.
     let not_110 = exfat || images > 0;
     let mut notices = Vec::new();
@@ -721,6 +747,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         }
     }
 
+    let by_loader_files = chosen.is_some_and(|(_, sign)| !sign.trace);
     let (profile, confidence, reason) = match chosen {
         Some((level, sign)) => (
             sign.profile,
@@ -843,6 +870,7 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
         loaders,
         notices,
         library,
+        by_loader_files,
     })
 }
 
@@ -1009,6 +1037,47 @@ mod tests {
         let fs = MemFs::new(FsKind::Fat32);
         fs.insert_file("CD/games.bin", &games_bin(188));
         assert_eq!(reason(&detect(&fs)), "profileByNewGamesBin");
+    }
+
+    #[test]
+    fn what_the_console_wrote_and_what_was_copied() {
+        // OPL writes games.bin while it lists a share; settings and ELFs in
+        // a folder read over SMB were copied there (research/18 §3).
+        let fs = MemFs::new(FsKind::Ntfs);
+        assert!(!detect(&fs).by_loader_files);
+        fs.insert_file("CD/games.bin", &games_bin(188));
+        assert!(!detect(&fs).by_loader_files);
+
+        let fs = MemFs::new(FsKind::Ntfs);
+        fs.insert_file("conf_opl.cfg", b"usb_mode=0\r\nenable_bgm=1\r\n");
+        assert!(detect(&fs).by_loader_files);
+        fs.insert_file("APPS/APP_RIPTOPL/settings_riptopl.cfg", b"enable_usb=1\r\n");
+        assert!(detect(&fs).by_loader_files);
+
+        let fs = MemFs::new(FsKind::Ntfs);
+        fs.insert_file("CD/Game.zso", b"x");
+        assert!(!detect(&fs).by_loader_files);
+
+        // RiptOPL writes its art index next to `art.tar` on the share.
+        let fs = MemFs::new(FsKind::Ntfs);
+        fs.insert_file("ART/art_cache.bin", b"ARC\0\x04");
+        let d = detect(&fs);
+        assert_eq!(d.profile, LoaderProfile::RiptOpl);
+        assert!(!d.by_loader_files);
+    }
+
+    #[test]
+    fn exfat_is_no_sign_over_smb() {
+        // The computer's file system is not what OPL reads over the network.
+        let fs = MemFs::new(FsKind::ExFat).with_smb(true);
+        let d = detect(&fs);
+        assert_eq!(d.confidence, Confidence::Default);
+        // So an old games.bin, which the console wrote, still decides.
+        fs.insert_file("CD/games.bin", &games_bin(92));
+        assert_eq!(
+            (detect(&fs).profile, reason(&detect(&fs))),
+            (LoaderProfile::Opl110, "profileByOldGamesBin")
+        );
     }
 
     #[test]

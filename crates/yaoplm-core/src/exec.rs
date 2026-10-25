@@ -291,10 +291,10 @@ pub fn undo(step: &Step, plan: &Plan) -> Vec<Step> {
                 Expect::Content(old) => steps.push(Step::PutFile {
                     path: path.clone(),
                     content: old.clone(),
-                    expect: Expect::Any,
+                    expect: Expect::Written(content.clone()),
                 }),
                 Expect::Absent => steps.push(ours(path, content.0.len() as u64)),
-                Expect::Any => {}
+                Expect::Any | Expect::Written(_) => {}
             }
             steps
         }
@@ -326,7 +326,11 @@ pub fn undo(step: &Step, plan: &Plan) -> Vec<Step> {
             steps.push(ours(path, u64::from(*size_mb) << 20));
             steps
         }
-        Step::CopyFile { to, .. } => vec![ours(to, 0)],
+        Step::CopyFile { from, to } => vec![Step::Remove {
+            path: to.clone(),
+            len: 0,
+            what: Removal::Copied { from: from.clone() },
+        }],
         Step::Rename { from, to } => vec![Step::Rename {
             from: to.clone(),
             to: from.clone(),
@@ -435,10 +439,19 @@ impl Runner<'_, '_> {
                 if self.mode == Mode::Resume && current.as_deref() == Some(&content.0[..]) {
                     return Ok(());
                 }
+                if let Expect::Written(ours) = expect
+                    && current.as_deref() != Some(&ours.0[..])
+                {
+                    // Undo: changed since this plan wrote it, so not ours.
+                    self.found.push(Notice::warning(
+                        Phrase::notice("notRestored").with("path", path.to_string()),
+                    ));
+                    return Ok(());
+                }
                 let ok = match expect {
                     Expect::Absent => current.is_none(),
                     Expect::Content(old) => current.as_deref() == Some(&old.0[..]),
-                    Expect::Any => true,
+                    Expect::Any | Expect::Written(_) => true,
                 };
                 if !ok {
                     return Err(ExecError::Precondition(
@@ -497,14 +510,32 @@ impl Runner<'_, '_> {
                 let ours = match what {
                     Removal::Ours => *len == 0 || meta.len == *len,
                     Removal::OursZso { iso_len } => holds_zso(fs, path, *iso_len),
-                    Removal::UserData | Removal::Cache | Removal::Backup => true,
+                    Removal::Copied { from } => fs
+                        .read(path)
+                        .ok()
+                        .is_some_and(|copy| fs.read(from).is_ok_and(|f| f == copy)),
+                    // OPL rebuilds its cache whatever it holds now.
+                    Removal::Cache => true,
+                    Removal::UserData | Removal::Backup if meta.len != *len => {
+                        // Planned at another size: what the user confirmed
+                        // is gone, this file came later and stays.
+                        self.found.push(Notice::warning(
+                            Phrase::notice("changedKept").with("path", path.to_string()),
+                        ));
+                        return Ok(());
+                    }
+                    Removal::UserData | Removal::Backup => true,
                 };
                 if !ours {
                     // Not the file this operation created: leave it.
                     return Ok(());
                 }
                 fs.remove_file(path)
-                    .map_err(ExecError::io(doing("cannotRemove", &path)))
+                    .map_err(ExecError::io(doing("cannotRemove", &path)))?;
+                // On the device before the journal says it is done, like a
+                // rename: a removal lost to a cache would bring a file back.
+                fs.sync_dir(&path.parent().unwrap_or_default())
+                    .map_err(ExecError::io(doing("cannotSync", &path)))
             }
             Step::RemoveSource { source } => {
                 let source = self

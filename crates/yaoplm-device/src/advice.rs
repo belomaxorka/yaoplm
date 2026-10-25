@@ -11,6 +11,10 @@
 //!   broken in OPL builds between about rev1981 and April 2025.
 //! - exFAT clusters of 512 KiB and more are reported to cause problems; on
 //!   FAT32 small clusters make every game start walk a longer FAT chain.
+//!
+//! A folder OPL reads over SMB (ADR-0047, research/18) is not mounted by
+//! BDM: none of the above applies there, only SMB's own limits and the 4 GiB
+//! file size of a FAT volume on the computer.
 
 use std::fmt;
 use std::fs;
@@ -19,7 +23,8 @@ use std::path::Path;
 use yaoplm_formats::LoaderProfile;
 use yaoplm_i18n::Phrase;
 
-use crate::volume::{FsKind, PartitionStyle, Volume, VolumeKind};
+use crate::mode::DeviceMode;
+use crate::volume::{FsKind, PartitionStyle, Volume};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Level {
@@ -35,6 +40,11 @@ pub struct DiagnoseOptions {
     /// OPL itself is started from this device through FreeMcBoot 1.966 or
     /// an old uLaunchELF, which read FAT32 only.
     pub boot_from_device: bool,
+    /// How OPL reads the device (ADR-0047).
+    pub mode: DeviceMode,
+    /// The device is the whole volume (a drive or mount point), not a
+    /// folder on it.
+    pub whole_volume: bool,
 }
 
 /// One finding about a volume.
@@ -53,9 +63,20 @@ pub enum Advice {
     LargeGamesAsUl,
     /// exFAT stores games over 4 GiB as one image (OPL 1.2.0 beta).
     ExfatRecommended,
-    /// OPL reads network shares with SMBv1 only; names up to 159 bytes and
-    /// at most 10 `ul` parts.
-    RemoteShare,
+    /// OPL reads the device over SMB: SMBv1 only (RiptOPL also SMB2),
+    /// image names up to 159 bytes, at most 10 `ul` parts (research/18).
+    Smb {
+        smb2: bool,
+    },
+    /// A whole system disk shared as the library: a separate folder is
+    /// cleaner (OPL creates its folders at the share's root).
+    SystemRoot(String),
+    /// Less than a tenth of the volume, or less than a single-layer DVD,
+    /// is free (owner's decision 2026-10-25, ADR-0047).
+    LowSpace {
+        free: u64,
+        total: u64,
+    },
     /// FatFs in OPL is built for 512-byte sectors only.
     SectorSize(u32),
     ClusterTooLarge(u32),
@@ -87,10 +108,12 @@ impl Advice {
             Self::FatNeededToBoot
             | Self::ClusterTooLarge(_)
             | Self::NoPartitionTable
+            | Self::SystemRoot(_)
+            | Self::LowSpace { .. }
             | Self::AppleDouble(_) => Level::Warning,
             Self::LargeGamesAsUl
             | Self::ExfatRecommended
-            | Self::RemoteShare
+            | Self::Smb { .. }
             | Self::ClusterSmall(_)
             | Self::Misaligned(_)
             | Self::NotExternal => Level::Info,
@@ -107,7 +130,10 @@ impl Advice {
             Self::FatNeededToBoot => "fatNeededToBoot",
             Self::LargeGamesAsUl => "largeGamesAsUl",
             Self::ExfatRecommended => "exfatRecommended",
-            Self::RemoteShare => "remoteShare",
+            Self::Smb { smb2: false } => "smbRules",
+            Self::Smb { smb2: true } => "smbRulesSmb2",
+            Self::SystemRoot(_) => "systemRoot",
+            Self::LowSpace { .. } => "lowSpace",
             Self::SectorSize(_) => "sectorSize",
             Self::ClusterTooLarge(_) => "clusterTooLarge",
             Self::ClusterSmall(_) => "clusterSmall",
@@ -136,13 +162,15 @@ impl Advice {
             }
             Self::Misaligned(offset) => phrase.with("offset", *offset),
             Self::AppleDouble(files) => phrase.with("files", *files),
+            Self::SystemRoot(folder) => phrase.with("folder", folder),
+            Self::LowSpace { free, total } => phrase.with("free", *free).with("total", *total),
             Self::SystemVolume
             | Self::ReadOnly
             | Self::ExfatNeedsOpl12
             | Self::FatNeededToBoot
             | Self::LargeGamesAsUl
             | Self::ExfatRecommended
-            | Self::RemoteShare
+            | Self::Smb { .. }
             | Self::GptUnsupported
             | Self::NoPartitionTable
             | Self::NotExternal => phrase,
@@ -158,8 +186,52 @@ impl fmt::Display for Advice {
 
 const MIB: u64 = 1 << 20;
 
+/// The folder a whole system disk's warning suggests sharing instead.
+pub const SHARE_FOLDER: &str = "PS2";
+
+/// A single-layer DVD: less free space than this takes no more DVD games.
+const DVD5_BYTES: u64 = 4_700_000_000;
+
+/// Little free space, on any device in either mode. A volume nothing can be
+/// written to fills no further.
+fn low_space(volume: &Volume) -> Option<Advice> {
+    let (free, total) = (volume.free_bytes, volume.total_bytes);
+    (!volume.read_only && total > 0 && (free < DVD5_BYTES || free.saturating_mul(10) < total))
+        .then_some(Advice::LowSpace { free, total })
+}
+
 /// Everything worth telling about `volume` for `options`, worst first.
 pub fn diagnose(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
+    match options.mode {
+        DeviceMode::Ps2 => diagnose_ps2(volume, options),
+        DeviceMode::Smb => diagnose_smb(volume, options),
+    }
+}
+
+/// A folder read over SMB: writes stay inside it whatever the disk holds
+/// (rule 1), and no BDM rule applies (research/18 §4).
+fn diagnose_smb(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
+    let mut found = Vec::new();
+    if volume.read_only {
+        found.push(Advice::ReadOnly);
+    }
+    found.extend(low_space(volume));
+    // A disk nothing can be written to gets no folder of its own either.
+    if volume.system && options.whole_volume && !volume.read_only {
+        found.push(Advice::SystemRoot(
+            volume.root.join(SHARE_FOLDER).display().to_string(),
+        ));
+    }
+    if volume.fs.max_file_size().is_some() {
+        found.push(Advice::LargeGamesAsUl);
+    }
+    found.push(Advice::Smb {
+        smb2: options.profile == LoaderProfile::RiptOpl,
+    });
+    sorted(found)
+}
+
+fn diagnose_ps2(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     let mut found = Vec::new();
     let profile = options.profile;
     if volume.system {
@@ -168,10 +240,7 @@ pub fn diagnose(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     if volume.read_only {
         found.push(Advice::ReadOnly);
     }
-    if volume.kind == VolumeKind::Remote {
-        found.push(Advice::RemoteShare);
-        return sorted(found);
-    }
+    found.extend(low_space(volume));
     match volume.fs {
         FsKind::Fat32 | FsKind::Fat16 => {
             found.push(Advice::LargeGamesAsUl);
@@ -267,7 +336,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::volume::{Bus, PartitionInfo};
+    use crate::volume::{Bus, PartitionInfo, VolumeKind};
 
     fn stick(fs: FsKind, cluster: u32) -> Volume {
         Volume {
@@ -304,10 +373,17 @@ mod tests {
     const OPL12: DiagnoseOptions = DiagnoseOptions {
         profile: LoaderProfile::Opl120Beta,
         boot_from_device: false,
+        mode: DeviceMode::Ps2,
+        whole_volume: true,
     };
     const OPL11: DiagnoseOptions = DiagnoseOptions {
         profile: LoaderProfile::Opl110,
-        boot_from_device: false,
+        ..OPL12
+    };
+    const SMB: DiagnoseOptions = DiagnoseOptions {
+        mode: DeviceMode::Smb,
+        whole_volume: false,
+        ..OPL12
     };
 
     #[test]
@@ -361,11 +437,12 @@ mod tests {
     }
 
     #[test]
-    fn shares_and_internal_disks() {
+    fn shares_and_internal_disks_plugged_into_the_ps2() {
+        // Switched to the console mode by hand: the BDM rules apply.
         let mut share = stick(FsKind::Ntfs, 4096);
         share.kind = VolumeKind::Remote;
         share.bus = None;
-        assert_eq!(codes(&share, OPL12), ["remoteShare"]);
+        assert_eq!(codes(&share, OPL12), ["notExternal"]);
 
         let mut internal = stick(FsKind::Ntfs, 4096);
         internal.kind = VolumeKind::Fixed;
@@ -373,6 +450,129 @@ mod tests {
         assert_eq!(codes(&internal, OPL12), ["notExternal"]);
         internal.system = true;
         assert_eq!(codes(&internal, OPL12), ["systemVolume"]);
+    }
+
+    fn system_disk() -> Volume {
+        let mut volume = stick(FsKind::Ntfs, 4096);
+        volume.root = PathBuf::from("C:\\");
+        volume.kind = VolumeKind::Fixed;
+        volume.bus = Some(Bus::Nvme);
+        volume.system = true;
+        volume.sector_size = Some(4096);
+        volume.partition = Some(PartitionInfo {
+            style: Some(PartitionStyle::Gpt),
+            number: 3,
+            offset: 17 * 1024,
+            mbr_type: None,
+        });
+        volume
+    }
+
+    #[test]
+    fn a_folder_for_smb_on_the_system_disk_suits_opl() {
+        // No system disk error, no file system, sector or partition rules.
+        let volume = system_disk();
+        assert_eq!(codes(&volume, SMB), ["smbRules"]);
+        assert!(
+            diagnose(&volume, &SMB)
+                .iter()
+                .all(|a| a.level() == Level::Info)
+        );
+        let riptopl = DiagnoseOptions {
+            profile: LoaderProfile::RiptOpl,
+            ..SMB
+        };
+        assert_eq!(codes(&volume, riptopl), ["smbRulesSmb2"]);
+    }
+
+    #[test]
+    fn smb_rules_by_the_folder() {
+        // FAT32 on the computer still holds files up to 4 GiB.
+        let mut fat = stick(FsKind::Fat32, 4096);
+        fat.kind = VolumeKind::Fixed;
+        fat.bus = Some(Bus::Sata);
+        assert_eq!(codes(&fat, SMB), ["largeGamesAsUl", "smbRules"]);
+        let mut exfat = fat.clone();
+        exfat.fs = FsKind::ExFat;
+        let opl11 = DiagnoseOptions {
+            profile: LoaderProfile::Opl110,
+            ..SMB
+        };
+        assert_eq!(codes(&exfat, opl11), ["smbRules"]);
+
+        let mut read_only = system_disk();
+        read_only.read_only = true;
+        let found = diagnose(&read_only, &SMB);
+        assert_eq!(found[0], Advice::ReadOnly);
+        assert_eq!(found[0].level(), Level::Error);
+        // A read-only system disk (macOS's sealed volume) is not offered a
+        // folder of its own.
+        let whole = DiagnoseOptions {
+            whole_volume: true,
+            ..SMB
+        };
+        assert_eq!(codes(&read_only, whole), ["readOnly", "smbRules"]);
+    }
+
+    #[test]
+    fn the_whole_system_disk_shared() {
+        let whole = DiagnoseOptions {
+            whole_volume: true,
+            ..SMB
+        };
+        let found = diagnose(&system_disk(), &whole);
+        assert_eq!(
+            found.iter().map(Advice::code).collect::<Vec<_>>(),
+            ["systemRoot", "smbRules"]
+        );
+        assert_eq!(found[0].level(), Level::Warning);
+        assert_eq!(
+            found[0].phrase().english(),
+            format!(
+                "The whole system disk is open: for sharing over the network, a separate folder such as {} is better",
+                PathBuf::from("C:\\").join("PS2").display()
+            )
+        );
+        // Only the system disk: another disk's root is an ordinary share.
+        let mut data = system_disk();
+        data.system = false;
+        assert_eq!(codes(&data, whole), ["smbRules"]);
+    }
+
+    #[test]
+    fn little_free_space_in_either_mode() {
+        let gib: u64 = 1 << 30;
+        let mut volume = stick(FsKind::ExFat, 128 * 1024);
+        // The owner's sticks and disks on 2026-10-25.
+        for (free, total, low) in [
+            (3 * gib + gib / 3, 7 * gib + gib / 2, true), // E: 3.3 of 7.5 GiB
+            (57 * gib, 57 * gib + gib / 2, false),        // F:, empty
+            (13 * gib, 476 * gib, true),                  // C:, 2.7 % free
+            (124 * gib, 466 * gib, false),                // D:
+        ] {
+            volume.free_bytes = free;
+            volume.total_bytes = total;
+            for options in [OPL12, SMB] {
+                assert_eq!(
+                    codes(&volume, options).contains(&"lowSpace"),
+                    low,
+                    "{free} of {total}"
+                );
+            }
+        }
+        volume.free_bytes = 2 * gib;
+        let advice = Advice::LowSpace {
+            free: volume.free_bytes,
+            total: volume.total_bytes,
+        };
+        assert_eq!(advice.level(), Level::Warning);
+        assert_eq!(
+            advice.phrase().english(),
+            "Little free space left: 2.0 GiB of 466.0 GiB"
+        );
+        // Nothing more can be written to a read-only volume anyway.
+        volume.read_only = true;
+        assert!(!codes(&volume, OPL12).contains(&"lowSpace"));
     }
 
     #[test]
@@ -406,7 +606,13 @@ mod phrase_tests {
             Advice::FatNeededToBoot,
             Advice::LargeGamesAsUl,
             Advice::ExfatRecommended,
-            Advice::RemoteShare,
+            Advice::Smb { smb2: false },
+            Advice::Smb { smb2: true },
+            Advice::SystemRoot(r"C:\PS2".into()),
+            Advice::LowSpace {
+                free: 3 << 30,
+                total: 8 << 30,
+            },
             Advice::SectorSize(4096),
             Advice::ClusterTooLarge(256 * 1024),
             Advice::ClusterSmall(4 * 1024),

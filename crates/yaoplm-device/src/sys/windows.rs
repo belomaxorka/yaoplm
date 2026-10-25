@@ -14,6 +14,7 @@ use std::io;
 use std::iter;
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
 use std::ptr;
@@ -21,10 +22,10 @@ use std::ptr;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BusType1394, BusTypeAta, BusTypeMmc, BusTypeNvme, BusTypeSata, BusTypeSd, BusTypeUsb,
-    CreateFileW, FILE_ALLOCATION_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAllocationInfo,
-    GetDiskFreeSpaceExW, GetDiskFreeSpaceW, GetDriveTypeW, GetLogicalDriveStringsW,
-    GetVolumeInformationW, GetVolumePathNameW, OPEN_EXISTING, STORAGE_BUS_TYPE,
-    SetFileInformationByHandle,
+    CreateFileW, FILE_ALLOCATION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FileAllocationInfo, GetDiskFreeSpaceExW, GetDiskFreeSpaceW, GetDriveTypeW,
+    GetLogicalDriveStringsW, GetVolumeInformationW, GetVolumePathNameW, OPEN_EXISTING,
+    STORAGE_BUS_TYPE, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
@@ -425,5 +426,45 @@ pub fn preallocate(file: &File, len: u64) -> io::Result<()> {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
+    }
+}
+
+/// Makes renames and removals in `dir` durable: flushes the folder, then
+/// the root of its volume. NTFS flushes a folder's own metadata; FAT
+/// flushes nothing for a folder but the root, which flushes the whole
+/// volume (fastfat `flush.c`, Windows-driver-samples at bb68ed5e77). On a
+/// hot-pluggable stick fastfat writes metadata through anyway, unless
+/// "Better performance" turned write caching on (`strucsup.c`,
+/// `VCB_STATE_FLAG_DEFERRED_FLUSH`): then only this flush puts a rename
+/// on the stick before the journal says it happened.
+pub fn sync_dir(dir: &Path) -> io::Result<()> {
+    flush_folder(dir)?;
+    match dir.ancestors().last() {
+        Some(root) if root != dir => flush_folder(root),
+        _ => Ok(()),
+    }
+}
+
+fn flush_folder(path: &Path) -> io::Result<()> {
+    /// ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED.
+    const UNSUPPORTED: [i32; 2] = [1, 50];
+    let flushed = std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .and_then(|folder| folder.sync_all());
+    match flushed {
+        // Not every folder opens for writing (the root of a system disk
+        // for a standard user) or flushes (some network redirectors): the
+        // rename stands as it would without a flush.
+        Err(err)
+            if err.kind() == io::ErrorKind::PermissionDenied
+                || err
+                    .raw_os_error()
+                    .is_some_and(|code| UNSUPPORTED.contains(&code)) =>
+        {
+            Ok(())
+        }
+        other => other,
     }
 }

@@ -109,7 +109,7 @@ fn opl_110_wants_every_file_in_one_piece() {
 fn no_check_off_bdm_or_when_the_os_cannot_tell() {
     for fs in [
         MemFs::new(FsKind::Ntfs),
-        MemFs::new(FsKind::Fat32).with_remote(true),
+        MemFs::new(FsKind::Fat32).with_smb(true),
     ] {
         let (plan, sources) = import(&fs, LoaderProfile::Opl120Beta);
         fs.set_fragments(RETAIL, 500);

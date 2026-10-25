@@ -12,6 +12,7 @@ import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
 import { DevicesPage } from "@/features/devices/DevicesPage";
+import { smbMode } from "@/features/devices/testDevice";
 import { build, device, file, installedLoader, offer, plan, storeSettings } from "@/features/loaders/fixtures";
 import { Providers } from "@/features/loaders/TestProviders";
 import i18n from "@/i18n";
@@ -223,5 +224,20 @@ describe("loader updates on the device card", () => {
     // Only the family is known: "Replace…" alone (§5.10.1).
     expect(screen.queryByTestId("device-install-loader")).toBeNull();
     expect(screen.getByTestId("device-replace-loader").textContent).toContain("Replace loader…");
+  });
+
+  it("leaves the loader in a folder read over SMB alone (ADR-0047)", async () => {
+    const core = fakeCore(() => [device({ mode: smbMode, installed: [installedLoader()] })]);
+    show(core);
+    const card = await screen.findByTestId("installed-loader");
+    expect(card.getAttribute("data-freshness")).toBe("update");
+    // A copy of what the console runs from its card or stick: shown, never
+    // offered or acted on.
+    expect(screen.queryByTestId("loader-update-dialog")).toBeNull();
+    expect(within(card).queryByTestId("installed-loader-update-to")).toBeNull();
+    expect(within(card).queryByTestId("installed-loader-check")).toBeNull();
+    expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
+    expect(screen.queryByTestId("device-install-loader")).toBeNull();
+    expect(screen.queryByTestId("device-replace-loader")).toBeNull();
   });
 });

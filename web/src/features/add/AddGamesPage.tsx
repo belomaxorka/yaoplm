@@ -77,7 +77,7 @@ export function AddGamesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { settings, update } = useSettings();
-  const { profile: loaderProfile } = useLoaderProfile();
+  const { profile: loaderProfile, mode } = useLoaderProfile();
   const root = settings.root;
   const [sources, setSources] = useState<string[]>([]);
   const [move, setMove] = useState(false);
@@ -127,12 +127,14 @@ export function AddGamesPage() {
       verify: settings.checkOnAdd,
       databaseTitles: settings.titlesFromDb,
       ...(coverSet ? { covers: coverSet } : {}),
+      ...(mode ? { mode } : {}),
     };
   }, [
     root,
     sources,
     overrides,
     loaderProfile,
+    mode,
     settings.nameStyle,
     move,
     alwaysUl,

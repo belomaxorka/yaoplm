@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use yaoplm_i18n::Phrase;
 
+use crate::mode::DeviceMode;
 use crate::source::ReadSeek;
 use crate::volume::{FsKind, VolumeKind, volume_for_path};
 
@@ -173,8 +174,9 @@ pub struct FsInfo {
     pub free_bytes: u64,
     /// Allocation unit; 4 KiB when the OS does not say.
     pub cluster_size: u32,
-    /// A network share: OPL's SMB limits apply.
-    pub remote: bool,
+    /// OPL reads the device over SMB (a network share, or a folder in SMB
+    /// mode, ADR-0047): SMB's limits apply, BDM's fragment rule does not.
+    pub smb: bool,
     /// Changes when the stick is swapped or reformatted ([`crate::Volume::fingerprint`]).
     pub fingerprint: String,
 }
@@ -211,7 +213,8 @@ pub trait DeviceFs: Send + Sync {
     fn remove_file(&self, path: &RelPath) -> io::Result<()>;
     /// Removes an empty folder.
     fn remove_dir(&self, path: &RelPath) -> io::Result<()>;
-    /// Makes renames and removals in `dir` durable (directory fsync on Unix).
+    /// Makes renames and removals in `dir` durable (directory fsync on
+    /// Unix; on Windows the folder and its volume's root are flushed).
     fn sync_dir(&self, _dir: &RelPath) -> io::Result<()> {
         Ok(())
     }
@@ -265,6 +268,9 @@ pub fn write_atomic(fs: &dyn DeviceFs, path: &RelPath, bytes: &[u8]) -> io::Resu
 #[derive(Debug, Clone)]
 pub struct HostFs {
     root: PathBuf,
+    /// The device's mode when the front end knows it; else a network share
+    /// counts as SMB.
+    smb: Option<bool>,
 }
 
 struct HostFile(File);
@@ -312,7 +318,14 @@ impl HostFs {
                 format!("{} is not a folder", root.display()),
             ));
         }
-        Ok(Self { root })
+        Ok(Self { root, smb: None })
+    }
+
+    /// The same root as OPL reads it in `mode` (ADR-0047).
+    #[must_use]
+    pub fn with_mode(mut self, mode: DeviceMode) -> Self {
+        self.smb = Some(mode == DeviceMode::Smb);
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -358,7 +371,7 @@ impl DeviceFs for HostFs {
             kind: volume.fs,
             free_bytes: volume.free_bytes,
             cluster_size: volume.cluster_size.unwrap_or(4096),
-            remote: volume.kind == VolumeKind::Remote,
+            smb: self.smb.unwrap_or(volume.kind == VolumeKind::Remote),
             fingerprint: volume.fingerprint(),
         })
     }
@@ -438,13 +451,18 @@ impl DeviceFs for HostFs {
     }
 
     fn sync_dir(&self, dir: &RelPath) -> io::Result<()> {
+        let path = self.resolve_checked(dir)?;
         #[cfg(unix)]
         {
-            File::open(self.resolve_checked(dir)?)?.sync_all()
+            File::open(path)?.sync_all()
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let _ = dir;
+            crate::sys::sync_dir(&path)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = path;
             Ok(())
         }
     }
@@ -477,6 +495,21 @@ mod tests {
         }
         assert!(RelPath::root().join("..").is_err());
         assert!(RelPath::root().join("a/b").is_err());
+    }
+
+    #[test]
+    fn sync_dir_reaches_the_folder() {
+        // On every OS the folder is opened and flushed: a rename the
+        // journal relies on is on the device, not in a cache.
+        let dir = tempfile::tempdir().unwrap();
+        let fs = HostFs::new(dir.path()).unwrap();
+        fs.create_dir(&rel("CD")).unwrap();
+        fs.sync_dir(&RelPath::root()).unwrap();
+        fs.sync_dir(&rel("CD")).unwrap();
+        assert_eq!(
+            fs.sync_dir(&rel("DVD")).err().map(|e| e.kind()),
+            Some(io::ErrorKind::NotFound)
+        );
     }
 
     #[test]
