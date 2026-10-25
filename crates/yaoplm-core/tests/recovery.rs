@@ -293,6 +293,50 @@ fn an_interrupted_recovery_can_run_again() {
 }
 
 #[test]
+fn a_resumed_recovery_drops_games_bin_even_when_its_carrier_rolls_back() {
+    // Two DVD games on exFAT and OPL's cache of the folder.
+    let fs = MemFs::new(FsKind::ExFat);
+    fs.insert_file("DVD/games.bin", &[0u8; 188]);
+    let sources = VirtualSources::new();
+    sources.add_iso(src("First.iso"), big_iso("SLUS_212.18", 2 * GIB));
+    sources.add_iso(src("Second.iso"), big_iso("SLUS_200.00", GIB));
+    let inputs = [src("First.iso"), src("Second.iso")];
+    let plan = plan_import(&fs, &sources, &inputs, &ImportOptions::default()).unwrap();
+    let carriers = plan
+        .transactions
+        .iter()
+        .filter(|t| {
+            t.steps
+                .iter()
+                .any(|s| matches!(s, Step::Remove { path, .. } if path.as_str() == "DVD/games.bin"))
+        })
+        .count();
+    assert_eq!(carriers, 1, "the drop rides with the first game");
+
+    // Pulled out while the first game is written: the drop has not run.
+    fs.unplug_after(GIB);
+    assert!(!run(&plan, &fs, &sources).succeeded());
+    fs.replug();
+    assert!(fs.exists("DVD/games.bin"));
+
+    // On resume the first game fails every time and is rolled back; the
+    // second one is written all the same.
+    let plan = plan_recovery(&fs, RecoveryAction::Resume).unwrap();
+    fs.fail_once("create", "SLUS_212.18");
+    let report = run(&plan, &fs, &sources);
+    assert!(
+        report.outcomes.contains(&Outcome::RolledBack),
+        "{:?}",
+        report.outcomes
+    );
+    assert!(fs.exists("DVD/SLUS_200.00.Second.iso"), "{:?}", fs.files());
+    assert!(!fs.exists("DVD/SLUS_212.18.First.iso"));
+    // The folder changed, so OPL's stale list must go (IMP-8).
+    assert!(!fs.exists("DVD/games.bin"), "{:?}", fs.files());
+    assert_eq!(journals(&fs), 0);
+}
+
+#[test]
 fn cancel_rolls_back_the_current_game_only() {
     let fs = MemFs::new(FsKind::ExFat);
     let sources = VirtualSources::new();
