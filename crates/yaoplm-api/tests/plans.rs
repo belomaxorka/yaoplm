@@ -308,7 +308,7 @@ fn the_loader_profile_of_a_device() {
 
 #[test]
 fn a_folder_on_the_computer_is_read_over_smb() {
-    // ADR-0044: the place gives the mode. A temp folder is never removable.
+    // ADR-0045: the place gives the mode. A temp folder is never removable.
     let s = setup();
     let api = Api::new();
     let inspect = |extra: Value| {

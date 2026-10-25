@@ -568,7 +568,7 @@ impl Profile {
     }
 }
 
-/// How OPL reads the device (ADR-0044).
+/// How OPL reads the device (ADR-0045).
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum ModeArg {
     /// By the device's place: a USB stick or SD card is plugged into the

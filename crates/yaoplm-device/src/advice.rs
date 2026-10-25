@@ -12,7 +12,7 @@
 //! - exFAT clusters of 512 KiB and more are reported to cause problems; on
 //!   FAT32 small clusters make every game start walk a longer FAT chain.
 //!
-//! A folder OPL reads over SMB (ADR-0044, research/18) is not mounted by
+//! A folder OPL reads over SMB (ADR-0045, research/18) is not mounted by
 //! BDM: none of the above applies there, only SMB's own limits and the 4 GiB
 //! file size of a FAT volume on the computer.
 
@@ -40,7 +40,7 @@ pub struct DiagnoseOptions {
     /// OPL itself is started from this device through FreeMcBoot 1.966 or
     /// an old uLaunchELF, which read FAT32 only.
     pub boot_from_device: bool,
-    /// How OPL reads the device (ADR-0044).
+    /// How OPL reads the device (ADR-0045).
     pub mode: DeviceMode,
     /// The device is the whole volume (a drive or mount point), not a
     /// folder on it.

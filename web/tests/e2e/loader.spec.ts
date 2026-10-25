@@ -55,7 +55,7 @@ test("a loader's settings file on the device decides the profile", async ({ page
     const header = page.getByTestId("loader-profile");
     await expect(header.getByTestId("loader-profile-name")).toHaveText("RiptOPL");
     // The fixture is a folder read over SMB: the loader's files there are a
-    // copy of what the console runs (ADR-0044).
+    // copy of what the console runs (ADR-0045).
     await expect(header.getByTestId("loader-profile-reason")).toHaveText(
       "— APPS/APP_RIPTOPL/settings_riptopl.cfg, который пишет только RiptOPL (копия: по SMB консоль запускает OPL с карты памяти или флешки)",
     );
@@ -84,7 +84,7 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по носителю)");
 });
 
-test("a server folder is read over SMB and asked about its OPL (ADR-0044)", async ({ page, request }) => {
+test("a server folder is read over SMB and asked about its OPL (ADR-0045)", async ({ page, request }) => {
   // The fixture library is a root of the e2e server in a temp folder, on
   // every OS: the PS2 reads such a folder over the network, so no system
   // disk verdict, and the version is asked. The answers: LoaderProfileHint.test.tsx.
@@ -126,7 +126,7 @@ test("a server folder is read over SMB and asked about its OPL (ADR-0044)", asyn
   await page.getByTestId("loader-profile-auto").click();
 });
 
-test("the mode is switched per device and goes back to auto (ADR-0044)", async ({ page, request }) => {
+test("the mode is switched per device and goes back to auto (ADR-0045)", async ({ page, request }) => {
   await openLibrary(page, request, { language: "ru" });
   await page.goto("/devices");
   const card = libraryCard(page);
@@ -161,7 +161,7 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/devices");
       await expect(libraryCard(page).getByTestId("loader-profile")).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/loader-devices-${language}-${theme}.png` });
-      // How the PS2 reads the folder, and the menu that switches it (ADR-0044).
+      // How the PS2 reads the folder, and the menu that switches it (ADR-0045).
       await libraryCard(page).getByTestId("device-mode-change").click();
       await expect(page.getByTestId("device-mode-ps2")).toBeVisible();
       await page.waitForTimeout(300);

@@ -358,7 +358,7 @@ pub fn loader_line(loader: &ActiveProfile) -> String {
     }
 }
 
-/// How OPL reads the device and why (ADR-0044).
+/// How OPL reads the device and why (ADR-0045).
 pub fn mode_line(mode: &ActiveMode) -> String {
     let name = match mode.mode {
         DeviceMode::Ps2 => "plugged into the PS2",
@@ -372,7 +372,7 @@ pub fn mode_line(mode: &ActiveMode) -> String {
 }
 
 /// The question the interface asks when nothing on the device tells the
-/// loader (ADR-0041, ADR-0044); a folder read over SMB is asked about the
+/// loader (ADR-0041, ADR-0045); a folder read over SMB is asked about the
 /// OPL on the console.
 fn profile_question(mode: DeviceMode) -> String {
     let question = match mode {

@@ -91,7 +91,7 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
 }
 
 /**
- * What the loader line cannot say in a few words (ADR-0041, ADR-0044):
+ * What the loader line cannot say in a few words (ADR-0041, ADR-0045):
  * - a device with no sign of its loader asks which OPL it is for, when the
  *   core says so (`askProfile`): prepared for OPL (OPL starts from the
  *   memory card, the console has not listed the device yet), or a folder

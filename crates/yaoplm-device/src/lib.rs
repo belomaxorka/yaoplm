@@ -3,7 +3,7 @@
 //! - [`volume`]: which volumes are mounted, their file system, free space,
 //!   cluster size and serial number (DEV-1).
 //! - [`mode`]: whether OPL reads a device plugged into the PS2 or over SMB,
-//!   by the device's place (ADR-0044).
+//!   by the device's place (ADR-0045).
 //! - [`advice`]: a read-only verdict on a volume for a loader profile and a
 //!   mode (DEV-2, research/06 §6.1).
 //! - [`fs`]: [`DeviceFs`], the only way the rest of YAOPLM writes to a

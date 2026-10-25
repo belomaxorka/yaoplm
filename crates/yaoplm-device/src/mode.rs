@@ -1,4 +1,4 @@
-//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0044,
+//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0045,
 //! research/18).
 //!
 //! A folder on an internal disk can reach a PS2 only over the network, so

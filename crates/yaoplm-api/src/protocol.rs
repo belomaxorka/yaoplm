@@ -122,7 +122,7 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         overrides: Option<Vec<ProfileOverride>>,
-        /// Modes chosen per device, by the same key (ADR-0044); every
+        /// Modes chosen per device, by the same key (ADR-0045); every
         /// other device gets its place's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -144,7 +144,7 @@ pub enum Request {
         boot_from_device: Option<bool>,
         /// A mode for this request (the CLI's `--mode`); an override for the
         /// device still wins, as with `profile`. Absent: an override, else
-        /// the device's place (ADR-0044).
+        /// the device's place (ADR-0045).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -167,7 +167,7 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         verify: Option<bool>,
         /// How OPL reads the device (`DeviceInfo.mode`); absent: by its
-        /// place. Over SMB the fragment rule does not apply (ADR-0044).
+        /// place. Over SMB the fragment rule does not apply (ADR-0045).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
@@ -190,7 +190,7 @@ pub enum Request {
     },
     /// Plans creating the missing OPL folders (LIB-3). With `folder`, a
     /// folder of that name inside `root` with the OPL folders in it: a
-    /// library of its own for a whole system disk (ADR-0044).
+    /// library of its own for a whole system disk (ADR-0045).
     PlanInit {
         root: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -39,7 +39,7 @@ profile?: LoaderProfile,
  */
 overrides?: Array<ProfileOverride>, 
 /**
- * Modes chosen per device, by the same key (ADR-0044); every
+ * Modes chosen per device, by the same key (ADR-0045); every
  * other device gets its place's.
  */
 modeOverrides?: Array<ModeOverride>, } | { "type": "InspectDevice", root: string, 
@@ -54,7 +54,7 @@ bootFromDevice?: boolean,
 /**
  * A mode for this request (the CLI's `--mode`); an override for the
  * device still wins, as with `profile`. Absent: an override, else
- * the device's place (ADR-0044).
+ * the device's place (ADR-0045).
  */
 mode?: DeviceMode, 
 /**
@@ -72,7 +72,7 @@ profile?: LoaderProfile,
 verify?: boolean, 
 /**
  * How OPL reads the device (`DeviceInfo.mode`); absent: by its
- * place. Over SMB the fragment rule does not apply (ADR-0044).
+ * place. Over SMB the fragment rule does not apply (ADR-0045).
  */
 mode?: DeviceMode, } | { "type": "ImageInfo", path: string, profile?: LoaderProfile, } | { "type": "ListDir", path?: string, } | { "type": "PlanInit", root: string, folder?: string, } | { "type": "PlanImport", root: string, sources: Array<string>, profile?: LoaderProfile, nameStyle?: NameStyle, transfer?: Transfer, layout?: Layout, overrides?: Array<ImportOverride>, 
 /**

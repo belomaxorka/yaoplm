@@ -212,7 +212,7 @@ pub struct Detection {
     /// The profile comes from the loader's own files (its ELF, `title.cfg`,
     /// settings), not from `games.bin` or the images. In a folder read over
     /// SMB those files are only copies: the console runs the OPL on its
-    /// memory card or stick (research/18 §3, ADR-0044).
+    /// memory card or stick (research/18 §3, ADR-0045).
     pub by_loader_files: bool,
 }
 

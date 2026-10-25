@@ -30,7 +30,7 @@ import { smbStep } from "./smbStep";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
- * (LIB-1), how the PS2 reads it (ADR-0044) and the storage doctor's verdict
+ * (LIB-1), how the PS2 reads it (ADR-0045) and the storage doctor's verdict
  * for both. The server lists its roots.
  */
 export function DevicesPage() {
@@ -125,7 +125,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
-  // A folder read over SMB may sit on the system disk (ADR-0044): the badge
+  // A folder read over SMB may sit on the system disk (ADR-0045): the badge
   // is a fact there, not a verdict.
   const smb = device.mode.mode === "smb";
   // One main button: the folder's next step comes before opening it. A

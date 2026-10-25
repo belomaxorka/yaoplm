@@ -1,6 +1,6 @@
 # 18. Folders OPL reads over SMB
 
-What OPL and its forks do with a folder they read over the network, for the "folder for SMB" mode (NET-1, DEV-2, LIB-1; ADR-0044, `docs/plans/smb-folder-mode.md`). Format details are in research/02 (SMB row in §2, §3, `ul` parts); this note collects what the mode needs. Checked 2026-10-25 against:
+What OPL and its forks do with a folder they read over the network, for the "folder for SMB" mode (NET-1, DEV-2, LIB-1; ADR-0045, `docs/plans/smb-folder-mode.md`). Format details are in research/02 (SMB row in §2, §3, `ul` parts); this note collects what the mode needs. Checked 2026-10-25 against:
 - upstream OPL `ps2homebrew/Open-PS2-Loader` at `b3a21997` (2026-10-12);
 - YAOPL `belomaxorka/yaopl` at `33a2b19a` (2026-10-23);
 - RiptOPL `NathanNeurotic/RiptOPL`: C edition `main` at `04aa1369` (2026-09-17), C++ rebuild `rebuild/main` at `6edea174` (2026-10-20);

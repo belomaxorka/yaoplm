@@ -187,7 +187,7 @@ impl Api {
     }
 
     /// How OPL reads the device at `path`: the mode a front end sends, else
-    /// its place's (ADR-0044).
+    /// its place's (ADR-0045).
     fn mode_at(&self, path: &Path, mode: Option<DeviceMode>) -> yaoplm_device::DeviceMode {
         match mode {
             Some(mode) => mode.into(),
