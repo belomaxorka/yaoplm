@@ -120,8 +120,10 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const verdict = worstLevel(device.advice);
   const [installing, setInstalling] = useState(false);
   // No loader can work from a system disk, a read-only volume or a device
-  // OPL cannot use (§5.10.1): no install there.
-  const installable = !device.system && !device.readOnly && verdict !== "error";
+  // OPL cannot use (§5.10.1): no install there. A folder read over SMB needs
+  // none: the console starts OPL from its memory card or stick (ADR-0045).
+  const installable =
+    device.mode.mode === "ps2" && !device.system && !device.readOnly && verdict !== "error";
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.

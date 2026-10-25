@@ -105,6 +105,9 @@ test("a server folder is read over SMB and asked about its OPL (ADR-0045)", asyn
     .first();
   await expect(sources.getByTestId("smb-init")).toBeVisible();
   await expect(sources.getByTestId("loader-question")).toBeVisible();
+  // The console starts OPL from its memory card or stick: no install here.
+  await expect(card.getByTestId("device-install-loader")).toHaveCount(0);
+  await expect(sources.getByTestId("device-install-loader")).toHaveCount(0);
   await sources.getByTestId("smb-init-button").click();
   const plan = page.getByTestId("plan-dialog");
   await expect(plan).toContainText("CD");
@@ -141,7 +144,7 @@ test("the mode is switched per device and goes back to auto (ADR-0045)", async (
   // nothing is asked; the other roots keep their place's mode.
   const unusable = (await card.getAttribute("data-verdict")) === "error";
   await expect(card.getByTestId("loader-question")).toHaveCount(unusable ? 0 : 1);
-  await expect(page.locator('[data-testid="device-mode"][data-mode="smb"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="device-mode"][data-mode="smb"]')).toHaveCount(3);
 
   await page.goto("/library");
   const header = page.getByTestId("device-mode");

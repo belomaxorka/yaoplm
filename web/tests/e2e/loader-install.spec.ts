@@ -42,6 +42,16 @@ async function stickAsUsb(page: Page): Promise<void> {
         serial: null,
         partition: null,
         advice: [],
+        // A USB stick is plugged into the console (ADR-0045); empty, it is
+        // not asked about its OPL.
+        mode: {
+          mode: "ps2",
+          source: "detected",
+          detected: "ps2",
+          place: { key: "reasons.placeRemovable", params: {} },
+          placeText: "a removable device",
+        },
+        askProfile: false,
       });
     }
     await route.fulfill({ response, json });
