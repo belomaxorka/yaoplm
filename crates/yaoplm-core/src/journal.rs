@@ -137,9 +137,19 @@ pub fn save(fs: &dyn DeviceFs, journal: &Journal) -> io::Result<()> {
 
 pub fn remove(fs: &dyn DeviceFs, id: &str) -> io::Result<()> {
     match fs.remove_file(&path(id)?) {
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-        other => other,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        other => other?,
     }
+    // Nothing of YAOPLM's stays behind once the operation is done: a whole
+    // system disk shared over SMB must not keep `.yaoplm/` (ADR-0047). The
+    // folders go only when empty; backups and other journals keep them.
+    for dir in [JOURNAL_DIR, DATA_DIR] {
+        let dir = rel(dir)?;
+        if list_or_empty(fs, &dir)?.is_empty() && fs.metadata(&dir)?.is_some() {
+            let _ = fs.remove_dir(&dir);
+        }
+    }
+    Ok(())
 }
 
 /// Removes temporary files of journal writes that never completed (the

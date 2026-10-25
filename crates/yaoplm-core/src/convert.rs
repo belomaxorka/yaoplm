@@ -412,7 +412,7 @@ impl Planner<'_> {
                 Phrase::notice("cannotSplit").with("reason", reasons::text(&e)),
             )
         })?;
-        if self.state.info.remote && !ul_cfg::fits_smb(chunks.len()) {
+        if self.state.info.smb && !ul_cfg::fits_smb(chunks.len()) {
             return Err(skip(
                 what,
                 Phrase::notice("ulTooManyPartsForSmb").with("parts", chunks.len()),

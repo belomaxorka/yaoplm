@@ -574,7 +574,7 @@ fn space_smb_and_device_checks() {
 
     // Over SMB OPL opens at most 10 ul parts.
     sources.add_iso(src("Eleven.iso"), big_iso("SLUS_212.19", 10 * GIB + 4096));
-    let share = MemFs::new(FsKind::Ntfs).with_remote(true);
+    let share = MemFs::new(FsKind::Ntfs).with_smb(true);
     let ul = ImportOptions {
         layout: Layout::Ul,
         ..options()

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use yaoplm_i18n::Phrase;
 
+use crate::mode::DeviceMode;
 use crate::source::ReadSeek;
 use crate::volume::{FsKind, VolumeKind, volume_for_path};
 
@@ -173,8 +174,9 @@ pub struct FsInfo {
     pub free_bytes: u64,
     /// Allocation unit; 4 KiB when the OS does not say.
     pub cluster_size: u32,
-    /// A network share: OPL's SMB limits apply.
-    pub remote: bool,
+    /// OPL reads the device over SMB (a network share, or a folder in SMB
+    /// mode, ADR-0047): SMB's limits apply, BDM's fragment rule does not.
+    pub smb: bool,
     /// Changes when the stick is swapped or reformatted ([`crate::Volume::fingerprint`]).
     pub fingerprint: String,
 }
@@ -265,6 +267,9 @@ pub fn write_atomic(fs: &dyn DeviceFs, path: &RelPath, bytes: &[u8]) -> io::Resu
 #[derive(Debug, Clone)]
 pub struct HostFs {
     root: PathBuf,
+    /// The device's mode when the front end knows it; else a network share
+    /// counts as SMB.
+    smb: Option<bool>,
 }
 
 struct HostFile(File);
@@ -312,7 +317,14 @@ impl HostFs {
                 format!("{} is not a folder", root.display()),
             ));
         }
-        Ok(Self { root })
+        Ok(Self { root, smb: None })
+    }
+
+    /// The same root as OPL reads it in `mode` (ADR-0047).
+    #[must_use]
+    pub fn with_mode(mut self, mode: DeviceMode) -> Self {
+        self.smb = Some(mode == DeviceMode::Smb);
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -358,7 +370,7 @@ impl DeviceFs for HostFs {
             kind: volume.fs,
             free_bytes: volume.free_bytes,
             cluster_size: volume.cluster_size.unwrap_or(4096),
-            remote: volume.kind == VolumeKind::Remote,
+            smb: self.smb.unwrap_or(volume.kind == VolumeKind::Remote),
             fingerprint: volume.fingerprint(),
         })
     }

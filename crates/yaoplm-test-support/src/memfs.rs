@@ -192,7 +192,7 @@ impl MemFs {
                     kind,
                     free_bytes: 64 << 30,
                     cluster_size: 32 * 1024,
-                    remote: false,
+                    smb: false,
                     fingerprint: "MEM-0001".into(),
                 },
                 unplugged: false,
@@ -214,8 +214,8 @@ impl MemFs {
         self
     }
 
-    pub fn with_remote(self, remote: bool) -> Self {
-        self.lock().info.remote = remote;
+    pub fn with_smb(self, smb: bool) -> Self {
+        self.lock().info.smb = smb;
         self
     }
 

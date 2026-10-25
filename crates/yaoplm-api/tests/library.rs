@@ -41,6 +41,7 @@ fn scan(api: &Api, root: PathBuf) -> Result<Value, ApiError> {
         root: text(root),
         profile: None,
         verify: None,
+        mode: None,
     })?
     else {
         panic!("ScanLibrary answers with a job");

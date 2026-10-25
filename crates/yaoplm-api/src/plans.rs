@@ -372,6 +372,9 @@ impl PlanView {
 pub struct StoredPlan {
     pub plan: core::Plan,
     pub root: PathBuf,
+    /// The device's mode the plan was made for; `None`: its place's
+    /// (ADR-0047).
+    pub mode: Option<yaoplm_device::DeviceMode>,
     created: Instant,
 }
 
@@ -409,6 +412,16 @@ impl PlanStore {
 
     /// Keeps `plan` and returns its view.
     pub fn insert(&self, root: PathBuf, plan: core::Plan) -> PlanView {
+        self.insert_in(root, None, plan)
+    }
+
+    /// Keeps `plan`, made for the device in `mode`.
+    pub fn insert_in(
+        &self,
+        root: PathBuf,
+        mode: Option<yaoplm_device::DeviceMode>,
+        plan: core::Plan,
+    ) -> PlanView {
         let id = yaoplm_core::journal::new_id();
         let view = PlanView::new(id.clone(), &root, &plan);
         let mut plans = self.lock();
@@ -428,6 +441,7 @@ impl PlanStore {
             StoredPlan {
                 plan,
                 root,
+                mode,
                 created: Instant::now(),
             },
         );

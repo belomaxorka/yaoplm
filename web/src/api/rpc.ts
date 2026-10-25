@@ -2,6 +2,7 @@ import type { ArtCacheInfo } from "@/api/generated/ArtCacheInfo";
 import type { Attribution } from "@/api/generated/Attribution";
 import type { CfgView } from "@/api/generated/CfgView";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { DeviceMode } from "@/api/generated/DeviceMode";
 import type { DirListing } from "@/api/generated/DirListing";
 import type { GameRef } from "@/api/generated/GameRef";
 import type { JobId } from "@/api/generated/JobId";
@@ -15,6 +16,7 @@ import type { LoaderImpact } from "@/api/generated/LoaderImpact";
 import type { LoaderOffer } from "@/api/generated/LoaderOffer";
 import type { LoaderReleaseList } from "@/api/generated/LoaderReleaseList";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
+import type { ModeOverride } from "@/api/generated/ModeOverride";
 import type { PlanView } from "@/api/generated/PlanView";
 import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import type { RedumpInfo } from "@/api/generated/RedumpInfo";
@@ -24,16 +26,20 @@ import { call, RpcError, type Transport } from "@/api/transport";
 
 /** Typed wrappers over `call`; every screen goes through these. */
 
-/** The profiles chosen per device; every other device is read (LIB-1, ADR-0040). */
-export interface ProfileChoice {
+/**
+ * The profiles and modes chosen per device; every other device is read
+ * (LIB-1, ADR-0040) and gets its place's mode (ADR-0047).
+ */
+export interface DeviceChoice {
   overrides: ProfileOverride[];
+  modeOverrides: ModeOverride[];
 }
 
-export function listDevices(transport: Transport, choice: ProfileChoice): Promise<DeviceInfo[]> {
+export function listDevices(transport: Transport, choice: DeviceChoice): Promise<DeviceInfo[]> {
   return call(transport, { type: "ListDevices", ...choice }, "Devices").then((r) => r.devices);
 }
 
-export async function inspectDevice(transport: Transport, root: string, choice: ProfileChoice): Promise<DeviceInfo> {
+export async function inspectDevice(transport: Transport, root: string, choice: DeviceChoice): Promise<DeviceInfo> {
   const { type: _type, ...device } = await call(transport, { type: "InspectDevice", root, ...choice }, "Device");
   return device;
 }
@@ -252,10 +258,12 @@ export async function scanLibrary(
   transport: Transport,
   root: string,
   profile: LoaderProfile,
+  mode: DeviceMode | null,
   verify: boolean,
   signal?: AbortSignal,
 ): Promise<Library> {
-  const { job } = await call(transport, { type: "ScanLibrary", root, profile, verify }, "Job");
+  const request: Request = { type: "ScanLibrary", root, profile, verify, ...(mode ? { mode } : {}) };
+  const { job } = await call(transport, request, "Job");
   const stop = () => void cancelJob(transport, job).catch(() => undefined);
   if (signal?.aborted) stop();
   signal?.addEventListener("abort", stop, { once: true });
