@@ -189,7 +189,8 @@
     "loaderForeignFile": "В {{path}} лежит другая программа ({{size, bytes}}, SHA-256 {{sha256}}). Она заменяется, только если вы подтвердите; резервная копия останется",
     "starterSettingsMx4sio": "Стартовые настройки для MX4SIO не пишутся: OPL не прочитает их, пока MX4SIO не включён в его настройках",
     "starterSettingsCard": "OPL прочитает этот файл, только если на карте памяти нет своего conf_opl.cfg",
-    "loaderNothingToDo": "Всё уже на месте"
+    "loaderNothingToDo": "Всё уже на месте",
+    "loaderNoBackup": "Резервной копии {{path}} нет: возвращать нечего"
   },
   "library": {
     "title": "Библиотека",
@@ -696,6 +697,35 @@
       "fork": "О форке"
     }
   },
+  "loaderUpdate": {
+    "title": "Обновление загрузчика",
+    "availableTitle": "Доступно обновление",
+    "description": "{{build}} в {{path}} на {{root}}",
+    "to": "до",
+    "notRead": "Сведения о релизе ещё не загружены: нажмите «Проверить обновления» на карточке носителя.",
+    "checked": "проверено {{date}}",
+    "lastCheck": "Последняя проверка: {{date}}",
+    "compare": "Что изменилось с вашей версии",
+    "whatChanges": "Заменяется только {{path}}; игры, обложки и настройки остаются. Текущий файл сохранится в резервной копии.",
+    "whatChangesWithLanguage": "Заменяются только {{path}} и язык меню ({{language}}); игры, обложки и настройки остаются. Текущий файл сохранится в резервной копии.",
+    "notNow": "Не сейчас",
+    "update": "Обновить",
+    "versionUnknown": "версия неизвестна",
+    "current": "Актуально",
+    "available": "Обновление: {{version}}",
+    "manifestStale": "Заменён без YAOPLM: программа ставила сюда другую сборку",
+    "knownBy": {
+      "manifest": "Установлен YAOPLM",
+      "checksum": "Опознан по контрольной сумме официального выпуска",
+      "version": "Опознан по версии внутри файла",
+      "name": "Опознан только по имени: сборка неизвестна"
+    },
+    "updateTo": "Обновить до {{version}}",
+    "check": "Проверить обновления",
+    "rollbackTo": "Вернуть {{version}}",
+    "rollbackFile": "Вернуть прежний файл",
+    "newest": "Это самая новая сборка своего канала"
+  },
   "devices": {
     "intro": "Тома и папки, каждый проверен под загрузчик, для которого он подготовлен. Откройте том или папку, чтобы увидеть игры.",
     "showAll": "Показывать все тома",
@@ -742,7 +772,8 @@
     },
     "open": "Открыть библиотеку",
     "changeDevice": "Сменить носитель",
-    "installLoader": "Установить загрузчик…"
+    "installLoader": "Установить загрузчик…",
+    "reinstallLoader": "Переустановить загрузчик…"
   },
   "settings": {
     "library": "Библиотека",
@@ -836,7 +867,9 @@
     "loaders": "Загрузчики",
     "loadersDescription": "Откуда берутся сборки OPL для установки.",
     "loaderMirror": "Зеркало релизов",
-    "loaderMirrorHint": "Папка со структурой релизов GitHub — для установки без сети; пусто — GitHub"
+    "loaderMirrorHint": "Папка со структурой релизов GitHub — для установки без сети; пусто — GitHub",
+    "offerLoaderUpdates": "Предлагать обновления загрузчика автоматически",
+    "offerLoaderUpdatesHint": "Если у загрузчика на носителе есть более новая сборка того же канала, окно «Доступно обновление» откроется один раз для этого носителя и сборки. О новых сборках YAOPLM узнаёт только по «Проверить обновления»."
   },
   "languages": {
     "en": "English",
@@ -1005,7 +1038,10 @@
     "installLoaderAt": "{{build}} в {{path}}",
     "installLanguage": "Язык меню OPL: {{language}}",
     "writeManifest": "Запомнить установленный загрузчик",
-    "writeStarterSettings": "Стартовые настройки в conf_opl.cfg"
+    "writeStarterSettings": "Стартовые настройки в conf_opl.cfg",
+    "updateLoader": "Обновление {{build}} до {{version}}",
+    "rollbackLoader": "Откат загрузчика в {{path}}",
+    "restoreLoader": "Вернуть {{backup}} на место {{path}}"
   },
   "errors": {
     "planBlocked": "План нельзя выполнить. {{reason}}",
@@ -1119,7 +1155,8 @@
     "loaderUnknownPreset": "У этой сборки нет места установки {{preset}}",
     "loaderPresetNotForDevice": "{{preset}} не подходит для этого носителя",
     "loaderLanguagesNotStored": "Языковой пакет {{build}} ещё не скачан",
-    "loaderNoLanguages": "В релизе {{build}} нет языкового пакета"
+    "loaderNoLanguages": "В релизе {{build}} нет языкового пакета",
+    "loaderNotInstalled": "В {{path}} нет загрузчика, который знает YAOPLM"
   },
   "reasons": {
     "appBadBoot": "в boot должно быть просто имя ELF-файла, а не {{boot}}",

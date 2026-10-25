@@ -8,6 +8,7 @@ import { useNavigate } from "react-router";
 
 import { useApi } from "@/api/context";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { InstalledLoader } from "@/api/generated/InstalledLoader";
 import { listDevices } from "@/api/rpc";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeIcon, NoticeList } from "@/components/Notices";
@@ -18,7 +19,9 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { pickFolder } from "@/features/add/desktop";
+import { InstalledLoaderRow } from "@/features/loaders/InstalledLoader";
 import { InstallLoaderDialog } from "@/features/loaders/InstallLoaderDialog";
+import { UpdateLoaderDialog } from "@/features/loaders/UpdateLoaderDialog";
 import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
@@ -45,6 +48,12 @@ export function DevicesPage() {
     queryFn: () => listDevices(transport, choice),
   });
   const shown = (devices.data ?? []).filter((d) => showAll || (d.external && !d.system));
+  // "Update available" opens by itself once per device and installed build
+  // (SPEC §5.10.1); whatever closes it counts as "Not now". Once open it
+  // stays until closed, while the update it starts changes the list.
+  const pending = settings.offerLoaderUpdates ? pendingOffer(shown, settings.loaderUpdatesOffered) : undefined;
+  const [offer, setOffer] = useState<Offer | null>(null);
+  if (offer === null && pending) setOffer(pending);
 
   const open = (root: string) => {
     update({ root });
@@ -107,8 +116,44 @@ export function DevicesPage() {
           ))}
         </ul>
       </div>
+      {offer && (
+        <UpdateLoaderDialog
+          key={offer.key}
+          device={offer.device}
+          loader={offer.loader}
+          offered
+          open
+          onOpenChange={(next) => {
+            if (next) return;
+            update({ loaderUpdatesOffered: [...settings.loaderUpdatesOffered, offer.key].slice(-100) });
+            setOffer(null);
+          }}
+        />
+      )}
     </PageScroll>
   );
+}
+
+/** No loader can work from a system disk, a read-only volume or a device OPL cannot use (§5.10.1). */
+function installable(device: DeviceInfo): boolean {
+  return !device.system && !device.readOnly && worstLevel(device.advice) !== "error";
+}
+
+interface Offer {
+  key: string;
+  device: DeviceInfo;
+  loader: InstalledLoader;
+}
+
+/** The first update on these devices not offered yet. */
+function pendingOffer(devices: readonly DeviceInfo[], offered: readonly string[]): Offer | undefined {
+  for (const device of devices.filter(installable)) {
+    for (const loader of device.installed) {
+      const key = `${device.loader.key}|${loader.sha256}`;
+      if (loader.freshness === "update" && !offered.includes(key)) return { key, device, loader };
+    }
+  }
+  return undefined;
 }
 
 function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: boolean; onOpen: () => void }) {
@@ -116,9 +161,8 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
   const [installing, setInstalling] = useState(false);
-  // No loader can work from a system disk, a read-only volume or a device
-  // OPL cannot use (§5.10.1): no install there.
-  const installable = !device.system && !device.readOnly && verdict !== "error";
+  const canInstall = installable(device);
+  const known = device.installed.find((l) => l.build !== null);
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.
@@ -154,6 +198,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           </div>
           <LoaderProfileLine loader={device.loader} className="mt-2 text-sm" />
           <LoaderProfileHint loader={device.loader} usable={verdict !== "error"} className="mt-2" />
+          {device.installed.map((loader) => (
+            <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
+          ))}
           {!simple && (
             <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {device.model && (
@@ -205,16 +252,23 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <Button onClick={onOpen} variant={verdict === "error" ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
-          {installable && (
+          {canInstall && (
             <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
               <Cpu aria-hidden />
-              {t("devices.installLoader")}
+              {device.installed.length > 0 ? t("devices.reinstallLoader") : t("devices.installLoader")}
             </Button>
           )}
         </div>
       </div>
       {advice.length > 0 && <NoticeList notices={advice} className="mt-3 border-t pt-3" />}
-      {installable && <InstallLoaderDialog device={device} open={installing} onOpenChange={setInstalling} />}
+      {canInstall && (
+        <InstallLoaderDialog
+          device={device}
+          open={installing}
+          onOpenChange={setInstalling}
+          initial={known ? { build: known.build, preset: known.preset } : undefined}
+        />
+      )}
     </li>
   );
 }

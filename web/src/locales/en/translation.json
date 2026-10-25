@@ -185,7 +185,8 @@
     "loaderForeignFile": "{{path}} holds another program ({{size, bytes}}, SHA-256 {{sha256}}). It is replaced only if you say so; a backup is kept",
     "starterSettingsMx4sio": "No starter settings for MX4SIO: OPL does not read them there until MX4SIO is turned on in its settings",
     "starterSettingsCard": "OPL reads this file only while the memory card holds no conf_opl.cfg of its own",
-    "loaderNothingToDo": "Everything is in place already"
+    "loaderNothingToDo": "Everything is in place already",
+    "loaderNoBackup": "There is no backup of {{path}} to put back"
   },
   "library": {
     "title": "Library",
@@ -668,6 +669,35 @@
       "fork": "About the fork"
     }
   },
+  "loaderUpdate": {
+    "title": "Update the loader",
+    "availableTitle": "Update available",
+    "description": "{{build}} in {{path}} on {{root}}",
+    "to": "to",
+    "notRead": "The release has not been read yet: use “Check for updates” on the device card.",
+    "checked": "checked {{date}}",
+    "lastCheck": "Last checked {{date}}",
+    "compare": "What changed since your version",
+    "whatChanges": "Only {{path}} is replaced; games, covers and settings stay. The current file is kept as a backup.",
+    "whatChangesWithLanguage": "Only {{path}} and the {{language}} menu language are replaced; games, covers and settings stay. The current file is kept as a backup.",
+    "notNow": "Not now",
+    "update": "Update",
+    "versionUnknown": "version unknown",
+    "current": "Up to date",
+    "available": "Update: {{version}}",
+    "manifestStale": "Replaced without YAOPLM: it installed another build here",
+    "knownBy": {
+      "manifest": "Installed by YAOPLM",
+      "checksum": "Known by the checksum of an official release",
+      "version": "Known by the version inside the file",
+      "name": "Known only by its name: the build is unknown"
+    },
+    "updateTo": "Update to {{version}}",
+    "check": "Check for updates",
+    "rollbackTo": "Put back {{version}}",
+    "rollbackFile": "Put back the previous file",
+    "newest": "This is the newest build of its channel"
+  },
   "devices": {
     "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
     "showAll": "Show all volumes",
@@ -714,7 +744,8 @@
     },
     "open": "Open library",
     "changeDevice": "Change device",
-    "installLoader": "Install loader…"
+    "installLoader": "Install loader…",
+    "reinstallLoader": "Reinstall loader…"
   },
   "settings": {
     "library": "Library",
@@ -806,7 +837,9 @@
     "loaders": "Loaders",
     "loadersDescription": "Where OPL builds for installing come from.",
     "loaderMirror": "Release mirror",
-    "loaderMirrorHint": "A folder with GitHub’s release layout, for installing without the network; empty: GitHub"
+    "loaderMirrorHint": "A folder with GitHub’s release layout, for installing without the network; empty: GitHub",
+    "offerLoaderUpdates": "Offer loader updates by themselves",
+    "offerLoaderUpdatesHint": "When a device’s loader has a newer build of its channel, “Update available” opens once for that device and build. YAOPLM learns of new builds only on “Check for updates”."
   },
   "languages": {
     "en": "English",
@@ -957,7 +990,10 @@
     "installLoaderAt": "Put {{build}} in {{path}}",
     "installLanguage": "OPL menu language: {{language}}",
     "writeManifest": "Remember the installed loader",
-    "writeStarterSettings": "Starter settings in conf_opl.cfg"
+    "writeStarterSettings": "Starter settings in conf_opl.cfg",
+    "updateLoader": "Update {{build}} to {{version}}",
+    "rollbackLoader": "Roll back the loader in {{path}}",
+    "restoreLoader": "Put {{backup}} back as {{path}}"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
@@ -1071,7 +1107,8 @@
     "loaderUnknownPreset": "No place called {{preset}} for this build",
     "loaderPresetNotForDevice": "{{preset}} does not fit this device",
     "loaderLanguagesNotStored": "The language pack of {{build}} is not downloaded yet",
-    "loaderNoLanguages": "The release of {{build}} has no language pack"
+    "loaderNoLanguages": "The release of {{build}} has no language pack",
+    "loaderNotInstalled": "No loader YAOPLM knows is at {{path}}"
   },
   "reasons": {
     "appBadBoot": "boot must be a plain ELF file name, not {{boot}}",

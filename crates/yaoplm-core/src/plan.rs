@@ -471,6 +471,10 @@ pub enum PlanKind {
     Vmc,
     /// A loader build put on the device (LDR-3).
     InstallLoader,
+    /// A newer build of the installed loader's channel (LDR-4).
+    UpdateLoader,
+    /// The newest backup of a loader's path put back (LDR-4).
+    RollbackLoader,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

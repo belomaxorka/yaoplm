@@ -1379,3 +1379,114 @@ fn loader_install_writes_through_a_plan_and_says_how_to_start_it() {
     );
     assert!(!text.contains("FreeMcBoot"), "{text}");
 }
+
+#[test]
+fn loader_update_and_rollback_through_plans() {
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    let releases = ReleaseMirror::new(&mirror);
+    releases.official().unwrap();
+    let data = dir.path().join("data");
+    let stick = dir.path().join("stick");
+    std::fs::create_dir_all(&stick).unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let (m, at) = (mirror.as_os_str(), stick.as_os_str());
+    let ok = |out: &std::process::Output| {
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            stdout(out),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout(out).to_owned()
+    };
+    // Nothing to update yet.
+    let none = cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+    ]);
+    assert!(!none.status.success());
+    assert!(String::from_utf8_lossy(&none.stderr).contains("no loader YAOPLM knows"));
+
+    ok(&cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        at,
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("Installed:  opl-beta v1.2.0-Beta-2271-b3a2199 at UPDT/OPL.ELF (installed by YAOPLM); up to date"),
+        "{text}"
+    );
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+    ]));
+    assert!(
+        text.contains("is the newest build of its channel"),
+        "{text}"
+    );
+
+    releases
+        .beta("v1.2.0-Beta-2280-0123abc", "2026-10-20")
+        .unwrap();
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "update".as_ref(),
+        at,
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Update OPL 1.2.0 beta to v1.2.0-Beta-2280-0123abc"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.2.0-Beta-2280-0123abc")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("v1.2.0-Beta-2280-0123abc at UPDT/OPL.ELF (installed by YAOPLM); up to date; backup v1.2.0-Beta-2271-b3a2199: `yaoplm loader rollback`"),
+        "{text}"
+    );
+
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "rollback".as_ref(),
+        at,
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Roll back the loader in UPDT/OPL.ELF"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.2.0-Beta-2271-b3a2199")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("update to v1.2.0-Beta-2280-0123abc: `yaoplm loader update`"),
+        "{text}"
+    );
+}

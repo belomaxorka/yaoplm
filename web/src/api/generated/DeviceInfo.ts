@@ -3,6 +3,7 @@ import type { ActiveProfile } from "./ActiveProfile";
 import type { DriveBus } from "./DriveBus";
 import type { DriveKind } from "./DriveKind";
 import type { FileSystem } from "./FileSystem";
+import type { InstalledLoader } from "./InstalledLoader";
 import type { Partition } from "./Partition";
 import type { PlanNotice } from "./PlanNotice";
 
@@ -34,4 +35,9 @@ unfinished: Array<string>,
  * The loader profile in force and why (LIB-1); the doctor's verdict
  * above is for this profile.
  */
-loader: ActiveProfile, };
+loader: ActiveProfile, 
+/**
+ * The loaders on the device as the catalogue knows them, with what
+ * YAOPLM knows of newer builds, without the network (LDR-4).
+ */
+installed: Array<InstalledLoader>, };

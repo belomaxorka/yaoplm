@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use yaoplm_core::Phrase as Said;
 use yaoplm_core::detect;
 use yaoplm_core::loaders::install::{self, ElfFile, InstallRequest, InstallTarget};
+use yaoplm_core::loaders::installed;
 use yaoplm_core::loaders::release::{self, ChecksumSource, FileOffer, Offer, Release};
+use yaoplm_core::loaders::rollback;
 use yaoplm_core::loaders::{
     self, Build, Catalog, DocKind, Launcher, LoaderError, Publisher, Target, boot, download,
     languages, local,
@@ -907,16 +909,17 @@ pub(crate) struct InstallParams {
     pub replace_foreign: bool,
 }
 
-/// Plans installing a stored ELF on `fs` (LDR-3).
-pub(crate) fn plan_install(
-    net: &Net,
-    fs: &dyn DeviceFs,
-    params: &InstallParams,
-) -> Result<Plan, ApiError> {
-    let store = net.loader_store();
-    let (catalog, _, _) = effective(&store)?;
-    let build = found(&catalog, &params.build)?;
-    let sha = params.sha256.to_ascii_lowercase();
+/// The build, the stored ELF and the language files an install of
+/// `sha256` takes: the ELF must be a build of `build_id`.
+fn prepare(
+    store: &LoaderStore,
+    catalog: &Catalog,
+    build_id: &str,
+    sha256: &str,
+    language: Option<&str>,
+) -> Result<PreparedElf, ApiError> {
+    let build = found(catalog, build_id)?;
+    let sha = sha256.to_ascii_lowercase();
     let not_stored = || {
         ApiError::phrased(
             ErrorCode::NotFound,
@@ -934,7 +937,7 @@ pub(crate) fn plan_install(
         .elf_file(&sha)
         .map_err(|e| net_error(ErrorCode::Internal, &e))?;
     let meta = HostSources.metadata(&path).map_err(|_| not_stored())?;
-    let language = match &params.language {
+    let language = match language {
         None => None,
         Some(name) => {
             let pack = record.languages.as_ref().ok_or_else(|| {
@@ -949,20 +952,57 @@ pub(crate) fn plan_install(
                 .ok_or_else(not_stored)?;
             let files = languages::files(&pack.file, &bytes, name)
                 .map_err(|e| loader_error(ErrorCode::BadRequest, &e))?;
-            Some((name.clone(), files))
+            Some((name.to_owned(), files))
         }
     };
+    let elf = ElfFile {
+        path,
+        sha256: sha.clone(),
+        len: meta.len,
+        modified: meta.modified,
+        version: record.version.clone(),
+        tag: record.tag.clone(),
+        source: record.source.clone(),
+    };
+    Ok(PreparedElf {
+        build,
+        elf,
+        language,
+    })
+}
+
+struct PreparedElf {
+    build: Build,
+    elf: ElfFile,
+    language: Option<(String, Vec<languages::LanguageFile>)>,
+}
+
+fn now() -> i64 {
+    i64::try_from(now_secs()).unwrap_or_default()
+}
+
+/// Plans installing a stored ELF on `fs` (LDR-3).
+pub(crate) fn plan_install(
+    net: &Net,
+    fs: &dyn DeviceFs,
+    params: &InstallParams,
+) -> Result<Plan, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    let PreparedElf {
+        build,
+        elf,
+        language,
+    } = prepare(
+        &store,
+        &catalog,
+        &params.build,
+        &params.sha256,
+        params.language.as_deref(),
+    )?;
     let request = InstallRequest {
         build: &build,
-        elf: ElfFile {
-            path,
-            sha256: sha.clone(),
-            len: meta.len,
-            modified: meta.modified,
-            version: record.version.clone(),
-            tag: record.tag.clone(),
-            source: record.source.clone(),
-        },
+        elf,
         targets: targets(
             &build,
             &params.presets,
@@ -976,9 +1016,151 @@ pub(crate) fn plan_install(
         language,
         starter_settings: params.starter_settings,
         replace_foreign: params.replace_foreign,
-        now: i64::try_from(now_secs()).unwrap_or_default(),
+        update: false,
+        now: now(),
     };
     install::plan_install(fs, &request).map_err(crate::io_error)
+}
+
+/// The loaders on `fs` as the catalogue in force knows them (LDR-4).
+fn installed_on(
+    fs: &dyn DeviceFs,
+    catalog: &Catalog,
+) -> Result<Vec<installed::Installed>, ApiError> {
+    let detection = detect::detect_profile(fs).map_err(io_error)?;
+    installed::installed(fs, &detection, catalog).map_err(io_error)
+}
+
+fn not_installed(path: &str) -> ApiError {
+    ApiError::phrased(
+        ErrorCode::NotFound,
+        &Said::error("loaderNotInstalled").with("path", path),
+    )
+}
+
+/// Plans updating the build at `path` to the stored ELF `sha256`, a newer
+/// build of the same channel (LDR-4): only the ELF, its language pack and
+/// the manifest change, the old ELF is kept as a backup.
+pub(crate) fn plan_update(
+    net: &Net,
+    fs: &dyn DeviceFs,
+    path: &str,
+    sha256: &str,
+) -> Result<Plan, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    let found = installed_on(fs, &catalog)?;
+    let current = found
+        .iter()
+        .find(|l| l.path.eq_ignore_ascii_case(path.trim_start_matches('/')))
+        .ok_or_else(|| not_installed(path))?;
+    let build_id = current
+        .build
+        .as_deref()
+        .ok_or_else(|| not_installed(path))?;
+    let entry = current.entry.as_ref();
+    let PreparedElf {
+        build,
+        elf,
+        language,
+    } = prepare(
+        &store,
+        &catalog,
+        build_id,
+        sha256,
+        entry.and_then(|e| e.language.as_deref()),
+    )?;
+    let device = match entry.map(|e| e.device.as_str()) {
+        Some("mx4sio") => Target::Mx4sio,
+        _ => Target::Usb,
+    };
+    let request = InstallRequest {
+        build: &build,
+        elf,
+        targets: vec![InstallTarget {
+            path: current.path.clone(),
+            preset: entry.and_then(|e| e.preset.clone()),
+            title: None,
+        }],
+        device,
+        language,
+        starter_settings: false,
+        replace_foreign: false,
+        update: true,
+        now: now(),
+    };
+    install::plan_install(fs, &request).map_err(crate::io_error)
+}
+
+/// Plans putting back the newest backup of the loader at `path` (LDR-4).
+pub(crate) fn plan_rollback(net: &Net, fs: &dyn DeviceFs, path: &str) -> Result<Plan, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    rollback::plan_rollback(fs, path.trim_start_matches('/'), &catalog, now()).map_err(io_error)
+}
+
+/// The newest release of a build's channel YAOPLM read, from the store
+/// alone, and when it was read (Unix seconds).
+fn cached_offer(store: &LoaderStore, build: &Build) -> Option<(Offer, Option<u64>)> {
+    let (json, _) = store
+        .cached_release(&build.repo, &build.channel.tag)
+        .ok()??;
+    let release = Release::parse(&json).ok()?;
+    let offer = release::offer(build, &release, None).ok()?;
+    Some((
+        offer,
+        store.release_checked_at(&build.repo, &build.channel.tag),
+    ))
+}
+
+/// What the "Update available" window shows, without the network (LDR-4,
+/// SPEC §5.10.1): the release as it was last read.
+pub(crate) fn cached_release(
+    store: &LoaderStore,
+    id: &str,
+) -> Result<Option<LoaderOffer>, ApiError> {
+    let (catalog, _, _) = effective(store)?;
+    let build = found(&catalog, id)?;
+    Ok(cached_offer(store, &build).map(|(offer, _)| {
+        let stored = stored_from(store, &offer);
+        offer_view(&build, &offer, false, stored.as_ref())
+    }))
+}
+
+/// The newest version of a channel YAOPLM read, and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Latest {
+    pub version: String,
+    /// Unix seconds.
+    pub checked_at: Option<u64>,
+}
+
+/// What the device cards need about loaders, read once per device list:
+/// the catalogue in force and the newest version of each channel from the
+/// store. Nothing here goes to the network (SPEC §5.10.1).
+#[derive(Debug, Clone)]
+pub struct LoaderContext {
+    pub catalog: Catalog,
+    pub latest: BTreeMap<String, Latest>,
+}
+
+pub(crate) fn context(store: &LoaderStore) -> Option<LoaderContext> {
+    let (catalog, _, _) = effective(store).ok()?;
+    let latest = catalog
+        .builds
+        .iter()
+        .filter_map(|build| {
+            let (offer, checked_at) = cached_offer(store, build)?;
+            Some((
+                build.id.clone(),
+                Latest {
+                    version: offer.version,
+                    checked_at,
+                },
+            ))
+        })
+        .collect();
+    Some(LoaderContext { catalog, latest })
 }
 
 /// How the console starts `build` at the places a request names (BOOT-1).

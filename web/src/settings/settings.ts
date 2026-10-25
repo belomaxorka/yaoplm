@@ -60,6 +60,10 @@ export interface Settings {
   screenscraper: ScreenScraperAccount;
   /** A folder with GitHub's layout for loader releases (tests, offline use); empty: GitHub. */
   loaderMirror: string;
+  /** Show "Update available" when a device's loader has a newer build in the cache (LDR-4). */
+  offerLoaderUpdates: boolean;
+  /** `<device key>|<installed SHA-256>` pairs already offered: "Not now" holds per pair. */
+  loaderUpdatesOffered: string[];
 }
 
 export const defaultSettings: Settings = {
@@ -80,6 +84,8 @@ export const defaultSettings: Settings = {
   },
   screenscraper: { user: "", password: "" },
   loaderMirror: "",
+  offerLoaderUpdates: true,
+  loaderUpdatesOffered: [],
 };
 
 const STORAGE_KEY = "yaoplm.settings";
@@ -160,6 +166,11 @@ export function readSettings(): Settings {
       artSources: readArtSources(p.artSources),
       screenscraper: readAccount(p.screenscraper),
       loaderMirror: typeof p.loaderMirror === "string" ? p.loaderMirror : "",
+      offerLoaderUpdates:
+        typeof p.offerLoaderUpdates === "boolean" ? p.offerLoaderUpdates : defaultSettings.offerLoaderUpdates,
+      loaderUpdatesOffered: Array.isArray(p.loaderUpdatesOffered)
+        ? p.loaderUpdatesOffered.filter((k): k is string => typeof k === "string")
+        : [],
     };
   } catch {
     return defaultSettings;

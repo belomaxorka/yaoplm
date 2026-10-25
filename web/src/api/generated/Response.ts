@@ -10,6 +10,7 @@ import type { JobInfo } from "./JobInfo";
 import type { LoaderBootHint } from "./LoaderBootHint";
 import type { LoaderCatalog } from "./LoaderCatalog";
 import type { LoaderFile } from "./LoaderFile";
+import type { LoaderOffer } from "./LoaderOffer";
 import type { PlanView } from "./PlanView";
 import type { RedumpInfo } from "./RedumpInfo";
 import type { VmcCard } from "./VmcCard";
@@ -17,4 +18,4 @@ import type { VmcCard } from "./VmcCard";
 /**
  * The successful answer to a [`Request`].
  */
-export type Response = { "type": "Pong" } | { "type": "Version", name: string, version: string, } | { "type": "Ack" } | { "type": "Devices", devices: Array<DeviceInfo>, } | { "type": "Device" } & DeviceInfo | { "type": "ImageInfo" } & ImageDetails | { "type": "Dir" } & DirListing | { "type": "Plan" } & PlanView | { "type": "Job", job: JobId, } | { "type": "JobState" } & JobInfo | { "type": "Jobs", jobs: Array<JobInfo>, } | { "type": "Attribution" } & Attribution | { "type": "ArtCache" } & ArtCacheInfo | { "type": "Redump", dat: RedumpInfo | null, } | { "type": "Cfg" } & CfgView | { "type": "Vmcs", cards: Array<VmcCard>, } | { "type": "LoaderCatalog" } & LoaderCatalog | { "type": "LoaderFiles", files: Array<LoaderFile>, } | { "type": "LoaderLanguages", languages: Array<string>, } | { "type": "LoaderBootHints", hints: Array<LoaderBootHint>, };
+export type Response = { "type": "Pong" } | { "type": "Version", name: string, version: string, } | { "type": "Ack" } | { "type": "Devices", devices: Array<DeviceInfo>, } | { "type": "Device" } & DeviceInfo | { "type": "ImageInfo" } & ImageDetails | { "type": "Dir" } & DirListing | { "type": "Plan" } & PlanView | { "type": "Job", job: JobId, } | { "type": "JobState" } & JobInfo | { "type": "Jobs", jobs: Array<JobInfo>, } | { "type": "Attribution" } & Attribution | { "type": "ArtCache" } & ArtCacheInfo | { "type": "Redump", dat: RedumpInfo | null, } | { "type": "Cfg" } & CfgView | { "type": "Vmcs", cards: Array<VmcCard>, } | { "type": "LoaderCatalog" } & LoaderCatalog | { "type": "LoaderFiles", files: Array<LoaderFile>, } | { "type": "LoaderLanguages", languages: Array<string>, } | { "type": "LoaderBootHints", hints: Array<LoaderBootHint>, } | { "type": "CachedLoaderRelease", offer: LoaderOffer | null, };
