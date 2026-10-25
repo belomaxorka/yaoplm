@@ -24,6 +24,7 @@
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -345,8 +346,15 @@ impl RedumpStore {
 /// Writes `<path>.part`, syncs it and renames it over `path`: after a crash
 /// `path` holds the old bytes or the new ones, never a mix.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), NetError> {
+    // A name of its own: two jobs may store the same answer at once (two
+    // reads of one release), and a shared `.part` would vanish under one.
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".part");
+    tmp.push(format!(
+        ".{}-{}.part",
+        std::process::id(),
+        NEXT.fetch_add(1, AtomicOrdering::Relaxed)
+    ));
     let tmp = PathBuf::from(tmp);
     let mut file = fs::File::create(&tmp).map_err(NetError::io(&tmp))?;
     file.write_all(bytes).map_err(NetError::io(&tmp))?;
@@ -360,6 +368,31 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), NetError> {
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn writers_of_one_file_at_once_all_succeed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("release.json");
+        let writers: Vec<_> = (0..8)
+            .map(|n| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20 {
+                        write_atomic(&path, format!("answer {n}").as_bytes()).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        assert!(fs::read_to_string(&path).unwrap().starts_with("answer "));
+        let left: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["release.json"], "no temporary file is left");
+    }
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
