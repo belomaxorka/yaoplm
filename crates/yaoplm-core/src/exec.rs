@@ -497,7 +497,7 @@ impl Runner<'_, '_> {
                 let ours = match what {
                     Removal::Ours => *len == 0 || meta.len == *len,
                     Removal::OursZso { iso_len } => holds_zso(fs, path, *iso_len),
-                    Removal::UserData | Removal::Cache => true,
+                    Removal::UserData | Removal::Cache | Removal::Backup => true,
                 };
                 if !ours {
                     // Not the file this operation created: leave it.

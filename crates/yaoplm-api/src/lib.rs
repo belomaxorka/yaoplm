@@ -932,6 +932,48 @@ impl Api {
             Request::LoaderFiles => Ok(Response::LoaderFiles {
                 files: loaders::files(&self.net.loader_store()),
             }),
+            Request::LoaderLanguages { sha256 } => Ok(Response::LoaderLanguages {
+                languages: loaders::language_names(&self.net.loader_store(), &sha256)?,
+            }),
+            Request::PlanInstallLoader {
+                root,
+                build,
+                sha256,
+                presets,
+                path,
+                device,
+                language,
+                starter_settings,
+                replace_foreign,
+            } => {
+                let (root, fs) = self.root(&root)?;
+                let params = loaders::InstallParams {
+                    build,
+                    sha256,
+                    presets,
+                    path,
+                    device,
+                    language,
+                    starter_settings: starter_settings.unwrap_or(false),
+                    replace_foreign: replace_foreign.unwrap_or(false),
+                };
+                let plan = loaders::plan_install(&self.net, &fs, &params)?;
+                Ok(self.store(root, plan))
+            }
+            Request::LoaderBootHints {
+                build,
+                presets,
+                path,
+                device,
+            } => Ok(Response::LoaderBootHints {
+                hints: loaders::boot_hints(
+                    &self.net.loader_store(),
+                    &build,
+                    &presets,
+                    path.as_deref(),
+                    device,
+                )?,
+            }),
             Request::UpdateLoaderCatalog { mirror } => {
                 let mirror = self.mirror(mirror)?;
                 let net = Arc::clone(&self.net);
@@ -965,6 +1007,7 @@ impl Api {
                 tag,
                 sha256,
                 mirror,
+                languages,
             } => {
                 let params = loaders::DownloadParams {
                     release: loaders::ReleaseParams {
@@ -973,6 +1016,7 @@ impl Api {
                         tag,
                     },
                     sha256,
+                    languages: languages.unwrap_or(false),
                 };
                 let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(

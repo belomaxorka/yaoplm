@@ -176,7 +176,16 @@
     "zsoHiddenFromOpl110": "OPL 1.1.0 does not show ZSO images ({{images}} on the device): convert them to ISO or choose another profile for this device",
     "jpgArtHint": "Pictures in ART/ are JPG ({{files}}): OPL 1.2 betas from build 2169 on do not load them. If this device is for OPL 1.1.0, choose that profile for it",
     "listedByOldOpl": "The games on this device were last listed by OPL 1.1.0 or an old beta. If OPL starts from elsewhere, such as the memory card, choose the profile for this device",
-    "listedByNewOpl": "The games on this device were last listed by OPL 1.2 (a beta from build 2017 on) or a fork. If OPL starts from elsewhere, such as the memory card, choose the profile for this device"
+    "listedByNewOpl": "The games on this device were last listed by OPL 1.2 (a beta from build 2017 on) or a fork. If OPL starts from elsewhere, such as the memory card, choose the profile for this device",
+    "loaderNoPath": "No place for the loader was chosen",
+    "loaderPathInvalid": "{{path}} cannot take a loader: it must be a path inside the device ending in .ELF",
+    "loaderPathReserved": "{{path}} belongs to YAOPLM or to a memory card emulator; nothing is written there",
+    "loaderPathIsFolder": "{{path}} is a folder, not a file",
+    "loaderAlreadyThere": "{{path}} already holds this very build",
+    "loaderForeignFile": "{{path}} holds another program ({{size, bytes}}, SHA-256 {{sha256}}). It is replaced only if you say so; a backup is kept",
+    "starterSettingsMx4sio": "No starter settings for MX4SIO: OPL does not read them there until MX4SIO is turned on in its settings",
+    "starterSettingsCard": "OPL reads this file only while the memory card holds no conf_opl.cfg of its own",
+    "loaderNothingToDo": "Everything is in place already"
   },
   "library": {
     "title": "Library",
@@ -339,7 +348,8 @@
     "atLeast": "at least {{size}}",
     "cfgChanges": "Changes in the CFG:",
     "cfgAbsent": "(none)",
-    "cfgRemoved": "(removed)"
+    "cfgRemoved": "(removed)",
+    "backup": "An older backup of a replaced loader; the newest three are kept"
   },
   "recovery": {
     "title_one": "An operation did not finish",
@@ -570,6 +580,94 @@
     "filesSay": "The device’s files say {{profile}}: {{reason}}",
     "backToAuto": "Back to auto"
   },
+  "loaderInstall": {
+    "title": "Install loader",
+    "description": "OPL on {{root}}: games, covers and settings on it stay as they are",
+    "targetLegend": "Where will this device work?",
+    "targets": {
+      "usb": "USB port",
+      "mx4sio": "MX4SIO (SD card in a memory card slot)"
+    },
+    "targetHints": {
+      "usb": "A USB stick or a card reader in the console’s USB port",
+      "mx4sio": "OPL reads it as MX4SIO; launchers see it as massX: or mx4sio:"
+    },
+    "loadingCatalog": "Reading the loader catalogue…",
+    "methodLegend": "How do you start OPL?",
+    "methods": {
+      "fmcb": "FreeMcBoot from the memory card",
+      "fmcbHint": "The OPL item of FreeMcBoot 1.966’s menu starts {{path}}",
+      "ps2bbl": "PS2BBL",
+      "ps2bblHint": "PS2BBL’s stock config starts {{path}} first",
+      "unknown": "I don’t know",
+      "unknownHint": "The loader goes to both stock places: {{paths}}",
+      "app": "As an app folder",
+      "appHint": "{{path}} with title.cfg: OSDMenu and the Apps page of another OPL start it",
+      "appMx4sio": "PS2BBL-MX4SIO or OSDMenu",
+      "appMx4sioHint": "{{path}} with title.cfg; the lines for the launcher are shown after the install",
+      "card": "OPL is on the memory card already",
+      "cardHint": "Only OPL’s folders are created on the device",
+      "custom": "My own path",
+      "customHint": "Any .ELF path on the device; the lines for the launcher are shown after the install"
+    },
+    "path": "Path",
+    "buildLegend": "Which OPL to install?",
+    "recommended": "Recommended",
+    "fork": "Fork",
+    "loadingRelease": "Reading the release…",
+    "version": "Version",
+    "stored": "Downloaded",
+    "released": "released {{date}}",
+    "size": "download {{size}}",
+    "offline": "GitHub cannot be reached: the details stored earlier are shown",
+    "changes": "What’s new ({{count}})",
+    "changesMore": "More on the release page",
+    "noChanges": "No change list was published",
+    "license": "Licence: {{license}}, {{authors}}.",
+    "licenseText": "Licence text",
+    "release": "Release page",
+    "commit": "Commit",
+    "hashOnDownload": "computed on download",
+    "optionsLegend": "Options",
+    "language": "OPL’s menu in {{language}}",
+    "languageHint": "The language file and its font go to LNG/; pick the language in OPL’s settings",
+    "starter": "Starter settings",
+    "starterHint": "conf_opl.cfg on the device turns the USB device on at start (usb_mode=2); its other keys stay",
+    "replaceForeign": "Replace this file (a backup is kept)",
+    "downloadAndInstall": "Download and install",
+    "install": "Install",
+    "createFolders": "Create folders",
+    "downloading": "Downloading…",
+    "finishing": "Finishing…",
+    "notFinished": "The installation did not finish; see Jobs",
+    "installed": "Loader installed",
+    "foldersReady": "OPL’s folders are ready",
+    "howToStart": "How to start it on the PS2",
+    "eject": "Eject the device safely, then plug it into the console.",
+    "cardDone": "Eject the device safely and start OPL from the memory card as usual.",
+    "launchers": {
+      "fmcb": "FreeMcBoot",
+      "ps2bbl": "PS2BBL",
+      "ps2bblMx4sio": "PS2BBL-MX4SIO",
+      "osdmenu": "OSDMenu",
+      "oplApps": "OPL’s Apps page"
+    },
+    "appsPage": "In another OPL, open the Apps page: “{{title}}” is there.",
+    "stock": "Nothing to set up: the stock config starts {{path}}.",
+    "addLines": "Add these lines to {{config}}:",
+    "itemNumber": "N is a free item number in that file.",
+    "turnOn": {
+      "usb": "In OPL’s settings, set the USB device start mode to Auto and save: OPL shows folders and games only on a device that is turned on.",
+      "mx4sio": "In OPL’s settings, turn MX4SIO on and save: OPL shows folders and games only on a device that is turned on."
+    },
+    "docs": "Documentation:",
+    "docKinds": {
+      "readme": "README",
+      "site": "Website",
+      "wiki": "Wiki",
+      "fork": "About the fork"
+    }
+  },
   "devices": {
     "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
     "showAll": "Show all volumes",
@@ -615,7 +713,8 @@
       "error": "Not usable for OPL"
     },
     "open": "Open library",
-    "changeDevice": "Change device"
+    "changeDevice": "Change device",
+    "installLoader": "Install loader…"
   },
   "settings": {
     "library": "Library",
@@ -703,7 +802,11 @@
     "loading": "Loading…",
     "unavailable": "Unavailable",
     "dumps": "Dump checks (Redump)",
-    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer."
+    "dumpsDescription": "Images are compared with the Redump PS2 DAT by their SHA-1. The DAT is kept on this computer.",
+    "loaders": "Loaders",
+    "loadersDescription": "Where OPL builds for installing come from.",
+    "loaderMirror": "Release mirror",
+    "loaderMirrorHint": "A folder with GitHub’s release layout, for installing without the network; empty: GitHub"
   },
   "languages": {
     "en": "English",
@@ -849,7 +952,12 @@
     "updateLoaderCatalog": "Loader catalogue update",
     "loaderRelease": "Release details of {{build}}",
     "downloadLoader": "Download of {{build}}",
-    "importLoader": "Loader file {{file}}"
+    "importLoader": "Loader file {{file}}",
+    "installLoader": "Install {{build}}",
+    "installLoaderAt": "Put {{build}} in {{path}}",
+    "installLanguage": "OPL menu language: {{language}}",
+    "writeManifest": "Remember the installed loader",
+    "writeStarterSettings": "Starter settings in conf_opl.cfg"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
@@ -956,7 +1064,14 @@
     "loaderVersionMismatch": "{{file}} says it is {{found}}, the release says {{expected}}; it was not stored",
     "loaderFileNoElf": "{{file}} holds no loader ELF",
     "loaderFileSeveralElfs": "{{file}} holds several loader ELFs ({{count}}); unpack the one to install",
-    "loaderCatalogInvalid": "The loader catalogue on main cannot be used, the one this program has stays: {{error}}"
+    "loaderCatalogInvalid": "The loader catalogue on main cannot be used, the one this program has stays: {{error}}",
+    "loaderLanguageMissing": "{{archive}} has no {{language}} language",
+    "loaderNotStored": "No loader with SHA-256 {{sha256}} is kept; download it or add your own file first",
+    "loaderFileOtherBuild": "This file is not a build of {{build}}",
+    "loaderUnknownPreset": "No place called {{preset}} for this build",
+    "loaderPresetNotForDevice": "{{preset}} does not fit this device",
+    "loaderLanguagesNotStored": "The language pack of {{build}} is not downloaded yet",
+    "loaderNoLanguages": "The release of {{build}} has no language pack"
   },
   "reasons": {
     "appBadBoot": "boot must be a plain ELF file name, not {{boot}}",

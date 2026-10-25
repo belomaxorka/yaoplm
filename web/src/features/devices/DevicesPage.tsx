@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
-import { CheckCircle2, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
+import { CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { pickFolder } from "@/features/add/desktop";
+import { InstallLoaderDialog } from "@/features/loaders/InstallLoaderDialog";
 import { formatBytes } from "@/lib/format";
 import { worstLevel } from "@/lib/notices";
 import { errorText } from "@/lib/phrase";
@@ -114,6 +115,10 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   const { t } = useTranslation();
   const simple = useSimpleMode();
   const verdict = worstLevel(device.advice);
+  const [installing, setInstalling] = useState(false);
+  // No loader can work from a system disk, a read-only volume or a device
+  // OPL cannot use (§5.10.1): no install there.
+  const installable = !device.system && !device.readOnly && verdict !== "error";
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.
@@ -200,9 +205,16 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <Button onClick={onOpen} variant={verdict === "error" ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
+          {installable && (
+            <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
+              <Cpu aria-hidden />
+              {t("devices.installLoader")}
+            </Button>
+          )}
         </div>
       </div>
       {advice.length > 0 && <NoticeList notices={advice} className="mt-3 border-t pt-3" />}
+      {installable && <InstallLoaderDialog device={device} open={installing} onOpenChange={setInstalling} />}
     </li>
   );
 }

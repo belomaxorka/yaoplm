@@ -58,6 +58,8 @@ export interface Settings {
   artSources: Record<ArtSourceId, ArtSourceSettings>;
   /** Optional; the source works without one. */
   screenscraper: ScreenScraperAccount;
+  /** A folder with GitHub's layout for loader releases (tests, offline use); empty: GitHub. */
+  loaderMirror: string;
 }
 
 export const defaultSettings: Settings = {
@@ -77,6 +79,7 @@ export const defaultSettings: Settings = {
     screenscraper: { enabled: true, mirror: "" },
   },
   screenscraper: { user: "", password: "" },
+  loaderMirror: "",
 };
 
 const STORAGE_KEY = "yaoplm.settings";
@@ -156,6 +159,7 @@ export function readSettings(): Settings {
       titlesFromDb: typeof p.titlesFromDb === "boolean" ? p.titlesFromDb : defaultSettings.titlesFromDb,
       artSources: readArtSources(p.artSources),
       screenscraper: readAccount(p.screenscraper),
+      loaderMirror: typeof p.loaderMirror === "string" ? p.loaderMirror : "",
     };
   } catch {
     return defaultSettings;

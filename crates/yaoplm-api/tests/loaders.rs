@@ -543,3 +543,217 @@ fn importing_a_downloaded_build_keeps_what_its_release_said() {
     ));
     assert_eq!((then.sha256, then.confirmed), (first.sha256, true));
 }
+
+fn execute(api: &Api, plan: &Value) -> JobInfo {
+    run(
+        api,
+        json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+    )
+}
+
+fn codes(plan: &Value) -> Vec<String> {
+    plan["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["code"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_loader_is_installed_through_a_plan_with_its_boot_hints() {
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "languages": true, "mirror": s.mirror}),
+    ));
+    assert!(got.languages);
+    let languages = call(
+        &s.api,
+        json!({"type": "LoaderLanguages", "sha256": got.sha256}),
+    )
+    .unwrap();
+    assert_eq!(languages["languages"], json!(["German", "Russian"]));
+
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": got.sha256,
+               "presets": ["fmcb", "ps2bbl"], "device": "usb", "language": "Russian", "starterSettings": true}),
+    )
+    .unwrap();
+    assert_eq!(plan["type"], "Plan");
+    assert_eq!(plan["kind"], "installLoader");
+    assert_eq!(plan["executable"], true, "{plan}");
+    let info = execute(&s.api, &plan);
+    assert_eq!(info.status, JobStatus::Finished, "{info:?}");
+
+    let beta = opl_elf("v1.2.0-Beta-2271-b3a2199");
+    let at = |p: &str| std::fs::read(device.path().join(p)).unwrap();
+    assert_eq!(at("UPDT/OPL.ELF"), beta);
+    assert_eq!(at("APPS/OPNPS2LD.ELF"), beta);
+    assert_eq!(at("LNG/lang_Russian.lng"), b"Russian strings");
+    assert_eq!(at("LNG/font_Russian.ttf"), b"Russian font");
+    let cfg = String::from_utf8(at("conf_opl.cfg")).unwrap();
+    assert!(
+        cfg.contains("usb_mode=2") && cfg.contains("language_text=Russian"),
+        "{cfg}"
+    );
+    let manifest: Value = serde_json::from_slice(&at(".yaoplm/manifest.json")).unwrap();
+    assert_eq!(manifest["loaders"].as_array().unwrap().len(), 2);
+    assert_eq!(manifest["loaders"][0]["language"], "Russian");
+    for folder in ["CD", "DVD", "ART", "CFG", "VMC"] {
+        assert!(device.path().join(folder).is_dir(), "{folder}");
+    }
+
+    let hints = call(
+        &s.api,
+        json!({"type": "LoaderBootHints", "build": "opl-beta", "presets": ["fmcb", "ps2bbl"], "device": "usb"}),
+    )
+    .unwrap();
+    let hints = hints["hints"].as_array().unwrap();
+    assert_eq!(hints.len(), 2);
+    assert!(hints.iter().all(|h| h["stock"] == true));
+    assert_eq!(hints[0]["ps2Path"], "mass:/UPDT/OPL.ELF");
+    let mx = call(
+        &s.api,
+        json!({"type": "LoaderBootHints", "build": "opl-beta", "presets": ["app"], "device": "mx4sio"}),
+    )
+    .unwrap();
+    let lines: Vec<&str> = mx["hints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|h| {
+            h["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l.as_str().unwrap())
+        })
+        .collect();
+    assert!(
+        lines.contains(&"LK_AUTO_E1 = massX:/APPS/OPL/OPNPS2LD.ELF"),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_foreign_file_blocks_the_plan_until_confirmed() {
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    std::fs::create_dir_all(device.path().join("APPS")).unwrap();
+    let foreign = yaoplm_test_support::loaders::plain_elf(&["LAUNCHELF.CNF", "wLaunchELF"]);
+    std::fs::write(device.path().join("APPS/OPNPS2LD.ELF"), &foreign).unwrap();
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    let request = json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": got.sha256,
+                         "presets": ["ps2bbl"], "device": "usb"});
+    let plan = call(&s.api, request.clone()).unwrap();
+    assert_eq!(plan["executable"], false);
+    assert!(
+        codes(&plan).contains(&"loaderForeignFile".to_owned()),
+        "{plan}"
+    );
+    // A plan that cannot run is refused outright.
+    let refused = call(
+        &s.api,
+        json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+    );
+    assert!(refused.is_err());
+    assert_eq!(
+        std::fs::read(device.path().join("APPS/OPNPS2LD.ELF")).unwrap(),
+        foreign
+    );
+
+    let mut confirmed = request;
+    confirmed["replaceForeign"] = json!(true);
+    let plan = call(&s.api, confirmed).unwrap();
+    assert_eq!(plan["executable"], true, "{plan}");
+    assert_eq!(execute(&s.api, &plan).status, JobStatus::Finished);
+    let backups: Vec<_> = walk(&device.path().join(".yaoplm/backup/loader"));
+    assert_eq!(backups.len(), 1, "{backups:?}");
+    assert_eq!(std::fs::read(&backups[0]).unwrap(), foreign);
+}
+
+fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
+#[test]
+fn install_requests_name_what_is_stored_and_where_it_may_go() {
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    let beta = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    let yaopl = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "yaopl", "mirror": s.mirror}),
+    ));
+    let plan = |build: &str, sha: &str, extra: Value| {
+        let mut request = json!({"type": "PlanInstallLoader", "root": root, "build": build, "sha256": sha,
+                                 "presets": ["fmcb"], "device": "usb"});
+        for (k, v) in extra.as_object().unwrap() {
+            request[k] = v.clone();
+        }
+        call(&s.api, request)
+            .err()
+            .and_then(|e| e.phrase)
+            .map(|p| p.key)
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        plan("opl-beta", &"0".repeat(64), json!({})),
+        "errors.loaderNotStored"
+    );
+    assert_eq!(
+        plan("opl-beta", &yaopl.sha256, json!({})),
+        "errors.loaderFileOtherBuild"
+    );
+    assert_eq!(
+        plan("opl-beta", &beta.sha256, json!({"presets": ["nope"]})),
+        "errors.loaderUnknownPreset"
+    );
+    assert_eq!(
+        plan("opl-beta", &beta.sha256, json!({"device": "mx4sio"})),
+        "errors.loaderPresetNotForDevice"
+    );
+    assert_eq!(
+        plan("opl-beta", &beta.sha256, json!({"language": "Russian"})),
+        "errors.loaderLanguagesNotStored"
+    );
+    // A path of the user's own is fine; one into an emulator's files is not.
+    let ok = call(
+        &s.api,
+        json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": beta.sha256,
+               "path": "/GAMES\\OPL.ELF", "device": "usb"}),
+    )
+    .unwrap();
+    assert_eq!(ok["executable"], true, "{ok}");
+    let no = call(
+        &s.api,
+        json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": beta.sha256,
+               "path": "MemoryCards/OPL.ELF", "device": "usb"}),
+    )
+    .unwrap();
+    assert!(
+        codes(&no).contains(&"loaderPathReserved".to_owned()),
+        "{no}"
+    );
+}

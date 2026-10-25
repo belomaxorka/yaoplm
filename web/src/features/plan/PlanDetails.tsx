@@ -59,6 +59,7 @@ function StepLine({ step }: { step: PlanStep }) {
           <span className="block text-xs text-muted-foreground">{t("plan.from", { source: step.source })}</span>
         )}
         {step.removal === "cache" && <span className="block text-xs text-muted-foreground">{t("plan.cache")}</span>}
+        {step.removal === "backup" && <span className="block text-xs text-muted-foreground">{t("plan.backup")}</span>}
       </span>
       {step.bytes !== null && step.bytes > 0 && (
         <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">

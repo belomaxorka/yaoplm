@@ -34,6 +34,10 @@ confirmed: boolean,
  */
 stable: string | null, 
 /**
+ * The release's language pack is kept with it.
+ */
+languages: boolean, 
+/**
  * Milliseconds since 1970.
  */
 storedAt: number, };

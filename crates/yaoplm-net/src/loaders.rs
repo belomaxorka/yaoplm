@@ -127,6 +127,15 @@ pub struct StoredCatalog {
     pub program: String,
 }
 
+/// A release file kept as it was downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredFile {
+    /// Its name in the release (`OPNPS2LD-LANGS.7z`).
+    pub file: String,
+    pub sha256: String,
+}
+
 /// What a download is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +159,9 @@ pub struct ElfRecord {
     pub file_sha256: Option<String>,
     /// The release page, or the path of the user's file.
     pub source: String,
+    /// The release's language pack, when it was downloaded too.
+    #[serde(default)]
+    pub languages: Option<StoredFile>,
     /// A release or the catalogue confirmed its hash before download.
     pub confirmed: bool,
     /// Seconds since 1970.
@@ -310,6 +322,47 @@ impl LoaderStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(NetError::io(&path)(e)),
         }
+    }
+
+    fn languages_path(&self, sha256: &str) -> Result<PathBuf, NetError> {
+        // The same check as for ELFs: a SHA-256, nothing else.
+        self.elf_path(sha256, "elf")?;
+        Ok(self.dir.join("langs").join(sha256))
+    }
+
+    /// Keeps a language pack by its SHA-256.
+    pub fn put_languages(&self, sha256: &str, bytes: &[u8]) -> Result<(), NetError> {
+        let path = self.languages_path(sha256)?;
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(NetError::io(dir))?;
+        }
+        write_atomic(&path, bytes)
+    }
+
+    /// The language pack with this SHA-256, if kept.
+    pub fn languages(&self, sha256: &str) -> Result<Option<Vec<u8>>, NetError> {
+        let path = self.languages_path(sha256)?;
+        match fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(NetError::io(&path)(e)),
+        }
+    }
+
+    /// Rewrites what a stored ELF is (its language pack came later).
+    pub fn put_record(&self, record: &ElfRecord) -> Result<(), NetError> {
+        let json = serde_json::to_vec_pretty(record).map_err(|e| NetError::Cache(e.to_string()))?;
+        write_atomic(&self.elf_path(&record.sha256, "json")?, &json)
+    }
+
+    /// The record of the stored ELF with this SHA-256.
+    pub fn record(&self, sha256: &str) -> Option<ElfRecord> {
+        self.elfs().into_iter().find(|r| r.sha256 == sha256)
+    }
+
+    /// The file the stored ELF with this SHA-256 is in.
+    pub fn elf_file(&self, sha256: &str) -> Result<PathBuf, NetError> {
+        self.elf_path(sha256, "elf")
     }
 
     /// Every stored ELF, newest first. A record without its ELF is skipped.
@@ -617,6 +670,7 @@ mod tests {
             file: "OPNPS2LD-v1.1.0.7z".into(),
             member: Some("OPNPS2LD/OPNPS2LD-v1.1.0.ELF".into()),
             file_sha256: Some("c".repeat(64)),
+            languages: None,
             source: "https://github.com/o/r/releases/tag/v1.1.0".into(),
             confirmed: true,
             stored_at: 5,

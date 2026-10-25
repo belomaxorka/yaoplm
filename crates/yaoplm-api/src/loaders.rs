@@ -11,13 +11,17 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use yaoplm_core::Phrase as Said;
 use yaoplm_core::detect;
+use yaoplm_core::loaders::install::{self, ElfFile, InstallRequest, InstallTarget};
 use yaoplm_core::loaders::release::{self, ChecksumSource, FileOffer, Offer, Release};
 use yaoplm_core::loaders::{
-    self, Build, Catalog, DocKind, Launcher, LoaderError, Publisher, Target, download, local,
+    self, Build, Catalog, DocKind, Launcher, LoaderError, Publisher, Target, boot, download,
+    languages, local,
 };
+use yaoplm_core::plan::Plan;
+use yaoplm_device::{DeviceFs, HostSources, SourceFs};
 use yaoplm_net::NetError;
 use yaoplm_net::cache::now_secs;
-use yaoplm_net::loaders::{ElfRecord, LoaderNet, LoaderStore, MAX_TEXT, ReleaseSource};
+use yaoplm_net::loaders::{ElfRecord, LoaderNet, LoaderStore, MAX_TEXT, ReleaseSource, StoredFile};
 
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
@@ -335,6 +339,8 @@ pub struct LoaderFile {
     pub confirmed: bool,
     /// The frozen upstream release it is, by SHA-256 (`v1.1.0`).
     pub stable: Option<String>,
+    /// The release's language pack is kept with it.
+    pub languages: bool,
     /// Milliseconds since 1970.
     pub stored_at: u64,
 }
@@ -351,6 +357,7 @@ fn file_view(record: &ElfRecord) -> LoaderFile {
         source: record.source.clone(),
         confirmed: record.confirmed,
         stable: detect::stable_version(&record.sha256).map(str::to_owned),
+        languages: record.languages.is_some(),
         stored_at: record.stored_at.saturating_mul(1000),
     }
 }
@@ -567,6 +574,61 @@ pub(crate) struct DownloadParams {
     pub release: ReleaseParams,
     /// The hash the user saw before confirming (SPEC §5.10.2).
     pub sha256: Option<String>,
+    /// Also the release's language pack (LDR-3).
+    pub languages: bool,
+}
+
+/// Downloads the language pack of `offer` for `record` unless it is kept
+/// already; held to the size and hash the release gives.
+fn download_languages(
+    net: &Net,
+    loader_net: &LoaderNet<'_>,
+    build: &Build,
+    offer: &Offer,
+    mut record: ElfRecord,
+) -> Result<ElfRecord, ApiError> {
+    let store = loader_net.store;
+    if let Some(kept) = &record.languages
+        && store
+            .languages(&kept.sha256)
+            .map_err(|e| net_error(ErrorCode::Internal, &e))?
+            .is_some()
+    {
+        return Ok(record);
+    }
+    let Some(pack) = &offer.languages else {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("loaderNoLanguages").with("build", &build.name),
+        ));
+    };
+    if pack.size > download::MAX_FILE {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("loaderFileTooLarge").with("file", &pack.name),
+        ));
+    }
+    let bytes = net
+        .block_on(loader_net.file(&build.repo, &pack.url, download::MAX_FILE))?
+        .map_err(|e| net_error(ErrorCode::Internal, &e))?;
+    let sha = yaoplm_hash::sha256_reader(&bytes[..]).map_err(ApiError::internal_error)?;
+    if bytes.len() as u64 != pack.size || pack.sha256.as_ref().is_some_and(|want| *want != sha) {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("loaderDownloadChecksum").with("asset", &pack.name),
+        ));
+    }
+    store
+        .put_languages(&sha, &bytes)
+        .map_err(|e| net_error(ErrorCode::Internal, &e))?;
+    record.languages = Some(StoredFile {
+        file: pack.name.clone(),
+        sha256: sha,
+    });
+    store
+        .put_record(&record)
+        .map_err(|e| net_error(ErrorCode::Internal, &e))?;
+    Ok(record)
 }
 
 /// The body of a `DownloadLoader` job: the release file, held to the hash
@@ -596,7 +658,10 @@ pub(crate) fn download_job(net: &Net, params: &DownloadParams) -> Result<JobResu
             &Said::error("loaderReleaseChanged").with("build", &build.name),
         ));
     }
-    if let Some(record) = stored_from(&store, &offer) {
+    if let Some(mut record) = stored_from(&store, &offer) {
+        if params.languages {
+            record = download_languages(net, &loader_net, build, &offer, record)?;
+        }
         return Ok(JobResult::LoaderFile(Box::new(file_view(&record))));
     }
     // A release that says its file is huge is not asked for at all.
@@ -632,11 +697,17 @@ pub(crate) fn download_job(net: &Net, params: &DownloadParams) -> Result<JobResu
         file_sha256: Some(file_sha),
         source: offer.release_url.clone(),
         confirmed: offer.file.sha256.is_some(),
+        languages: None,
         stored_at: now_secs(),
     };
     store
         .put_elf(&record, &elf.bytes)
         .map_err(|e| net_error(ErrorCode::Internal, &e))?;
+    let record = if params.languages {
+        download_languages(net, &loader_net, build, &offer, record)?
+    } else {
+        record
+    };
     Ok(JobResult::LoaderFile(Box::new(file_view(&record))))
 }
 
@@ -684,6 +755,7 @@ pub(crate) fn import_job(net: &Net, path: &Path) -> Result<JobResult, ApiError> 
         file: name,
         member: local.member.clone(),
         file_sha256: None,
+        languages: None,
         source: display_path(path),
         confirmed: local.stable.is_some(),
         stored_at: now_secs(),
@@ -742,6 +814,219 @@ pub(crate) fn update_catalog_job(
         LoaderCatalogSource::Main,
         Some(stored),
     ))))
+}
+
+/// One way to start an installed loader (BOOT-1): the path the launcher
+/// uses and the lines the user adds to its config on the console.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderBootHint {
+    pub launcher: LoaderLauncher,
+    /// `mass:/UPDT/OPL.ELF`; `null` for OPL's Apps page.
+    pub ps2_path: Option<String>,
+    /// The launcher's stock config starts it: nothing to edit.
+    pub stock: bool,
+    /// The file the lines go into, on the console.
+    pub config: Option<String>,
+    /// `N` stands for a free item number.
+    pub lines: Vec<String>,
+    /// The app's name on OPL's Apps page.
+    pub title: Option<String>,
+}
+
+fn device(target: LoaderTarget) -> Target {
+    match target {
+        LoaderTarget::Usb => Target::Usb,
+        LoaderTarget::Mx4sio => Target::Mx4sio,
+    }
+}
+
+fn found(catalog: &Catalog, id: &str) -> Result<Build, ApiError> {
+    catalog.build(id).cloned().ok_or_else(|| {
+        ApiError::phrased(
+            ErrorCode::NotFound,
+            &Said::error("loaderUnknownBuild").with("build", id),
+        )
+    })
+}
+
+/// The places a request names: catalogue presets for this device, and a
+/// path of the user's own.
+fn targets(
+    build: &Build,
+    presets: &[String],
+    path: Option<&str>,
+    target: Target,
+) -> Result<Vec<(InstallTarget, Vec<Launcher>)>, ApiError> {
+    let mut out = Vec::new();
+    for id in presets {
+        let preset = build.preset(id).ok_or_else(|| {
+            ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("loaderUnknownPreset").with("preset", id),
+            )
+        })?;
+        if !preset.devices.contains(&target) {
+            return Err(ApiError::phrased(
+                ErrorCode::BadRequest,
+                &Said::error("loaderPresetNotForDevice").with("preset", id),
+            ));
+        }
+        out.push((
+            InstallTarget {
+                path: preset.path.clone(),
+                preset: Some(id.clone()),
+                title: preset.title.clone(),
+            },
+            preset.launchers.clone(),
+        ));
+    }
+    if let Some(path) = path.map(str::trim).filter(|p| !p.is_empty()) {
+        out.push((
+            InstallTarget {
+                path: path.replace('\\', "/").trim_start_matches('/').to_owned(),
+                preset: None,
+                title: None,
+            },
+            boot::custom_launchers(target),
+        ));
+    }
+    Ok(out)
+}
+
+pub(crate) struct InstallParams {
+    pub build: String,
+    /// The stored ELF.
+    pub sha256: String,
+    pub presets: Vec<String>,
+    pub path: Option<String>,
+    pub device: LoaderTarget,
+    pub language: Option<String>,
+    pub starter_settings: bool,
+    pub replace_foreign: bool,
+}
+
+/// Plans installing a stored ELF on `fs` (LDR-3).
+pub(crate) fn plan_install(
+    net: &Net,
+    fs: &dyn DeviceFs,
+    params: &InstallParams,
+) -> Result<Plan, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    let build = found(&catalog, &params.build)?;
+    let sha = params.sha256.to_ascii_lowercase();
+    let not_stored = || {
+        ApiError::phrased(
+            ErrorCode::NotFound,
+            &Said::error("loaderNotStored").with("sha256", &sha),
+        )
+    };
+    let record = store.record(&sha).ok_or_else(not_stored)?;
+    if record.build.as_deref() != Some(build.id.as_str()) {
+        return Err(ApiError::phrased(
+            ErrorCode::BadRequest,
+            &Said::error("loaderFileOtherBuild").with("build", &build.name),
+        ));
+    }
+    let path = store
+        .elf_file(&sha)
+        .map_err(|e| net_error(ErrorCode::Internal, &e))?;
+    let meta = HostSources.metadata(&path).map_err(|_| not_stored())?;
+    let language = match &params.language {
+        None => None,
+        Some(name) => {
+            let pack = record.languages.as_ref().ok_or_else(|| {
+                ApiError::phrased(
+                    ErrorCode::BadRequest,
+                    &Said::error("loaderLanguagesNotStored").with("build", &build.name),
+                )
+            })?;
+            let bytes = store
+                .languages(&pack.sha256)
+                .map_err(|e| net_error(ErrorCode::Internal, &e))?
+                .ok_or_else(not_stored)?;
+            let files = languages::files(&pack.file, &bytes, name)
+                .map_err(|e| loader_error(ErrorCode::BadRequest, &e))?;
+            Some((name.clone(), files))
+        }
+    };
+    let request = InstallRequest {
+        build: &build,
+        elf: ElfFile {
+            path,
+            sha256: sha.clone(),
+            len: meta.len,
+            modified: meta.modified,
+            version: record.version.clone(),
+            tag: record.tag.clone(),
+            source: record.source.clone(),
+        },
+        targets: targets(
+            &build,
+            &params.presets,
+            params.path.as_deref(),
+            device(params.device),
+        )?
+        .into_iter()
+        .map(|(target, _)| target)
+        .collect(),
+        device: device(params.device),
+        language,
+        starter_settings: params.starter_settings,
+        replace_foreign: params.replace_foreign,
+        now: i64::try_from(now_secs()).unwrap_or_default(),
+    };
+    install::plan_install(fs, &request).map_err(crate::io_error)
+}
+
+/// How the console starts `build` at the places a request names (BOOT-1).
+pub(crate) fn boot_hints(
+    store: &LoaderStore,
+    id: &str,
+    presets: &[String],
+    path: Option<&str>,
+    target: LoaderTarget,
+) -> Result<Vec<LoaderBootHint>, ApiError> {
+    let (catalog, _, _) = effective(store)?;
+    let build = found(&catalog, id)?;
+    let mut hints = Vec::new();
+    for (place, launchers) in targets(&build, presets, path, device(target))? {
+        let title = place.title.clone().unwrap_or_else(|| build.name.clone());
+        hints.extend(
+            boot::hints(&place.path, device(target), &launchers, &title)
+                .into_iter()
+                .map(|hint| LoaderBootHint {
+                    launcher: launcher(hint.launcher),
+                    ps2_path: hint.ps2_path,
+                    stock: hint.stock,
+                    config: hint.config.map(str::to_owned),
+                    lines: hint.lines,
+                    title: hint.title,
+                }),
+        );
+    }
+    Ok(hints)
+}
+
+/// The languages of the pack kept with a stored ELF.
+pub(crate) fn language_names(store: &LoaderStore, sha256: &str) -> Result<Vec<String>, ApiError> {
+    let sha = sha256.to_ascii_lowercase();
+    let record = store.record(&sha).ok_or_else(|| {
+        ApiError::phrased(
+            ErrorCode::NotFound,
+            &Said::error("loaderNotStored").with("sha256", &sha),
+        )
+    })?;
+    let Some(pack) = record.languages else {
+        return Ok(Vec::new());
+    };
+    let bytes = store
+        .languages(&pack.sha256)
+        .map_err(|e| net_error(ErrorCode::Internal, &e))?
+        .unwrap_or_default();
+    languages::names(&pack.file, &bytes).map_err(|e| loader_error(ErrorCode::BadRequest, &e))
 }
 
 #[cfg(test)]
