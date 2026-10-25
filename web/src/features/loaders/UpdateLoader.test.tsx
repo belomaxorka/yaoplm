@@ -33,7 +33,7 @@ function newest(): LoaderOffer {
 }
 
 /** The core behind the devices screen; `devices` is what ListDevices answers. */
-function fakeCore(devices: () => DeviceInfo[]) {
+function fakeCore(devices: () => DeviceInfo[], { failWrite = false }: { failWrite?: boolean } = {}) {
   const requests: Request[] = [];
   const jobs = new Map<number, JobInfo>();
   const start = (kind: JobInfo["kind"], result: JobResult | null): Response => {
@@ -79,7 +79,22 @@ function fakeCore(devices: () => DeviceInfo[]) {
       case "PlanRollbackLoader":
         return plan([], "rollbackLoader");
       case "ExecutePlan":
-        return start("executePlan", null);
+        // A failed transaction still ends the job as finished, with the
+        // error in its report.
+        return start(
+          "executePlan",
+          failWrite
+            ? {
+                type: "Execution",
+                outcomes: ["rolledBack"],
+                cancelled: false,
+                error: "Could not write UPDT/OPL.ELF: device removed",
+                journal: null,
+                checks: [],
+                notices: [],
+              }
+            : null,
+        );
       case "GetJob": {
         const info = jobs.get(request.job);
         if (!info) throw new RpcError({ code: "NotFound", message: `no job ${request.job}` });
@@ -224,6 +239,21 @@ describe("loader updates on the device card", () => {
     // Only the family is known: "Replace…" alone (§5.10.1).
     expect(screen.queryByTestId("device-install-loader")).toBeNull();
     expect(screen.getByTestId("device-replace-loader").textContent).toContain("Replace loader…");
+  });
+
+  it("stays open with the reason when the update's write fails", async () => {
+    storeSettings({ offerLoaderUpdates: false });
+    const user = userEvent.setup();
+    const core = fakeCore(() => [device({ installed: [installedLoader()] })], { failWrite: true });
+    show(core);
+    const card = await screen.findByTestId("installed-loader");
+    await user.click(within(card).getByTestId("installed-loader-update-to"));
+    const dialog = await screen.findByTestId("loader-update-dialog");
+    await waitFor(() => expect(within(dialog).getByTestId<HTMLButtonElement>("loader-update-start").disabled).toBe(false));
+    await user.click(within(dialog).getByTestId("loader-update-start"));
+    await user.click(within(await screen.findByTestId("plan-dialog")).getByTestId("plan-confirm"));
+    const after = await screen.findByTestId("loader-update-dialog");
+    expect(await within(after).findByRole("alert")).toHaveTextContent("Could not write UPDT/OPL.ELF: device removed");
   });
 
   it("leaves the loader in a folder read over SMB alone (ADR-0047)", async () => {
