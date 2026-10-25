@@ -76,7 +76,9 @@ describe("the link to the core (plan task 8)", () => {
     transport.reachable = false;
     transport.set("closed");
     expect(await screen.findByRole("alert", {}, { timeout: 4000 })).toHaveTextContent(lostText);
-    expect(container).toHaveAttribute("inert");
+    // The banner comes from the link check's timer, outside act: the effect
+    // that blocks the app may run a moment after it shows.
+    await waitFor(() => expect(container).toHaveAttribute("inert"));
     // A dialog opened meanwhile is blocked too.
     const late = document.createElement("div");
     act(() => document.body.append(late));
