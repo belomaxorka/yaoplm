@@ -363,6 +363,11 @@ pub struct Transaction {
     /// The CFG keys this transaction changes, for display.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cfg_changes: Vec<CfgChange>,
+    /// It changes what the console runs: a loader's ELF, its language or its
+    /// starter settings. Like a game, simple mode lists it; folders and the
+    /// manifest around it are housekeeping (LDR-3, ADR-0034).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub loader: bool,
 }
 
 impl Transaction {
@@ -375,6 +380,7 @@ impl Transaction {
             commit: 0,
             notices: Vec::new(),
             cfg_changes: Vec::new(),
+            loader: false,
         }
     }
 

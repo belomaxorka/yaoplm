@@ -13,4 +13,9 @@ commit: number, notices: Array<PlanNotice>,
 /**
  * CFG keys this transaction changes (CFG-2).
  */
-cfgChanges: Array<CfgKeyChange>, };
+cfgChanges: Array<CfgKeyChange>, 
+/**
+ * It changes what the console runs (a loader, its language or
+ * starter settings): simple mode lists it like a game.
+ */
+loader?: boolean, };
