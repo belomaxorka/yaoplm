@@ -107,6 +107,29 @@ describe("plans and logs keep their details out of the way", () => {
     expect(screen.queryByText("Remember the installed loader")).toBeNull();
   });
 
+  it("show a plan of housekeeping alone in simple mode, rather than none of it", () => {
+    // Creating OPL's folders is all the plan does: no game, no loader.
+    const init: PlanView = {
+      ...plan,
+      kind: "initLibrary",
+      title: "Create OPL folders",
+      writeBytes: 0,
+      transactions: [
+        {
+          title: "Create the OPL folders",
+          game: null,
+          steps: [{ op: "createDir", path: "CD", to: null, bytes: null, removal: null, source: null }],
+          commit: 1,
+          notices: [],
+          cfgChanges: [],
+        },
+      ],
+    };
+    show(true, <PlanDetails plan={init} />);
+    expect(screen.getByText("1 operation")).toBeTruthy();
+    expect(screen.getByText("Create the OPL folders")).toBeTruthy();
+  });
+
   it("fold a job log away, and leave it out in simple mode", () => {
     const advanced = show(false, <JobLog entries={log} />);
     const details = advanced.container.querySelector("details[data-testid=job-log-details]") as HTMLDetailsElement;
