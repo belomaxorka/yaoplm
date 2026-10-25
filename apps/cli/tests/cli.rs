@@ -375,7 +375,7 @@ fn devices_and_device_doctor() {
         "{text}"
     );
     assert!(
-        text.contains("? Which OPL do you start with this device?"),
+        text.contains("? Which OPL reads this folder over the network?"),
         "{text}"
     );
     let json = run(&["device".as_ref(), s.root.as_os_str(), "--json".as_ref()]);

@@ -372,9 +372,18 @@ pub fn mode_line(mode: &ActiveMode) -> String {
 }
 
 /// The question the interface asks when nothing on the device tells the
-/// loader (ADR-0041, ADR-0044).
-const PROFILE_QUESTION: &str = "? Which OPL do you start with this device? Nothing on it tells: \
-     pass --profile opl-1.2, opl-1.1 or riptopl (opl-1.1 if you do not know)";
+/// loader (ADR-0041, ADR-0044); a folder read over SMB is asked about the
+/// OPL on the console.
+fn profile_question(mode: DeviceMode) -> String {
+    let question = match mode {
+        DeviceMode::Ps2 => "Which OPL do you start with this device?",
+        DeviceMode::Smb => "Which OPL reads this folder over the network?",
+    };
+    format!(
+        "? {question} Nothing on it tells: pass --profile opl-1.2, opl-1.1 or riptopl \
+         (opl-1.1 if you do not know)"
+    )
+}
 
 pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     let mut out = String::new();
@@ -435,7 +444,7 @@ pub fn device(device: &DeviceInfo) -> String {
         plan_notices(&mut out, "", &detected.notices);
     }
     if device.ask_profile {
-        let _ = writeln!(out, "{PROFILE_QUESTION}");
+        let _ = writeln!(out, "{}", profile_question(device.mode.mode));
     }
     for id in &device.unfinished {
         let _ = writeln!(out, "x unfinished operation {id}: run `yaoplm recover`");
