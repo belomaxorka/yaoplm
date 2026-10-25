@@ -273,9 +273,10 @@ struct Record {
     info: JobInfo,
     cancel: CancelToken,
     /// When the job reached its final state, in finishing order; 0 while
-    /// it runs. Pruning drops the jobs that finished first, not the oldest
-    /// ids: a scan queued long ago may finish last, and a front end asks
-    /// for its result right after the final event.
+    /// it runs. Pruning drops library scans first (no screen lists them)
+    /// and then the jobs that finished first, not the oldest ids: a front
+    /// end asks for a result right after the final event, and the jobs
+    /// page asks for those of the jobs it lists.
     finished: u64,
 }
 
@@ -553,14 +554,14 @@ impl WriteQueue<'_> {
 }
 
 fn prune(jobs: &mut BTreeMap<u64, Record>) {
-    let mut finished: Vec<(u64, u64)> = jobs
+    let mut finished: Vec<(bool, u64, u64)> = jobs
         .iter()
         .filter(|(_, r)| r.info.status.is_final())
-        .map(|(id, r)| (r.finished, *id))
+        .map(|(id, r)| (r.info.kind != JobKind::ScanLibrary, r.finished, *id))
         .collect();
     if finished.len() > KEEP_FINISHED {
         finished.sort_unstable();
-        for (_, id) in &finished[..finished.len() - KEEP_FINISHED] {
+        for (_, _, id) in &finished[..finished.len() - KEEP_FINISHED] {
             jobs.remove(id);
         }
     }
@@ -740,6 +741,19 @@ mod tests {
         jobs.wait(next).unwrap();
         assert!(jobs.get(slow).is_some(), "the job that finished last stays");
         assert_eq!(jobs.list().len(), KEEP_FINISHED + 1);
+
+        // Scans go before the jobs a screen lists, however late they ended.
+        let plan = jobs.spawn(JobKind::ExecutePlan, &title, None, Queue::Write, |_| {
+            Ok(execution(false))
+        });
+        jobs.wait(plan).unwrap();
+        for _ in 0..KEEP_FINISHED {
+            let scan = jobs.spawn(JobKind::ScanLibrary, &title, None, Queue::Read, |_| {
+                Ok(execution(false))
+            });
+            jobs.wait(scan).unwrap();
+        }
+        assert!(jobs.get(plan).is_some(), "the plan outlives the scans");
     }
 
     #[test]
