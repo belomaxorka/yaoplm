@@ -213,7 +213,8 @@ pub trait DeviceFs: Send + Sync {
     fn remove_file(&self, path: &RelPath) -> io::Result<()>;
     /// Removes an empty folder.
     fn remove_dir(&self, path: &RelPath) -> io::Result<()>;
-    /// Makes renames and removals in `dir` durable (directory fsync on Unix).
+    /// Makes renames and removals in `dir` durable (directory fsync on
+    /// Unix; on Windows the folder and its volume's root are flushed).
     fn sync_dir(&self, _dir: &RelPath) -> io::Result<()> {
         Ok(())
     }
@@ -450,13 +451,18 @@ impl DeviceFs for HostFs {
     }
 
     fn sync_dir(&self, dir: &RelPath) -> io::Result<()> {
+        let path = self.resolve_checked(dir)?;
         #[cfg(unix)]
         {
-            File::open(self.resolve_checked(dir)?)?.sync_all()
+            File::open(path)?.sync_all()
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let _ = dir;
+            crate::sys::sync_dir(&path)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = path;
             Ok(())
         }
     }
@@ -489,6 +495,21 @@ mod tests {
         }
         assert!(RelPath::root().join("..").is_err());
         assert!(RelPath::root().join("a/b").is_err());
+    }
+
+    #[test]
+    fn sync_dir_reaches_the_folder() {
+        // On every OS the folder is opened and flushed: a rename the
+        // journal relies on is on the device, not in a cache.
+        let dir = tempfile::tempdir().unwrap();
+        let fs = HostFs::new(dir.path()).unwrap();
+        fs.create_dir(&rel("CD")).unwrap();
+        fs.sync_dir(&RelPath::root()).unwrap();
+        fs.sync_dir(&rel("CD")).unwrap();
+        assert_eq!(
+            fs.sync_dir(&rel("DVD")).err().map(|e| e.kind()),
+            Some(io::ErrorKind::NotFound)
+        );
     }
 
     #[test]

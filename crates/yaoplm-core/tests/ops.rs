@@ -327,6 +327,31 @@ fn deleting_keeps_settings_unless_asked() {
 }
 
 #[test]
+fn a_file_replaced_after_planning_is_kept() {
+    let fs = library();
+    let src = VirtualSources::new();
+    let plan = plan_delete(
+        &fs,
+        &image("CD/SLUS_200.62.Retail.iso"),
+        &DeleteOptions::default(),
+    )
+    .unwrap();
+    // Before the plan runs, the user copies another image under the name.
+    let other = b"another image, copied over the planned one".to_vec();
+    fs.insert_file("CD/SLUS_200.62.Retail.iso", &other);
+    let report = run(&plan, &fs, &src);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert_eq!(fs.bytes("CD/SLUS_200.62.Retail.iso").unwrap(), other);
+    assert!(
+        report.notices.iter().any(|(_, n)| n.code == "changedKept"),
+        "{:?}",
+        report.notices
+    );
+    // games.bin is OPL's cache: it goes whatever it holds now.
+    assert!(!fs.exists("CD/games.bin"));
+}
+
+#[test]
 fn deleting_a_ul_game_drops_its_record_first() {
     let (fs, before) = ul_library();
     let plan = plan_delete(
