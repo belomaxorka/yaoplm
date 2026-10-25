@@ -14,8 +14,8 @@ use yaoplm_api::library::{
     Platform,
 };
 use yaoplm_api::loaders::{
-    LoaderBootHint, LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderLauncher, LoaderOffer,
-    LoaderPublisher, LoaderTarget,
+    ImpactGame, LoaderBootHint, LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderImpact,
+    LoaderLauncher, LoaderOffer, LoaderPublisher, LoaderReleaseList, LoaderTarget,
 };
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
@@ -852,6 +852,95 @@ fn checksum_source(source: LoaderChecksumSource) -> &'static str {
 }
 
 /// `yaoplm loader release`: what a download would be.
+/// The releases of a channel (LDR-6).
+pub fn loader_releases(list: &LoaderReleaseList) -> String {
+    let mut out = String::new();
+    if list.offline {
+        let _ = writeln!(out, "GitHub cannot be reached: the list stored earlier.");
+    }
+    for release in &list.releases {
+        let _ = write!(out, "{}", release.tag);
+        if let Some(version) = release.version.as_ref().filter(|v| **v != release.tag) {
+            let _ = write!(out, "  {version}");
+        }
+        if let Some(date) = &release.date {
+            let _ = write!(out, "  {date}");
+        }
+        if release.default {
+            out.push_str("  (default)");
+        }
+        out.push('\n');
+    }
+    if list.releases.is_empty() {
+        let _ = writeln!(out, "No release of this channel.");
+    }
+    out
+}
+
+/// What replacing the loader changes for the games (LDR-7).
+pub fn loader_impact(impact: &LoaderImpact) -> String {
+    let mut out = String::from("What changes for the games:\n");
+    if let Some(blocked) = &impact.blocked {
+        let _ = writeln!(out, "x {}", blocked.english());
+        return out;
+    }
+    let games = |out: &mut String, list: &[ImpactGame]| {
+        for game in list {
+            let _ = writeln!(
+                out,
+                "    {} {}{}",
+                game.startup,
+                game.title,
+                game.fragments
+                    .map(|n| format!(" ({n} pieces)"))
+                    .unwrap_or_default()
+            );
+        }
+    };
+    if !impact.zso.is_empty() {
+        let _ = writeln!(
+            out,
+            "  ZSO the new build cannot show, converted to ISO first (--keep-zso leaves them): {}",
+            impact.zso.len()
+        );
+        games(&mut out, &impact.zso);
+    }
+    if !impact.fragmented.is_empty() {
+        let _ = writeln!(
+            out,
+            "  In several pieces, refused by OPL 1.1.0: copy them to the computer, format the device and add them back: {}",
+            impact.fragmented.len()
+        );
+        games(&mut out, &impact.fragmented);
+    }
+    if !impact.unknown_fragments.is_empty() {
+        let _ = writeln!(
+            out,
+            "  Pieces not known (the OS does not say): {}",
+            impact.unknown_fragments.len()
+        );
+        games(&mut out, &impact.unknown_fragments);
+    }
+    if !impact.art.is_empty() {
+        let _ = writeln!(
+            out,
+            "  Pictures re-encoded to PNG, the old ones kept as a backup (--keep-art leaves them): {}",
+            impact.art.len()
+        );
+        for art in &impact.art {
+            let _ = writeln!(out, "    {}", art.path);
+        }
+    }
+    if impact.zso.is_empty()
+        && impact.fragmented.is_empty()
+        && impact.unknown_fragments.is_empty()
+        && impact.art.is_empty()
+    {
+        out.push_str("  Nothing changes for the games.\n");
+    }
+    out
+}
+
 pub fn loader_offer(offer: &LoaderOffer) -> String {
     let mut out = String::new();
     let _ = writeln!(

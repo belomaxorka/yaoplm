@@ -85,6 +85,8 @@ pub enum PlanKind {
     UpdateLoader,
     /// A loader's backup put back (LDR-4).
     RollbackLoader,
+    /// Another build in place of the installed one (LDR-7).
+    ReplaceLoader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -223,6 +225,7 @@ fn kind(kind: core::PlanKind) -> PlanKind {
         core::PlanKind::InstallLoader => PlanKind::InstallLoader,
         core::PlanKind::UpdateLoader => PlanKind::UpdateLoader,
         core::PlanKind::RollbackLoader => PlanKind::RollbackLoader,
+        core::PlanKind::ReplaceLoader => PlanKind::ReplaceLoader,
     }
 }
 

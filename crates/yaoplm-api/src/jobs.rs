@@ -22,7 +22,7 @@ use yaoplm_device::CancelToken;
 use crate::art::{ArtLogState, ArtVariants, CoverSearch};
 use crate::events::EventBus;
 use crate::library::Library;
-use crate::loaders::{LoaderCatalog, LoaderFile, LoaderOffer};
+use crate::loaders::{LoaderCatalog, LoaderFile, LoaderImpact, LoaderOffer, LoaderReleaseList};
 use crate::phrase::Phrase;
 use crate::plans::{PlanNotice, PlanView, StepOp};
 use crate::verify::{
@@ -59,6 +59,10 @@ pub enum JobKind {
     DownloadLoader,
     /// Reads the user's own loader file and keeps its ELF (LDR-2).
     ImportLoader,
+    /// Lists the releases of a build's channel (LDR-6).
+    LoaderReleases,
+    /// Scans the library with another build's rules (LDR-7).
+    LoaderImpact,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +135,8 @@ pub enum JobResult {
     LoaderCatalog(Box<LoaderCatalog>),
     LoaderOffer(Box<LoaderOffer>),
     LoaderFile(Box<LoaderFile>),
+    LoaderReleases(Box<LoaderReleaseList>),
+    LoaderImpact(Box<LoaderImpact>),
 }
 
 /// The state of a transaction in the live log.

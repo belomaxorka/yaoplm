@@ -86,6 +86,9 @@ pub struct InstallRequest<'a> {
     pub replace_foreign: bool,
     /// A newer build of the channel over the installed one (LDR-4).
     pub update: bool,
+    /// Loaders a replacement at another path leaves behind, moved into the
+    /// backup folder and out of the manifest (LDR-7): nothing is deleted.
+    pub retire: Vec<String>,
     /// Unix seconds: names the backups, dates the manifest.
     pub now: i64,
 }
@@ -453,6 +456,59 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
         if !tx.steps.is_empty() || !tx.notices.is_empty() {
             plan.transactions.push(tx);
         }
+    }
+
+    // The loaders a replacement leaves behind, once the new one is in place.
+    for path in &request.retire {
+        if request
+            .targets
+            .iter()
+            .any(|t| t.path.eq_ignore_ascii_case(path))
+        {
+            continue;
+        }
+        if let Some(why) = refused(path) {
+            plan.notices.push(Notice::error(why));
+            continue;
+        }
+        let target = rel(path)?;
+        let Some(parent) = target.parent() else {
+            continue;
+        };
+        let entries = list_or_empty(fs, &parent)?;
+        let Some(entry) = find_entry(&entries, target.file_name()).filter(|e| !e.is_dir) else {
+            continue;
+        };
+        let current = parent
+            .join(&entry.name)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+        let name = backup_name(path);
+        let dir = format!("{BACKUP_DIR}/{stamp}");
+        let backup = rel(&format!("{dir}/{name}"))?;
+        let mut tx = Transaction::titled(Phrase::title("retireLoader").with("path", path));
+        for step in missing_parents(fs, &backup, &mut planned)? {
+            tx.push(step);
+        }
+        tx.push(Step::Rename {
+            from: current,
+            to: backup,
+        });
+        for (folder, len) in backups(fs, &name)?
+            .into_iter()
+            .filter(|(folder, _)| *folder != dir)
+            .skip(KEEP_BACKUPS - 1)
+        {
+            tx.then(Step::Remove {
+                path: rel(&format!("{folder}/{name}"))?,
+                len,
+                what: Removal::Backup,
+            });
+            tx.then(Step::RemoveDir {
+                path: rel(&folder)?,
+            });
+        }
+        manifest.remove(path);
+        plan.transactions.push(tx);
     }
 
     // 3. The language pack.

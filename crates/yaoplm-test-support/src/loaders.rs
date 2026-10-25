@@ -147,7 +147,31 @@ impl ReleaseMirror {
             json_string(&format!("https://github.com/{repo}/releases/tag/{tag}")),
             list.join(","),
         );
-        fs::write(tags.join(format!("{tag}.json")), json)
+        fs::write(tags.join(format!("{tag}.json")), json)?;
+        self.list(repo)
+    }
+
+    /// `repos/<repo>/releases.json`: every release written so far, newest
+    /// first, as `GET /repos/{owner}/{repo}/releases` lists them.
+    fn list(&self, repo: &str) -> io::Result<()> {
+        let dir = self.root.join("repos").join(repo).join("releases");
+        let mut releases = Vec::new();
+        for entry in fs::read_dir(dir.join("tags"))? {
+            let text = fs::read_to_string(entry?.path())?;
+            let published = text
+                .split("\"published_at\":\"")
+                .nth(1)
+                .and_then(|rest| rest.get(..20))
+                .unwrap_or_default()
+                .to_owned();
+            releases.push((published, text));
+        }
+        releases.sort_by(|a, b| b.cmp(a));
+        let list: Vec<String> = releases.into_iter().map(|(_, text)| text).collect();
+        fs::write(
+            self.root.join("repos").join(repo).join("releases.json"),
+            format!("[{}]", list.join(",")),
+        )
     }
 
     /// A file of the catalogue on `main`: `loaders/index.toml`.

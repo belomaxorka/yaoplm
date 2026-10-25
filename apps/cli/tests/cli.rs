@@ -1490,3 +1490,116 @@ fn loader_update_and_rollback_through_plans() {
         "{text}"
     );
 }
+
+#[test]
+fn loader_replace_says_what_changes_and_converts_first() {
+    use std::io::Cursor;
+    use yaoplm_formats::zso;
+    use yaoplm_test_support::Variant;
+    use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
+    let dir = tempfile::tempdir().unwrap();
+    let mirror = dir.path().join("mirror");
+    ReleaseMirror::new(&mirror).official().unwrap();
+    let data = dir.path().join("data");
+    let stick = dir.path().join("stick");
+    let iso = Variant::Retail.build().to_vec();
+    let mut packed = Cursor::new(Vec::new());
+    zso::compress(
+        &mut Cursor::new(&iso),
+        iso.len() as u64,
+        &mut packed,
+        &mut |_| {},
+    )
+    .unwrap();
+    std::fs::create_dir_all(stick.join("DVD")).unwrap();
+    std::fs::write(
+        stick.join("DVD/SLUS_200.62.Retail Game.zso"),
+        packed.into_inner(),
+    )
+    .unwrap();
+    let stable = dir.path().join("OPNPS2LD-v1.1.0.ELF");
+    std::fs::write(&stable, opl_elf("v1.1.0")).unwrap();
+    let cli = |args: &[&std::ffi::OsStr]| {
+        yaoplm()
+            .args(args)
+            .env("YAOPLM_DATA_DIR", &data)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let (m, at) = (mirror.as_os_str(), stick.as_os_str());
+    let ok = |out: &std::process::Output| {
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            stdout(out),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout(out).to_owned()
+    };
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "releases".as_ref(),
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+    ]));
+    assert!(text.contains("latest  v1.2.0-Beta-2271-b3a2199"), "{text}");
+    assert!(text.contains("(default)"), "{text}");
+
+    ok(&cli(&[
+        "loader".as_ref(),
+        "install".as_ref(),
+        at,
+        "opl-beta".as_ref(),
+        "--mirror".as_ref(),
+        m,
+        "--yes".as_ref(),
+    ]));
+    // A dry run shows what changes and the plan, and writes nothing.
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "replace".as_ref(),
+        at,
+        "opl-stable".as_ref(),
+        "--file".as_ref(),
+        stable.as_os_str(),
+        "--dry-run".as_ref(),
+    ]));
+    for line in [
+        "What changes for the games:",
+        "ZSO the new build cannot show, converted to ISO first (--keep-zso leaves them): 1",
+        "SLUS_200.62 Retail Game",
+        "Replace OPL 1.2.0 beta with OPL 1.1.0",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+    assert!(stick.join("DVD/SLUS_200.62.Retail Game.zso").exists());
+
+    let text = ok(&cli(&[
+        "loader".as_ref(),
+        "replace".as_ref(),
+        at,
+        "opl-stable".as_ref(),
+        "--file".as_ref(),
+        stable.as_os_str(),
+        "--yes".as_ref(),
+    ]));
+    assert!(
+        text.contains("Replace OPL 1.2.0 beta with OPL 1.1.0"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read(stick.join("DVD/SLUS_200.62.Retail Game.iso")).unwrap(),
+        iso
+    );
+    assert_eq!(
+        std::fs::read(stick.join("UPDT/OPL.ELF")).unwrap(),
+        opl_elf("v1.1.0")
+    );
+    let text = ok(&cli(&["device".as_ref(), at]));
+    assert!(
+        text.contains("Installed:  opl-stable v1.1.0 at UPDT/OPL.ELF"),
+        "{text}"
+    );
+}

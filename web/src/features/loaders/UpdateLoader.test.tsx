@@ -220,6 +220,8 @@ describe("loader updates on the device card", () => {
     expect(card.textContent).toContain("Known only by its name");
     expect(within(card).queryByTestId("installed-loader-check")).toBeNull();
     expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
-    expect(screen.getByTestId("device-install-loader").textContent).toContain("Reinstall loader…");
+    // Only the family is known: "Replace…" alone (§5.10.1).
+    expect(screen.queryByTestId("device-install-loader")).toBeNull();
+    expect(screen.getByTestId("device-replace-loader").textContent).toContain("Replace loader…");
   });
 });

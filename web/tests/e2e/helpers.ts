@@ -113,3 +113,27 @@ export async function emptyStick(request: APIRequestContext): Promise<string> {
   for (const name of readdirSync(stick)) rmSync(path.join(stick, name), { recursive: true, force: true });
   return stick;
 }
+
+export interface Answer {
+  type: string;
+  [key: string]: unknown;
+}
+
+/** One request to the server's API. */
+export async function rpc(request: APIRequestContext, body: object): Promise<Answer> {
+  const response = await request.post("/api/rpc", { data: body });
+  const json = (await response.json()) as Answer;
+  if (!response.ok()) throw new Error(`${JSON.stringify(body)}: ${JSON.stringify(json)}`);
+  return json;
+}
+
+/** Runs a job to its end. */
+export async function job(request: APIRequestContext, body: object): Promise<Answer> {
+  const { job } = await rpc(request, body);
+  for (;;) {
+    const info = await rpc(request, { type: "GetJob", job });
+    if (info.status === "finished") return info;
+    if (info.status === "failed" || info.status === "cancelled") throw new Error(JSON.stringify(info));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}

@@ -983,6 +983,75 @@ impl Api {
                 let plan = loaders::plan_rollback(&self.net, &fs, &path)?;
                 Ok(self.store(root, plan))
             }
+            Request::LoaderReleases { build, mirror } => {
+                let params = loaders::ReleaseParams {
+                    mirror: self.mirror(mirror)?,
+                    build,
+                    tag: None,
+                };
+                let net = Arc::clone(&self.net);
+                let job = self.jobs.spawn(
+                    JobKind::LoaderReleases,
+                    &Said::title("loaderReleases").with("build", &params.build),
+                    None,
+                    Queue::Read,
+                    move |_| loaders::releases_job(&net, &params),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::LoaderImpact {
+                root,
+                build,
+                profile,
+            } => {
+                let (path, _) = self.root(&root)?;
+                let net = Arc::clone(&self.net);
+                let from = profile.unwrap_or_default();
+                let shown = display_path(&path);
+                let job = self.jobs.spawn(
+                    JobKind::LoaderImpact,
+                    &Said::title("loaderImpact").with("build", &build),
+                    Some(shown),
+                    Queue::Read,
+                    move |_| loaders::impact_job(&net, &path, &build, from),
+                );
+                Ok(Response::Job { job })
+            }
+            Request::PlanReplaceLoader {
+                root,
+                build,
+                sha256,
+                presets,
+                path,
+                device,
+                language,
+                starter_settings,
+                replace_foreign,
+                profile,
+                convert,
+                reencode_art,
+                retire,
+            } => {
+                let (root, fs) = self.root(&root)?;
+                let params = loaders::ReplaceParams {
+                    install: loaders::InstallParams {
+                        build,
+                        sha256,
+                        presets,
+                        path,
+                        device,
+                        language,
+                        starter_settings: starter_settings.unwrap_or(false),
+                        replace_foreign: replace_foreign.unwrap_or(false),
+                    },
+                    from: profile.unwrap_or_default(),
+                    convert,
+                    reencode_art,
+                    retire,
+                };
+                let plan = loaders::plan_replace(&self.net, &root, &fs, &params)?;
+                Ok(self.store(root, plan))
+            }
             Request::CachedLoaderRelease { build } => Ok(Response::CachedLoaderRelease {
                 offer: loaders::cached_release(&self.net.loader_store(), &build)?.map(Box::new),
             }),

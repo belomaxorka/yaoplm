@@ -11,7 +11,9 @@ import type { Library } from "@/api/generated/Library";
 import type { LoaderBootHint } from "@/api/generated/LoaderBootHint";
 import type { LoaderCatalog } from "@/api/generated/LoaderCatalog";
 import type { LoaderFile } from "@/api/generated/LoaderFile";
+import type { LoaderImpact } from "@/api/generated/LoaderImpact";
 import type { LoaderOffer } from "@/api/generated/LoaderOffer";
+import type { LoaderReleaseList } from "@/api/generated/LoaderReleaseList";
 import type { LoaderProfile } from "@/api/generated/LoaderProfile";
 import type { PlanView } from "@/api/generated/PlanView";
 import type { ProfileOverride } from "@/api/generated/ProfileOverride";
@@ -140,14 +142,19 @@ async function loaderJob(transport: Transport, request: Request, signal?: AbortS
   throw new RpcError(info.error ?? { code: "Internal", message: "the job ended without a result" });
 }
 
-/** What a download of `build` would be (LDR-2). */
+/** What a download of `build` would be (LDR-2); `tag` picks another release of its channel (LDR-6). */
 export async function loaderRelease(
   transport: Transport,
   build: string,
   mirror: string,
   signal?: AbortSignal,
+  tag?: string | null,
 ): Promise<LoaderOffer> {
-  const result = await loaderJob(transport, { type: "LoaderRelease", build, ...(mirror ? { mirror } : {}) }, signal);
+  const result = await loaderJob(
+    transport,
+    { type: "LoaderRelease", build, ...(tag ? { tag } : {}), ...(mirror ? { mirror } : {}) },
+    signal,
+  );
   if (result.type !== "LoaderOffer") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
   const { type: _type, ...offer } = result;
   return offer;
@@ -176,6 +183,31 @@ export async function downloadLoader(
   if (result.type !== "LoaderFile") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
   const { type: _type, ...file } = result;
   return file;
+}
+
+/** The releases of a build's channel the catalogue allows (LDR-6). */
+export async function loaderReleases(
+  transport: Transport,
+  build: string,
+  mirror: string,
+  signal?: AbortSignal,
+): Promise<LoaderReleaseList> {
+  const result = await loaderJob(transport, { type: "LoaderReleases", build, ...(mirror ? { mirror } : {}) }, signal);
+  if (result.type !== "LoaderReleases") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
+  const { type: _type, ...list } = result;
+  return list;
+}
+
+/** What replacing the device's loader by `build` changes for the games (LDR-7). */
+export async function loaderImpact(
+  transport: Transport,
+  request: Omit<Extract<Request, { type: "LoaderImpact" }>, "type">,
+  signal?: AbortSignal,
+): Promise<LoaderImpact> {
+  const result = await loaderJob(transport, { type: "LoaderImpact", ...request }, signal);
+  if (result.type !== "LoaderImpact") throw new RpcError({ code: "Internal", message: `unexpected ${result.type}` });
+  const { type: _type, ...impact } = result;
+  return impact;
 }
 
 /** Reads the loader catalogue on YAOPLM's main branch; it is kept only when it reads (LDR-1). */

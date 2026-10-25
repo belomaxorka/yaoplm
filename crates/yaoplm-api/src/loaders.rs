@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use yaoplm_core::Phrase as Said;
+use yaoplm_core::art::{ArtItem, plan_set_art};
+use yaoplm_core::convert;
 use yaoplm_core::detect;
+use yaoplm_core::loaders::impact;
 use yaoplm_core::loaders::install::{self, ElfFile, InstallRequest, InstallTarget};
 use yaoplm_core::loaders::installed;
 use yaoplm_core::loaders::release::{self, ChecksumSource, FileOffer, Offer, Release};
@@ -19,8 +22,13 @@ use yaoplm_core::loaders::{
     self, Build, Catalog, DocKind, Launcher, LoaderError, Publisher, Target, boot, download,
     languages, local,
 };
+use yaoplm_core::ops::GameRef;
 use yaoplm_core::plan::Plan;
+use yaoplm_core::plan::{Notice as CoreNotice, PlanKind, Skipped};
+use yaoplm_core::{LoaderProfile as CoreProfile, ScanOptions};
+use yaoplm_device::RelPath;
 use yaoplm_device::{DeviceFs, HostSources, SourceFs};
+use yaoplm_formats::art::{ArtKind, ArtSubject, recommended_size};
 use yaoplm_net::NetError;
 use yaoplm_net::cache::now_secs;
 use yaoplm_net::loaders::{ElfRecord, LoaderNet, LoaderStore, MAX_TEXT, ReleaseSource, StoredFile};
@@ -32,6 +40,7 @@ use crate::art::Net;
 use crate::error::net_error;
 use crate::jobs::JobResult;
 use crate::library::LoaderProfile;
+use crate::phrase::Phrase;
 use crate::{ApiError, ErrorCode, display_path, io_error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1017,6 +1026,7 @@ pub(crate) fn plan_install(
         starter_settings: params.starter_settings,
         replace_foreign: params.replace_foreign,
         update: false,
+        retire: Vec::new(),
         now: now(),
     };
     install::plan_install(fs, &request).map_err(crate::io_error)
@@ -1087,6 +1097,7 @@ pub(crate) fn plan_update(
         starter_settings: false,
         replace_foreign: false,
         update: true,
+        retire: Vec::new(),
         now: now(),
     };
     install::plan_install(fs, &request).map_err(crate::io_error)
@@ -1209,6 +1220,394 @@ pub(crate) fn language_names(store: &LoaderStore, sha256: &str) -> Result<Vec<St
         .map_err(|e| net_error(ErrorCode::Internal, &e))?
         .unwrap_or_default();
     languages::names(&pack.file, &bytes).map_err(|e| loader_error(ErrorCode::BadRequest, &e))
+}
+
+/// One release of a build's channel (LDR-6): "Another version…".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderReleaseItem {
+    pub tag: String,
+    pub version: Option<String>,
+    /// `YYYY-MM-DD` it was published.
+    pub date: Option<String>,
+    pub prerelease: bool,
+    /// The channel's own tag, installed by default.
+    pub default: bool,
+}
+
+/// The releases of a build's channel the catalogue allows, newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderReleaseList {
+    pub build: String,
+    pub releases: Vec<LoaderReleaseItem>,
+    /// GitHub could not be reached: the last stored list is shown.
+    pub offline: bool,
+}
+
+/// The body of a `LoaderReleases` job: GitHub's list of the repository's
+/// releases, kept to the tags `channel.releases` names (SPEC §5.10.2).
+pub(crate) fn releases_job(net: &Net, params: &ReleaseParams) -> Result<JobResult, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    let build = found(&catalog, &params.build)?;
+    let service = net.service()?;
+    let source = source(&params.mirror);
+    let loader_net = LoaderNet {
+        http: service.http(),
+        source: &source,
+        store: &store,
+    };
+    let (json, offline) = match net.block_on(loader_net.releases(&build.repo))? {
+        Ok(list) => (list.json, false),
+        Err(err @ NetError::Status { .. }) => return Err(net_error(ErrorCode::NotFound, &err)),
+        Err(err) => match store.cached_list(&build.repo) {
+            Ok(Some((json, _))) if matches!(source, ReleaseSource::Remote { .. }) => (json, true),
+            _ => return Err(net_error(ErrorCode::Internal, &err)),
+        },
+    };
+    let releases = Release::parse_list(&json).map_err(|e| loader_error(ErrorCode::Internal, &e))?;
+    let items = releases
+        .iter()
+        .filter(|r| !r.draft)
+        .filter(|r| {
+            build
+                .channel
+                .releases
+                .iter()
+                .any(|pattern| loaders::catalog::glob_match(pattern, &r.tag_name, false))
+        })
+        .map(|r| LoaderReleaseItem {
+            tag: r.tag_name.clone(),
+            version: release::version(&build, r).map(|v| v.to_string()),
+            date: r
+                .published_at
+                .as_deref()
+                .and_then(|d| d.get(..10))
+                .map(str::to_owned),
+            prerelease: r.prerelease,
+            default: r.tag_name == build.channel.tag,
+        })
+        .collect();
+    Ok(JobResult::LoaderReleases(Box::new(LoaderReleaseList {
+        build: build.id.clone(),
+        releases: items,
+        offline,
+    })))
+}
+
+/// A game the new build would not show (LDR-7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ImpactGame {
+    pub startup: String,
+    pub title: String,
+    /// The image, relative to the root, `/`-separated; `null` for `ul`.
+    pub path: Option<String>,
+    pub size: u64,
+    /// Pieces of its files, when known.
+    pub fragments: Option<u32>,
+}
+
+/// A picture the new build would not load.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ImpactArt {
+    pub startup: String,
+    pub title: String,
+    pub suffix: String,
+    pub path: String,
+    pub size: u64,
+}
+
+/// What replacing the loader by `build` changes for the games (LDR-7,
+/// SPEC §5.10.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderImpact {
+    pub build: String,
+    pub from: LoaderProfile,
+    pub to: LoaderProfile,
+    /// The new build cannot use the device: no replacement.
+    pub blocked: Option<Phrase>,
+    /// Converted to ISO in the replace plan unless left out.
+    pub zso: Vec<ImpactGame>,
+    /// In several pieces: a list and the README's advice.
+    pub fragmented: Vec<ImpactGame>,
+    /// The OS cannot say how many pieces.
+    pub unknown_fragments: Vec<ImpactGame>,
+    /// Re-encoded to PNG in the replace plan unless left out.
+    pub art: Vec<ImpactArt>,
+}
+
+fn slash(path: &Path) -> String {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn impact_game(game: &impact::ImpactGame) -> ImpactGame {
+    ImpactGame {
+        startup: game.startup.clone(),
+        title: game.title.clone(),
+        path: game.path.as_deref().map(slash),
+        size: game.size,
+        fragments: game.fragments,
+    }
+}
+
+/// The library under `to`'s rules, and what changes against `from`.
+fn analyse(
+    root: &Path,
+    from: CoreProfile,
+    to: CoreProfile,
+) -> Result<(yaoplm_core::Library, impact::Impact), ApiError> {
+    let options = ScanOptions {
+        profile: to,
+        verify_images: false,
+    };
+    let library = yaoplm_core::scan_library(root, &options).map_err(|e| crate::scan_error(&e))?;
+    let kind = yaoplm_device::volume_for_path(root)
+        .map(|v| v.fs)
+        .unwrap_or(yaoplm_device::FsKind::Other);
+    let impact = impact::impact(&library, kind, from, to);
+    Ok((library, impact))
+}
+
+/// The body of a `LoaderImpact` job: the library scanned with `build`'s
+/// profile against the device's current one.
+pub(crate) fn impact_job(
+    net: &Net,
+    root: &Path,
+    id: &str,
+    from: LoaderProfile,
+) -> Result<JobResult, ApiError> {
+    let (catalog, _, _) = effective(&net.loader_store())?;
+    let build = found(&catalog, id)?;
+    let (_, found) = analyse(root, from.into(), build.profile)?;
+    Ok(JobResult::LoaderImpact(Box::new(LoaderImpact {
+        build: build.id.clone(),
+        from,
+        to: build.profile.into(),
+        blocked: found.blocked.as_ref().map(Phrase::from),
+        zso: found.zso.iter().map(impact_game).collect(),
+        fragmented: found.fragmented.iter().map(impact_game).collect(),
+        unknown_fragments: found.unknown_fragments.iter().map(impact_game).collect(),
+        art: found
+            .art
+            .iter()
+            .map(|a| ImpactArt {
+                startup: a.startup.clone(),
+                title: a.title.clone(),
+                suffix: a.suffix.clone(),
+                path: slash(&a.path),
+                size: a.size,
+            })
+            .collect(),
+    })))
+}
+
+pub(crate) struct ReplaceParams {
+    pub install: InstallParams,
+    /// The device's profile now: the rules the library follows today.
+    pub from: LoaderProfile,
+    /// ZSO images to convert to ISO first (`ul` above FAT32's limit).
+    pub convert: Vec<String>,
+    /// Re-encode JPG and BMP pictures the new build cannot load.
+    pub reencode_art: bool,
+    /// Loaders left at other paths, moved into the backup folder.
+    pub retire: Vec<String>,
+}
+
+/// Plans replacing the device's loader by another build (LDR-7, SPEC
+/// §5.10.3): the conversions the user kept, the pictures, then the build's
+/// folders, the ELF (the old one kept as a backup), the language pack, the
+/// manifest. The loader goes last: if writing stops on the way, the old
+/// build still starts.
+pub(crate) fn plan_replace(
+    net: &Net,
+    root: &Path,
+    fs: &dyn DeviceFs,
+    params: &ReplaceParams,
+) -> Result<Plan, ApiError> {
+    let store = net.loader_store();
+    let (catalog, _, _) = effective(&store)?;
+    let install = &params.install;
+    let PreparedElf {
+        build,
+        elf,
+        language,
+    } = prepare(
+        &store,
+        &catalog,
+        &install.build,
+        &install.sha256,
+        install.language.as_deref(),
+    )?;
+    let targets: Vec<InstallTarget> = targets(
+        &build,
+        &install.presets,
+        install.path.as_deref(),
+        device(install.device),
+    )?
+    .into_iter()
+    .map(|(target, _)| target)
+    .collect();
+    let previous = installed_on(fs, &catalog)?;
+    let from_name = previous
+        .iter()
+        .find(|l| {
+            targets.iter().any(|t| t.path.eq_ignore_ascii_case(&l.path))
+                || params
+                    .retire
+                    .iter()
+                    .any(|r| r.eq_ignore_ascii_case(&l.path))
+        })
+        .or_else(|| previous.first())
+        .map(|l| {
+            l.build
+                .as_deref()
+                .and_then(|b| catalog.build(b))
+                .map_or_else(|| l.family.name().to_owned(), |b| b.name.clone())
+        })
+        .unwrap_or_else(|| "OPL".to_owned());
+
+    let loader = install::plan_install(
+        fs,
+        &InstallRequest {
+            build: &build,
+            elf,
+            targets,
+            device: device(install.device),
+            language,
+            starter_settings: install.starter_settings,
+            replace_foreign: install.replace_foreign,
+            update: false,
+            retire: params.retire.clone(),
+            now: now(),
+        },
+    )
+    .map_err(crate::io_error)?;
+    let mut plan = Plan::titled(
+        PlanKind::ReplaceLoader,
+        Said::title("replaceLoader")
+            .with("from", &from_name)
+            .with("to", &build.name),
+        loader.fingerprint.clone(),
+        loader.free_bytes,
+    );
+    plan.profile = Some(build.profile);
+
+    let (library, found) = analyse(root, params.from.into(), build.profile)?;
+    if let Some(why) = &found.blocked {
+        plan.notices.push(CoreNotice::error(why.clone()));
+    }
+    // 1. Conversions: only ZSO images this build cannot show.
+    let wanted: Vec<RelPath> = found
+        .zso
+        .iter()
+        .filter_map(|g| g.path.as_deref())
+        .map(slash)
+        .filter(|p| {
+            params
+                .convert
+                .iter()
+                .any(|c| c.replace('\\', "/").eq_ignore_ascii_case(p))
+        })
+        .filter_map(|p| RelPath::new(&p).ok())
+        .collect();
+    if !wanted.is_empty() {
+        let options = convert::ConvertOptions {
+            profile: build.profile,
+            name_style: None,
+        };
+        let games: Vec<GameRef> = wanted
+            .iter()
+            .map(|path| GameRef::Image { path: path.clone() })
+            .collect();
+        let mut to_iso = convert::plan_convert(fs, &games, convert::Target::Iso, &options)
+            .map_err(crate::op_error)?;
+        // Above FAT32's limit an ISO cannot be one file: those go to `ul`.
+        let (too_large, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut to_iso.skipped)
+            .into_iter()
+            .partition(|s| s.reason.code == "tooLargeUseUl");
+        to_iso.skipped = kept;
+        plan.absorb(to_iso);
+        if !too_large.is_empty() {
+            let games: Vec<GameRef> = wanted
+                .iter()
+                .filter(|path| too_large.iter().any(|s| s.path == Path::new(path.as_str())))
+                .map(|path| GameRef::Image { path: path.clone() })
+                .collect();
+            let to_ul = convert::plan_convert(fs, &games, convert::Target::Ul, &options)
+                .map_err(crate::op_error)?;
+            plan.absorb(to_ul);
+        }
+    }
+    // 2. Pictures the build cannot load, re-encoded with a backup.
+    if params.reencode_art && !found.art.is_empty() {
+        let service = net.service()?;
+        let mut items = Vec::new();
+        for art in &found.art {
+            let Some(kind) = ArtKind::from_suffix(&art.suffix.to_ascii_uppercase()) else {
+                continue;
+            };
+            let Some(game) = library.games.iter().find(|g| g.startup == art.startup) else {
+                continue;
+            };
+            let label = slash(&art.path);
+            let size = recommended_size(
+                build.profile,
+                ArtSubject::Game {
+                    startup: &art.startup,
+                },
+                kind,
+            );
+            let cover = std::fs::read(root.join(&art.path))
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    service
+                        .import_local(&bytes, kind, size, &label)
+                        .map_err(|e| e.to_string())
+                });
+            match cover {
+                Ok(cover) => items.push(ArtItem {
+                    startup: game.startup.clone(),
+                    title: game.title.clone(),
+                    media: game.media,
+                    format: game.format.to_string(),
+                    kind,
+                    file: cover.png,
+                    origin: label,
+                }),
+                Err(_) => plan.skipped.push(Skipped {
+                    path: label.into(),
+                    reason: CoreNotice::warning(Said::notice("artUnreadable")),
+                }),
+            }
+        }
+        if !items.is_empty() {
+            let art = plan_set_art(fs, &HostSources, &items, true).map_err(crate::io_error)?;
+            plan.absorb(art);
+        }
+    }
+    // 3. The loader, last.
+    plan.absorb(loader);
+    let needed = plan.write_bytes();
+    if needed > plan.free_bytes && plan.notices.iter().all(|n| n.code != "noSpace") {
+        plan.notices.push(CoreNotice::error(
+            Said::notice("noSpace")
+                .with("needed", needed)
+                .with("free", plan.free_bytes),
+        ));
+    }
+    Ok(plan)
 }
 
 #[cfg(test)]

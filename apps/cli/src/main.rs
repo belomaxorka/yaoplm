@@ -353,6 +353,22 @@ enum LoaderCommand {
         #[command(flatten)]
         apply: Apply,
     },
+    /// The releases of BUILD's channel the catalogue allows (LDR-6), for
+    /// `--tag` of `release`, `download`, `install` and `replace`.
+    Releases {
+        build: String,
+        /// A folder with GitHub's layout instead of the network.
+        #[arg(long, value_name = "DIR")]
+        mirror: Option<PathBuf>,
+        /// Print the answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace the loader on the device at ROOT by BUILD (LDR-7): says what
+    /// changes for the games, then plans the ZSO conversions and picture
+    /// re-encodes the new build's rules need, and the build last, where the
+    /// current loader is (the old ELF kept as a backup).
+    Replace(LoaderReplace),
     /// Put the newest backup of the loader on the device at ROOT back
     /// (LDR-4); what is there now becomes the newest backup.
     Rollback {
@@ -405,6 +421,46 @@ struct LoaderInstall {
     /// Replace a file of another program at the path; a backup is kept.
     #[arg(long)]
     replace_foreign: bool,
+    /// Your own ELF, zip or 7z instead of a download.
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["tag", "mirror"])]
+    file: Option<PathBuf>,
+    #[command(flatten)]
+    from: ReleaseFrom,
+    #[command(flatten)]
+    apply: Apply,
+}
+
+#[derive(Debug, Args)]
+struct LoaderReplace {
+    root: PathBuf,
+    build: String,
+    /// fmcb, ps2bbl or app; the current loader's place by default.
+    #[arg(long = "preset", value_name = "PRESET")]
+    presets: Vec<String>,
+    /// A path of your own on the device, ending in .ELF.
+    #[arg(long, value_name = "PATH")]
+    path: Option<String>,
+    /// The device is an SD card for MX4SIO, not a USB stick.
+    #[arg(long)]
+    mx4sio: bool,
+    /// Install an OPL menu language from the release's pack: Russian, ...
+    #[arg(long, value_name = "NAME")]
+    language: Option<String>,
+    /// Write usb_mode=2 (and the language) to conf_opl.cfg on the device.
+    #[arg(long)]
+    starter_settings: bool,
+    /// Replace a file of another program at the path; a backup is kept.
+    #[arg(long)]
+    replace_foreign: bool,
+    /// Leave ZSO games as they are, though the new build cannot show them.
+    #[arg(long)]
+    keep_zso: bool,
+    /// Leave JPG and BMP pictures as they are, though the new build cannot load them.
+    #[arg(long)]
+    keep_art: bool,
+    /// Move loaders at other paths into the backup folder.
+    #[arg(long)]
+    retire_previous: bool,
     /// Your own ELF, zip or 7z instead of a download.
     #[arg(long, value_name = "FILE", conflicts_with_all = ["tag", "mirror"])]
     file: Option<PathBuf>,
@@ -1166,6 +1222,29 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
             mirror,
             apply,
         } => update_loader(api, &root, path.as_deref(), mirror.as_deref(), &apply),
+        LoaderCommand::Releases {
+            build,
+            mirror,
+            json,
+        } => match loader_job(
+            api,
+            Request::LoaderReleases {
+                build,
+                mirror: mirror.as_deref().map(absolute),
+            },
+        ) {
+            Ok(JobResult::LoaderReleases(list)) => {
+                if json {
+                    print_json(&list, true);
+                } else {
+                    print!("{}", report::loader_releases(&list));
+                }
+                Ok(ExitCode::SUCCESS)
+            }
+            Ok(other) => bail!("unexpected answer {other:?}"),
+            Err(error) => fail(&error, json),
+        },
+        LoaderCommand::Replace(replace) => replace_loader(api, replace),
         LoaderCommand::Rollback { root, path, apply } => {
             let Some(loader) = installed_loader(api, &root, path.as_deref(), true)? else {
                 return Ok(ExitCode::FAILURE);
@@ -1375,6 +1454,208 @@ fn update_loader(
     )
 }
 
+/// The ELF to install: the user's file, or `build`'s release after the
+/// download is confirmed (none needed when it is stored already). `Err`
+/// holds the exit code when nothing is to be installed.
+fn loader_elf(
+    api: &Api,
+    build: &str,
+    file: Option<&Path>,
+    from: &ReleaseFrom,
+    languages: bool,
+    apply: &Apply,
+) -> anyhow::Result<Result<Box<yaoplm_api::loaders::LoaderFile>, ExitCode>> {
+    let json = apply.json;
+    let elf = match file {
+        Some(file) => loader_job(
+            api,
+            Request::ImportLoader {
+                file: absolute(file),
+            },
+        ),
+        None => {
+            let offer = match loader_job(api, release_request(build, from)) {
+                Ok(JobResult::LoaderOffer(offer)) => offer,
+                Ok(other) => bail!("unexpected answer {other:?}"),
+                Err(error) => return Ok(Err(fail(&error, json)?)),
+            };
+            let stored = offer.stored.is_some() && !languages;
+            if !stored && !confirm_download(&offer, apply.yes, json)? {
+                return Ok(Err(ExitCode::SUCCESS));
+            }
+            loader_job(
+                api,
+                Request::DownloadLoader {
+                    build: build.to_owned(),
+                    tag: Some(offer.tag.clone()),
+                    sha256: offer.file.sha256.clone(),
+                    mirror: from.mirror.as_deref().map(absolute),
+                    languages: languages.then_some(true),
+                },
+            )
+        }
+    };
+    match elf {
+        Ok(JobResult::LoaderFile(file)) => Ok(Ok(file)),
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => Ok(Err(fail(&error, json)?)),
+    }
+}
+
+/// `yaoplm loader replace`: what changes for the games, the ELF, then the
+/// replace plan: conversions and pictures first, the build last (LDR-7).
+fn replace_loader(api: &Api, replace: LoaderReplace) -> anyhow::Result<ExitCode> {
+    let LoaderReplace {
+        root,
+        build,
+        presets,
+        path,
+        mx4sio,
+        language,
+        starter_settings,
+        replace_foreign,
+        keep_zso,
+        keep_art,
+        retire_previous,
+        file,
+        from,
+        apply,
+    } = replace;
+    let json = apply.json;
+    let device = match api.dispatch(Request::InspectDevice {
+        root: absolute(&root),
+        profile: None,
+        overrides: None,
+        boot_from_device: None,
+    }) {
+        Ok(Response::Device(device)) => device,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, json),
+    };
+    let target = if mx4sio {
+        yaoplm_api::loaders::LoaderTarget::Mx4sio
+    } else {
+        yaoplm_api::loaders::LoaderTarget::Usb
+    };
+    let catalog = match api.dispatch(Request::LoaderCatalog) {
+        Ok(Response::LoaderCatalog(catalog)) => catalog,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, json),
+    };
+    let Some(new) = catalog.builds.iter().find(|b| b.id == build) else {
+        eprintln!("yaoplm: no build {build} in the loader catalogue (`yaoplm loader ls`)");
+        return Ok(ExitCode::FAILURE);
+    };
+    // Where the build goes: as asked, else where the current loader is.
+    let (presets, path) = if !presets.is_empty() || path.is_some() {
+        (presets, path)
+    } else {
+        match device.installed.first() {
+            Some(current) => match current
+                .preset
+                .as_ref()
+                .filter(|p| new.presets.iter().any(|n| &&n.id == p))
+            {
+                Some(preset) => (vec![preset.clone()], None),
+                None => (Vec::new(), Some(current.path.clone())),
+            },
+            None => (
+                new.default_presets
+                    .iter()
+                    .filter(|d| d.device == target)
+                    .map(|d| d.preset.clone())
+                    .collect(),
+                None,
+            ),
+        }
+    };
+    let impact = match loader_job(
+        api,
+        Request::LoaderImpact {
+            root: absolute(&root),
+            build: build.clone(),
+            profile: Some(device.loader.profile),
+        },
+    ) {
+        Ok(JobResult::LoaderImpact(impact)) => impact,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, json),
+    };
+    if !json {
+        print!("{}", report::loader_impact(&impact));
+    }
+    if impact.blocked.is_some() {
+        return Ok(ExitCode::FAILURE);
+    }
+    let elf = match loader_elf(
+        api,
+        &build,
+        file.as_deref(),
+        &from,
+        language.is_some(),
+        &apply,
+    )? {
+        Ok(elf) => elf,
+        Err(code) => return Ok(code),
+    };
+    let new_paths: Vec<String> = new
+        .presets
+        .iter()
+        .filter(|p| presets.contains(&p.id))
+        .map(|p| p.path.clone())
+        .chain(path.clone())
+        .collect();
+    let retire = if retire_previous {
+        device
+            .installed
+            .iter()
+            .map(|l| l.path.clone())
+            .filter(|p| !new_paths.iter().any(|n| n.eq_ignore_ascii_case(p)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let request = Request::PlanReplaceLoader {
+        root: absolute(&root),
+        build: build.clone(),
+        sha256: elf.sha256.clone(),
+        presets: presets.clone(),
+        path: path.clone(),
+        device: target,
+        language,
+        starter_settings: starter_settings.then_some(true),
+        replace_foreign: replace_foreign.then_some(true),
+        profile: Some(device.loader.profile),
+        convert: if keep_zso {
+            Vec::new()
+        } else {
+            impact.zso.iter().filter_map(|g| g.path.clone()).collect()
+        },
+        reencode_art: !keep_art,
+        retire,
+    };
+    let code = plan_and_apply(api, request, &apply)?;
+    let moved = device
+        .installed
+        .iter()
+        .all(|l| !new_paths.iter().any(|n| n.eq_ignore_ascii_case(&l.path)));
+    if code == ExitCode::SUCCESS && !apply.dry_run && !json && moved {
+        match api.dispatch(Request::LoaderBootHints {
+            build,
+            presets,
+            path,
+            device: target,
+        }) {
+            Ok(Response::LoaderBootHints { hints }) => {
+                print!("{}", report::boot_hints(&hints, target))
+            }
+            Ok(other) => bail!("unexpected answer {other:?}"),
+            Err(error) => return fail(&error, json),
+        }
+    }
+    Ok(code)
+}
+
 /// `yaoplm loader install`: the ELF from the store (downloaded first when
 /// needed) or the user's file, then the install plan, then the boot hints.
 fn install_loader(api: &Api, install: LoaderInstall) -> anyhow::Result<ExitCode> {
@@ -1397,39 +1678,16 @@ fn install_loader(api: &Api, install: LoaderInstall) -> anyhow::Result<ExitCode>
     } else {
         yaoplm_api::loaders::LoaderTarget::Usb
     };
-    let elf = match &file {
-        Some(file) => loader_job(
-            api,
-            Request::ImportLoader {
-                file: absolute(file),
-            },
-        ),
-        None => {
-            let offer = match loader_job(api, release_request(&build, &from)) {
-                Ok(JobResult::LoaderOffer(offer)) => offer,
-                Ok(other) => bail!("unexpected answer {other:?}"),
-                Err(error) => return fail(&error, json),
-            };
-            let stored = offer.stored.is_some() && language.is_none();
-            if !stored && !confirm_download(&offer, apply.yes, json)? {
-                return Ok(ExitCode::SUCCESS);
-            }
-            loader_job(
-                api,
-                Request::DownloadLoader {
-                    build: build.clone(),
-                    tag: Some(offer.tag.clone()),
-                    sha256: offer.file.sha256.clone(),
-                    mirror: from.mirror.as_deref().map(absolute),
-                    languages: language.is_some().then_some(true),
-                },
-            )
-        }
-    };
-    let elf = match elf {
-        Ok(JobResult::LoaderFile(file)) => file,
-        Ok(other) => bail!("unexpected answer {other:?}"),
-        Err(error) => return fail(&error, json),
+    let elf = match loader_elf(
+        api,
+        &build,
+        file.as_deref(),
+        &from,
+        language.is_some(),
+        &apply,
+    )? {
+        Ok(elf) => elf,
+        Err(code) => return Ok(code),
     };
     let presets = if presets.is_empty() && path.is_none() {
         match api.dispatch(Request::LoaderCatalog) {

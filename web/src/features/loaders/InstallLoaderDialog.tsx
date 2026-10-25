@@ -5,13 +5,22 @@ import { useTranslation } from "react-i18next";
 
 import { useApi } from "@/api/context";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { InstalledLoader } from "@/api/generated/InstalledLoader";
 import type { JobId } from "@/api/generated/JobId";
 import type { LoaderBootHint } from "@/api/generated/LoaderBootHint";
 import type { LoaderBuild } from "@/api/generated/LoaderBuild";
 import type { LoaderOffer } from "@/api/generated/LoaderOffer";
 import type { LoaderTarget } from "@/api/generated/LoaderTarget";
 import type { Request } from "@/api/generated/Request";
-import { downloadLoader, loaderBootHints, loaderCatalog, loaderRelease, waitForJob } from "@/api/rpc";
+import {
+  downloadLoader,
+  loaderBootHints,
+  loaderCatalog,
+  loaderImpact,
+  loaderRelease,
+  loaderReleases,
+  waitForJob,
+} from "@/api/rpc";
 import { ExternalLink } from "@/components/ExternalLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +43,11 @@ import { isLanguage, type Language } from "@/i18n";
 import { errorText } from "@/lib/phrase";
 import { useSettings, useSimpleMode } from "@/settings/context";
 
+import { ReplaceImpact } from "./ReplaceImpact";
+import { versionLabel } from "./versions";
+
 type InstallRequest = Extract<Request, { type: "PlanInstallLoader" }>;
+type ReplaceRequest = Extract<Request, { type: "PlanReplaceLoader" }>;
 
 /**
  * How the console starts OPL: a catalogue preset, both stock paths
@@ -81,9 +94,27 @@ interface Form {
   path: string;
   language: boolean;
   starter: boolean;
+  /** Another release of the channel (LDR-6); `null`: the channel's own. */
+  tag: string | null;
+  /** ZSO images a replacement leaves as they are. */
+  keepZso: string[];
+  reencodeArt: boolean;
+  /** Move the replaced loader into the backup when the new one goes elsewhere. */
+  retire: boolean;
 }
 
-const freshForm = (): Form => ({ target: null, method: null, build: null, path: "", language: false, starter: false });
+const freshForm = (): Form => ({
+  target: null,
+  method: null,
+  build: null,
+  path: "",
+  language: false,
+  starter: false,
+  tag: null,
+  keepZso: [],
+  reencodeArt: true,
+  retire: false,
+});
 
 /**
  * "Install loader…" (LDR-3, BOOT-1, ADR-0044): where the device will
@@ -91,18 +122,27 @@ const freshForm = (): Form => ({ target: null, method: null, build: null, path: 
  * licence and changes show before anything is downloaded; the download is
  * held to the hash shown, the install is a plan, and after it the lines
  * for the launcher show. Memory card configs are never written.
+ *
+ * With `replace` it is "Replace…" (LDR-7, SPEC §5.10.3): the installed
+ * build is marked, the place defaults to where it is, and "What changes
+ * for the games" lists what the new build's rules need converted,
+ * re-encoded or left as advice; the plan runs those first and the loader
+ * last.
  */
 export function InstallLoaderDialog({
   device,
   open,
   onOpenChange,
   initial,
+  replace,
 }: {
   device: DeviceInfo;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** "Reinstall…": the build and preset already on the device. */
   initial?: { build: string | null; preset: string | null };
+  /** "Replace…": the loader to replace. */
+  replace?: InstalledLoader;
 }) {
   const { t, i18n } = useTranslation();
   const { transport } = useApi();
@@ -110,16 +150,21 @@ export function InstallLoaderDialog({
   const simple = useSimpleMode();
   const queryClient = useQueryClient();
   const ids = useId();
-  const start = (): Form => ({ ...freshForm(), build: initial?.build ?? null, method: initial?.preset ?? null });
+  const start = (): Form =>
+    replace
+      ? { ...freshForm(), method: replace.preset ?? "custom", path: replace.preset ? "" : replace.path }
+      : { ...freshForm(), build: initial?.build ?? null, method: initial?.preset ?? null };
   const [form, setForm] = useState<Form>(start);
   const [busy, setBusy] = useState<"download" | "finish" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // What was planned last: a re-plan (replace the foreign file) starts from it.
-  const [planned, setPlanned] = useState<InstallRequest | "card" | null>(null);
+  const [planned, setPlanned] = useState<InstallRequest | ReplaceRequest | "card" | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
   const [done, setDone] = useState<{ hints: LoaderBootHint[]; card: boolean } | null>(null);
 
   const close = () => {
     setForm(start());
+    setShowVersions(false);
     setError(null);
     setPlanned(null);
     setDone(null);
@@ -138,21 +183,52 @@ export function InstallLoaderDialog({
   });
   const target: LoaderTarget = form.target ?? (device.bus === "sd" ? "mx4sio" : "usb");
   const builds = (catalog.data?.builds ?? []).filter((b) => b.devices.includes(target) && b.presets.length > 0);
-  const build = builds.find((b) => b.id === form.build) ?? builds.find((b) => b.recommended) ?? builds[0];
-  const methods = methodsFor(build, target, !simple);
+  // Replacing starts on another build, the recommended one when it is.
+  const other = (b: LoaderBuild) => !replace || b.id !== replace.build;
+  const build =
+    builds.find((b) => b.id === form.build) ??
+    builds.find((b) => b.recommended && other(b)) ??
+    builds.find(other) ??
+    builds[0];
+  // A replacement keeps the loader's place: a path of its own needs "custom".
+  const methods = methodsFor(build, target, !simple || (replace !== undefined && replace.preset === null)).filter(
+    (m) => !replace || m.id !== "card",
+  );
   const fallback = build?.defaultPresets.find((d) => d.device === target)?.preset;
   const method =
     methods.find((m) => m.id === form.method) ?? methods.find((m) => m.id === fallback) ?? methods[0];
   const card = method?.id === "card";
   const mirror = settings.loaderMirror.trim();
 
+  const tag = form.tag;
   const offer = useQuery({
-    queryKey: ["loaderRelease", build?.id, mirror],
-    queryFn: ({ signal }) => loaderRelease(transport, build?.id ?? "", mirror, signal),
+    queryKey: ["loaderRelease", build?.id, mirror, tag],
+    queryFn: ({ signal }) => loaderRelease(transport, build?.id ?? "", mirror, signal, tag),
     enabled: open && build !== undefined && !card,
     staleTime: 10 * 60_000,
     retry: false,
   });
+  const releases = useQuery({
+    queryKey: ["loaderReleases", build?.id, mirror],
+    queryFn: ({ signal }) => loaderReleases(transport, build?.id ?? "", mirror, signal),
+    enabled: open && showVersions && build !== undefined,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+  const replacing = replace !== undefined && build !== undefined && build.id !== replace.build;
+  const profile = device.loader.profile;
+  const impact = useQuery({
+    queryKey: ["loaderImpact", device.root, build?.id, profile],
+    queryFn: ({ signal }) => loaderImpact(transport, { root: device.root, build: build?.id ?? "", profile }, signal),
+    enabled: open && replacing,
+    staleTime: 60_000,
+    retry: false,
+  });
+  // The new build's paths, to tell whether the replaced loader stays behind.
+  const newPaths =
+    method?.id === "custom" ? [form.path.trim().replace(/\\/g, "/").replace(/^\/+/, "")] : (method?.paths ?? []);
+  const leftBehind =
+    replace !== undefined && !newPaths.some((p) => p.toLowerCase() === replace.path.toLowerCase());
   const uiLanguage: Language = isLanguage(i18n.resolvedLanguage) ? i18n.resolvedLanguage : "en";
   const language = oplLanguages[uiLanguage];
   const offersLanguage = language !== undefined && offer.data?.languages != null;
@@ -201,7 +277,7 @@ export function InstallLoaderDialog({
     setBusy("download");
     try {
       const file = await downloadLoader(transport, offer.data, wantsLanguage, mirror);
-      const request: InstallRequest = {
+      const install: InstallRequest = {
         type: "PlanInstallLoader",
         root: device.root,
         build: build.id,
@@ -212,6 +288,18 @@ export function InstallLoaderDialog({
         ...(wantsLanguage ? { language } : {}),
         ...(starterOffered && form.starter ? { starterSettings: true } : {}),
       };
+      const request: InstallRequest | ReplaceRequest = replace
+        ? {
+            ...install,
+            type: "PlanReplaceLoader",
+            profile,
+            convert: (impact.data?.zso ?? [])
+              .map((g) => g.path ?? "")
+              .filter((p) => p !== "" && !form.keepZso.includes(p)),
+            reencodeArt: form.reencodeArt,
+            retire: leftBehind && form.retire ? [replace.path] : [],
+          }
+        : install;
       setPlanned(request);
       void flow.request(request);
     } catch (err) {
@@ -245,7 +333,8 @@ export function InstallLoaderDialog({
   const ready =
     method !== undefined &&
     busy === null &&
-    (card || (offer.data !== undefined && (method.id !== "custom" || form.path.trim() !== "")));
+    (card || (offer.data !== undefined && (method.id !== "custom" || form.path.trim() !== ""))) &&
+    (!replacing || (impact.data !== undefined && !impact.data.blocked));
 
   return (
     <>
@@ -259,10 +348,27 @@ export function InstallLoaderDialog({
         <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl" data-testid="loader-install-dialog">
           <DialogHeader>
             <DialogTitle>
-              {done ? (done.card ? t("loaderInstall.foldersReady") : t("loaderInstall.installed")) : t("loaderInstall.title")}
+              {done
+                ? done.card
+                  ? t("loaderInstall.foldersReady")
+                  : replace
+                    ? t("loaderReplace.replaced")
+                    : t("loaderInstall.installed")
+                : replace
+                  ? t("loaderReplace.title")
+                  : t("loaderInstall.title")}
             </DialogTitle>
             <DialogDescription>
-              {done ? t("loaderInstall.howToStart") : t("loaderInstall.description", { root: device.root })}
+              {done
+                ? t("loaderInstall.howToStart")
+                : replace
+                  ? t("loaderReplace.description", {
+                      build: builds.find((b) => b.id === replace.build)?.name ?? replace.family,
+                      version: replace.version ? versionLabel(replace.version) : t("loaderUpdate.versionUnknown"),
+                      path: replace.path,
+                      root: device.root,
+                    })
+                  : t("loaderInstall.description", { root: device.root })}
             </DialogDescription>
           </DialogHeader>
           <div className="relative min-h-0 flex-1 overflow-auto pr-1">
@@ -353,7 +459,10 @@ export function InstallLoaderDialog({
                 {build && !card && (
                   <fieldset>
                     <legend className="mb-2 text-sm font-medium">{t("loaderInstall.buildLegend")}</legend>
-                    <RadioGroup value={build.id} onValueChange={(value) => set({ build: value, method: null })}>
+                    <RadioGroup
+                      value={build.id}
+                      onValueChange={(value) => set({ build: value, tag: null, ...(replace ? {} : { method: null }) })}
+                    >
                       {builds.map((b) => (
                         <Label
                           key={b.id}
@@ -371,10 +480,20 @@ export function InstallLoaderDialog({
                               <span className="font-medium">{b.name}</span>
                               {b.recommended && <Badge>{t("loaderInstall.recommended")}</Badge>}
                               {b.publisher === "fork" && <Badge variant="outline">{t("loaderInstall.fork")}</Badge>}
+                              {replace?.build === b.id && (
+                                <Badge variant="secondary" data-testid="loader-build-installed">
+                                  {t("loaderReplace.installed")}
+                                </Badge>
+                              )}
                             </span>
                             <span className="block text-xs text-muted-foreground">
                               {b.summary[uiLanguage] ?? b.summary.en}
                             </span>
+                            {(b.limits[uiLanguage] ?? b.limits.en) && (
+                              <span className="mt-0.5 block text-xs text-muted-foreground/80">
+                                {t("loaderInstall.limits", { text: b.limits[uiLanguage] ?? b.limits.en ?? "" })}
+                              </span>
+                            )}
                           </span>
                         </Label>
                       ))}
@@ -396,7 +515,92 @@ export function InstallLoaderDialog({
                       </p>
                     )}
                     {offer.data && <OfferDetails offer={offer.data} />}
+                    {!simple && (
+                      <div className="-mt-2 text-xs" data-testid="loader-versions">
+                        {!showVersions ? (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => setShowVersions(true)}
+                            data-testid="loader-other-version"
+                          >
+                            {t("loaderInstall.otherVersion")}
+                          </Button>
+                        ) : releases.isPending ? (
+                          <span className="flex items-center gap-2 text-muted-foreground" role="status">
+                            <Loader2 className="size-3 animate-spin" aria-hidden />
+                            {t("loaderInstall.loadingReleases")}
+                          </span>
+                        ) : releases.error ? (
+                          <span className="text-destructive" role="alert">
+                            {errorText(releases.error)}
+                          </span>
+                        ) : (releases.data?.releases.length ?? 0) < 2 ? (
+                          <span className="text-muted-foreground">{t("loaderInstall.onlyRelease")}</span>
+                        ) : (
+                          <RadioGroup
+                            value={tag ?? releases.data?.releases.find((r) => r.default)?.tag ?? ""}
+                            onValueChange={(value) =>
+                              set({ tag: releases.data?.releases.find((r) => r.tag === value)?.default ? null : value })
+                            }
+                            aria-label={t("loaderInstall.versionLegend")}
+                          >
+                            {releases.data?.releases.map((r) => (
+                              <Label key={r.tag} htmlFor={`${ids}-tag-${r.tag}`} className="font-normal">
+                                <RadioGroupItem id={`${ids}-tag-${r.tag}`} value={r.tag} data-testid={`loader-tag-${r.tag}`} />
+                                <span className="font-mono">{r.version ? versionLabel(r.version) : r.tag}</span>
+                                {r.date && <span className="text-muted-foreground">{r.date}</span>}
+                                {r.default && <Badge variant="outline">{t("loaderInstall.defaultRelease")}</Badge>}
+                              </Label>
+                            ))}
+                          </RadioGroup>
+                        )}
+                      </div>
+                    )}
                   </>
+                )}
+
+                {replacing && (
+                  <fieldset>
+                    <legend className="mb-2 text-sm font-medium">{t("loaderReplace.impactLegend")}</legend>
+                    {impact.isPending && (
+                      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                        {t("loaderReplace.impactLoading")}
+                      </p>
+                    )}
+                    {impact.error && (
+                      <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+                        {errorText(impact.error)}
+                      </p>
+                    )}
+                    {impact.data && (
+                      <ReplaceImpact
+                        impact={impact.data}
+                        keepZso={form.keepZso}
+                        onKeepZso={(keepZso) => set({ keepZso })}
+                        reencodeArt={form.reencodeArt}
+                        onReencodeArt={(reencodeArt) => set({ reencodeArt })}
+                      />
+                    )}
+                  </fieldset>
+                )}
+
+                {replace && leftBehind && (
+                  <Label htmlFor={`${ids}-retire`} className="items-start font-normal">
+                    <Checkbox
+                      id={`${ids}-retire`}
+                      checked={form.retire}
+                      onCheckedChange={(on) => set({ retire: on === true })}
+                      className="mt-0.5"
+                      data-testid="loader-retire"
+                    />
+                    <span>
+                      {t("loaderReplace.retire", { path: replace.path })}
+                      <span className="block text-xs text-muted-foreground">{t("loaderReplace.retireHint")}</span>
+                    </span>
+                  </Label>
                 )}
 
                 {!card && (offersLanguage || starterOffered) && (
@@ -460,9 +664,13 @@ export function InstallLoaderDialog({
                       ? t("loaderInstall.finishing")
                       : card
                         ? t("loaderInstall.createFolders")
-                        : offer.data?.stored
-                          ? t("loaderInstall.install")
-                          : t("loaderInstall.downloadAndInstall")}
+                        : replace
+                          ? offer.data?.stored
+                            ? t("loaderReplace.replace")
+                            : t("loaderReplace.downloadAndReplace")
+                          : offer.data?.stored
+                            ? t("loaderInstall.install")
+                            : t("loaderInstall.downloadAndInstall")}
                 </Button>
               </>
             )}

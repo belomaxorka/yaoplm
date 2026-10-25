@@ -54,6 +54,13 @@ impl Release {
         })
     }
 
+    /// `GET /repos/{owner}/{repo}/releases`: every release, newest first.
+    pub fn parse_list(json: &[u8]) -> Result<Vec<Self>, LoaderError> {
+        serde_json::from_slice(json).map_err(|e| {
+            LoaderError::new(Phrase::error("loaderReleaseUnreadable").with("error", e.to_string()))
+        })
+    }
+
     pub fn asset(&self, name: &str) -> Option<&Asset> {
         self.assets.iter().find(|a| a.name == name)
     }

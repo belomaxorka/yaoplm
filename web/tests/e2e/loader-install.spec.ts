@@ -52,16 +52,16 @@ test("the recommended build goes onto a fresh stick, and the card names it", asy
 
 test("a program that is not OPL is replaced only when ticked, and kept as a backup", async ({ page, request }) => {
   const stick = await emptyStick(request);
-  mkdirSync(path.join(stick, "APPS"), { recursive: true });
-  // wLaunchELF where PS2BBL looks first.
-  const foreign = Buffer.concat([Buffer.from("\x7fELF", "latin1"), Buffer.from("wLaunchELF 4.43a")]);
-  writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), foreign);
-
   await openLibrary(page, request, { language: "ru" });
   await stickAsUsb(page);
   await page.goto("/devices");
   await stickCard(page).getByTestId("device-install-loader").click();
   const dialog = page.getByTestId("loader-install-dialog");
+  // wLaunchELF where PS2BBL looks first, put there while the wizard is
+  // open: the plan reads the stick, the card has not seen it.
+  mkdirSync(path.join(stick, "APPS"), { recursive: true });
+  const foreign = Buffer.concat([Buffer.from("\x7fELF", "latin1"), Buffer.from("wLaunchELF 4.43a")]);
+  writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), foreign);
   await dialog.getByTestId("loader-method-ps2bbl").click();
   await expect(dialog.getByTestId("loader-offer")).toBeVisible();
   await dialog.getByTestId("loader-install-start").click();
@@ -89,9 +89,6 @@ for (const language of ["en", "ru"] as const) {
   for (const theme of ["light", "dark"] as const) {
     test(`loader install screenshots ${language} ${theme}`, async ({ page, request }) => {
       const stick = await emptyStick(request);
-      // Something else where PS2BBL looks: the plan stops at it.
-      mkdirSync(path.join(stick, "APPS"), { recursive: true });
-      writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), "\x7fELF wLaunchELF");
       await page.setViewportSize({ width: 1280, height: 900 });
       await openLibrary(page, request, { language, theme });
       await stickAsUsb(page);
@@ -103,6 +100,9 @@ for (const language of ["en", "ru"] as const) {
       await page.goto("/devices");
       await stickCard(page).getByTestId("device-install-loader").click();
       const dialog = page.getByTestId("loader-install-dialog");
+      // Something else where PS2BBL looks: the plan stops at it.
+      mkdirSync(path.join(stick, "APPS"), { recursive: true });
+      writeFileSync(path.join(stick, "APPS", "OPNPS2LD.ELF"), "\x7fELF wLaunchELF");
       await expect(dialog.getByTestId("loader-offer")).toBeVisible();
       await shot("loader-install");
 
