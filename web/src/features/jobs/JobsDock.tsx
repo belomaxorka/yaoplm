@@ -42,7 +42,7 @@ export function JobsDock() {
           </Button>
         )}
       </div>
-      <ul className="flex max-h-60 flex-col gap-3 overflow-y-auto" data-testid="jobs-dock-list">
+      <ul className="relative flex max-h-60 flex-col gap-3 overflow-y-auto" data-testid="jobs-dock-list">
         {active.map((job) => (
           <li key={job.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">
