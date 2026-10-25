@@ -354,6 +354,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
                 .with("build", &build.name)
                 .with("path", &target.path),
         );
+        tx.loader = true;
         match occupant(fs, &path, build.family, &request.elf.sha256)? {
             Occupant::Folder => {
                 plan.notices.push(Notice::error(
@@ -486,6 +487,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
         let dir = format!("{BACKUP_DIR}/{stamp}");
         let backup = rel(&format!("{dir}/{name}"))?;
         let mut tx = Transaction::titled(Phrase::title("retireLoader").with("path", path));
+        tx.loader = true;
         for step in missing_parents(fs, &backup, &mut planned)? {
             tx.push(step);
         }
@@ -517,6 +519,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
     {
         let mut tx =
             Transaction::titled(Phrase::title("installLanguage").with("language", language));
+        tx.loader = true;
         if !state.has_folder(folder) && !planned.iter().any(|p| p.eq_ignore_ascii_case(folder)) {
             tx.push(Step::CreateDir { path: rel(folder)? });
         }
@@ -580,6 +583,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
                 }
                 if let Some(step) = put(fs, &path, doc.to_bytes())? {
                     let mut tx = Transaction::titled(Phrase::title("writeStarterSettings"));
+                    tx.loader = true;
                     tx.push(step);
                     tx.notices
                         .push(Notice::info(Phrase::notice("starterSettingsCard")));

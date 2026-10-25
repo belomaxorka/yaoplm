@@ -82,6 +82,7 @@ fn add_journal(plan: &mut Plan, journal: &Journal, action: RecoveryAction) {
             .map_or_else(|| Param::from(&tx.title), Param::from);
         let mut recovery = Transaction::titled(Phrase::title(verb).with("title", title));
         recovery.game = tx.game.clone();
+        recovery.loader = tx.loader;
         for (i, step) in steps.iter().enumerate() {
             if i < commit {
                 recovery.push(step.shifted(base));

@@ -165,6 +165,11 @@ pub struct PlanTransaction {
     /// CFG keys this transaction changes (CFG-2).
     #[serde(default)]
     pub cfg_changes: Vec<CfgKeyChange>,
+    /// It changes what the console runs (a loader, its language or
+    /// starter settings): simple mode lists it like a game.
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<bool>", optional))]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub loader: bool,
 }
 
 /// A CFG key before and after a plan; `None` is absent.
@@ -356,6 +361,7 @@ impl PlanView {
                             after: c.after.clone(),
                         })
                         .collect(),
+                    loader: tx.loader,
                 })
                 .collect(),
             skipped: plan

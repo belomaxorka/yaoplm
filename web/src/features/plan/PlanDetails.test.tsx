@@ -75,6 +75,38 @@ describe("plans and logs keep their details out of the way", () => {
     expect(container.querySelector("[data-testid=plan-steps]")).toBeNull();
   });
 
+  it("show the loader a plan puts on the device in simple mode", () => {
+    // A loader plan has no games: the loader itself is what it changes.
+    const rollback: PlanView = {
+      ...plan,
+      kind: "rollbackLoader",
+      title: "Roll back the loader in UPDT/OPL.ELF",
+      transactions: [
+        {
+          title: "Put .yaoplm/backup/loader/20261025-180851/UPDT_OPL.ELF back as UPDT/OPL.ELF",
+          game: null,
+          loader: true,
+          steps: [{ op: "rename", path: ".yaoplm/backup/loader/20261025-180851/UPDT_OPL.ELF", to: "UPDT/OPL.ELF", bytes: null, removal: null, source: null }],
+          commit: 1,
+          notices: [],
+          cfgChanges: [],
+        },
+        {
+          title: "Remember the installed loader",
+          game: null,
+          steps: [{ op: "putFile", path: ".yaoplm/manifest.json", to: null, bytes: 433, removal: null, source: null }],
+          commit: 1,
+          notices: [],
+          cfgChanges: [],
+        },
+      ],
+    };
+    show(true, <PlanDetails plan={rollback} />);
+    expect(screen.getByText("1 operation")).toBeTruthy();
+    expect(screen.getByText(/back as UPDT\/OPL\.ELF/)).toBeTruthy();
+    expect(screen.queryByText("Remember the installed loader")).toBeNull();
+  });
+
   it("fold a job log away, and leave it out in simple mode", () => {
     const advanced = show(false, <JobLog entries={log} />);
     const details = advanced.container.querySelector("details[data-testid=job-log-details]") as HTMLDetailsElement;
