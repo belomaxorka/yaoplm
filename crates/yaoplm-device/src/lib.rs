@@ -2,8 +2,10 @@
 //!
 //! - [`volume`]: which volumes are mounted, their file system, free space,
 //!   cluster size and serial number (DEV-1).
-//! - [`advice`]: a read-only verdict on a volume for a loader profile
-//!   (DEV-2, research/06 §6.1).
+//! - [`mode`]: whether OPL reads a device plugged into the PS2 or over SMB,
+//!   by the device's place (ADR-0047).
+//! - [`advice`]: a read-only verdict on a volume for a loader profile and a
+//!   mode (DEV-2, research/06 §6.1).
 //! - [`fs`]: [`DeviceFs`], the only way the rest of YAOPLM writes to a
 //!   device. Paths are [`RelPath`]s, so nothing can be written outside the
 //!   selected root (CLAUDE.md rule 1).
@@ -19,6 +21,7 @@
 pub mod advice;
 pub mod copy;
 pub mod fs;
+pub mod mode;
 pub mod source;
 mod sys;
 pub mod volume;
@@ -26,6 +29,7 @@ pub mod volume;
 pub use advice::{Advice, DiagnoseOptions, Level, diagnose};
 pub use copy::{CancelToken, CopyError, copy_exact};
 pub use fs::{DeviceFile, DeviceFs, DirEntry, FileMeta, FsInfo, HostFs, PathError, RelPath};
+pub use mode::{DeviceMode, Place};
 pub use source::{HostSources, ReadSeek, SourceFs, SourceMeta};
 pub use volume::{
     Bus, FsKind, PartitionInfo, PartitionStyle, Volume, VolumeKind, list_volumes, volume_for_path,

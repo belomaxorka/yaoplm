@@ -88,7 +88,7 @@ function ConvertBody({
 }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
-  const { profile: loaderProfile } = useLoaderProfile();
+  const { profile: loaderProfile, mode } = useLoaderProfile();
   const ids = useId();
   const zsoReadable = loaderProfile !== "Opl110";
   const [target, setTarget] = useState<ConvertTarget>(() => suggestTarget(games, zsoReadable));
@@ -142,6 +142,7 @@ function ConvertBody({
               target,
               profile: loaderProfile,
               nameStyle: settings.nameStyle,
+              ...(mode ? { mode } : {}),
             })
           }
           data-testid="convert-preview"

@@ -234,7 +234,7 @@ impl DeviceFs for FatImage {
                 kind: FsKind::Fat32,
                 free_bytes: u64::from(stats.free_clusters()) * u64::from(stats.cluster_size()),
                 cluster_size: stats.cluster_size(),
-                remote: false,
+                smb: false,
                 fingerprint: format!("{:08X}|FAT32|fatfs", fs.volume_id()),
             })
         })

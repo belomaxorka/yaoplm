@@ -232,8 +232,10 @@ fn ul_games_by_index() {
 fn the_loader_profile_of_a_device() {
     let s = setup();
     let api = Api::new();
+    // As a stick plugged into the console: in a folder read over SMB the
+    // reasons add that the loader's files are copies.
     let inspect = |extra: Value| {
-        let mut request = json!({"type": "InspectDevice", "root": s.device});
+        let mut request = json!({"type": "InspectDevice", "root": s.device, "mode": "ps2"});
         for (key, value) in extra.as_object().unwrap() {
             request[key] = value.clone();
         }
@@ -302,6 +304,123 @@ fn the_loader_profile_of_a_device() {
             .iter()
             .all(|d| d["loader"]["key"].is_string())
     );
+}
+
+#[test]
+fn a_folder_on_the_computer_is_read_over_smb() {
+    // ADR-0047: the place gives the mode. A temp folder is never removable.
+    let s = setup();
+    let api = Api::new();
+    let inspect = |extra: Value| {
+        let mut request = json!({"type": "InspectDevice", "root": s.device});
+        for (key, value) in extra.as_object().unwrap() {
+            request[key] = value.clone();
+        }
+        call(&api, request).unwrap()
+    };
+    let codes = |device: &Value| -> Vec<String> {
+        device["advice"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["code"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    let device = inspect(json!({}));
+    assert_eq!(device["mode"]["mode"], "smb");
+    assert_eq!(device["mode"]["source"], "detected");
+    assert_eq!(device["mode"]["detected"], "smb");
+    assert_eq!(
+        device["mode"]["placeText"],
+        "a folder on the computer’s disk"
+    );
+    // No system disk error, no file system rules: SMB's own.
+    assert!(codes(&device).contains(&"smbRules".to_owned()), "{device}");
+    assert!(
+        device["advice"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["level"] != "error"),
+        "{device}"
+    );
+    // Empty, and still asked: the console leaves no sign over SMB.
+    assert_eq!(device["askProfile"], true);
+    assert_eq!(device["loader"]["detected"]["library"], false);
+
+    // Switched to the console mode for this device: the BDM rules, and an
+    // empty device is not asked (it gets OPL installed first).
+    let key = device["loader"]["key"].as_str().unwrap().to_owned();
+    let device = inspect(json!({"modeOverrides": [{"key": key, "mode": "ps2"}]}));
+    assert_eq!(
+        (&device["mode"]["mode"], &device["mode"]["source"]),
+        (&json!("ps2"), &json!("override"))
+    );
+    assert_eq!(device["mode"]["detected"], "smb");
+    assert!(!codes(&device).contains(&"smbRules".to_owned()));
+    assert_eq!(device["askProfile"], false);
+    let device = inspect(json!({"mode": "ps2"}));
+    assert_eq!(device["mode"]["source"], "explicit");
+
+    // RiptOPL's settings in a folder read over SMB are a copy.
+    let app = Path::new(&s.device).join("APPS").join("APP_RIPTOPL");
+    fs::create_dir_all(&app).unwrap();
+    fs::write(app.join("settings_riptopl.cfg"), "enable_usb=1\r\n").unwrap();
+    let device = inspect(json!({}));
+    assert_eq!(device["loader"]["profile"], "RiptOpl");
+    assert_eq!(
+        device["loader"]["detected"]["reason"]["key"],
+        "reasons.profileByCopy"
+    );
+    assert_eq!(
+        device["loader"]["detected"]["reasonText"],
+        "APPS/APP_RIPTOPL/settings_riptopl.cfg, which only RiptOPL writes (a copy: over SMB the console starts OPL from a memory card or stick)"
+    );
+    assert!(codes(&device).contains(&"smbRulesSmb2".to_owned()));
+    assert_eq!(device["askProfile"], false);
+    let device = inspect(json!({"mode": "ps2"}));
+    assert_eq!(
+        device["loader"]["detected"]["reason"]["key"],
+        "reasons.profileByFiles"
+    );
+
+    // A server root is a folder on the server.
+    let root = fs::canonicalize(Path::new(&s.device)).unwrap();
+    let server = Api::with_roots(vec![root]);
+    let devices = call(&server, json!({"type": "ListDevices"})).unwrap();
+    assert_eq!(
+        devices["devices"][0]["mode"]["placeText"],
+        "a folder on the server"
+    );
+}
+
+#[test]
+fn a_library_folder_inside_the_root() {
+    let s = setup();
+    let api = Api::new();
+    let plan = call(
+        &api,
+        json!({"type": "PlanInit", "root": s.device, "folder": "PS2"}),
+    )
+    .unwrap();
+    assert_eq!(
+        plan["transactions"][0]["steps"].as_array().unwrap().len(),
+        10
+    );
+    execute(&api, &plan, false);
+    for name in ["CD", "DVD", "ART", "VMC"] {
+        assert!(
+            Path::new(&s.device).join("PS2").join(name).is_dir(),
+            "{name}"
+        );
+    }
+    let err = call(
+        &api,
+        json!({"type": "PlanInit", "root": s.device, "folder": "../out"}),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::BadRequest);
 }
 
 #[test]
