@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use yaoplm_device::RelPath;
-use yaoplm_device::fs::{DeviceFs, TMP_SUFFIX, list_or_empty, write_atomic};
+use yaoplm_device::fs::{DeviceFs, DirEntry, TMP_SUFFIX, find_entry, list_or_empty, write_atomic};
 
 use crate::plan::Plan;
 
@@ -142,17 +142,45 @@ pub fn remove(fs: &dyn DeviceFs, id: &str) -> io::Result<()> {
     }
 }
 
-/// Removes temporary files of journal writes that never completed (the
-/// device vanished mid-write). They are never a journal: an atomic write
-/// leaves the previous `.json`, if any, in place.
+fn join(dir: &RelPath, name: &str) -> io::Result<RelPath> {
+    dir.join(name)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+}
+
+fn read(fs: &dyn DeviceFs, file: &RelPath) -> Result<Journal, String> {
+    fs.read(file)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| serde_json::from_slice::<Journal>(&bytes).map_err(|e| e.to_string()))
+}
+
+/// The journal a temporary file of an atomic write stands for, when that
+/// journal is gone. FAT has no atomic rename over a file: Windows removes
+/// the old journal and then renames the new one in, so a stick pulled in
+/// between leaves only the temporary file, complete and synced.
+fn orphan_temp<'a>(name: &'a str, entries: &[DirEntry]) -> Option<&'a str> {
+    name.strip_suffix(TMP_SUFFIX)
+        .filter(|json| json.ends_with(".json") && find_entry(entries, json).is_none())
+}
+
+/// Before a plan runs: puts back a journal left only as its temporary file
+/// (see `orphan_temp`) and removes the temporary files of journal writes
+/// that never completed. Such a file is no journal: either it does not
+/// read, or the `.json` it was to replace is still there and holds the
+/// older, safer state.
 pub fn clean_temp(fs: &dyn DeviceFs) -> io::Result<()> {
     let dir = rel(JOURNAL_DIR)?;
-    for entry in list_or_empty(fs, &dir)? {
-        if !entry.is_dir && entry.name.ends_with(TMP_SUFFIX) {
-            let path = dir
-                .join(&entry.name)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-            fs.remove_file(&path)?;
+    let entries = list_or_empty(fs, &dir)?;
+    for entry in entries
+        .iter()
+        .filter(|e| !e.is_dir && e.name.ends_with(TMP_SUFFIX))
+    {
+        let tmp = join(&dir, &entry.name)?;
+        match orphan_temp(&entry.name, &entries) {
+            Some(json) if read(fs, &tmp).is_ok() => {
+                fs.rename(&tmp, &join(&dir, json)?)?;
+                fs.sync_dir(&dir)?;
+            }
+            _ => fs.remove_file(&tmp)?,
         }
     }
     Ok(())
@@ -165,25 +193,30 @@ pub struct Unreadable {
     pub error: String,
 }
 
-/// Every journal left on the device, oldest first.
+/// Every journal left on the device, oldest first, including one left only
+/// as its temporary file (see `orphan_temp`). Reads only: [`clean_temp`]
+/// puts such a file back before the next plan runs.
 pub fn load_all(fs: &dyn DeviceFs) -> io::Result<(Vec<Journal>, Vec<Unreadable>)> {
     let mut journals = Vec::new();
     let mut unreadable = Vec::new();
-    for entry in list_or_empty(fs, &rel(JOURNAL_DIR)?)? {
-        if entry.is_dir || !entry.name.ends_with(".json") {
+    let dir = rel(JOURNAL_DIR)?;
+    let entries = list_or_empty(fs, &dir)?;
+    for entry in entries.iter().filter(|e| !e.is_dir) {
+        let file = join(&dir, &entry.name)?;
+        if orphan_temp(&entry.name, &entries).is_some() {
+            // One that does not read was never complete: no journal.
+            if let Ok(journal) = read(fs, &file) {
+                journals.push(journal);
+            }
             continue;
         }
-        let file = rel(JOURNAL_DIR)?
-            .join(&entry.name)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        let parsed = fs
-            .read(&file)
-            .map_err(|e| e.to_string())
-            .and_then(|bytes| serde_json::from_slice::<Journal>(&bytes).map_err(|e| e.to_string()));
-        match parsed {
+        if !entry.name.ends_with(".json") {
+            continue;
+        }
+        match read(fs, &file) {
             Ok(journal) => journals.push(journal),
             Err(error) => unreadable.push(Unreadable {
-                file: entry.name,
+                file: entry.name.clone(),
                 error,
             }),
         }
@@ -194,7 +227,47 @@ pub fn load_all(fs: &dyn DeviceFs) -> io::Result<(Vec<Journal>, Vec<Unreadable>)
 
 #[cfg(test)]
 mod tests {
+    use yaoplm_device::FsKind;
+    use yaoplm_test_support::MemFs;
+
     use super::*;
+    use crate::plan::PlanKind;
+
+    #[test]
+    fn a_temp_file_is_a_journal_only_when_the_journal_is_gone() {
+        let fs = MemFs::new(FsKind::Fat32);
+        let plan = Plan::new(PlanKind::Import, "p", "fp".into(), 0);
+        let (kept, orphan, cut) = (
+            Journal::new(&plan),
+            Journal::new(&plan),
+            Journal::new(&plan),
+        );
+        let json = |j: &Journal| serde_json::to_vec(j).unwrap_or_default();
+        let at = |j: &Journal, suffix: &str| format!("{JOURNAL_DIR}/{}.json{suffix}", j.id);
+        // A newer complete write that never replaced the journal: the
+        // journal holds the older, safer state.
+        fs.insert_file(&at(&kept, ""), &json(&kept));
+        fs.insert_file(&at(&kept, TMP_SUFFIX), &json(&kept));
+        // Pulled out between FAT's remove and rename.
+        fs.insert_file(&at(&orphan, TMP_SUFFIX), &json(&orphan));
+        // Pulled out while the first write of a plan was under way.
+        fs.insert_file(&at(&cut, TMP_SUFFIX), &json(&cut)[..10]);
+
+        let ids = |fs: &MemFs| -> Vec<String> {
+            let (journals, unreadable) = load_all(fs).unwrap_or_default();
+            assert!(unreadable.is_empty(), "{unreadable:?}");
+            journals.into_iter().map(|j| j.id).collect()
+        };
+        let mut want = vec![kept.id.clone(), orphan.id.clone()];
+        want.sort();
+        assert_eq!(ids(&fs), want);
+        clean_temp(&fs).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(ids(&fs), want);
+        let left: Vec<String> = fs.files().into_iter().map(|(p, _)| p).collect();
+        let mut expected = vec![at(&kept, ""), at(&orphan, "")];
+        expected.sort();
+        assert_eq!(left, expected);
+    }
 
     #[test]
     fn ids_are_dated_and_unique() {

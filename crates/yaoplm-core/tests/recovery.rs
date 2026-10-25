@@ -8,9 +8,11 @@ mod common;
 use common::{GIB, assert_same_as, big_iso, files, run, run_with, src};
 use yaoplm_core::exec::Outcome;
 use yaoplm_core::import::{ImportOptions, Layout, plan_import};
+use yaoplm_core::journal;
 use yaoplm_core::plan::{PlanKind, Step};
 use yaoplm_core::recovery::{RecoveryAction, plan_recovery};
-use yaoplm_device::{CancelToken, FsKind};
+use yaoplm_device::fs::DeviceFs;
+use yaoplm_device::{CancelToken, FsKind, RelPath};
 use yaoplm_formats::ul_cfg::UlCfg;
 use yaoplm_test_support::{MemFs, Variant, VirtualSources};
 
@@ -49,6 +51,65 @@ fn interrupted_split() -> (MemFs, VirtualSources, yaoplm_test_support::VirtualIs
     assert!(report.journal.is_some());
     fs.replug();
     (fs, sources, iso)
+}
+
+/// FAT renames over a file in two steps: Windows removes the old journal,
+/// then renames the new one in. A stick pulled in between leaves only the
+/// complete, synced `.json.yaoplm-tmp`.
+fn journal_left_as_temp_file(fs: &MemFs) -> String {
+    let (path, _) = fs
+        .files()
+        .into_iter()
+        .find(|(p, _)| p.starts_with(".yaoplm/journal/") && p.ends_with(".json"))
+        .unwrap();
+    let bytes = fs.bytes(&path).unwrap();
+    DeviceFs::remove_file(fs, &RelPath::new(&path).unwrap()).unwrap();
+    let tmp = format!("{path}.yaoplm-tmp");
+    fs.insert_file(&tmp, &bytes);
+    tmp
+}
+
+#[test]
+fn a_journal_left_as_its_temp_file_is_still_recovered() {
+    let (fs, sources, _) = interrupted_split();
+    let tmp = journal_left_as_temp_file(&fs);
+
+    // Scans see the unfinished operation, so nothing else may run.
+    let blocked =
+        plan_import(&fs, &sources, &[src("Huge.iso")], &ImportOptions::default()).unwrap();
+    assert!(
+        blocked
+            .notices
+            .iter()
+            .any(|n| n.code == "unfinishedOperation"),
+        "{:?}",
+        blocked.notices
+    );
+    // The clean-up before a plan runs keeps it.
+    journal::clean_temp(&fs).unwrap();
+    assert_eq!(journals(&fs), 1, "{:?}", fs.files());
+
+    let plan = plan_recovery(&fs, RecoveryAction::Rollback).unwrap();
+    assert!(plan.transactions[0].title.starts_with("Undo"), "{plan:?}");
+    let report = run(&plan, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert!(ul_names(&fs).is_empty(), "{:?}", fs.files());
+    assert_eq!(journals(&fs), 0);
+    assert!(!fs.exists(&tmp));
+}
+
+#[test]
+fn a_journal_left_as_its_temp_file_blocks_and_is_recovered_unclean() {
+    // Without the clean-up first: recovery reads the temp file itself.
+    let (fs, sources, _) = interrupted_split();
+    let tmp = journal_left_as_temp_file(&fs);
+    let plan = plan_recovery(&fs, RecoveryAction::Rollback).unwrap();
+    assert!(plan.transactions[0].title.starts_with("Undo"), "{plan:?}");
+    let report = run(&plan, &fs, &sources);
+    assert!(report.succeeded(), "{:?}", report.error);
+    assert!(ul_names(&fs).is_empty(), "{:?}", fs.files());
+    assert_eq!(journals(&fs), 0);
+    assert!(!fs.exists(&tmp));
 }
 
 #[test]
