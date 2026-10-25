@@ -5,7 +5,8 @@ use std::path::Path;
 
 use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{
-    ActiveProfile, DeviceInfo, DriveBus, DriveKind, FileSystem, PartitionTable, ProfileSource,
+    ActiveProfile, DeviceInfo, DriveBus, DriveKind, FileSystem, InstalledLoader, LoaderFreshness,
+    LoaderKnownBy, PartitionTable, ProfileSource,
 };
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
@@ -378,6 +379,43 @@ pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     out
 }
 
+/// A loader on the device, its build and where it stands (LDR-4).
+fn installed_line(loader: &InstalledLoader) -> String {
+    let mut line = match (&loader.build, &loader.version) {
+        (Some(build), Some(version)) => format!("{build} {version}"),
+        (None, Some(version)) => format!("{} {version}", loader.family),
+        (_, None) => format!("{}, version unknown", loader.family),
+    };
+    let _ = write!(line, " at {}", loader.path);
+    line.push_str(match loader.known_by {
+        LoaderKnownBy::Manifest => " (installed by YAOPLM)",
+        LoaderKnownBy::Checksum => " (by checksum)",
+        LoaderKnownBy::Version => " (by the version inside the file)",
+        LoaderKnownBy::Name => " (by its name)",
+    });
+    if loader.manifest_stale {
+        line.push_str("; replaced since YAOPLM installed it");
+    }
+    match (loader.freshness, &loader.latest) {
+        (LoaderFreshness::Update, Some(latest)) => {
+            let _ = write!(line, "; update to {latest}: `yaoplm loader update`");
+        }
+        (LoaderFreshness::Current, _) => line.push_str("; up to date"),
+        _ if loader.build.is_some() => {
+            line.push_str("; not checked for updates: `yaoplm loader update`")
+        }
+        _ => {}
+    }
+    if let Some(backup) = &loader.backup {
+        let _ = write!(
+            line,
+            "; backup {}: `yaoplm loader rollback`",
+            backup.version.as_deref().unwrap_or(&backup.file)
+        );
+    }
+    line
+}
+
 pub fn device(device: &DeviceInfo) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "{}", device_line(device));
@@ -413,6 +451,9 @@ pub fn device(device: &DeviceInfo) -> String {
             let _ = writeln!(out, "Found:      {found} at {}", loader.path);
         }
         plan_notices(&mut out, "", &detected.notices);
+    }
+    for loader in &device.installed {
+        let _ = writeln!(out, "Installed:  {}", installed_line(loader));
     }
     for id in &device.unfinished {
         let _ = writeln!(out, "x unfinished operation {id}: run `yaoplm recover`");

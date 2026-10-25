@@ -96,10 +96,13 @@ export function InstallLoaderDialog({
   device,
   open,
   onOpenChange,
+  initial,
 }: {
   device: DeviceInfo;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** "Reinstall…": the build and preset already on the device. */
+  initial?: { build: string | null; preset: string | null };
 }) {
   const { t, i18n } = useTranslation();
   const { transport } = useApi();
@@ -107,7 +110,8 @@ export function InstallLoaderDialog({
   const simple = useSimpleMode();
   const queryClient = useQueryClient();
   const ids = useId();
-  const [form, setForm] = useState<Form>(freshForm);
+  const start = (): Form => ({ ...freshForm(), build: initial?.build ?? null, method: initial?.preset ?? null });
+  const [form, setForm] = useState<Form>(start);
   const [busy, setBusy] = useState<"download" | "finish" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // What was planned last: a re-plan (replace the foreign file) starts from it.
@@ -115,7 +119,7 @@ export function InstallLoaderDialog({
   const [done, setDone] = useState<{ hints: LoaderBootHint[]; card: boolean } | null>(null);
 
   const close = () => {
-    setForm(freshForm());
+    setForm(start());
     setError(null);
     setPlanned(null);
     setDone(null);

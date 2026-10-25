@@ -9,7 +9,7 @@ use crate::devices::{DeviceInfo, ProfileOverride};
 use crate::dir::DirListing;
 use crate::jobs::{JobInfo, JobKind, JobLogEntry};
 use crate::library::{ImageDetails, LoaderProfile, Media};
-use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderTarget};
+use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderOffer, LoaderTarget};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
 use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
@@ -546,6 +546,25 @@ pub enum Request {
         path: Option<String>,
         device: LoaderTarget,
     },
+    /// Plans updating the loader at `path` on `root` to the stored ELF
+    /// `sha256`, a build of the same channel (LDR-4): the ELF, its language
+    /// pack and the manifest, with a backup of the old ELF.
+    PlanUpdateLoader {
+        root: String,
+        path: String,
+        sha256: String,
+    },
+    /// Plans putting back the newest backup of the loader at `path` (LDR-4);
+    /// what is there becomes the newest backup.
+    PlanRollbackLoader {
+        root: String,
+        path: String,
+    },
+    /// The newest release of `build`'s channel as it was last read, without
+    /// the network (LDR-4): what the "Update available" window shows.
+    CachedLoaderRelease {
+        build: String,
+    },
 }
 
 /// The successful answer to a [`Request`].
@@ -594,6 +613,10 @@ pub enum Response {
     },
     LoaderBootHints {
         hints: Vec<LoaderBootHint>,
+    },
+    /// `None`: no release of the channel was read yet.
+    CachedLoaderRelease {
+        offer: Option<Box<LoaderOffer>>,
     },
 }
 

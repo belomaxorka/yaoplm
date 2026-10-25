@@ -11,8 +11,10 @@
 //! picture each (ART-1, ADR-0035), so the art screens work without the
 //! network, and a
 //! Redump DAT that verifies some of the games and not others (GAME-5),
-//! `sets/` with two picture sets to import (ART-5) and `loaders/`, the
-//! catalogue builds' GitHub releases with test ELFs (LDR-2, LDR-3);
+//! `sets/` with two picture sets to import (ART-5), `loaders/`, the
+//! catalogue builds' GitHub releases with test ELFs (LDR-2, LDR-3), and
+//! `loaders-next/`, the same with upstream's beta rebuilt as build 2280
+//! (LDR-4: "Check for updates" against it finds an update);
 //! `<folder>/stick` is an empty device to install a loader on. Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
@@ -299,6 +301,10 @@ fn main() -> ExitCode {
     ReleaseMirror::new(&mirror.join("loaders"))
         .official()
         .expect("loader releases");
+    let next = ReleaseMirror::new(&mirror.join("loaders-next"));
+    next.official().expect("loader releases");
+    next.beta("v1.2.0-Beta-2280-0123abc", "2026-10-20")
+        .expect("a newer beta");
 
     // A ul game, written the way YAOPLM writes it.
     let staged = dir.join("staging");

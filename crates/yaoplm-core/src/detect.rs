@@ -170,6 +170,8 @@ pub struct FoundLoader {
     pub exact: bool,
     /// `version` is the string inside the ELF.
     pub version_in_elf: bool,
+    /// Of the ELF: the install manifest is held to it (ADR-0040).
+    pub sha256: String,
 }
 
 impl FoundLoader {
@@ -414,6 +416,7 @@ impl Scan<'_> {
             path: path.to_owned(),
             exact: false,
             version_in_elf: false,
+            sha256: sha.clone(),
         };
         if family == Family::Opl
             && let Some(known) = self.known.iter().find(|k| k.sha256 == sha)

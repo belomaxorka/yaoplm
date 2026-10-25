@@ -178,6 +178,17 @@ export async function downloadLoader(
   return file;
 }
 
+/** Reads the loader catalogue on YAOPLM's main branch; it is kept only when it reads (LDR-1). */
+export async function updateLoaderCatalog(transport: Transport, mirror: string, signal?: AbortSignal): Promise<void> {
+  await loaderJob(transport, { type: "UpdateLoaderCatalog", ...(mirror ? { mirror } : {}) }, signal);
+}
+
+/** The newest release of a build's channel as it was last read, without the network (LDR-4). */
+export async function cachedLoaderRelease(transport: Transport, build: string): Promise<LoaderOffer | null> {
+  const { offer } = await call(transport, { type: "CachedLoaderRelease", build }, "CachedLoaderRelease");
+  return offer;
+}
+
 /** How the console starts an installed loader (BOOT-1). */
 export function loaderBootHints(
   transport: Transport,

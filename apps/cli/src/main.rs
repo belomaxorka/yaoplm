@@ -338,6 +338,31 @@ enum LoaderCommand {
     /// UPDT/OPL.ELF on a stick, an app folder on MX4SIO by default), a
     /// backup of what it replaces, the manifest; then how to start it.
     Install(LoaderInstall),
+    /// Update the loader on the device at ROOT to the newest build of its
+    /// channel (LDR-4): reads the release, downloads it after asking, then
+    /// plans replacing only the ELF (and its language pack). The old ELF
+    /// is kept as a backup for `yaoplm loader rollback`.
+    Update {
+        root: PathBuf,
+        /// The loader's path on the device, when it has several.
+        #[arg(long, value_name = "PATH")]
+        path: Option<String>,
+        /// A folder with GitHub's layout instead of the network.
+        #[arg(long, value_name = "DIR")]
+        mirror: Option<PathBuf>,
+        #[command(flatten)]
+        apply: Apply,
+    },
+    /// Put the newest backup of the loader on the device at ROOT back
+    /// (LDR-4); what is there now becomes the newest backup.
+    Rollback {
+        root: PathBuf,
+        /// The loader's path on the device, when it has several.
+        #[arg(long, value_name = "PATH")]
+        path: Option<String>,
+        #[command(flatten)]
+        apply: Apply,
+    },
     /// The loader ELFs YAOPLM keeps.
     Files {
         /// Print the answer as JSON.
@@ -1135,6 +1160,25 @@ fn loader(api: &Api, command: LoaderCommand) -> anyhow::Result<ExitCode> {
             json,
         ),
         LoaderCommand::Install(install) => install_loader(api, install),
+        LoaderCommand::Update {
+            root,
+            path,
+            mirror,
+            apply,
+        } => update_loader(api, &root, path.as_deref(), mirror.as_deref(), &apply),
+        LoaderCommand::Rollback { root, path, apply } => {
+            let Some(loader) = installed_loader(api, &root, path.as_deref(), true)? else {
+                return Ok(ExitCode::FAILURE);
+            };
+            plan_and_apply(
+                api,
+                Request::PlanRollbackLoader {
+                    root: absolute(&root),
+                    path: loader.path,
+                },
+                &apply,
+            )
+        }
         LoaderCommand::Files { json } => {
             let response = api.dispatch(Request::LoaderFiles);
             show(response, json, |response| match response {
@@ -1197,6 +1241,138 @@ fn confirm_download(
         eprintln!("yaoplm: nothing downloaded");
     }
     Ok(go)
+}
+
+/// The loader at `path` on the device, or its only one. `None` after
+/// saying why there is none to take; `backup` asks for one with a backup.
+fn installed_loader(
+    api: &Api,
+    root: &Path,
+    path: Option<&str>,
+    backup: bool,
+) -> anyhow::Result<Option<yaoplm_api::devices::InstalledLoader>> {
+    let device = match api.dispatch(Request::InspectDevice {
+        root: absolute(root),
+        profile: None,
+        overrides: None,
+        boot_from_device: None,
+    }) {
+        Ok(Response::Device(device)) => device,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => {
+            fail(&error, false)?;
+            return Ok(None);
+        }
+    };
+    let wanted = |l: &&yaoplm_api::devices::InstalledLoader| {
+        path.is_none_or(|p| {
+            l.path
+                .eq_ignore_ascii_case(p.replace('\\', "/").trim_start_matches('/'))
+        })
+    };
+    let candidates: Vec<_> = device
+        .installed
+        .iter()
+        .filter(wanted)
+        .filter(|l| !backup || l.backup.is_some())
+        .collect();
+    match candidates.as_slice() {
+        [one] => Ok(Some((*one).clone())),
+        [] => {
+            eprintln!(
+                "yaoplm: {}",
+                match (path, backup) {
+                    (Some(p), true) => format!("no loader with a backup at {p}"),
+                    (Some(p), false) => format!("no loader YAOPLM knows at {p}"),
+                    (None, true) => "no loader with a backup on this device".to_owned(),
+                    (None, false) => "no loader YAOPLM knows on this device".to_owned(),
+                }
+            );
+            Ok(None)
+        }
+        several => {
+            let paths: Vec<&str> = several.iter().map(|l| l.path.as_str()).collect();
+            eprintln!(
+                "yaoplm: several loaders ({}); name one with --path",
+                paths.join(", ")
+            );
+            Ok(None)
+        }
+    }
+}
+
+/// `yaoplm loader update`: the release of the installed build's channel,
+/// the download after asking, then the update plan.
+fn update_loader(
+    api: &Api,
+    root: &Path,
+    path: Option<&str>,
+    mirror: Option<&Path>,
+    apply: &Apply,
+) -> anyhow::Result<ExitCode> {
+    let Some(loader) = installed_loader(api, root, path, false)? else {
+        return Ok(ExitCode::FAILURE);
+    };
+    let Some(build) = loader.build.clone() else {
+        eprintln!(
+            "yaoplm: {}: YAOPLM does not know which build this is; `yaoplm loader install` replaces it",
+            loader.path
+        );
+        return Ok(ExitCode::FAILURE);
+    };
+    let mirror = mirror.map(absolute);
+    let offer = match loader_job(
+        api,
+        Request::LoaderRelease {
+            build: build.clone(),
+            tag: None,
+            mirror: mirror.clone(),
+        },
+    ) {
+        Ok(JobResult::LoaderOffer(offer)) => offer,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, apply.json),
+    };
+    // The release was just read: the device now says where it stands.
+    let Some(loader) = installed_loader(api, root, Some(&loader.path), false)? else {
+        return Ok(ExitCode::FAILURE);
+    };
+    if loader.freshness != yaoplm_api::devices::LoaderFreshness::Update {
+        println!(
+            "{}: {} is the newest build of its channel YAOPLM knows ({}).",
+            loader.path,
+            loader.version.as_deref().unwrap_or("?"),
+            offer.version
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+    let stored = offer.stored.is_some() && loader.language.is_none();
+    if !stored && !confirm_download(&offer, apply.yes, apply.json)? {
+        return Ok(ExitCode::SUCCESS);
+    }
+    let file = match loader_job(
+        api,
+        Request::DownloadLoader {
+            build,
+            tag: Some(offer.tag.clone()),
+            sha256: offer.file.sha256.clone(),
+            mirror,
+            languages: loader.language.is_some().then_some(true),
+        },
+    ) {
+        Ok(JobResult::LoaderFile(file)) => file,
+        Ok(other) => bail!("unexpected answer {other:?}"),
+        Err(error) => return fail(&error, apply.json),
+    };
+    plan_and_apply(
+        api,
+        Request::PlanUpdateLoader {
+            root: absolute(root),
+            path: loader.path,
+            sha256: file.sha256,
+        },
+        apply,
+    )
 }
 
 /// `yaoplm loader install`: the ELF from the store (downloaded first when

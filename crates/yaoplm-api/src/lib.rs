@@ -245,17 +245,24 @@ impl Api {
                     explicit: profile,
                     overrides: overrides.as_deref().unwrap_or_default(),
                 };
+                let context = loaders::context(&self.net.loader_store());
                 let devices = match &self.paths {
                     PathPolicy::Any => yaoplm_device::list_volumes()
                         .iter()
-                        .map(|v| DeviceInfo::new(v, &v.root, choice, false))
+                        .map(|v| DeviceInfo::new(v, &v.root, choice, false, context.as_ref()))
                         .collect(),
                     // A server shows its library roots, never the host's disks.
                     PathPolicy::Within(roots) => roots
                         .iter()
                         .filter_map(|root| {
                             let volume = yaoplm_device::volume_for_path(root).ok()?;
-                            Some(DeviceInfo::new(&volume, root, choice, false))
+                            Some(DeviceInfo::new(
+                                &volume,
+                                root,
+                                choice,
+                                false,
+                                context.as_ref(),
+                            ))
                         })
                         .collect(),
                 };
@@ -273,8 +280,14 @@ impl Api {
                     explicit: profile,
                     overrides: overrides.as_deref().unwrap_or_default(),
                 };
-                let mut info =
-                    DeviceInfo::new(&volume, &path, choice, boot_from_device.unwrap_or(false));
+                let context = loaders::context(&self.net.loader_store());
+                let mut info = DeviceInfo::new(
+                    &volume,
+                    &path,
+                    choice,
+                    boot_from_device.unwrap_or(false),
+                    context.as_ref(),
+                );
                 info.add_apple_double(count_apple_double(&path));
                 let (journals, unreadable) =
                     yaoplm_core::journal::load_all(&fs).map_err(io_error)?;
@@ -960,6 +973,19 @@ impl Api {
                 let plan = loaders::plan_install(&self.net, &fs, &params)?;
                 Ok(self.store(root, plan))
             }
+            Request::PlanUpdateLoader { root, path, sha256 } => {
+                let (root, fs) = self.root(&root)?;
+                let plan = loaders::plan_update(&self.net, &fs, &path, &sha256)?;
+                Ok(self.store(root, plan))
+            }
+            Request::PlanRollbackLoader { root, path } => {
+                let (root, fs) = self.root(&root)?;
+                let plan = loaders::plan_rollback(&self.net, &fs, &path)?;
+                Ok(self.store(root, plan))
+            }
+            Request::CachedLoaderRelease { build } => Ok(Response::CachedLoaderRelease {
+                offer: loaders::cached_release(&self.net.loader_store(), &build)?.map(Box::new),
+            }),
             Request::LoaderBootHints {
                 build,
                 presets,

@@ -159,6 +159,32 @@ impl ReleaseMirror {
         fs::write(file, text)
     }
 
+    /// Upstream's `latest` rebuilt as `version` (`v1.2.0-Beta-2271-b3a2199`),
+    /// uploaded on `date`: the ELF, its 7z under both names and the
+    /// language pack, all with digests.
+    pub fn beta(&self, version: &str, date: &str) -> io::Result<()> {
+        let elf = opl_elf(version);
+        let member = format!("OPNPS2LD/OPNPS2LD-{version}.ELF");
+        let packed = crate::packed::seven_zip(&[(member.as_str(), &elf)])?;
+        let commit = version.rsplit('-').next().unwrap_or_default();
+        let versioned = format!("OPNPS2LD-{version}.7z");
+        self.release(
+            "ps2homebrew/Open-PS2-Loader",
+            "latest",
+            "latest",
+            &format!(
+                "## Documentation\n* Add a note by @someone in https://github.com/ps2homebrew/Open-PS2-Loader/commit/{commit}\n"
+            ),
+            date,
+            &[
+                MirrorAsset { name: "OPNPS2LD.ELF", bytes: &elf, digest: true },
+                MirrorAsset { name: "OPNPS2LD.7z", bytes: &packed, digest: true },
+                MirrorAsset { name: &versioned, bytes: &packed, digest: true },
+                MirrorAsset { name: "OPNPS2LD-LANGS.7z", bytes: &beta_langs()?, digest: true },
+            ],
+        )
+    }
+
     /// The three catalogue builds as GitHub publishes them (research/17
     /// §6–§7), with test ELFs: `latest` of upstream (digests), `latest` of
     /// YAOPL (digests and `SHA256SUMS`) and upstream's `v1.1.0` (no
@@ -166,22 +192,7 @@ impl ReleaseMirror {
     /// the catalogue pins the real one's hash, so tests that download it
     /// pin this one through a catalogue of their own.
     pub fn official(&self) -> io::Result<Vec<u8>> {
-        let beta = opl_elf("v1.2.0-Beta-2271-b3a2199");
-        let beta_7z =
-            crate::packed::seven_zip(&[("OPNPS2LD/OPNPS2LD-v1.2.0-Beta-2271-b3a2199.ELF", &beta)])?;
-        self.release(
-            "ps2homebrew/Open-PS2-Loader",
-            "latest",
-            "latest",
-            "## Documentation\n* Add a note by @someone in https://github.com/ps2homebrew/Open-PS2-Loader/commit/b3a2199\n",
-            "2026-10-13",
-            &[
-                MirrorAsset { name: "OPNPS2LD.ELF", bytes: &beta, digest: true },
-                MirrorAsset { name: "OPNPS2LD.7z", bytes: &beta_7z, digest: true },
-                MirrorAsset { name: "OPNPS2LD-v1.2.0-Beta-2271-b3a2199.7z", bytes: &beta_7z, digest: true },
-                MirrorAsset { name: "OPNPS2LD-LANGS.7z", bytes: &beta_langs()?, digest: true },
-            ],
-        )?;
+        self.beta("v1.2.0-Beta-2271-b3a2199", "2026-10-13")?;
         let yaopl = opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl");
         let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&yaopl));
         self.release(

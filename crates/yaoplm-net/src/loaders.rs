@@ -21,7 +21,8 @@
 //! The store under the app data folder:
 //!
 //! ```text
-//! loaders/releases/<owner>__<repo>/<tag>.json   the last answer, with .etag
+//! loaders/releases/<owner>__<repo>/<tag>.json   the last answer, with .etag;
+//!                                               its time is the last check (LDR-4)
 //! loaders/catalog/<file>                        the catalogue from main, once it read
 //! loaders/elf/<sha256>.elf, <sha256>.json       ELFs ready to install and what they are
 //! ```
@@ -202,6 +203,19 @@ impl LoaderStore {
         };
         let etag = fs::read_to_string(path.with_extension("etag")).ok();
         Ok(Some((json, etag)))
+    }
+
+    /// When the release was last read, Unix seconds: the device card says
+    /// how fresh its "Update to …" is without asking GitHub (LDR-4).
+    pub fn release_checked_at(&self, repo: &str, tag: &str) -> Option<u64> {
+        let modified = fs::metadata(self.release_path(repo, tag).ok()?)
+            .ok()?
+            .modified()
+            .ok()?;
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs())
     }
 
     fn put_release(
@@ -410,6 +424,9 @@ impl LoaderNet<'_> {
                 )
                 .ok_or_else(|| NetError::Http(format!("{tag}: not a release tag")))?;
                 let json = fs::read(&path).map_err(NetError::io(&path))?;
+                // The mirror stands in for GitHub: the card reads its
+                // answer offline like GitHub's.
+                self.store.put_release(repo, tag, &json, None)?;
                 Ok(ReleaseJson {
                     json,
                     cached: false,
@@ -439,7 +456,11 @@ impl LoaderNet<'_> {
                         })
                     }
                     Fetched::NotModified => match cached {
-                        Some((json, _)) => Ok(ReleaseJson { json, cached: true }),
+                        Some((json, etag)) => {
+                            // Checked just now: the stored answer is fresh again.
+                            self.store.put_release(repo, tag, &json, etag.as_deref())?;
+                            Ok(ReleaseJson { json, cached: true })
+                        }
                         None => Err(NetError::Http(format!(
                             "{url}: 304 without a cached answer"
                         ))),

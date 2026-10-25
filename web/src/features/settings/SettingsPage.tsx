@@ -170,38 +170,52 @@ export function SettingsPage() {
           </Card>
         )}
 
-        {!simple && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("settings.loaders")}</CardTitle>
-              <CardDescription>{t("settings.loadersDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <Label htmlFor={`${ids}-loader-mirror`}>{t("settings.loaderMirror")}</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id={`${ids}-loader-mirror`}
-                  value={settings.loaderMirror}
-                  placeholder={t("settings.mirrorPlaceholder")}
-                  onChange={(event) => update({ loaderMirror: event.target.value })}
-                  className="font-mono text-xs"
-                  data-testid="loader-mirror"
-                />
-                {isTauri() && (
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label={t("settings.pickMirror")}
-                    onClick={() => void pickFolder().then((folder) => folder && update({ loaderMirror: folder }))}
-                  >
-                    <FolderOpen aria-hidden />
-                  </Button>
-                )}
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.loaders")}</CardTitle>
+            <CardDescription>{t("settings.loadersDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            <SettingRow
+              label={t("settings.offerLoaderUpdates")}
+              hint={t("settings.offerLoaderUpdatesHint")}
+              htmlFor={`${ids}-offer-updates`}
+            >
+              <Switch
+                id={`${ids}-offer-updates`}
+                checked={settings.offerLoaderUpdates}
+                onCheckedChange={(offerLoaderUpdates) => update({ offerLoaderUpdates })}
+                data-testid="offer-loader-updates"
+              />
+            </SettingRow>
+            {!simple && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${ids}-loader-mirror`}>{t("settings.loaderMirror")}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={`${ids}-loader-mirror`}
+                    value={settings.loaderMirror}
+                    placeholder={t("settings.mirrorPlaceholder")}
+                    onChange={(event) => update({ loaderMirror: event.target.value })}
+                    className="font-mono text-xs"
+                    data-testid="loader-mirror"
+                  />
+                  {isTauri() && (
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t("settings.pickMirror")}
+                      onClick={() => void pickFolder().then((folder) => folder && update({ loaderMirror: folder }))}
+                    >
+                      <FolderOpen aria-hidden />
+                    </Button>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground">{t("settings.loaderMirrorHint")}</span>
               </div>
-              <span className="text-xs text-muted-foreground">{t("settings.loaderMirrorHint")}</span>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

@@ -10,6 +10,10 @@
 //! 5. starter settings in `conf_opl.cfg`, only when asked for and only for a
 //!    USB device, other keys and their order kept.
 //!
+//! An update (LDR-4) is the same plan for the one path the build is at:
+//! no folders, no `title.cfg`, no settings, only the ELF, its language
+//! pack and the manifest.
+//!
 //! What sits at a path decides how: the same ELF is left alone; another OPL
 //! build is replaced; a file of another family, or one YAOPLM does not
 //! recognise, only with the user's "replace this file" (the backup is made
@@ -80,6 +84,8 @@ pub struct InstallRequest<'a> {
     pub starter_settings: bool,
     /// The user saw what is at a path and said to replace it.
     pub replace_foreign: bool,
+    /// A newer build of the channel over the installed one (LDR-4).
+    pub update: bool,
     /// Unix seconds: names the backups, dates the manifest.
     pub now: i64,
 }
@@ -111,12 +117,12 @@ pub fn stamp(now: i64) -> String {
 }
 
 /// The backup name of a path: `UPDT/OPL.ELF` → `UPDT_OPL.ELF`.
-fn backup_name(path: &str) -> String {
+pub(crate) fn backup_name(path: &str) -> String {
     path.replace('/', "_")
 }
 
 /// Why `path` cannot take a loader, if it cannot.
-fn refused(path: &str) -> Option<Phrase> {
+pub(crate) fn refused(path: &str) -> Option<Phrase> {
     let parsed = RelPath::new(path).ok().filter(|p| !p.is_root());
     let Some(parsed) = parsed else {
         return Some(Phrase::notice("loaderPathInvalid").with("path", path));
@@ -191,7 +197,7 @@ fn occupant(
 }
 
 /// Folders `path` needs that are not there yet, outermost first.
-fn missing_parents(
+pub(crate) fn missing_parents(
     fs: &dyn DeviceFs,
     path: &RelPath,
     planned: &mut Vec<String>,
@@ -215,7 +221,7 @@ fn missing_parents(
 }
 
 /// Backups of `name` under [`BACKUP_DIR`], newest first: (folder, len).
-fn backups(fs: &dyn DeviceFs, name: &str) -> io::Result<Vec<(String, u64)>> {
+pub(crate) fn backups(fs: &dyn DeviceFs, name: &str) -> io::Result<Vec<(String, u64)>> {
     let mut found = Vec::new();
     for stamp_dir in list_or_empty(fs, &rel(BACKUP_DIR)?)?
         .into_iter()
@@ -233,7 +239,7 @@ fn backups(fs: &dyn DeviceFs, name: &str) -> io::Result<Vec<(String, u64)>> {
 }
 
 /// A small file set through the plan: written whole, held to what was read.
-fn put(fs: &dyn DeviceFs, path: &RelPath, content: Vec<u8>) -> io::Result<Option<Step>> {
+pub(crate) fn put(fs: &dyn DeviceFs, path: &RelPath, content: Vec<u8>) -> io::Result<Option<Step>> {
     let current = fs
         .metadata(path)?
         .filter(|m| !m.is_dir)
@@ -277,11 +283,21 @@ fn title_cfg(
 pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Result<Plan> {
     let build = request.build;
     let state = DeviceState::read(fs)?;
-    let mut plan = new_plan(
-        PlanKind::InstallLoader,
-        Phrase::title("installLoader").with("build", &build.name),
-        &state,
-    );
+    let mut plan = if request.update {
+        new_plan(
+            PlanKind::UpdateLoader,
+            Phrase::title("updateLoader")
+                .with("build", &build.name)
+                .with("version", request.elf.version.as_deref().unwrap_or("?")),
+            &state,
+        )
+    } else {
+        new_plan(
+            PlanKind::InstallLoader,
+            Phrase::title("installLoader").with("build", &build.name),
+            &state,
+        )
+    };
     plan.profile = Some(build.profile);
     plan.sources.push(Source {
         path: request.elf.path.clone(),
@@ -303,7 +319,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
     // 1. The build's folders.
     let mut planned: Vec<String> = Vec::new();
     let mut folders = Transaction::titled(Phrase::title("createFolders"));
-    for name in &build.layout.folders {
+    for name in build.layout.folders.iter().filter(|_| !request.update) {
         if !state.has_folder(name) {
             planned.push(name.clone());
             folders.push(Step::CreateDir { path: rel(name)? });
@@ -404,7 +420,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
                 }
             }
         }
-        if let Some(title) = &target.title
+        if let Some(title) = target.title.as_ref().filter(|_| !request.update)
             && let Some(parent) = path.parent()
         {
             let cfg = parent
@@ -483,7 +499,7 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
     }
 
     // 5. Starter settings (ADR-0042): USB only; the card's copy wins.
-    if request.starter_settings {
+    if request.starter_settings && !request.update {
         match request.device {
             Target::Mx4sio => plan
                 .notices

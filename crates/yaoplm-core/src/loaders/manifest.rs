@@ -62,6 +62,11 @@ impl Manifest {
         self.loaders.sort_by(|a, b| a.path.cmp(&b.path));
     }
 
+    /// Drops the entry for `path`: what is there is not ours any more.
+    pub fn remove(&mut self, path: &str) {
+        self.loaders.retain(|l| !l.path.eq_ignore_ascii_case(path));
+    }
+
     pub fn entry(&self, path: &str) -> Option<&Installed> {
         self.loaders
             .iter()
