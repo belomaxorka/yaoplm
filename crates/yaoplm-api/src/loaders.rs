@@ -1425,6 +1425,14 @@ pub(crate) struct ReplaceParams {
     pub retire: Vec<String>,
 }
 
+/// One part of a replace plan's conversions. A part that converts nothing
+/// (every game went to the other part, or was skipped with its reason)
+/// does not block the replacement: only a plan of conversions alone does.
+fn conversions(mut part: Plan) -> Plan {
+    part.notices.retain(|n| n.code != "nothingToConvert");
+    part
+}
+
 /// Plans replacing the device's loader by another build (LDR-7, SPEC
 /// §5.10.3): the conversions the user kept, the pictures, then the build's
 /// folders, the ELF (the old one kept as a backup), the language pack, the
@@ -1538,7 +1546,7 @@ pub(crate) fn plan_replace(
             .into_iter()
             .partition(|s| s.reason.code == "tooLargeUseUl");
         to_iso.skipped = kept;
-        plan.absorb(to_iso);
+        plan.absorb(conversions(to_iso));
         if !too_large.is_empty() {
             let games: Vec<GameRef> = wanted
                 .iter()
@@ -1547,7 +1555,7 @@ pub(crate) fn plan_replace(
                 .collect();
             let to_ul = convert::plan_convert(fs, &games, convert::Target::Ul, &options)
                 .map_err(crate::op_error)?;
-            plan.absorb(to_ul);
+            plan.absorb(conversions(to_ul));
         }
     }
     // 2. Pictures the build cannot load, re-encoded with a backup.
@@ -1599,7 +1607,9 @@ pub(crate) fn plan_replace(
     }
     // 3. The loader, last.
     plan.absorb(loader);
-    let needed = plan.write_bytes();
+    // As the executor checks it: a conversion removes its ZSO before the
+    // next one starts, so the most needed at once, not the sum.
+    let needed = plan.peak_write_bytes();
     if needed > plan.free_bytes && plan.notices.iter().all(|n| n.code != "noSpace") {
         plan.notices.push(CoreNotice::error(
             Said::notice("noSpace")
@@ -1612,7 +1622,150 @@ pub(crate) fn plan_replace(
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Read};
+
+    use yaoplm_device::FsKind;
+    use yaoplm_formats::zso;
+    use yaoplm_test_support::fixtures::{placeholder_elf, ps2_cnf};
+    use yaoplm_test_support::loaders::opl_elf;
+    use yaoplm_test_support::{Content, IsoBuilder, MemFs};
+
     use super::*;
+
+    /// OPL 1.1.0 as the user's own file, stored the way `ImportLoader` does.
+    fn stored_stable(net: &Net, dir: &Path) -> String {
+        let file = dir.join("OPNPS2LD-v1.1.0.ELF");
+        std::fs::write(&file, opl_elf("v1.1.0")).unwrap();
+        match import_job(net, &file).unwrap() {
+            JobResult::LoaderFile(file) => file.sha256.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn to_stable(sha256: String, convert: &[&str]) -> ReplaceParams {
+        ReplaceParams {
+            install: InstallParams {
+                build: "opl-stable".into(),
+                sha256,
+                presets: vec!["fmcb".into()],
+                path: None,
+                device: LoaderTarget::Usb,
+                language: None,
+                starter_settings: false,
+                replace_foreign: false,
+            },
+            from: LoaderProfile::Opl120Beta,
+            convert: convert.iter().map(|&p| p.to_owned()).collect(),
+            reencode_art: false,
+            retire: Vec::new(),
+        }
+    }
+
+    /// A ZSO of an ISO of `len` bytes that does not compress.
+    fn noise_zso(id: &str, len: u64) -> Vec<u8> {
+        let mut iso = Vec::new();
+        IsoBuilder::new()
+            .system_cnf(ps2_cnf(&format!("cdrom0:\\{id};1")))
+            .file(format!("{id};1"), Content::Bytes(placeholder_elf()))
+            .file("DATA.BIN;1", Content::Noise { len, seed: 3 })
+            .build()
+            .read_to_end(&mut iso)
+            .unwrap();
+        let mut out = Cursor::new(Vec::new());
+        zso::compress(
+            &mut Cursor::new(&iso),
+            iso.len() as u64,
+            &mut out,
+            &mut |_| {},
+        )
+        .unwrap();
+        out.into_inner()
+    }
+
+    /// The device twice: a folder the library is scanned from, and a
+    /// `MemFs` with the same files that plans are made on, so its free
+    /// space can be set. `free` is what is left once the files are there.
+    fn stick(dir: &Path, files: &[(String, Vec<u8>)], free: u64) -> (std::path::PathBuf, MemFs) {
+        let root = dir.join("stick");
+        let fs = MemFs::new(FsKind::Fat32);
+        let mut used = 0;
+        for (path, bytes) in files {
+            let host = root.join(path);
+            std::fs::create_dir_all(host.parent().unwrap()).unwrap();
+            std::fs::write(&host, bytes).unwrap();
+            fs.insert_file(path, bytes);
+            used += (bytes.len() as u64).div_ceil(32 << 10) * (32 << 10);
+        }
+        (root, fs.with_free_bytes(used + free))
+    }
+
+    fn errors(plan: &Plan) -> Vec<String> {
+        plan.notices
+            .iter()
+            .filter(|n| n.level == yaoplm_core::plan::Level::Error)
+            .map(|n| n.code.clone())
+            .collect()
+    }
+
+    #[test]
+    fn replacing_counts_the_space_one_conversion_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = Net::new(dir.path().join("data"));
+        let sha = stored_stable(&net, dir.path());
+        // Three 8 MiB games, each ZSO removed once its ISO is complete: they
+        // need about 8 MiB at a time, not 24.
+        let games = ["SLUS_200.62", "SLUS_200.63", "SLUS_200.64"];
+        let files: Vec<(String, Vec<u8>)> = games
+            .iter()
+            .map(|id| (format!("CD/{id}.Game.zso"), noise_zso(id, 8 << 20)))
+            .collect();
+        let (root, fs) = stick(dir.path(), &files, 12 << 20);
+        let convert: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+        let plan = plan_replace(&net, &root, &fs, &to_stable(sha, &convert)).unwrap();
+        let converts = plan
+            .transactions
+            .iter()
+            .filter(|t| t.game.is_some())
+            .count();
+        assert_eq!(converts, 3);
+        assert!(
+            plan.write_bytes() > plan.free_bytes,
+            "the case this is about"
+        );
+        assert_eq!(errors(&plan), Vec::<String>::new());
+        assert!(plan.is_executable());
+    }
+
+    #[test]
+    fn zso_too_large_for_one_fat32_file_go_to_ul_without_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = Net::new(dir.path().join("data"));
+        let sha = stored_stable(&net, dir.path());
+        // A ZSO of a 5 GiB DVD: its ISO is over FAT32's 4 GiB limit.
+        let header = zso::ZsoHeader {
+            header_size: 24,
+            total_bytes: 5 << 30,
+            block_size: 2048,
+            version: 1,
+            align: 2,
+            reserved: [0; 2],
+        };
+        let huge = "DVD/SLUS_212.18.Huge.zso";
+        let (root, fs) = stick(
+            dir.path(),
+            &[(huge.to_owned(), header.to_bytes().to_vec())],
+            8 << 30,
+        );
+        let plan = plan_replace(&net, &root, &fs, &to_stable(sha, &[huge])).unwrap();
+        assert_eq!(errors(&plan), Vec::<String>::new());
+        let titles: Vec<&str> = plan.transactions.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles[0], "Convert Huge into 5 ul chunks", "{titles:?}");
+        assert!(plan.is_executable());
+        assert_eq!(
+            titles.last().copied(),
+            Some("Remember the installed loader")
+        );
+    }
 
     #[test]
     fn the_catalogue_reaches_the_front_ends() {
