@@ -29,7 +29,7 @@ pub use macos::{list_volumes, volume_for_path};
 #[cfg(unix)]
 pub use unix::preallocate;
 #[cfg(windows)]
-pub use windows::{fragments, list_volumes, preallocate, volume_for_path};
+pub use windows::{fragments, list_volumes, preallocate, sync_dir, volume_for_path};
 
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn fragments(_file: &std::fs::File) -> std::io::Result<u32> {

@@ -531,7 +531,11 @@ impl Runner<'_, '_> {
                     return Ok(());
                 }
                 fs.remove_file(path)
-                    .map_err(ExecError::io(doing("cannotRemove", &path)))
+                    .map_err(ExecError::io(doing("cannotRemove", &path)))?;
+                // On the device before the journal says it is done, like a
+                // rename: a removal lost to a cache would bring a file back.
+                fs.sync_dir(&path.parent().unwrap_or_default())
+                    .map_err(ExecError::io(doing("cannotSync", &path)))
             }
             Step::RemoveSource { source } => {
                 let source = self
