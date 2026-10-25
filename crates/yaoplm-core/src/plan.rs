@@ -135,12 +135,16 @@ impl TryFrom<String> for Bytes {
 pub enum Expect {
     Absent,
     Content(Bytes),
-    /// Recovery only: whatever is there is replaced.
+    /// Recovery only: whatever is there is replaced. Journals of older
+    /// versions undo with it; undo now uses [`Expect::Written`].
     Any,
+    /// Undo only: the file still holds what the plan wrote. Anything else
+    /// is a newer change, by OPL or another manager, and stays.
+    Written(Bytes),
 }
 
 /// Why a file is removed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Removal {
     /// The user's data: an image, chunks, CFG, art. Shown highlighted and
@@ -158,6 +162,10 @@ pub enum Removal {
     /// `iso_len` bytes, so a file someone else put there stays.
     #[serde(rename_all = "camelCase")]
     OursZso { iso_len: u64 },
+    /// A copy of `from` this operation made (rollback of `CopyFile`):
+    /// removed only while it holds the same bytes, so a file that was
+    /// there before and refused the copy stays.
+    Copied { from: RelPath },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -236,7 +244,7 @@ impl Step {
         ) && !matches!(
             self,
             Self::PutFile {
-                expect: Expect::Any,
+                expect: Expect::Any | Expect::Written(_),
                 ..
             }
         )

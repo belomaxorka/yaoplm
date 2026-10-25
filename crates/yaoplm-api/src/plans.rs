@@ -290,7 +290,9 @@ pub(crate) fn step(plan: &core::Plan, step: &Step) -> PlanStep {
             removal: Some(match what {
                 Removal::UserData => RemovalKind::UserData,
                 Removal::Cache => RemovalKind::Cache,
-                Removal::Ours | Removal::OursZso { .. } => RemovalKind::Ours,
+                Removal::Ours | Removal::OursZso { .. } | Removal::Copied { .. } => {
+                    RemovalKind::Ours
+                }
                 Removal::Backup => RemovalKind::Backup,
             }),
             ..base(StepOp::Remove, path)

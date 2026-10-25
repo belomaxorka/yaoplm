@@ -95,6 +95,7 @@
     "gptUnsupported": "GPT partition table: OPL 1.1.0 and old loaders read MBR only",
     "idKept": "Game IDs do not change: settings, art, cheats and memory cards keep working",
     "changedKept": "{{path}} changed after the plan was made, so it was kept",
+    "notRestored": "{{path}} changed after this operation wrote it, so its earlier version was not put back",
     "idKeptInName": "The image does not name {{startup}}, but ul.cfg does: the ID stays in the file name, where OPL reads it first",
     "idNotInName": "The game ID {{startup}} cannot start a file name; OPL will read it from the image",
     "imageDeletedAfterUl": "The image is deleted once the ul chunks and ul.cfg are complete",
