@@ -60,7 +60,7 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   await expect(panel.getByTestId("emulator-boot-channel").first()).toContainText("FMCB 1.966");
   await expect(panel.getByTestId("emulator-settings")).toHaveCount(simple ? 0 : 1);
   // The factory card makes 64 MiB cards: the doctor says so in both modes.
-  await expect(card).toContainText("New cards are made at 64 MiB");
+  await expect(card).toContainText("The emulator makes 64 MiB cards");
   await expect(card.getByTestId("device-install-loader")).toHaveCount(0);
   await expect(card.getByTestId("device-replace-loader")).toHaveCount(0);
 
