@@ -9,6 +9,7 @@ use std::io::Cursor;
 use proptest::prelude::*;
 use yaoplm_formats::cfg::{CfgDocument, KEY_MAX, VALUE_MAX};
 use yaoplm_formats::cht::ChtFile;
+use yaoplm_formats::cue::{self, CueError, CueSheet, MAX_FRAMES};
 use yaoplm_formats::image::{self, DiscImage};
 use yaoplm_formats::iso9660::{SECTOR_SIZE, SectorSource};
 use yaoplm_formats::ul_cfg::{RECORD_SIZE, UlCfg, UlRecord};
@@ -32,6 +33,24 @@ fn cfg_text() -> impl Strategy<Value = Vec<u8>> {
         ],
         0..300,
     )
+}
+
+/// One CUE line: the keywords the parser knows, positions with any number
+/// of minutes, blank and stray lines.
+fn cue_line() -> impl Strategy<Value = String> {
+    let mode = prop_oneof![Just("MODE2/2352"), Just("MODE1/2048"), Just("AUDIO")];
+    prop_oneof![
+        Just("FILE a.bin BINARY".to_owned()),
+        Just("FILE \"b c.bin\" BINARY".to_owned()),
+        (1u32..4, mode).prop_map(|(n, mode)| format!("TRACK {n:02} {mode}")),
+        (0u32..3, any::<u32>(), 0u32..60, 0u32..75)
+            .prop_map(|(n, m, s, f)| format!("INDEX {n:02} {m}:{s:02}:{f:02}")),
+        (0u32..3, 0u32..100, 0u32..60, 0u32..75)
+            .prop_map(|(n, m, s, f)| format!("INDEX {n:02} {m:02}:{s:02}:{f:02}")),
+        Just("REM SESSION 01".to_owned()),
+        Just(String::new()),
+        "[ -~]{0,20}",
+    ]
 }
 
 /// Keys OPL can store: no leading blank, no '=', no line breaks, no '#'.
@@ -122,8 +141,36 @@ proptest! {
         }
         let _ = system_cnf::parse_info(&bytes);
         let _ = ChtFile::parse(&bytes);
+        if let Ok(sheet) = CueSheet::parse(&bytes) {
+            let _ = sheet.data_track();
+        }
+        let _ = cue::probe_raw(&bytes);
         let _ = yaoplm_formats::games_bin::parse(&bytes);
         let _ = yaoplm_formats::vmc::opl_check(&bytes, bytes.len() as u64);
+    }
+
+    #[test]
+    fn cue_positions_stay_on_a_cd(
+        lines in proptest::collection::vec(
+            (cue_line(), prop_oneof![Just("\n"), Just("\r\n"), Just("\r")]),
+            0..12,
+        )
+    ) {
+        let text: String = lines.iter().map(|(line, end)| format!("{line}{end}")).collect();
+        match CueSheet::parse(text.as_bytes()) {
+            Ok(sheet) => {
+                let indexes = sheet.files.iter().flat_map(|f| &f.tracks).flat_map(|t| &t.indexes);
+                for &(_, frames) in indexes {
+                    prop_assert!(frames < MAX_FRAMES);
+                }
+                if let Ok(track) = sheet.data_track() {
+                    let end = track.start_sector + track.sectors.unwrap_or(0);
+                    prop_assert!(end < u64::from(MAX_FRAMES));
+                }
+            }
+            Err(CueError::Syntax { line, .. }) => prop_assert!((1..=lines.len()).contains(&line)),
+            Err(error) => prop_assert!(false, "parse gave {error}"),
+        }
     }
 
     #[test]
