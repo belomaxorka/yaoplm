@@ -212,3 +212,29 @@ describe("the main button on the device card (UI-6, UI-7)", () => {
     expect(within(card).getByTestId("device-open")).toHaveAttribute("data-variant", "outline");
   });
 });
+
+describe("facts and reasons on the device card (UI-4, UI-7)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false, root: "D:\\Games" });
+  });
+
+  // The owner's decision of 2026-10-27: both modes keep the reason of the
+  // connection and of the OPL version behind the ⓘ icon; the advanced
+  // mode differs by what it lists, not by how long a line is. Its facts
+  // are one line, joined by a middle dot. On main the advanced mode spelt
+  // every reason out after a dash and spaced the facts apart.
+  it("keeps the reasons behind the icon in advanced mode too, and joins the facts", async () => {
+    show(device({ model: "USB3.0 FLASH DRIVE", partition: { table: "mbr", number: 1, offset: 1048576, mbrType: 12 } }));
+    const card = await screen.findByTestId("device-card");
+    await within(card).findByTestId("loader-profile");
+    expect(within(card).getByTestId("device-mode-reason")).toHaveClass("sr-only");
+    expect(within(card).getByTestId("loader-profile-reason")).toHaveClass("sr-only");
+    expect(within(card).getAllByRole("button", { name: "Why" })).toHaveLength(2);
+    const facts = within(card).getByTestId("device-facts");
+    expect(facts).toHaveTextContent("Model: USB3.0 FLASH DRIVE");
+    expect(facts).toHaveTextContent("Serial: 3C761797");
+    expect(facts).toHaveTextContent("Cluster: 32 KiB");
+    expect(facts).toHaveTextContent("Partition: MBR #1");
+  });
+});

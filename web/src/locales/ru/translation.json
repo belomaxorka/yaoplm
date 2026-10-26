@@ -878,7 +878,7 @@
       "noBootCards": "Загрузочных карт нет: сам эмулятор ничего не запустит.",
       "channel": "Канал {{channel}}",
       "noName": "без имени в BootCard.ini",
-      "cards": "Номерные карты: {{cards}}; карты игр: {{games}}",
+      "cards": "Номерные карты: {{cards}} · карты игр: {{games}}",
       "holds": "{{what}}",
       "builderImage": "{{name}} из SD Builder",
       "unreadable": "Содержимое карты прочитать не удалось",

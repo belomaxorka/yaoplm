@@ -129,3 +129,28 @@ describe("the library of a folder without OPL's folders", () => {
     expect(screen.getAllByRole("link", { name: "Add games" })).toHaveLength(1);
   });
 });
+
+describe("the library header's facts (UI-4, UI-7)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ root: "E:\\", simpleMode: false });
+  });
+
+  // The owner's decision of 2026-10-27: both modes keep the reason behind
+  // the ⓘ icon; the advanced mode differs by what it lists, not by how long
+  // a line is. On main the advanced header spelt the reason out after a dash.
+  it("keeps the connection's reason behind the icon in advanced mode too", async () => {
+    render(
+      <Providers transport={emptyFolderCore()}>
+        <LibraryPage />
+      </Providers>,
+    );
+    await screen.findByTestId("library-count");
+    const facts = screen.getByTestId("library-facts");
+    expect(facts).toContainElement(screen.getByTestId("device-mode"));
+    expect(facts).toContainElement(screen.getByTestId("library-count"));
+    expect(screen.getByTestId("device-mode-reason")).toHaveClass("sr-only");
+    expect(screen.getByTestId("device-mode-reason")).toHaveTextContent("a folder on the computer’s disk");
+    expect(screen.getAllByRole("button", { name: "Why" }).length).toBeGreaterThan(0);
+  });
+});

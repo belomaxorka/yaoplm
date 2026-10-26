@@ -31,6 +31,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { NoticeList } from "@/components/Notices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Facts } from "@/components/ui/facts";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -296,7 +297,13 @@ function LibraryView({
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {/* Counters are advanced tools (ADR-0034); the count stays for screen readers. */}
+        {data && simple && (
+          <span className="sr-only" data-testid="library-count">
+            {t("library.count", { shown: games.length, total: data.games.length })}
+          </span>
+        )}
+        <Facts className="text-xs text-muted-foreground" data-testid="library-facts">
           {/* The header names the device already; the path is a detail. */}
           {!simple && (
             <span className="truncate font-mono" title={root}>
@@ -304,25 +311,22 @@ function LibraryView({
             </span>
           )}
           {loader.device && <DeviceLines device={loader.device} className="text-xs" />}
-          {data && (
-            <>
-              {/* Counters are advanced tools (ADR-0034); the count stays for screen readers. */}
-              <span className={simple ? "sr-only" : undefined} data-testid="library-count">
-                {t("library.count", { shown: games.length, total: data.games.length })}
-              </span>
-              {!simple && <span>{formatBytes(data.games.reduce((sum, g) => sum + g.size, 0))}</span>}
-              {data.skipped.length > 0 && (
-                <button
-                  type="button"
-                  className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                  onClick={() => setSkippedOpen(true)}
-                >
-                  {t("library.skipped", { count: data.skipped.length })}
-                </button>
-              )}
-            </>
+          {data && !simple && (
+            <span data-testid="library-count">{t("library.count", { shown: games.length, total: data.games.length })}</span>
           )}
-        </div>
+          {data && !simple && <span>{formatBytes(data.games.reduce((sum, g) => sum + g.size, 0))}</span>}
+          {data && data.skipped.length > 0 && (
+            <span>
+              <button
+                type="button"
+                className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                onClick={() => setSkippedOpen(true)}
+              >
+                {t("library.skipped", { count: data.skipped.length })}
+              </button>
+            </span>
+          )}
+        </Facts>
       </div>
 
       <div className="flex flex-col gap-3 px-6 pt-3 empty:hidden">
