@@ -108,7 +108,6 @@ export function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.library")}</CardTitle>
-            <CardDescription>{t("settings.libraryDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
@@ -143,7 +142,6 @@ export function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>{t("settings.covers")}</CardTitle>
-              <CardDescription>{t("settings.coversDescription")}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
               <ArtSourceSettingsList art={about.data?.art} />
@@ -172,7 +170,6 @@ export function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.loaders")}</CardTitle>
-            <CardDescription>{t("settings.loadersDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <SettingRow
@@ -219,7 +216,6 @@ export function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.dumps")}</CardTitle>
-            <CardDescription>{t("settings.dumpsDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <RedumpPanel compact={simple} />

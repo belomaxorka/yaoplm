@@ -59,7 +59,7 @@ test("search, filters and the list view", async ({ page, request }) => {
   await page.getByRole("radio", { name: "Grid" }).click();
   await expect(page.getByTestId("game-grid")).toBeVisible();
 
-  await page.getByText("2 files OPL ignores").click();
+  await page.getByText("2 files OPL will not show").click();
   await expect(page.getByRole("dialog")).toContainText("No Boot2.iso");
   await page.keyboard.press("Escape");
 });

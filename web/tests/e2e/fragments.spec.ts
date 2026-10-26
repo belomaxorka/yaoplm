@@ -64,7 +64,7 @@ test("a fragmented game: warnings filter, card and pieces", async ({ page, reque
   await page.getByTitle("Only games with warnings").click();
 
   await openGame(page, title());
-  await expect(page.getByTestId("game-warnings")).toContainText("lies on the device in 70 pieces, more than the 64");
+  await expect(page.getByTestId("game-warnings")).toContainText("is in 70 pieces on the device, more than the 64");
   await expect(page.getByTestId("game-fragments")).toHaveText("70 (OPL loads a game from up to 64)");
 });
 
@@ -74,7 +74,7 @@ test("simple mode keeps the warning and hides the count", async ({ page, request
   await page.goto("/library");
   await expect(page.getByTestId("library-count")).toBeVisible();
   await openGame(page, title());
-  await expect(page.getByTestId("game-warnings")).toContainText("Игра лежит на носителе кусками (частей: 70)");
+  await expect(page.getByTestId("game-warnings")).toContainText("Игра лежит на носителе кусками (70) и не запустится");
   await expect(page.getByTestId("game-fragments")).toHaveCount(0);
 });
 

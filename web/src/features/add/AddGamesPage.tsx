@@ -393,12 +393,6 @@ export function AddGamesPage() {
               <span className="block text-xs text-muted-foreground">{t("add.checkOnAddHint")}</span>
             </span>
           </Label>
-          <p className="text-xs text-muted-foreground">
-            {t("add.usingSettings", {
-              profile: t(`settings.profiles.${loaderProfile}`),
-              style: t(`settings.nameStyles.${settings.nameStyle}`),
-            })}
-          </p>
         </section>
 
         {!flow.plan && !flow.pending && (

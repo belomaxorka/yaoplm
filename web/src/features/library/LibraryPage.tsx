@@ -239,14 +239,16 @@ function LibraryView({
             />
           )}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon-sm" onClick={rescan} disabled={isFetching} aria-label={t("library.rescan")}>
-                  <RefreshCw className={cn(isFetching && "animate-spin")} aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("library.rescan")}</TooltipContent>
-            </Tooltip>
+            {!simple && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon-sm" onClick={rescan} disabled={isFetching} aria-label={t("library.rescan")}>
+                    <RefreshCw className={cn(isFetching && "animate-spin")} aria-hidden />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("library.rescan")}</TooltipContent>
+              </Tooltip>
+            )}
             {!simple && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -304,10 +306,11 @@ function LibraryView({
           {loader.device && <DeviceLines device={loader.device} className="text-xs" />}
           {data && (
             <>
-              <span data-testid="library-count">
+              {/* Counters are advanced tools (ADR-0034); the count stays for screen readers. */}
+              <span className={simple ? "sr-only" : undefined} data-testid="library-count">
                 {t("library.count", { shown: games.length, total: data.games.length })}
               </span>
-              <span>{formatBytes(data.games.reduce((sum, g) => sum + g.size, 0))}</span>
+              {!simple && <span>{formatBytes(data.games.reduce((sum, g) => sum + g.size, 0))}</span>}
               {data.skipped.length > 0 && (
                 <button
                   type="button"
