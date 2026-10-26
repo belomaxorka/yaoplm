@@ -136,10 +136,12 @@ async function tabOrder(page: Page, presses: number): Promise<string[]> {
 
 class Pass {
   readonly report: StateReport[] = [];
-  constructor(
-    readonly page: Page,
-    readonly run: Run,
-  ) {}
+  readonly page: Page;
+  readonly run: Run;
+  constructor(page: Page, run: Run) {
+    this.page = page;
+    this.run = run;
+  }
 
   get suffix(): string {
     return `${this.run.language}-${this.run.theme}-${this.run.simple ? "simple" : "advanced"}`;
@@ -551,16 +553,19 @@ for (const run of runs) {
     await pass.escape();
     await pass.escape();
     await pass.state("game-move-plan", async () => {
-      await page.getByRole("button", { name: w.moveToDvd }).click();
+      await page.getByTestId("game-more").click();
+      await page.getByTestId("game-move").click();
       await expect(page.getByTestId("plan-dialog").getByTestId("plan-confirm")).toBeVisible();
     });
     await pass.escape();
     if (!run.simple) await pass.state("game-convert", async () => {
+      await page.getByTestId("game-more").click();
       await page.getByTestId("game-convert").click();
       await expect(page.getByTestId("convert-dialog")).toBeVisible();
     });
     await pass.escape();
     if (!run.simple) await pass.state("game-verify", async () => {
+      await page.getByTestId("game-more").click();
       await page.getByTestId("game-verify").click();
       await expect(page.getByTestId("verify-dialog")).toBeVisible();
     });
