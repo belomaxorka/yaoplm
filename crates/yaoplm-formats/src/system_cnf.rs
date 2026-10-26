@@ -181,12 +181,13 @@ pub fn startup_from_boot_path(boot: &BootPath) -> Result<String, CnfError> {
     }
     let rest = &bytes[start.min(bytes.len())..];
     let len = rest.iter().position(|&b| b == b';').unwrap_or(rest.len());
-    if len == 0 && !boot.unterminated {
-        return Err(CnfError::EmptyStartup);
-    }
     // Past the end of an unterminated value OPL reads stack memory.
     if boot.unterminated && len < STARTUP_MAX && len == rest.len() {
         return Err(CnfError::Unpredictable);
+    }
+    // A `;` inside the buffer ends the ID even when the value fills it.
+    if len == 0 {
+        return Err(CnfError::EmptyStartup);
     }
     Ok(boot.value[start..start + len.min(STARTUP_MAX)].to_owned())
 }
@@ -391,6 +392,29 @@ mod tests {
 
         let short_tail = format!("BOOT2 = {}:\\AB", "A".repeat(BOOT_PATH_MAX - 4));
         let boot = parse_boot2(short_tail.as_bytes()).unwrap();
+        assert_eq!(startup_from_boot_path(&boot), Err(CnfError::Unpredictable));
+    }
+
+    #[test]
+    fn a_full_buffer_with_an_empty_id_hides_the_game() {
+        // OPL finds the `;` inside its 64-byte buffer, counts a length of 0
+        // and hides the image (`GetStartupExecName`, src/supportbase.c).
+        for value in [
+            format!("cdrom0:;{}", "1".repeat(BOOT_PATH_MAX - 8)),
+            format!("cdrom0:\\\\;{}", "1".repeat(BOOT_PATH_MAX - 10)),
+        ] {
+            let boot = parse_boot2(format!("BOOT2 = {value} rest").as_bytes()).unwrap();
+            assert!(boot.unterminated);
+            assert_eq!(
+                startup_from_boot_path(&boot),
+                Err(CnfError::EmptyStartup),
+                "{value}"
+            );
+        }
+        // Backslashes to the end of the buffer: OPL skips on past it.
+        let value = format!("cdrom0:{}", "\\".repeat(BOOT_PATH_MAX - 7));
+        let boot = parse_boot2(format!("BOOT2 = {value}").as_bytes()).unwrap();
+        assert!(boot.unterminated);
         assert_eq!(startup_from_boot_path(&boot), Err(CnfError::Unpredictable));
     }
 

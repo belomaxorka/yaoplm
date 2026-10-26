@@ -24,7 +24,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use crate::iso9660::{SECTOR_SIZE, Sector, SectorSource};
 
 /// 74:59:74 at 75 frames per second; anything above is nonsense.
-const MAX_FRAMES: u32 = 100 * 60 * 75;
+pub const MAX_FRAMES: u32 = 100 * 60 * 75;
 /// A whole CD sector: sync, header, user data, EDC/ECC.
 pub const RAW_SECTOR_SIZE: u32 = 2352;
 const SYNC: [u8; 12] = [
@@ -169,10 +169,12 @@ fn decode(bytes: &[u8]) -> String {
 fn parse_msf(text: &str) -> Option<u32> {
     let mut parts = text.split(':').map(|p| p.parse::<u32>().ok());
     let (m, s, f) = (parts.next()??, parts.next()??, parts.next()??);
-    if parts.next().is_some() || s >= 60 || f >= 75 {
+    // Minutes are bounded before the arithmetic: from 954438 on it would
+    // overflow and wrap to a position on the disc.
+    if parts.next().is_some() || m >= MAX_FRAMES / (60 * 75) || s >= 60 || f >= 75 {
         return None;
     }
-    Some((m * 60 + s) * 75 + f).filter(|&frames| frames < MAX_FRAMES)
+    Some((m * 60 + s) * 75 + f)
 }
 
 /// `FILE "name with spaces.bin" BINARY` or `FILE name.bin BINARY`.
@@ -193,7 +195,8 @@ impl CueSheet {
     /// UTF-8 BOM is skipped. Metadata lines (`REM`, `TITLE`, `CATALOG`,
     /// `FLAGS`, ...) are ignored.
     pub fn parse(bytes: &[u8]) -> Result<Self, CueError> {
-        let text = decode(bytes);
+        // CR LF first, so it ends one line, not two.
+        let text = decode(bytes).replace("\r\n", "\n");
         let mut sheet = Self::default();
         for (index, raw) in text.split(['\n', '\r']).enumerate() {
             let line_no = index + 1;
@@ -519,6 +522,53 @@ mod tests {
         let track = sheet.data_track().unwrap();
         assert_eq!(track.file, "game.bin");
         assert_eq!(track.start_sector, 150);
+    }
+
+    #[test]
+    fn positions_past_a_cd_are_refused_without_wrapping() {
+        let bad_position = Err(CueError::Syntax {
+            line: 3,
+            problem: "bad INDEX position".to_owned(),
+        });
+        let parse = |msf: &str| {
+            CueSheet::parse(
+                format!("FILE a.bin BINARY\nTRACK 01 MODE2/2352\nINDEX 01 {msf}\n").as_bytes(),
+            )
+        };
+        // 787410671 * 4500 is 300 modulo 2^32: wrapping arithmetic would
+        // start the track at sector 300 (00:04:00) instead of refusing it.
+        assert_eq!(parse("787410671:00:00"), bad_position);
+        assert_eq!(parse("4294967295:59:74"), bad_position);
+        assert_eq!(parse("100:00:00"), bad_position);
+        let last = parse("99:59:74").unwrap().data_track().unwrap();
+        assert_eq!(last.start_sector, u64::from(MAX_FRAMES) - 1);
+    }
+
+    #[test]
+    fn syntax_errors_name_the_line_whatever_the_line_ends() {
+        for end in ["\n", "\r\n", "\r"] {
+            let sheet = [
+                "FILE a.bin BINARY",
+                "",
+                "TRACK 01 MODE2/2352",
+                "INDEX 01 xx",
+            ]
+            .join(end);
+            assert_eq!(
+                CueSheet::parse(sheet.as_bytes()),
+                Err(CueError::Syntax {
+                    line: 4,
+                    problem: "bad INDEX position".to_owned(),
+                }),
+                "{end:?}"
+            );
+        }
+        // A blank line made of CR LF counts once, a lone CR or LF too.
+        let mixed = "FILE a.bin BINARY\r\n\r\n\rTRACK 01 MODE2/2352\n\r\nINDEX 01 xx";
+        assert!(matches!(
+            CueSheet::parse(mixed.as_bytes()),
+            Err(CueError::Syntax { line: 6, .. })
+        ));
     }
 
     #[test]

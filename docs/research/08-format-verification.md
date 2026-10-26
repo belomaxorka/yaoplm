@@ -46,8 +46,15 @@ Other behaviour:
   - Example: `cdrom0:\AB\x01CD;1` gives `AB`.
 - **Exactly 64 printable characters leave the buffer unterminated.**
   - The ID is still defined when it fits inside those 64 bytes.
+  - So is an empty ID: a `;` inside the buffer right after the `:` (and any `\`) gives length 0, and the game is hidden like any empty ID. Until 2026-10-26 YAOPLM returned an empty ID here instead (`GetStartupExecName`, `src/supportbase.c`, ps2homebrew/Open-PS2-Loader@b3a21997).
   - Otherwise YAOPLM reports `Unpredictable`.
 - **Only `\` is skipped after the colon:** `cdrom0:/SLUS_200.62;1` gives `/SLUS_200.6`.
+- **OPL 1.1.0 derives the ID differently** (found 2026-10-26; `git show v1.1.0:src/supportbase.c`). The rules above come from commit `44bab002` ("krat0s: fix system.cnf parser", 2023-05-22), which only the 1.2.0 betas carry. In 1.1.0 `GetStartupExecName` skips at most one `\` after the `:` and then `strncpy`s 11 bytes: it does not stop at `;` and has no empty-ID check.
+  - A retail ID (`cdrom0:\SLUS_200.62;1`) is 11 characters before the `;`, so both versions give `SLUS_200.62`.
+  - Shorter boot names differ: `cdrom0:\BOOT.ELF;1` gives `BOOT.ELF;1` in 1.1.0 and `BOOT.ELF` in 1.2.0. `cdrom0:\\X;1` gives `\X;1` in 1.1.0.
+  - An empty ID does not hide the game in 1.1.0: `cdrom0:\;1` lists it as `;1`.
+  - YAOPLM uses the 1.2.0 rules for every profile, so with the `opl-1.1` profile such a game's CFG, ART, CHT and VMC names do not match what 1.1.0 looks up. Not fixed yet.
+  - `ps2cnf.c` changed after 1.1.0 too (`e7dbec7c`, 2023-07-29: bounds and infinite loops on damaged files). A well-formed `SYSTEM.CNF` reads the same in both versions.
 
 ## 3. ISO9660 as OPL's isofs reads it [V]
 
