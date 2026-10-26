@@ -76,7 +76,8 @@ for (const language of ["en", "ru"] as const) {
         await shot("art-slots");
         await page.getByTestId("game-title").scrollIntoViewIfNeeded();
 
-        await page.getByRole("button", { name: language === "en" ? "Move to DVD" : "Перенести в DVD" }).click();
+        await page.getByTestId("game-more").click();
+        await page.getByTestId("game-move").click();
         const plan = page.getByTestId("plan-dialog");
         await expect(plan.getByTestId("plan-summary")).toBeVisible();
         await shot("plan");

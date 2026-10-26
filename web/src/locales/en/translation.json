@@ -278,6 +278,7 @@
     "notFoundDescription": "It may have been renamed or deleted. Rescan the library.",
     "backToLibrary": "Back to the library",
     "actions": "Actions",
+    "moreActions": "More actions",
     "rename": "Rename",
     "moveTo": "Move to {{media}}",
     "delete": "Delete",
@@ -908,14 +909,6 @@
       "light": "Light",
       "dark": "Dark",
       "system": "System"
-    },
-    "keyboard": "Keyboard",
-    "keys": {
-      "tab": "Move between controls",
-      "search": "Search the library",
-      "arrows": "Move between games",
-      "enter": "Open the selected game",
-      "escape": "Close a dialog"
     },
     "about": "About",
     "aboutDescription": "Versions, licences and the sources this app is built on.",

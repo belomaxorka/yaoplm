@@ -1,6 +1,6 @@
 import "@/i18n";
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -113,8 +113,11 @@ describe("simple mode (UI-4)", () => {
     expect(screen.queryByTestId("art-source-xlenore")).not.toBeInTheDocument();
     expect(screen.queryByText("Check IDs inside images while scanning")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Jobs" })).not.toBeInTheDocument();
+    // No keyboard card (owner, 2026-10-26): the keys are the usual ones.
+    expect(screen.queryByText("Keyboard")).toBeNull();
 
     await userEvent.click(switches[0]!);
+    expect(screen.queryByText("Keyboard")).toBeNull();
     expect(screen.getByTestId("art-source-xlenore")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Jobs" })).toBeInTheDocument();
   });
@@ -151,8 +154,19 @@ describe("simple mode (UI-4)", () => {
       await screen.findByTestId("game-title");
       const actions = screen.getByRole("group", { name: "Actions" });
       expect(within(actions).getByRole("button", { name: "Rename" })).toBeInTheDocument();
-      expect(within(actions).getByRole("button", { name: "Move to DVD" })).toBeInTheDocument();
       expect(within(actions).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+      // Moving, converting and checking wait in a menu in both modes (owner,
+      // 2026-10-26): the card's own actions are renaming and deleting.
+      expect(within(actions).queryByRole("button", { name: "Move to DVD" })).toBeNull();
+      await userEvent.click(within(actions).getByTestId("game-more"));
+      expect(await screen.findByTestId("game-move")).toHaveTextContent("Move to DVD");
+      // Converting and checking the dump are advanced tools (ADR-0034).
+      for (const tool of ["game-convert", "game-verify"]) {
+        if (simple) expect(screen.queryByTestId(tool)).not.toBeInTheDocument();
+        else expect(screen.getByTestId(tool)).toBeInTheDocument();
+      }
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByTestId("game-move")).not.toBeInTheDocument());
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
       expect(screen.getByTestId("game-warnings")).toBeInTheDocument();
       // Game settings (ADR-0036): the modes and slot 1 in both modes.
@@ -161,8 +175,6 @@ describe("simple mode (UI-4)", () => {
       expect(screen.getByRole("checkbox", { name: /Mode 6/ })).toBeInTheDocument();
       expect(screen.queryByRole("checkbox", { name: /Mode 7/ })).not.toBeInTheDocument();
       const advanced = [
-        screen.queryByTestId("game-convert"),
-        screen.queryByTestId("game-verify"),
         screen.queryByText(game.path),
         screen.queryByTestId("game-fragments"),
         screen.queryByTestId("cfg-vmc-1"),

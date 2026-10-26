@@ -16,7 +16,6 @@ import { PageScroll } from "@/components/PageScroll";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
@@ -228,35 +227,6 @@ export function SettingsPage() {
         </Card>
 
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.keyboard")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-              <dt>
-                <Kbd>Tab</Kbd>
-              </dt>
-              <dd className="text-muted-foreground">{t("settings.keys.tab")}</dd>
-              <dt>
-                <Kbd>/</Kbd>
-              </dt>
-              <dd className="text-muted-foreground">{t("settings.keys.search")}</dd>
-              <dt>
-                <Kbd>←</Kbd> <Kbd>→</Kbd> <Kbd>↑</Kbd> <Kbd>↓</Kbd>
-              </dt>
-              <dd className="text-muted-foreground">{t("settings.keys.arrows")}</dd>
-              <dt>
-                <Kbd>Enter</Kbd>
-              </dt>
-              <dd className="text-muted-foreground">{t("settings.keys.enter")}</dd>
-              <dt>
-                <Kbd>Esc</Kbd>
-              </dt>
-              <dd className="text-muted-foreground">{t("settings.keys.escape")}</dd>
-            </dl>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>
