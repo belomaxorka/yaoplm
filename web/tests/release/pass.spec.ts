@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { openEmulatorPanel } from "../e2e/emulator-flow";
-import { emptyStick, job, joinPath, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
+import { emptyStick, job, joinPath, menuItemProblems, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
 
 // The release UI pass (docs/plans/release-ui-consistency.md): every screen
 // and state in both interface modes, both languages and both themes at
@@ -40,6 +40,10 @@ interface StateReport {
 
 /** The layout checks of walkthrough.spec.ts. */
 async function layoutProblems(page: Page): Promise<string[]> {
+  return [...(await boxProblems(page)), ...(await menuItemProblems(page))];
+}
+
+async function boxProblems(page: Page): Promise<string[]> {
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   return page.evaluate(() => {
     const problems: string[] = [];
@@ -356,8 +360,12 @@ for (const run of runs) {
       await expect(dialog).toBeHidden();
       await expect(stickCard(page).getByTestId("installed-loader")).toHaveAttribute("data-freshness", "current");
     });
-    await pass.state("reinstall-wizard", async () => {
+    // The card's "⋯" menu under its icon button: as wide as its items (UI-5).
+    await pass.state("stick-more-menu", async () => {
       await stickCard(page).getByTestId("device-more").click();
+      await expect(page.getByRole("menu")).toBeVisible();
+    });
+    await pass.state("reinstall-wizard", async () => {
       await page.getByTestId("device-install-loader").click();
       await expect(dialog.getByTestId("loader-offer")).toBeVisible();
     });

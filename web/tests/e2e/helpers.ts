@@ -170,3 +170,34 @@ export async function job(request: APIRequestContext, body: object): Promise<Ans
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
+
+/**
+ * An open menu's items on one line each and not cut (UI-5): a menu as wide
+ * as its trigger broke "Reinstall OPL…" and "Switch OPL…" onto two lines
+ * under the icon button and clipped them (the owner, 2026-10-27).
+ */
+export async function menuItemProblems(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const problems: string[] = [];
+    const items = document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]');
+    for (const item of items) {
+      if (!item.checkVisibility()) continue;
+      const name = item.textContent?.trim().slice(0, 40) ?? "";
+      if (item.scrollWidth > item.clientWidth + 1) {
+        problems.push(`the menu item "${name}" is cut by ${item.scrollWidth - item.clientWidth} px`);
+      }
+      const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const lines = range.getClientRects().length;
+        if (lines > 1) {
+          problems.push(`the menu item "${name}" wraps onto ${lines} lines`);
+          break;
+        }
+      }
+    }
+    return problems;
+  });
+}
