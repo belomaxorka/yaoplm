@@ -202,7 +202,8 @@
     "emulatorDamaged": "The emulator’s firmware moved damaged cards aside ({{count}}): {{files}}",
     "emulatorIniTail": "The last line of {{file}} has no line break, so the emulator’s firmware never reads it: “{{line}}”",
     "emulatorServiceFile": "{{path}} belongs to the memory card emulator: YAOPLM does not change it",
-    "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card"
+    "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card",
+    "emulatorChannelName": "{{variant}} boot channel {{channel}} is named “{{name}}” in BootCard.ini, but its image holds {{holds}}"
   },
   "library": {
     "title": "Library",
@@ -840,7 +841,12 @@
       "noBootCards": "No boot cards: the emulator starts nothing by itself.",
       "channel": "Channel {{channel}}",
       "noName": "no name in BootCard.ini",
-      "cards": "Numbered cards: {{cards}}; game cards: {{games}}"
+      "cards": "Numbered cards: {{cards}}; game cards: {{games}}",
+      "holds": "Holds: {{what}}",
+      "builderImage": "SD Builder’s {{name}}",
+      "unreadable": "The card’s contents could not be read",
+      "mmce": "MMCE",
+      "versionUnknown": "version unknown"
     }
   },
   "settings": {
@@ -1319,7 +1325,8 @@
     "placeComputerDisk": "a folder on the computer’s disk",
     "placeNetworkFolder": "a network folder",
     "placeServerFolder": "a folder on the server",
-    "placeEmulator": "the files of a memory card emulator: {{files}}"
+    "placeEmulator": "the files of a memory card emulator: {{files}}",
+    "profileByBootCard": "{{version}} with MMCE in {{file}} inside boot card {{channel}} ({{variant}})"
   },
   "cfg": {
     "heading": "Game settings",

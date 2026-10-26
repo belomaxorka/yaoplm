@@ -62,8 +62,28 @@ export const emulatorInfo: EmulatorInfo = {
     {
       name: "PS2",
       boot: [
-        { channel: 1, name: "FMCB 1.966", file: "MemoryCards/PS2/BOOT/BootCard-1.mcd", bytes: 8 << 20 },
-        { channel: 2, name: null, file: "MemoryCards/PS2/BOOT/BootCard-2.mcd", bytes: 8 << 20 },
+        {
+          channel: 1,
+          name: "FMCB 1.966",
+          file: "MemoryCards/PS2/BOOT/BootCard-1.mcd",
+          bytes: 8 << 20,
+          contents: {
+            launchers: ["FreeMcBoot"],
+            loaders: [
+              { path: "APPS/OPNPS2LD.ELF", family: "OPL", version: "v1.2.0-Beta-2049-513e9b3", mmce: false },
+              { path: "APPS/OPL-MMCE-BETA2.ELF", family: "OPL", version: "v1.2.0-Beta-2216-bb415d2", mmce: true },
+            ],
+            builder: null,
+            unreadable: null,
+          },
+        },
+        {
+          channel: 2,
+          name: null,
+          file: "MemoryCards/PS2/BOOT/BootCard-2.mcd",
+          bytes: 8 << 20,
+          contents: { launchers: ["FreeMcBoot"], loaders: [], builder: "FMCB 1.963", unreadable: null },
+        },
       ],
       maxChannels: null,
       cardSize: null,

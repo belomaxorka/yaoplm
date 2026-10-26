@@ -151,6 +151,119 @@ pub struct BootCard {
     /// Relative to the SD's root.
     pub file: String,
     pub bytes: u64,
+    /// What the image holds, read from its own file system; `None` when the
+    /// image could not be read.
+    pub contents: Option<BootContents>,
+}
+
+/// A launcher a boot card starts (names of programs, not translated).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+pub enum BootLauncher {
+    FreeMcBoot,
+    #[serde(rename = "PS2BBL")]
+    Ps2bbl,
+    FunTuna,
+    #[serde(rename = "FreePSXBoot")]
+    FreePsxBoot,
+}
+
+/// An OPL-family build inside a boot card, known by its ELF (ADR-0041).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CardLoader {
+    /// On the card: `APPS/OPNPS2LD.ELF`.
+    pub path: String,
+    /// `OPL`, `RiptOPL`, `wOPL`.
+    pub family: String,
+    pub version: Option<String>,
+    /// It reads games from a memory card emulator's SD.
+    pub mmce: bool,
+}
+
+/// What a boot card holds (research/19 §4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct BootContents {
+    pub launchers: Vec<BootLauncher>,
+    pub loaders: Vec<CardLoader>,
+    /// The SD Builder image it is byte for byte: `FMCB 1.966`.
+    pub builder: Option<String>,
+    /// Its file system could not be read: why (technical).
+    pub unreadable: Option<String>,
+}
+
+impl From<&yaoplm_core::boot_card::BootContents> for BootContents {
+    fn from(c: &yaoplm_core::boot_card::BootContents) -> Self {
+        use yaoplm_core::boot_card::Launcher;
+        Self {
+            launchers: c
+                .launchers
+                .iter()
+                .map(|l| match l {
+                    Launcher::FreeMcBoot => BootLauncher::FreeMcBoot,
+                    Launcher::Ps2bbl => BootLauncher::Ps2bbl,
+                    Launcher::FunTuna => BootLauncher::FunTuna,
+                    Launcher::FreePsxBoot => BootLauncher::FreePsxBoot,
+                })
+                .collect(),
+            loaders: c
+                .loaders
+                .iter()
+                .map(|l| CardLoader {
+                    path: l.path.clone(),
+                    family: l.family.name().to_owned(),
+                    version: l.version.clone(),
+                    mmce: l.mmce,
+                })
+                .collect(),
+            builder: c
+                .builder
+                .as_ref()
+                .and_then(|b| b.names.first())
+                .map(|n| (*n).to_owned()),
+            unreadable: c.unreadable.clone(),
+        }
+    }
+}
+
+/// What each boot card of a survey holds, by variant and channel.
+type Held = Vec<Vec<Option<yaoplm_core::boot_card::BootContents>>>;
+
+/// Boot card contents read so far, by image path, size and modification
+/// time: the devices screen asks again on every refresh, and reading a boot
+/// card means hashing its whole image.
+fn cached_contents(
+    fs: &yaoplm_device::HostFs,
+    file: &str,
+    len: u64,
+) -> Option<yaoplm_core::boot_card::BootContents> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock, PoisonError};
+    type Key = (std::path::PathBuf, u64, Option<std::time::SystemTime>);
+    static CACHE: OnceLock<Mutex<HashMap<Key, yaoplm_core::boot_card::BootContents>>> =
+        OnceLock::new();
+    let rel = yaoplm_device::RelPath::new(file).ok()?;
+    let path = fs.resolve(&rel);
+    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    let key = (path, len, modified);
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(found) = cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&key)
+    {
+        return Some(found.clone());
+    }
+    let found = yaoplm_core::boot_card::contents(fs, &rel, len).ok()?;
+    let mut cache = cache.lock().unwrap_or_else(PoisonError::into_inner);
+    if cache.len() >= 256 {
+        cache.clear();
+    }
+    cache.insert(key, found.clone());
+    Some(found)
 }
 
 /// The cards of one variant folder: `PS2`, `PS1`, `COH`, `SC2`, `PROT`.
@@ -205,7 +318,7 @@ pub struct EmulatorInfo {
 }
 
 impl EmulatorInfo {
-    fn new(sd: &EmulatorSd, survey: Option<&yaoplm_core::emulator::Survey>) -> Self {
+    fn new(sd: &EmulatorSd, survey: Option<&yaoplm_core::emulator::Survey>, held: &Held) -> Self {
         let mut kinds = Vec::new();
         if sd.sd2psx {
             kinds.push(EmulatorKind::Sd2psx);
@@ -213,16 +326,22 @@ impl EmulatorInfo {
         if sd.mcp2 {
             kinds.push(EmulatorKind::MemcardPro2);
         }
-        let variant = |v: &yaoplm_core::emulator::Variant| CardVariant {
+        let variant = |(i, v): (usize, &yaoplm_core::emulator::Variant)| CardVariant {
             name: v.name.clone(),
             boot: v
                 .boot
                 .iter()
-                .map(|b| BootCard {
+                .enumerate()
+                .map(|(j, b)| BootCard {
                     channel: b.channel,
                     name: b.name.clone(),
                     file: b.file.clone(),
                     bytes: b.bytes,
+                    contents: held
+                        .get(i)
+                        .and_then(|v| v.get(j))
+                        .and_then(Option::as_ref)
+                        .map(BootContents::from),
                 })
                 .collect(),
             max_channels: v.max_channels,
@@ -243,13 +362,50 @@ impl EmulatorInfo {
             folder: sd.at.clone(),
             protected: sd.service_files().iter().map(|n| (*n).to_owned()).collect(),
             variants: survey
-                .map(|s| s.variants.iter().map(variant).collect())
+                .map(|s| s.variants.iter().enumerate().map(variant).collect())
                 .unwrap_or_default(),
             settings: survey
                 .and_then(|s| s.settings.as_ref())
                 .map(|ini| ini.sections().into_iter().map(section).collect())
                 .unwrap_or_default(),
             damaged: survey.map(|s| s.damaged.clone()).unwrap_or_default(),
+        }
+    }
+}
+
+/// The first OPL build with MMCE inside a boot card, PS2 channels first,
+/// becomes the detection's answer: its family's rules (RiptOPL's own, else
+/// 1.2.0 beta's) by an indirect sign.
+fn by_boot_card(
+    detection: &mut yaoplm_core::detect::Detection,
+    survey: Option<&yaoplm_core::emulator::Survey>,
+    held: &Held,
+) {
+    let Some(survey) = survey else {
+        return;
+    };
+    for (variant, held) in survey.variants.iter().zip(held) {
+        for (boot, contents) in variant.boot.iter().zip(held) {
+            let Some(loader) = contents
+                .as_ref()
+                .and_then(|c| c.loaders.iter().find(|l| l.mmce))
+            else {
+                continue;
+            };
+            detection.profile = match loader.family {
+                yaoplm_core::detect::Family::RiptOpl => yaoplm_core::LoaderProfile::RiptOpl,
+                _ => yaoplm_core::LoaderProfile::Opl120Beta,
+            };
+            detection.confidence = yaoplm_core::detect::Confidence::Indirect;
+            detection.reason = yaoplm_core::Phrase::reason("profileByBootCard")
+                .with(
+                    "version",
+                    loader.version.as_deref().unwrap_or(loader.family.name()),
+                )
+                .with("file", &loader.path)
+                .with("channel", boot.channel)
+                .with("variant", &variant.name);
+            return;
         }
     }
 }
@@ -407,12 +563,31 @@ impl DeviceInfo {
         let fs = host.map(|fs| fs.with_mode(mode.mode.into()));
         // What the SD holds, read from its root even when a folder on it is
         // open.
-        let survey = sd.as_ref().and_then(|sd| {
-            let sd_fs = yaoplm_device::HostFs::new(&sd_root(fs.as_ref()?.root(), &sd.at)).ok()?;
-            yaoplm_core::emulator::survey(&sd_fs).ok()
-        });
+        let sd_fs = sd
+            .as_ref()
+            .and_then(|sd| yaoplm_device::HostFs::new(&sd_root(fs.as_ref()?.root(), &sd.at)).ok());
+        let survey = sd_fs
+            .as_ref()
+            .and_then(|sd_fs| yaoplm_core::emulator::survey(sd_fs).ok());
+        // What each boot card holds, from its own file system.
+        let held: Held = match (&sd_fs, &survey) {
+            (Some(sd_fs), Some(survey)) => survey
+                .variants
+                .iter()
+                .map(|v| {
+                    v.boot
+                        .iter()
+                        .map(|b| cached_contents(sd_fs, &b.file, b.bytes))
+                        .collect()
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let emulator_mode = mode.mode == DeviceMode::Emulator;
         // In a folder read over SMB the loader's files are copies, and the
-        // reason says so (research/18 §3).
+        // reason says so (research/18 §3). On a memory card emulator's SD
+        // with no other sign, an OPL build with MMCE inside a boot card
+        // answers which OPL reads it (ADR-0048).
         let detection = fs
             .as_ref()
             .and_then(|fs| yaoplm_core::detect::detect_profile(fs).ok())
@@ -420,6 +595,9 @@ impl DeviceInfo {
                 if smb && d.by_loader_files {
                     d.reason =
                         yaoplm_core::Phrase::reason("profileByCopy").with("reason", d.reason);
+                }
+                if emulator_mode && d.confidence == yaoplm_core::detect::Confidence::Default {
+                    by_boot_card(&mut d, survey.as_ref(), &held);
                 }
                 d
             });
@@ -446,13 +624,24 @@ impl DeviceInfo {
         let mut found = advice::diagnose(volume, &options);
         if let Some(survey) = &survey {
             found.extend(survey.advice.iter().cloned());
+            for (variant, held) in survey.variants.iter().zip(&held) {
+                for (boot, contents) in variant.boot.iter().zip(held) {
+                    found.extend(contents.as_ref().and_then(|c| {
+                        yaoplm_core::boot_card::channel_advice(
+                            &variant.name,
+                            boot.channel,
+                            boot.name.as_deref(),
+                            c,
+                        )
+                    }));
+                }
+            }
             found.sort_by_key(|a| std::cmp::Reverse(a.level()));
         }
         let usable = found.iter().all(|a| a.level() != advice::Level::Error);
         let whole_system_disk = found.iter().any(|a| matches!(a, Advice::SystemRoot(_)));
         // A memory card emulator's SD is asked even without OPL's folders:
         // the answer decides whether they are offered (ADR-0048).
-        let emulator_mode = mode.mode == DeviceMode::Emulator;
         let ask_profile = usable
             && loader.source == ProfileSource::Detected
             && loader.detected.as_ref().is_some_and(|d| {
@@ -505,7 +694,9 @@ impl DeviceInfo {
             mode,
             ask_profile,
             installed,
-            emulator: sd.as_ref().map(|sd| EmulatorInfo::new(sd, survey.as_ref())),
+            emulator: sd
+                .as_ref()
+                .map(|sd| EmulatorInfo::new(sd, survey.as_ref(), &held)),
         }
     }
 

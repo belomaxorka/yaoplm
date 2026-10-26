@@ -48,13 +48,13 @@ fn the_card_reads_channels_cards_and_settings() {
                 channel: 1,
                 name: Some("FMCB 1.966".into()),
                 file: "MemoryCards/PS2/BOOT/BootCard-1.mcd".into(),
-                bytes: 16 * 1024,
+                bytes: 8 << 20,
             },
             BootChannel {
                 channel: 2,
                 name: Some("PS2BBL".into()),
                 file: "MemoryCards/PS2/BOOT/BootCard-2.mcd".into(),
-                bytes: 16 * 1024,
+                bytes: 8 << 20,
             },
         ]
     );
@@ -66,6 +66,51 @@ fn the_card_reads_channels_cards_and_settings() {
     // The factory card makes 64 MiB cards: more than the README's 8.
     assert_eq!(codes(&found.advice), ["emulatorCardSize"]);
     assert!(found.damaged.is_empty());
+}
+
+#[test]
+fn boot_cards_are_known_by_what_they_hold() {
+    use yaoplm_core::boot_card::{Launcher, channel_advice, contents};
+    let fs = emulator::memfs();
+    let found = survey(&fs).unwrap();
+    let held = |variant: usize, channel: usize| {
+        let boot = &found.variants[variant].boot[channel];
+        contents(&fs, &rel(&boot.file), boot.bytes).unwrap()
+    };
+    let one = held(0, 0);
+    assert_eq!(
+        (one.launchers.as_slice(), one.unreadable.as_deref()),
+        (&[Launcher::FreeMcBoot][..], None)
+    );
+    assert_eq!(one.loaders.len(), 1);
+    assert_eq!(one.loaders[0].path, "APPS/OPL-MMCE-BETA2.ELF");
+    assert_eq!(
+        one.loaders[0].version.as_deref(),
+        Some("v1.2.0-Beta-2216-bb415d2")
+    );
+    assert!(one.loaders[0].mmce);
+    assert!(
+        one.folders
+            .iter()
+            .any(|(name, title)| name == "BAEXEC-SYSTEM" && title.as_deref() == Some("FreeMcBoot"))
+    );
+    let two = held(0, 1);
+    assert_eq!(two.launchers, [Launcher::Ps2bbl]);
+    assert!(!two.loaders[0].mmce);
+    // Names that agree give no warning; a wrong one does.
+    assert_eq!(channel_advice("PS2", 1, Some("FMCB 1.966"), &one), None);
+    assert_eq!(channel_advice("PS2", 2, Some("PS2BBL"), &two), None);
+    assert!(channel_advice("PS2", 2, Some("FMCB 1.953"), &two).is_some());
+    // A formatted PS1 card holds nothing, and says so without an error.
+    let ps1 = held(1, 0);
+    assert!(ps1.launchers.is_empty() && ps1.unreadable.is_none() && ps1.folders.is_empty());
+    // A placeholder that is no card is reported, not a failure.
+    fs.insert_file(
+        "MemoryCards/PS2/BOOT/BootCard-3.mcd",
+        &emulator::card_image(16 * 1024),
+    );
+    let broken = contents(&fs, &rel("MemoryCards/PS2/BOOT/BootCard-3.mcd"), 16 * 1024).unwrap();
+    assert!(broken.unreadable.is_some());
 }
 
 #[test]
@@ -292,4 +337,117 @@ fn exfat_is_no_sign_and_fragments_do_not_count_through_the_emulator() {
         detect::Confidence::Indirect
     );
     assert!(fragments::applies(&stick));
+}
+
+/// What the factory SD's boot cards hold, from their own file systems
+/// (research/19 §4); reads only.
+#[test]
+#[ignore = "needs YAOPLM_TESTDATA with the factory SD's copy"]
+fn the_factory_boot_cards_by_their_content() {
+    use yaoplm_core::boot_card::{Launcher, channel_advice, contents};
+    let data = std::env::var_os("YAOPLM_TESTDATA").expect("set YAOPLM_TESTDATA");
+    let copy = std::path::Path::new(&data)
+        .join("backups")
+        .join("psxmemcard-gen2-sd-2026-10-26")
+        .join("files");
+    let fs = yaoplm_device::HostFs::new(&copy).unwrap();
+    let found = survey(&fs).unwrap();
+    let mut seen = Vec::new();
+    for variant in &found.variants {
+        for boot in &variant.boot {
+            let held = contents(&fs, &rel(&boot.file), boot.bytes).unwrap();
+            assert_eq!(held.unreadable, None, "{}", boot.file);
+            let loaders: Vec<String> = held
+                .loaders
+                .iter()
+                .map(|l| {
+                    format!(
+                        "{} {} mmce={}",
+                        l.path,
+                        l.version.as_deref().unwrap_or("?"),
+                        l.mmce
+                    )
+                })
+                .collect();
+            println!(
+                "{} {} {:?}: {:?} builder={:?} {loaders:?}",
+                variant.name,
+                boot.channel,
+                boot.name,
+                held.launchers,
+                held.builder.as_ref().map(|b| b.file)
+            );
+            let warning = channel_advice(&variant.name, boot.channel, boot.name.as_deref(), &held)
+                .map(|a| a.phrase().english());
+            seen.push((variant.name.clone(), boot.channel, held, warning));
+        }
+    }
+    let at = |variant: &str, channel: u32| {
+        seen.iter()
+            .find(|(v, c, _, _)| v == variant && *c == channel)
+            .unwrap()
+    };
+    // Channel 1: the factory's own FMCB 1.966 with three OPL builds.
+    let (_, _, one, warning) = at("PS2", 1);
+    assert_eq!(
+        (one.launchers.as_slice(), one.builder.as_ref()),
+        (&[Launcher::FreeMcBoot][..], None)
+    );
+    assert_eq!(*warning, None);
+    let version = |path: &str| {
+        one.loaders
+            .iter()
+            .find(|l| l.path == path)
+            .map(|l| (l.version.clone(), l.mmce))
+    };
+    assert_eq!(
+        version("APPS/OPNPS2LD.ELF"),
+        Some((Some("v1.2.0-Beta-2049-513e9b3".into()), false))
+    );
+    assert_eq!(
+        version("APPS/OPL-MMCE-BETA2.ELF"),
+        Some((Some("v1.2.0-Beta-2216-bb415d2".into()), true))
+    );
+    // Channel 2: FunTuna, not an SD Builder image.
+    assert_eq!(at("PS2", 2).2.launchers, [Launcher::FunTuna]);
+    assert_eq!(at("PS2", 2).3, None);
+    // Channels 3–6: SD Builder images under the wrong names.
+    for (channel, file, holds) in [
+        (3, "FMCB-1963.mcd", "FMCB 1.963"),
+        (4, "FMCB-1953.mcd", "FMCB 1.953"),
+        (5, "PS2BBL.mcd", "PS2BBL"),
+        (6, "FMCB-1965.mcd", "FMCB 1.965"),
+    ] {
+        let (_, _, held, warning) = at("PS2", channel);
+        assert_eq!(
+            held.builder.as_ref().map(|b| b.file),
+            Some(file),
+            "{channel}"
+        );
+        assert!(
+            warning.as_deref().is_some_and(|w| w.contains(holds)),
+            "{channel}: {warning:?}"
+        );
+    }
+    // Channel 5's swapped names: the MMCE build is the one called OPNPS2LD.
+    let five = &at("PS2", 5).2;
+    assert_eq!(five.launchers, [Launcher::Ps2bbl]);
+    let mmce: Vec<&str> = five
+        .loaders
+        .iter()
+        .filter(|l| l.mmce)
+        .map(|l| l.path.as_str())
+        .collect();
+    assert_eq!(mmce, ["APPS/OPNPS2LD.ELF"]);
+    // PS1: FreePSXBoot, matching none of SD Builder's images; COH: SD
+    // Builder's wLaunchELF.
+    assert_eq!(at("PS1", 1).2.launchers, [Launcher::FreePsxBoot]);
+    assert_eq!(at("PS1", 1).2.builder, None);
+    assert_eq!(
+        at("COH", 1).2.builder.as_ref().map(|b| b.names[0]),
+        Some("wLE COH")
+    );
+    // Its own name differs from SD Builder's, and that is no warning.
+    assert_eq!(at("COH", 1).3, None);
+    assert_eq!(at("PS1", 1).3, None);
 }

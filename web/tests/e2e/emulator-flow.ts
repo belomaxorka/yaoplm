@@ -6,10 +6,11 @@ import { type APIRequestContext, expect, type Page } from "@playwright/test";
 import { openLibrary, roots } from "./helpers";
 
 // A memory card emulator's SD (DEV-2, ADR-0048). The fixture root `emulator`
-// has the factory card's layout with placeholder images: the emulator's
-// files make it the emulator's SD wherever it lies, its card shows the boot
-// channels, it gets no loader, and OPL's folders come once the version
-// question is answered.
+// has the factory card's layout: boot card 1 holds FreeMcBoot's folders and
+// an OPL build with MMCE, boot card 2 PS2BBL's. The emulator's files make it
+// the emulator's SD wherever it lies, its card shows what each boot card
+// holds, it gets no loader, and the MMCE build answers which OPL reads it,
+// so OPL's folders come at once.
 
 export function emulatorCard(page: Page) {
   return page
@@ -63,14 +64,17 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   await expect(card.getByTestId("device-install-loader")).toHaveCount(0);
   await expect(card.getByTestId("device-replace-loader")).toHaveCount(0);
 
-  // Which OPL with MMCE: no OPL 1.1.0, and no folders before the answer.
-  const question = card.getByTestId("loader-question");
-  await expect(question).toContainText("Which OPL with MMCE do you start?");
-  await expect(question.getByTestId("loader-answer-Opl110")).toHaveCount(0);
-  await expect(card.getByTestId("emulator-init")).toHaveCount(0);
-  await question.getByTestId("loader-answer-unknownMmce").click();
+  // What the boot cards hold, read from their own file systems: in both
+  // modes the launcher, in advanced mode the OPL builds and MMCE.
+  const first = panel.getByTestId("emulator-boot-channel").first();
+  await expect(first).toContainText("Holds: FreeMcBoot");
+  await expect(first.getByTestId("emulator-boot-loader")).toHaveCount(simple ? 0 : 1);
+  if (!simple) await expect(first.getByTestId("emulator-boot-loader")).toContainText("v1.2.0-Beta-2216-bb415d2");
+  // The MMCE build inside boot card 1 answers which OPL reads the SD, so
+  // nothing is asked and OPL's folders come at once.
+  await expect(card.getByTestId("loader-question")).toHaveCount(0);
   await expect(card.getByTestId("loader-profile")).toContainText(
-    "OPL 1.2.0 beta — version not known: the rules of the OPL fork with MMCE",
+    "OPL 1.2.0 beta — v1.2.0-Beta-2216-bb415d2 with MMCE in APPS/OPL-MMCE-BETA2.ELF inside boot card 1 (PS2)",
   );
 
   // OPL's folders through a plan that names them, in either mode.

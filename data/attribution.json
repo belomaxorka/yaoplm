@@ -55,5 +55,18 @@
       "credits": "ScreenScraper.fr and its contributors",
       "use": "every picture type by serial and region, in builds with a developer key"
     }
+  ],
+  "other": [
+    {
+      "id": "sd-builder",
+      "file": "data/emulator/sd-builder.tsv",
+      "name": "sd2psXtd SD Builder boot card images (names and SHA-256 only)",
+      "url": "https://github.com/sd2psXtd/sd2psXtd.github.io/tree/main/sd_builder",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/sd2psXtd/sd2psXtd.github.io/blob/main/LICENSE",
+      "credits": "sd2psXtd team; the images carry FreeMcBoot, PS2BBL, wLaunchELF and FreePSXBoot by their authors",
+      "use": "telling a memory card emulator's boot card that is byte for byte an SD Builder image; the images themselves are never bundled or downloaded (ADR-0007, ADR-0048)",
+      "version": "7a204d9"
+    }
   ]
 }

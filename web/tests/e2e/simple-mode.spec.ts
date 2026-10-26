@@ -78,8 +78,9 @@ test("simple mode: a memory card emulator's SD names its plan, keeps its files a
   page,
   request,
 }) => {
-  // ADR-0048: the question, then "Create OPL folders" through a plan that
-  // lists its transaction; the emulator's files stay byte for byte.
+  // ADR-0048: the boot cards answer the version, then "Create OPL folders"
+  // through a plan that lists its transaction; the emulator's files stay
+  // byte for byte.
   await emulatorFlow(page, request, true);
 });
 

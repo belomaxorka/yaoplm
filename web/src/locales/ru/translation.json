@@ -206,7 +206,8 @@
     "emulatorDamaged": "Прошивка эмулятора отложила испорченные карты ({{count}}): {{files}}",
     "emulatorIniTail": "У последней строки {{file}} нет перевода строки, поэтому прошивка эмулятора её не читает: «{{line}}»",
     "emulatorServiceFile": "{{path}} принадлежит эмулятору карты памяти: YAOPLM его не меняет",
-    "loaderOnEmulatorSd": "Это SD эмулятора карты памяти: загрузчик на неё не ставится. OPL запускается изнутри загрузочной карты"
+    "loaderOnEmulatorSd": "Это SD эмулятора карты памяти: загрузчик на неё не ставится. OPL запускается изнутри загрузочной карты",
+    "emulatorChannelName": "Загрузочный канал {{channel}} ({{variant}}) назван в BootCard.ini «{{name}}», а в образе — {{holds}}"
   },
   "library": {
     "title": "Библиотека",
@@ -868,7 +869,12 @@
       "noBootCards": "Загрузочных карт нет: сам эмулятор ничего не запустит.",
       "channel": "Канал {{channel}}",
       "noName": "без имени в BootCard.ini",
-      "cards": "Номерные карты: {{cards}}; карты игр: {{games}}"
+      "cards": "Номерные карты: {{cards}}; карты игр: {{games}}",
+      "holds": "Внутри: {{what}}",
+      "builderImage": "{{name}} из SD Builder",
+      "unreadable": "Содержимое карты прочитать не удалось",
+      "mmce": "MMCE",
+      "versionUnknown": "версия неизвестна"
     }
   },
   "settings": {
@@ -1367,7 +1373,8 @@
     "placeComputerDisk": "папка на диске компьютера",
     "placeNetworkFolder": "сетевая папка",
     "placeServerFolder": "папка на сервере",
-    "placeEmulator": "файлы эмулятора карты памяти: {{files}}"
+    "placeEmulator": "файлы эмулятора карты памяти: {{files}}",
+    "profileByBootCard": "{{version}} с MMCE в {{file}} внутри загрузочной карты {{channel}} ({{variant}})"
   },
   "cfg": {
     "heading": "Настройки игры",

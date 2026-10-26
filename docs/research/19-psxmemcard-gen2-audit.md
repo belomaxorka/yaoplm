@@ -122,7 +122,8 @@ The COH boot card is the builder's `wLaunchELF_Arcade.mcd`. The PS1 boot card ma
 
 - **The factory SD is built from the SD Builder's images and then customised.** Its channel names are wrong for channels 3–6, so a tool must read what a card holds and never trust `BootCard.ini`.
 - **The factory mislabels files.** This is real-world evidence for ADR-0041: a build is known by the version inside its ELF, never by its file name.
-- **An unpacked OPL ELF gives no version** (`OPNPS2LD10th.ELF`, the 10th-anniversary build; its `OPL/` save says "OpenPS2Loader 10TH_ANNIVERSARY"). This is a gap in research/16 §1.6 detection.
+- **An unpacked OPL ELF gives no version** (`OPNPS2LD10th.ELF`, the 10th-anniversary build; its `OPL/` save says "OpenPS2Loader 10TH_ANNIVERSARY"). This is a gap in research/16 §1.6 detection. YAOPLM's boot card reader (ADR-0048, PR 2) does not list it at all: it carries none of the family strings either.
+- **How YAOPLM tells the launchers apart [V 2026-10-26, mymcplusplus `dir` on copies]:** `icon.sys` titles. FreeMcBoot's `B?EXEC-SYSTEM` folders are titled `FreeMcBoot`, PS2BBL's `PS2BBL`, both copy-protected; FunTuna's `BOOT` is titled `FORTUNA`. Every OPL build with MMCE carries its setting `mmce_mode` in the program (2216 does, 2049 does not).
 - **OPL settings live inside the boot card**, as research/07 §2.7 expects: `OPL/conf_opl.cfg` on BootCard-1, CRLF.
   - It sets `default_device=4`, which is `MMCE_MODE` in the fork (upstream has modes 0–3), and has no `mmce_*` keys.
   - **That config was last saved by a build without MMCE.** The fork writes `mmce_mode`, `mmce_slot` and `mmceigr_slot` on every save (`src/opl.c`, `mmce_support`). Without them the fork starts with MMCE **disabled** (`gMMCEStartMode = START_MODE_DISABLED`), so its game list from the SD stays hidden until the user sets the MMCE start mode to Auto in OPL's settings and saves. That save lands in this boot card's `OPL/conf_opl.cfg`.

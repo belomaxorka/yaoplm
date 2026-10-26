@@ -302,6 +302,19 @@ describe("loader updates on the device card", () => {
       expect(within(panel).queryByTestId("emulator-settings") === null).toBe(simple);
       expect(within(panel).queryByTestId("emulator-cards") === null).toBe(simple);
       if (!simple) expect(within(panel).getByTestId("emulator-settings")).toHaveTextContent("[PS2] CardSize=64");
+      // What each image holds shows in both modes; the OPL builds inside,
+      // with MMCE, in advanced mode only.
+      expect(channels[0]).toHaveTextContent("Holds: FreeMcBoot");
+      expect(channels[1]).toHaveTextContent("Holds: SD Builder’s FMCB 1.963");
+      const [first] = channels;
+      if (!first) throw new Error("no boot channel");
+      const loaders = within(first).queryAllByTestId("emulator-boot-loader");
+      expect(loaders).toHaveLength(simple ? 0 : 2);
+      if (!simple) {
+        expect(loaders[1]).toHaveTextContent("OPL v1.2.0-Beta-2216-bb415d2");
+        expect(loaders[1]).toHaveTextContent("MMCE");
+        expect(loaders[0]).not.toHaveTextContent("MMCE");
+      }
     });
   }
 });
