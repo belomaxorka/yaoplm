@@ -1,0 +1,479 @@
+{
+  "run": {
+    "language": "en",
+    "theme": "light",
+    "simple": false
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED"
+  ],
+  "states": [
+    {
+      "state": "devices",
+      "axe": [],
+      "layout": [],
+      "tabs": [
+        "<a> Library",
+        "<a> Devices",
+        "<a> Jobs",
+        "<a> Settings",
+        "<a> C:\\Users\\Admin\\AppData\\Local\\Temp\\yaoplm-e2e-pVnyz",
+        "<button role=radio> English",
+        "<button> Switch to dark theme",
+        "<button> Refresh",
+        "<button> Change",
+        "<button> OPL 1.2 or YAOPL",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know (rules for any OPL)",
+        "<button> Open library",
+        "<button> Change",
+        "<button> OPL 1.2 or YAOPL",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know (rules for any OPL)",
+        "<button> Create OPL folders",
+        "<button> Open library",
+        "<button> Change",
+        "<button> OPL 1.2 or YAOPL",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know (rules for any OPL)",
+        "<button> Create OPL folders",
+        "<button> Open library",
+        "<button> Change",
+        "<button> OPL 1.2 or YAOPL",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know (rules for any OPL)",
+        "<button> Create OPL folders",
+        "<button> Open library",
+        "<button> Change",
+        "<button> Create OPL folders",
+        "<button> Open library",
+        "(body)",
+        "<a> Skip to content"
+      ]
+    },
+    {
+      "state": "devices-stick-answered",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-choice-menu",
+      "axe": [
+        "aria-hidden-focus (serious) at .px-3",
+        "aria-hidden-focus (serious) at aside",
+        "aria-hidden-focus (serious) at .min-w-0.flex-1[data-aria-hidden=\"true\"]"
+      ],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-back-to-auto",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-as-ps2-by-hand",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-mode-auto",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-smb-init-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-emulator-init-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-empty",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-1-wizard",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "install-2-unknown-method-details",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "install-3-other-version",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "install-4-stable-build",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "install-5-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-6-boot-hints",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-installed-current",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "reinstall-wizard",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_v_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "update-1-offer",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-2-not-now",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-3-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-4-done",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "rollback-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "rollback-done-update-available",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "replace-1-wizard",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_24_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_24_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_24_-build-yaopl\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "replace-2-to-stable-impact",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_24_-build-opl-stable\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_24_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_24_-build-yaopl\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "rollback-across-builds-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-exfat-with-opl110",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-exfat-wizard",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_13_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "replace-exfat-wizard",
+      "axe": [
+        "color-contrast (serious) at label[for=\"_r_21_-build-opl-beta\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5",
+        "color-contrast (serious) at label[for=\"_r_21_-build-yaopl\"] > .min-w-0 > .text-muted-foreground\\/80.block.mt-0\\.5"
+      ],
+      "layout": []
+    },
+    {
+      "state": "library",
+      "axe": [],
+      "layout": [],
+      "tabs": [
+        "<a> Library",
+        "<a> Devices",
+        "<a> Jobs",
+        "<a> Settings",
+        "<a> C:\\Users\\Admin\\AppData\\Local\\Temp\\yaoplm-e2e-pVnyz",
+        "<button role=radio> English",
+        "<button> Switch to dark theme",
+        "<input> Search",
+        "<button role=radio> All",
+        "<button role=radio> All",
+        "<button> 3 with warnings",
+        "<button> 3 without cover",
+        "<button role=combobox> Sort by",
+        "<button> Ascending; click for descending",
+        "<button role=radio> Grid",
+        "<button> Rescan",
+        "<button> More",
+        "<button> Download pictures",
+        "<a> Add games",
+        "<button> Change",
+        "<button> 2 files OPL ignores",
+        "<button> OPL 1.2 or YAOPL",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know (rules for any OPL)",
+        "<a role=listitem> Dual Layer Quest, SLUS_212.18",
+        "<a role=listitem> Retail Game, SLUS_200.62",
+        "<a role=listitem> Split Game, SCES_500.03",
+        "<a role=listitem> Uppercase Ext, SLPM_123.45",
+        "<a role=listitem> Wrong Name, SLES_999.99"
+      ]
+    },
+    {
+      "state": "library-search-nomatch",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library-list-view",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library-more-menu",
+      "axe": [
+        "aria-hidden-focus (serious) at .px-3",
+        "aria-hidden-focus (serious) at aside",
+        "aria-hidden-focus (serious) at .flex-1.min-w-0[data-aria-hidden=\"true\"]"
+      ],
+      "layout": []
+    },
+    {
+      "state": "library-skipped-files",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-import",
+      "axe": [
+        "target-size (serious) at #_r_1v_-kind-COV",
+        "target-size (serious) at #_r_1v_-kind-ICO",
+        "target-size (serious) at #_r_1v_-kind-COV2",
+        "target-size (serious) at #_r_1v_-kind-BG",
+        "target-size (serious) at #_r_1v_-kind-SCR",
+        "target-size (serious) at #_r_1v_-kind-SCR2",
+        "target-size (serious) at #_r_1v_-kind-LGO",
+        "target-size (serious) at #_r_1v_-kind-LAB"
+      ],
+      "layout": []
+    },
+    {
+      "state": "art-import-browser",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "verify-dialog",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "convert-dialog",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "convert-dialog-ul",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-fetch",
+      "axe": [
+        "target-size (serious) at #_r_2j_-kind-COV",
+        "target-size (serious) at #_r_2j_-kind-COV2",
+        "target-size (serious) at #_r_2j_-kind-BG",
+        "target-size (serious) at #_r_2j_-kind-SCR",
+        "target-size (serious) at #_r_2j_-kind-LGO",
+        "target-size (serious) at #_r_2j_-kind-LAB"
+      ],
+      "layout": []
+    },
+    {
+      "state": "library-empty-folder",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library-stale-device",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-rename",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-delete",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-delete-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-move-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-convert",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-verify",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-variants",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-slot-menu",
+      "axe": [
+        "aria-hidden-focus (serious) at .px-3",
+        "aria-hidden-focus (serious) at aside",
+        "aria-hidden-focus (serious) at .flex-1.min-w-0[data-aria-hidden=\"true\"]"
+      ],
+      "layout": []
+    },
+    {
+      "state": "vmc-new",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "cfg-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-ul",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-no-cover-warning",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-browser",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-sources",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-done",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "jobs",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "jobs-log",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "delete-added-game",
+      "axe": [
+        "color-contrast (serious) at a[data-index=\"2\"] > .h-9.min-w-0.overflow-hidden > .justify-between.text-xs.text-muted-foreground > .font-mono.truncate"
+      ],
+      "layout": []
+    },
+    {
+      "state": "settings",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "settings-redump-import-browser",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "connection-lost",
+      "axe": [],
+      "layout": []
+    }
+  ]
+}
