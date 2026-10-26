@@ -71,3 +71,10 @@ path = "fuzz_targets/tar.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cue"
+path = "fuzz_targets/cue.rs"
+test = false
+doc = false
+bench = false
