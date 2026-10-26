@@ -8,8 +8,6 @@
     "Failed to load resource: the server responded with a status of 404 (Not Found)",
     "Failed to load resource: the server responded with a status of 404 (Not Found)",
     "Failed to load resource: the server responded with a status of 404 (Not Found)",
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
     "Failed to load resource: net::ERR_FAILED",
     "Failed to load resource: net::ERR_FAILED",
     "Failed to load resource: net::ERR_FAILED"
@@ -259,8 +257,7 @@
     {
       "state": "library-skipped-files",
       "axe": [],
-      "layout": [],
-      "error": "locator.click: Timeout 10000ms exceeded. Call log: \u001b[2m  - waiting for getByRole('button', { name: /files OPL ignores|OPL не видит/ })\u001b[22m"
+      "layout": []
     },
     {
       "state": "art-import",
@@ -314,9 +311,7 @@
     },
     {
       "state": "game-delete",
-      "axe": [
-        "color-contrast (serious) at button[data-testid=\"delete-preview\"]"
-      ],
+      "axe": [],
       "layout": []
     },
     {
