@@ -59,7 +59,7 @@ test("leaving OPL 1.1.0 re-encodes a JPG cover and puts the beta last", async ({
   await openLibrary(page, request, { language: "en" });
   await stickAsUsb(page);
   const dialog = await openReplace(page);
-  await expect(dialog.getByRole("heading", { name: "Replace the loader" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Switch OPL" })).toBeVisible();
   // The installed build is marked; the recommended beta is chosen.
   await expect(dialog.getByTestId("loader-build-installed")).toBeVisible();
   await expect(dialog.getByTestId("loader-build-opl-beta")).toHaveAttribute("data-state", "checked");
