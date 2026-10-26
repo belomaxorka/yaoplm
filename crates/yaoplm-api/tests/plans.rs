@@ -360,9 +360,47 @@ fn a_memory_card_emulator_s_sd_is_known_by_its_files() {
     );
     // A copy on the computer: no rule of the SD, but its card size.
     assert_eq!(codes(&info), ["emulatorCardSize", "emulatorCopy"]);
-    // Asked without OPL's folders: the answer decides whether they come.
-    assert_eq!(info["loader"]["detected"]["library"], false);
-    assert_eq!(info["askProfile"], true);
+    // What the boot cards hold, from their own file systems.
+    let one = &sd["variants"][0]["boot"][0]["contents"];
+    assert_eq!(one["launchers"], json!(["FreeMcBoot"]));
+    assert_eq!(one["loaders"][0]["version"], "v1.2.0-Beta-2216-bb415d2");
+    assert_eq!(one["loaders"][0]["mmce"], true);
+    assert_eq!(
+        sd["variants"][0]["boot"][1]["contents"]["launchers"],
+        json!(["PS2BBL"])
+    );
+    // The MMCE build in boot card 1 answers which OPL reads the SD.
+    assert_eq!(info["loader"]["detected"]["confidence"], "indirect");
+    assert_eq!(
+        info["loader"]["detected"]["reasonText"],
+        "v1.2.0-Beta-2216-bb415d2 with MMCE in APPS/OPL-MMCE-BETA2.ELF inside boot card 1 (PS2)"
+    );
+    assert_eq!(info["askProfile"], false);
+    // Without one it is asked, even without OPL's folders: the answer
+    // decides whether they come.
+    let card1 = device.join("MemoryCards/PS2/BOOT/BootCard-1.mcd");
+    let with_mmce = fs::read(&card1).unwrap();
+    fs::write(&card1, yaoplm_test_support::emulator::ps2bbl_card()).unwrap();
+    let asked = inspect(json!({}));
+    assert_eq!(asked["loader"]["detected"]["library"], false);
+    assert_eq!(asked["askProfile"], true);
+    // A boot card named for what it does not hold is a warning.
+    fs::write(
+        device.join("MemoryCards/PS2/BOOT/BootCard.ini"),
+        "[ChannelName]\n1=FMCB 1.966\n2=PS2BBL\n",
+    )
+    .unwrap();
+    let named = inspect(json!({}));
+    assert!(
+        codes(&named).contains(&"emulatorChannelName".to_owned()),
+        "{named}"
+    );
+    fs::write(&card1, with_mmce).unwrap();
+    fs::write(
+        device.join("MemoryCards/PS2/BOOT/BootCard.ini"),
+        yaoplm_test_support::emulator::PS2_BOOT_INI,
+    )
+    .unwrap();
 
     // Read as a stick, the doctor's rules change; the protection does not.
     let key = info["loader"]["key"].as_str().unwrap().to_owned();

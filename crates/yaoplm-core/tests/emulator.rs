@@ -48,13 +48,13 @@ fn the_card_reads_channels_cards_and_settings() {
                 channel: 1,
                 name: Some("FMCB 1.966".into()),
                 file: "MemoryCards/PS2/BOOT/BootCard-1.mcd".into(),
-                bytes: 16 * 1024,
+                bytes: 8 << 20,
             },
             BootChannel {
                 channel: 2,
                 name: Some("PS2BBL".into()),
                 file: "MemoryCards/PS2/BOOT/BootCard-2.mcd".into(),
-                bytes: 16 * 1024,
+                bytes: 8 << 20,
             },
         ]
     );
@@ -66,6 +66,51 @@ fn the_card_reads_channels_cards_and_settings() {
     // The factory card makes 64 MiB cards: more than the README's 8.
     assert_eq!(codes(&found.advice), ["emulatorCardSize"]);
     assert!(found.damaged.is_empty());
+}
+
+#[test]
+fn boot_cards_are_known_by_what_they_hold() {
+    use yaoplm_core::boot_card::{Launcher, channel_advice, contents};
+    let fs = emulator::memfs();
+    let found = survey(&fs).unwrap();
+    let held = |variant: usize, channel: usize| {
+        let boot = &found.variants[variant].boot[channel];
+        contents(&fs, &rel(&boot.file), boot.bytes).unwrap()
+    };
+    let one = held(0, 0);
+    assert_eq!(
+        (one.launchers.as_slice(), one.unreadable.as_deref()),
+        (&[Launcher::FreeMcBoot][..], None)
+    );
+    assert_eq!(one.loaders.len(), 1);
+    assert_eq!(one.loaders[0].path, "APPS/OPL-MMCE-BETA2.ELF");
+    assert_eq!(
+        one.loaders[0].version.as_deref(),
+        Some("v1.2.0-Beta-2216-bb415d2")
+    );
+    assert!(one.loaders[0].mmce);
+    assert!(
+        one.folders
+            .iter()
+            .any(|(name, title)| name == "BAEXEC-SYSTEM" && title.as_deref() == Some("FreeMcBoot"))
+    );
+    let two = held(0, 1);
+    assert_eq!(two.launchers, [Launcher::Ps2bbl]);
+    assert!(!two.loaders[0].mmce);
+    // Names that agree give no warning; a wrong one does.
+    assert_eq!(channel_advice("PS2", 1, Some("FMCB 1.966"), &one), None);
+    assert_eq!(channel_advice("PS2", 2, Some("PS2BBL"), &two), None);
+    assert!(channel_advice("PS2", 2, Some("FMCB 1.953"), &two).is_some());
+    // A formatted PS1 card holds nothing, and says so without an error.
+    let ps1 = held(1, 0);
+    assert!(ps1.launchers.is_empty() && ps1.unreadable.is_none() && ps1.folders.is_empty());
+    // A placeholder that is no card is reported, not a failure.
+    fs.insert_file(
+        "MemoryCards/PS2/BOOT/BootCard-3.mcd",
+        &emulator::card_image(16 * 1024),
+    );
+    let broken = contents(&fs, &rel("MemoryCards/PS2/BOOT/BootCard-3.mcd"), 16 * 1024).unwrap();
+    assert!(broken.unreadable.is_some());
 }
 
 #[test]

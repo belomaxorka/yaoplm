@@ -216,3 +216,21 @@ fn ps1_cards_from_real_data() {
         );
     }
 }
+
+#[test]
+#[ignore = "needs YAOPLM_TESTDATA with the mymcplusplus clone and Python"]
+fn fixture_cards_pass_mymcplusplus_check() {
+    // The test support's card builder makes sound cards, and our reader
+    // agrees with mymcplusplus on them.
+    let dir = tempfile::tempdir().unwrap();
+    for (name, image) in [
+        ("fmcb.mcd", yaoplm_test_support::emulator::fmcb_card()),
+        ("ps2bbl.mcd", yaoplm_test_support::emulator::ps2bbl_card()),
+    ] {
+        let path = dir.path().join(name);
+        std::fs::write(&path, image).unwrap();
+        let out = mymc(&path, &["check"]);
+        assert!(out.contains("No errors found"), "{name}: {out}");
+        compare(&path);
+    }
+}

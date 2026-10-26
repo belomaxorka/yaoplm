@@ -841,7 +841,12 @@
       "noBootCards": "No boot cards: the emulator starts nothing by itself.",
       "channel": "Channel {{channel}}",
       "noName": "no name in BootCard.ini",
-      "cards": "Numbered cards: {{cards}}; game cards: {{games}}"
+      "cards": "Numbered cards: {{cards}}; game cards: {{games}}",
+      "holds": "Holds: {{what}}",
+      "builderImage": "SD Builder’s {{name}}",
+      "unreadable": "The card’s contents could not be read",
+      "mmce": "MMCE",
+      "versionUnknown": "version unknown"
     }
   },
   "settings": {
@@ -1320,7 +1325,8 @@
     "placeComputerDisk": "a folder on the computer’s disk",
     "placeNetworkFolder": "a network folder",
     "placeServerFolder": "a folder on the server",
-    "placeEmulator": "the files of a memory card emulator: {{files}}"
+    "placeEmulator": "the files of a memory card emulator: {{files}}",
+    "profileByBootCard": "{{version}} with MMCE in {{file}} inside boot card {{channel}} ({{variant}})"
   },
   "cfg": {
     "heading": "Game settings",

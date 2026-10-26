@@ -3,8 +3,44 @@ import { MemoryStick } from "lucide-react";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { BootContents } from "@/api/generated/BootContents";
 import type { EmulatorInfo } from "@/api/generated/EmulatorInfo";
+import { Badge } from "@/components/ui/badge";
 import { useSimpleMode } from "@/settings/context";
+
+/**
+ * What a boot card holds by its content (research/19 §4): the SD Builder
+ * image it is or the launchers it starts, in both modes, since that is what
+ * the channel-name warnings compare with; the OPL builds inside, with their
+ * versions and MMCE, in advanced mode.
+ */
+function BootHolds({ contents, simple }: { contents: BootContents; simple: boolean }) {
+  const { t } = useTranslation();
+  if (contents.unreadable !== null) {
+    return <span className="ml-1 text-xs text-muted-foreground">{t("devices.emulator.unreadable")}</span>;
+  }
+  const what =
+    contents.builder !== null ? t("devices.emulator.builderImage", { name: contents.builder }) : contents.launchers.join(" + ");
+  return (
+    <div className="ml-1 flex flex-col text-xs text-muted-foreground" data-testid="emulator-boot-holds">
+      {what && <span>{t("devices.emulator.holds", { what })}</span>}
+      {!simple &&
+        contents.loaders.map((loader) => (
+          <span key={loader.path} className="flex flex-wrap items-center gap-x-1.5" data-testid="emulator-boot-loader">
+            <span>
+              {loader.family} {loader.version ?? t("devices.emulator.versionUnknown")}
+            </span>
+            {loader.mmce && (
+              <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                {t("devices.emulator.mmce")}
+              </Badge>
+            )}
+            <span className="font-mono break-all">{loader.path}</span>
+          </span>
+        ))}
+    </div>
+  );
+}
 
 /**
  * A memory card emulator's SD on the device card (ADR-0048): what it is,
@@ -48,12 +84,15 @@ export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo;
           ) : (
             <ol className="flex flex-col gap-0.5">
               {variant.boot.map((boot) => (
-                <li key={boot.channel} className="flex flex-wrap gap-x-2" data-testid="emulator-boot-channel">
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {t("devices.emulator.channel", { channel: boot.channel })}
-                  </span>
-                  <span>{boot.name ?? t("devices.emulator.noName")}</span>
-                  {!simple && <span className="font-mono text-xs break-all text-muted-foreground">{boot.file}</span>}
+                <li key={boot.channel} className="flex flex-col" data-testid="emulator-boot-channel">
+                  <div className="flex flex-wrap gap-x-2">
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {t("devices.emulator.channel", { channel: boot.channel })}
+                    </span>
+                    <span>{boot.name ?? t("devices.emulator.noName")}</span>
+                    {!simple && <span className="font-mono text-xs break-all text-muted-foreground">{boot.file}</span>}
+                  </div>
+                  {boot.contents && <BootHolds contents={boot.contents} simple={simple} />}
                 </li>
               ))}
             </ol>

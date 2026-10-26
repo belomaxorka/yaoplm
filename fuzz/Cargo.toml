@@ -78,3 +78,24 @@ path = "fuzz_targets/cue.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "memcard"
+path = "fuzz_targets/memcard.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ps1mc"
+path = "fuzz_targets/ps1mc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sd2psx_ini"
+path = "fuzz_targets/sd2psx_ini.rs"
+test = false
+doc = false
+bench = false

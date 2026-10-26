@@ -869,7 +869,12 @@
       "noBootCards": "Загрузочных карт нет: сам эмулятор ничего не запустит.",
       "channel": "Канал {{channel}}",
       "noName": "без имени в BootCard.ini",
-      "cards": "Номерные карты: {{cards}}; карты игр: {{games}}"
+      "cards": "Номерные карты: {{cards}}; карты игр: {{games}}",
+      "holds": "Внутри: {{what}}",
+      "builderImage": "{{name}} из SD Builder",
+      "unreadable": "Содержимое карты прочитать не удалось",
+      "mmce": "MMCE",
+      "versionUnknown": "версия неизвестна"
     }
   },
   "settings": {
@@ -1368,7 +1373,8 @@
     "placeComputerDisk": "папка на диске компьютера",
     "placeNetworkFolder": "сетевая папка",
     "placeServerFolder": "папка на сервере",
-    "placeEmulator": "файлы эмулятора карты памяти: {{files}}"
+    "placeEmulator": "файлы эмулятора карты памяти: {{files}}",
+    "profileByBootCard": "{{version}} с MMCE в {{file}} внутри загрузочной карты {{channel}} ({{variant}})"
   },
   "cfg": {
     "heading": "Настройки игры",

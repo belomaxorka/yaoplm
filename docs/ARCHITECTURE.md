@@ -67,7 +67,7 @@ yaoplm/
 ├─ package.json  pnpm-workspace.yaml
 ├─ crates/
 │  ├─ yaoplm-core/            # Game, Library, Device, Profile; сканер; JobManager-примитивы; SQLite-кэш; ProgressSink
-│  ├─ yaoplm-formats/         # iso9660 + system_cnf, ul_cfg + usba_crc32, cfg, zso, cue/bin, chd, archives, art naming, vmc, cht, apps
+│  ├─ yaoplm-formats/         # iso9660 + system_cnf, ul_cfg + usba_crc32, cfg, zso, cue/bin, chd, archives, art naming, vmc, ps2mc + ps1mc + icon_sys (memory cards), sd2psx_ini, cht, apps
 │  ├─ yaoplm-hash/            # многохешевый конвейер, Logiqx/Redump DAT, сопоставление
 │  ├─ yaoplm-i18n/            # Phrase: ключ каталога + параметры, английский текст из web/src/locales/en (ADR-0029)
 │  ├─ yaoplm-device/          # тома, тип ФС, копирование/нарезка/предвыделение, фрагментация (по ОС)

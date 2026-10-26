@@ -5,9 +5,9 @@ use std::path::Path;
 
 use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{
-    ActiveMode, ActiveProfile, DeviceInfo, DeviceMode, DriveBus, DriveKind, EmulatorInfo,
-    EmulatorKind, FileSystem, InstalledLoader, LoaderFreshness, LoaderKnownBy, ModeSource,
-    PartitionTable, ProfileSource,
+    ActiveMode, ActiveProfile, BootContents, BootLauncher, DeviceInfo, DeviceMode, DriveBus,
+    DriveKind, EmulatorInfo, EmulatorKind, FileSystem, InstalledLoader, LoaderFreshness,
+    LoaderKnownBy, ModeSource, PartitionTable, ProfileSource,
 };
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
@@ -395,6 +395,42 @@ fn profile_question(mode: DeviceMode) -> String {
     )
 }
 
+/// What a boot card holds, by its content (research/19 §4).
+fn contents_line(held: &BootContents) -> String {
+    if let Some(why) = &held.unreadable {
+        return format!("? (unreadable: {why})");
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(name) = &held.builder {
+        parts.push(format!("SD Builder {name}"));
+    } else if !held.launchers.is_empty() {
+        let names: Vec<&str> = held
+            .launchers
+            .iter()
+            .map(|l| match l {
+                BootLauncher::FreeMcBoot => "FreeMcBoot",
+                BootLauncher::Ps2bbl => "PS2BBL",
+                BootLauncher::FunTuna => "FunTuna",
+                BootLauncher::FreePsxBoot => "FreePSXBoot",
+            })
+            .collect();
+        parts.push(names.join(" + "));
+    }
+    for loader in &held.loaders {
+        let version = loader.version.as_deref().unwrap_or("version unknown");
+        let mmce = if loader.mmce { ", MMCE" } else { "" };
+        parts.push(format!(
+            "{} {version}{mmce} ({})",
+            loader.family, loader.path
+        ));
+    }
+    if parts.is_empty() {
+        "nothing YAOPLM knows".to_owned()
+    } else {
+        parts.join("; ")
+    }
+}
+
 /// What a memory card emulator's SD holds (ADR-0048).
 fn emulator_lines(out: &mut String, sd: &EmulatorInfo) {
     let kinds: Vec<&str> = sd
@@ -435,6 +471,9 @@ fn emulator_lines(out: &mut String, sd: &EmulatorInfo) {
                 boot.file,
                 size(boot.bytes)
             );
+            if let Some(held) = &boot.contents {
+                let _ = writeln!(out, "           holds {}", contents_line(held));
+            }
         }
     }
     for section in &sd.settings {
