@@ -40,7 +40,7 @@ test("simple mode: a game is added and deleted through plans that name it, and n
 
   // No jobs page: back to the library, and a notification.
   await expect(page).toHaveURL(/\/library$/);
-  await expect(page.getByText("Import 1 game: done")).toBeVisible();
+  await expect(page.getByText("Done: Import 1 game")).toBeVisible();
   const added = page.getByRole("listitem", { name: /Dead or Alive 2/ });
   await expect(added).toBeVisible();
   await expect(page.getByTestId("library-count")).toHaveText("6 of 6 games");
@@ -54,7 +54,7 @@ test("simple mode: a game is added and deleted through plans that name it, and n
   await removal.getByLabel("I understand that files will be deleted").check();
   await removal.getByTestId("plan-confirm").click();
   await expect(page).toHaveURL(/\/library$/);
-  await expect(page.getByText(/^Delete .*: done$/)).toBeVisible();
+  await expect(page.getByText(/^Done: Delete /)).toBeVisible();
   await expect(page.getByTestId("library-count")).toHaveText("5 of 5 games");
 });
 

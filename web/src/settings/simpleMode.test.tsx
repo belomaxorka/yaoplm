@@ -118,6 +118,9 @@ describe("simple mode (UI-4)", () => {
     expect(defaultSettings.checkOnAdd).toBe(false);
     // No keyboard card (owner, 2026-10-26): the keys are the usual ones.
     expect(screen.queryByText("Keyboard")).toBeNull();
+    // Cards explain nothing under their titles (release pass 2.2).
+    expect(screen.queryByText(/The loader profile is read from each device/)).toBeNull();
+    expect(screen.queryByText(/Where OPL builds for installing come from/)).toBeNull();
 
     await userEvent.click(switches[0]!);
     expect(screen.queryByText("Keyboard")).toBeNull();
@@ -133,7 +136,6 @@ describe("simple mode (UI-4)", () => {
       expect(screen.getByRole("searchbox", { name: "Search" })).toBeInTheDocument();
       expect(screen.getByRole("radiogroup", { name: "Media" })).toBeInTheDocument();
       expect(screen.getByRole("radiogroup", { name: "Format" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Rescan" })).toBeInTheDocument();
       expect(screen.getByTestId("download-covers")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Add games" })).toBeInTheDocument();
       const advanced = [
@@ -150,6 +152,12 @@ describe("simple mode (UI-4)", () => {
       // The hidden filter stays in the address but does not apply.
       expect(window.location.search).toBe("?warnings=1");
       expect(screen.getByTestId("library-count")).toHaveTextContent("1 of 1 games");
+      // Counters and rescanning are advanced tools (release pass 2.1): simple
+      // mode keeps the count for screen readers only.
+      if (simple) expect(screen.getByTestId("library-count")).toHaveClass("sr-only");
+      else expect(screen.getByTestId("library-count")).not.toHaveClass("sr-only");
+      if (simple) expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+      else expect(screen.getByRole("button", { name: "Rescan" })).toBeInTheDocument();
     });
 
     it(`game card: ${simple ? "modes and slot 1, no conversion, dump check or technical details" : "everything"}`, async () => {

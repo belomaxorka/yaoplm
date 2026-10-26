@@ -427,12 +427,12 @@ fn what_a_rollback_loses_is_said_as_the_replace_window_says_it() {
             (
                 "rollbackFragmented",
                 Level::Warning,
-                "Games in several pieces, which OPL 1.1.0 will not start: 2. Copy them to the computer, format the device and add them back"
+                "Games in pieces that OPL 1.1.0 will not start: 2. Only formatting helps: copy the games off, format, add them back"
             ),
             (
                 "rollbackUnknownFragments",
                 Level::Warning,
-                "Games whose pieces cannot be counted: 1. OPL 1.1.0 starts a game only when each of its files is one piece"
+                "Games whose pieces cannot be counted: 1. OPL 1.1.0 starts a game only when each file is one piece"
             ),
         ]
     );

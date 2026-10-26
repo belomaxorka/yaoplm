@@ -74,7 +74,7 @@ test("simple mode keeps the warning and hides the count", async ({ page, request
   await page.goto("/library");
   await expect(page.getByTestId("library-count")).toBeVisible();
   await openGame(page, title());
-  await expect(page.getByTestId("game-warnings")).toContainText("Игра лежит на носителе кусками (частей: 70)");
+  await expect(page.getByTestId("game-warnings")).toContainText("Игра лежит на носителе кусками (70) и не запустится");
   await expect(page.getByTestId("game-fragments")).toHaveCount(0);
 });
 
