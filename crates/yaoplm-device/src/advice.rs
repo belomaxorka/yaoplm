@@ -156,11 +156,12 @@ impl Advice {
             | Self::SystemRoot(_)
             | Self::LowSpace { .. }
             | Self::AppleDouble(_)
-            | Self::EmulatorCardSize(_)
             | Self::EmulatorDamaged { .. }
-            | Self::EmulatorIniTail { .. }
-            | Self::EmulatorChannelName { .. } => Level::Warning,
-            Self::LargeGamesAsUl
+            | Self::EmulatorIniTail { .. } => Level::Warning,
+            // The owner cannot change these in YAOPLM, and the SD works as it is.
+            Self::EmulatorCardSize(_)
+            | Self::EmulatorChannelName { .. }
+            | Self::LargeGamesAsUl
             | Self::ExfatRecommended
             | Self::Smb { .. }
             | Self::ClusterSmall(_)
@@ -650,6 +651,23 @@ mod tests {
             ..SMB
         };
         assert_eq!(codes(&volume, riptopl), ["smbRulesSmb2"]);
+    }
+
+    #[test]
+    fn emulator_notes_are_information() {
+        // The owner cannot change them in YAOPLM and the SD works as it is
+        // (release pass 1.8): no "Has notes" verdict for them.
+        assert_eq!(Advice::EmulatorCardSize(64).level(), Level::Info);
+        assert_eq!(
+            Advice::EmulatorChannelName {
+                variant: "PS2".into(),
+                channel: 3,
+                name: "FMCB 1.965".into(),
+                holds: "FMCB 1.963".into(),
+            }
+            .level(),
+            Level::Info
+        );
     }
 
     #[test]

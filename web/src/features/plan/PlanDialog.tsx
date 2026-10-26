@@ -55,7 +55,7 @@ export function PlanDialog({
           <DialogTitle>{plan ? phraseText(plan.titlePhrase, plan.title) : t("plan.title")}</DialogTitle>
           <DialogDescription>{description ?? (plan ? t("plan.on", { root: plan.root }) : t("plan.building"))}</DialogDescription>
         </DialogHeader>
-        <div className="relative min-h-0 flex-1 overflow-auto pr-1">
+        <div className="relative min-h-0 flex-1 overflow-auto pr-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50" tabIndex={0}>
           {flow.pending && (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground" role="status">
               <Loader2 className="size-4 animate-spin" aria-hidden />

@@ -319,3 +319,27 @@ describe("loader updates on the device card", () => {
     });
   }
 });
+
+describe("a rollback that would only redo the update", () => {
+  // After a rollback the backup is the newer build: "Put back 2280" next to
+  // "Update to 2280" is one action twice (release pass 1.15).
+  it("is not offered", async () => {
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false });
+    const core = fakeCore(() => [
+      device({
+        installed: [
+          installedLoader({
+            version: "v1.2.0-Beta-2271-b3a2199",
+            latest: "v1.2.0-Beta-2280-0123abc",
+            freshness: "update",
+            backup: { file: ".yaoplm/backup/loader/20261026-120000/UPDT_OPL.ELF", family: "OPL", version: "v1.2.0-Beta-2280-0123abc" },
+          }),
+        ],
+      }),
+    ]);
+    show(core);
+    const card = await screen.findByTestId("installed-loader");
+    expect(within(card).getByTestId("installed-loader-update-to")).toBeInTheDocument();
+    expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
+  });
+});

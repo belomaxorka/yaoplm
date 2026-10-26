@@ -40,6 +40,8 @@ import { findGame, gameRef, idKey } from "@/lib/gameKey";
 import { useSettings, useSimpleMode } from "@/settings/context";
 import { nameStyles } from "@/settings/settings";
 
+const vmcWarnings = new Set(["vmcInvalid", "vmcMissing", "vmcNotOnDevice", "vmcSlotFragmented"]);
+
 export function GamePage() {
   const { t } = useTranslation();
   const { key } = useParams();
@@ -109,6 +111,13 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   const knownTitle = game.knownTitle !== null && game.knownTitle !== game.title ? game.knownTitle : null;
   // Simple mode has no technical details: only what the user can act on.
   const showDetails = !simple || knownTitle !== null || game.dump !== null;
+  // A VMC warning belongs to its slot in the settings below (ADR-0036); the
+  // list keeps only what no slot on screen shows (slot 2 in simple mode).
+  const slotsShown = simple ? [1] : [1, 2];
+  const warnings = game.warnings.filter((warning) => {
+    const slot = warning.phrase?.params.slot;
+    return !(vmcWarnings.has(warning.code) && typeof slot === "number" && slotsShown.includes(slot));
+  });
 
   return (
     <PageScroll>
@@ -181,10 +190,10 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            {game.warnings.length > 0 && (
+            {warnings.length > 0 && (
               <section className="rounded-lg border bg-card p-3" data-testid="game-warnings">
                 <h3 className="mb-2 text-sm font-medium">{t("game.warnings")}</h3>
-                <NoticeList notices={game.warnings} />
+                <NoticeList notices={warnings} />
               </section>
             )}
           </div>

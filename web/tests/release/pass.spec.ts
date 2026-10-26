@@ -85,7 +85,9 @@ async function layoutProblems(page: Page): Promise<string[]> {
       const style = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && !el.closest("[aria-hidden=true], [inert]");
     });
-    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
+    // Behind an open dialog or menu, only it counts (menus are not modal: the
+    // page behind them stays in the accessibility tree).
+    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]');
     const shown = dialog ? visible.filter((el) => dialog.contains(el)) : visible;
     for (let i = 0; i < shown.length; i++) {
       const a = shown[i]!;
@@ -477,7 +479,7 @@ for (const run of runs) {
       });
       await pass.escape();
       await pass.state("library-skipped-files", async () => {
-        await page.getByRole("button", { name: /files OPL ignores|OPL не видит/ }).click();
+        await page.getByRole("button", { name: /files OPL will not show|OPL не покажет/ }).click();
         await expect(page.getByRole("dialog")).toBeVisible();
       });
       await pass.escape();

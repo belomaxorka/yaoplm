@@ -76,8 +76,10 @@ test("the game card shows warnings, CFG and keyboard navigation works", async ({
 
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
   await expect(page.getByTestId("game-title")).toHaveText("Retail Game");
-  await expect(page.getByTestId("game-warnings")).toContainText(
-    "VMC slot 1: VMC/SLUS_200.62_0.bin is unusable: not a PS2 memory card image (no superblock magic)",
+  // The VMC warning sits by its slot, not in the list (release pass 1.10).
+  await expect(page.getByTestId("game-warnings")).toHaveCount(0);
+  await expect(page.getByTestId("cfg-vmc-0")).toContainText(
+    "OPL does not take SLUS_200.62_0: not a PS2 memory card image (no superblock magic)",
   );
   await expect(page.getByText("Mode 1: accurate reads")).toBeVisible();
   await expect(page.getByText("Mode 3: unhook syscalls")).toBeVisible();

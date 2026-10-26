@@ -54,7 +54,7 @@ test("simple: the broken card in slot 1 is replaced by a formatted one", async (
   await openLibrary(page, request, { simple: true });
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
-  await expect(page.getByTestId("game-warnings")).toContainText("VMC slot 1: VMC/SLUS_200.62_0.bin is unusable");
+  await expect(page.getByTestId("cfg-vmc-0")).toContainText("OPL does not take SLUS_200.62_0");
   const settings = page.getByTestId("game-settings");
   await expect(settings.getByRole("checkbox", { name: /Mode 1/ })).toBeChecked();
   await expect(settings.getByTestId("cfg-vmc-1")).toHaveCount(0);

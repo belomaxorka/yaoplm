@@ -362,7 +362,8 @@ function LibraryView({
       {data && <VerifyDialog root={root} games={data.games} open={verifyOpen} onOpenChange={setVerifyOpen} />}
       <ConvertDialog root={root} games={games} open={convertOpen} onOpenChange={setConvertOpen} />
 
-      {data && data.games.length === 0 && !isPending && (
+      {/* One next step (UI-6): while OPL's folders are missing, creating them is it. */}
+      {data && data.games.length === 0 && !isPending && folderNext === null && missingFolders.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center p-6">
           <EmptyState icon={Disc3} title={t("library.noGamesTitle")} description={t("library.noGamesDescription")} />
           <Button asChild>
@@ -687,7 +688,7 @@ function GameCard({ game, index }: { game: Game; index: number }) {
         <div className="truncate text-sm font-medium" title={game.title}>
           {game.title}
         </div>
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground group-hover:text-foreground/80">
           <span className="truncate font-mono">{game.startup}</span>
           <span className="flex shrink-0 items-center gap-1">
             {game.warnings.length > 0 && <WarningMark count={game.warnings.length} />}

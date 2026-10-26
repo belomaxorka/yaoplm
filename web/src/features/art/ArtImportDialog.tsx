@@ -245,7 +245,7 @@ function ImportBody({
           </section>
           <fieldset data-testid="art-import-kinds">
             <legend className="mb-2 text-sm font-medium">{t("art.kindsLegend")}</legend>
-            <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
               {artTypes.map((kind) => (
                 <li key={kind}>
                   <Label htmlFor={`${ids}-kind-${kind}`} className="font-normal">
