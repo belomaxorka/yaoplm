@@ -192,7 +192,17 @@
     "starterSettingsCard": "OPL reads this file only while the memory card holds no conf_opl.cfg of its own",
     "loaderNothingToDo": "Everything is in place already",
     "loaderNoBackup": "There is no backup of {{path}} to put back",
-    "replaceExfatOpl110": "OPL 1.1.0 cannot read exFAT: on this device it would show no games. Keep the current build, or prepare the device again in FAT32 after copying the games to the computer"
+    "replaceExfatOpl110": "OPL 1.1.0 cannot read exFAT: on this device it would show no games. Keep the current build, or prepare the device again in FAT32 after copying the games to the computer",
+    "emulatorGpt": "GPT partition table: firmware 1.4.0 of a memory card emulator mounts MBR only, so the SD will not mount",
+    "emulatorNoPartitionTable": "No partition table: firmware 1.4.0 of a memory card emulator mounts MBR partition 1 only",
+    "emulatorPartition": "The data is in partition {{number}}: a memory card emulator’s firmware mounts partition 1 only",
+    "emulatorFs": "A memory card emulator’s firmware cannot read {{fs}}: it reads FAT32 and exFAT",
+    "emulatorCopy": "A copy of a memory card emulator’s SD on the computer: the emulator reads only the SD itself",
+    "emulatorCardSize": "New cards are made at {{size}} MiB (CardSize in .sd2psx/settings.ini). The firmware’s README recommends 8 MiB: larger cards may get corrupted on a slow SD",
+    "emulatorDamaged": "The emulator’s firmware moved damaged cards aside ({{count}}): {{files}}",
+    "emulatorIniTail": "The last line of {{file}} has no line break, so the emulator’s firmware never reads it: “{{line}}”",
+    "emulatorServiceFile": "{{path}} belongs to the memory card emulator: YAOPLM does not change it",
+    "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card"
   },
   "library": {
     "title": "Library",
@@ -587,7 +597,15 @@
       "RiptOpl": "RiptOPL"
     },
     "filesSay": "The device’s files say {{profile}}: {{reason}}",
-    "backToAuto": "Back to auto"
+    "backToAuto": "Back to auto",
+    "questionEmulator": "Which OPL with MMCE do you start?",
+    "questionHintEmulator": "Only OPL builds with MMCE see games on this SD; upstream OPL does not. The version decides the rules YAOPLM writes games and pictures by.",
+    "answersEmulator": {
+      "Opl120Beta": "MMCE fork, YAOPL or wOPL",
+      "RiptOpl": "RiptOPL"
+    },
+    "unknownMmce": "I don’t know (rules of the MMCE fork)",
+    "byUnknownMmce": "version not known: the rules of the OPL fork with MMCE"
   },
   "loaderInstall": {
     "title": "Install loader",
@@ -786,13 +804,15 @@
     "connection": "Connection to the PS2",
     "modes": {
       "ps2": "plugged into the console",
-      "smb": "over the network (SMB)"
+      "smb": "over the network (SMB)",
+      "emulator": "in a memory card emulator (MMCE)"
     },
     "modeOptions": {
       "ps2": "Plugged into the console",
-      "smb": "Over the network (SMB)"
+      "smb": "Over the network (SMB)",
+      "emulator": "In a memory card emulator (MMCE)"
     },
-    "modeAuto": "Auto (by place)",
+    "modeAuto": "Auto (by place and files)",
     "modeForThisDevice": "Connection of this device",
     "modeByOverride": "chosen for this device",
     "modeByExplicit": "chosen for every device",
@@ -806,7 +826,22 @@
     "folderSubmit": "Preview plan",
     "installLoader": "Install loader…",
     "reinstallLoader": "Reinstall loader…",
-    "replaceLoader": "Replace loader…"
+    "replaceLoader": "Replace loader…",
+    "emulatorInitHint": "Games for OPL with MMCE go into OPL’s usual folders at the SD’s root, next to the emulator’s files. Create them and add games.",
+    "emulator": {
+      "title": "Memory card emulator SD",
+      "kinds": {
+        "sd2psx": "sd2psx or sd2psXtd",
+        "memcardPro2": "MemCard PRO 2"
+      },
+      "protected": "YAOPLM does not change the emulator’s files ({{files}}), does not format the SD and puts no loader on it: OPL runs from inside the boot card.",
+      "folder": "This folder is {{folder}} on the SD.",
+      "bootCards": "Boot cards {{variant}}",
+      "noBootCards": "No boot cards: the emulator starts nothing by itself.",
+      "channel": "Channel {{channel}}",
+      "noName": "no name in BootCard.ini",
+      "cards": "Numbered cards: {{cards}}; game cards: {{games}}"
+    }
   },
   "settings": {
     "library": "Library",
@@ -1283,7 +1318,8 @@
     "placeUsbDiskOther": "a USB disk OPL cannot read over USB: the console reads it only over the network",
     "placeComputerDisk": "a folder on the computer’s disk",
     "placeNetworkFolder": "a network folder",
-    "placeServerFolder": "a folder on the server"
+    "placeServerFolder": "a folder on the server",
+    "placeEmulator": "the files of a memory card emulator: {{files}}"
   },
   "cfg": {
     "heading": "Game settings",

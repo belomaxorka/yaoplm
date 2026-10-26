@@ -307,6 +307,114 @@ fn the_loader_profile_of_a_device() {
 }
 
 #[test]
+fn a_memory_card_emulator_s_sd_is_known_by_its_files() {
+    // ADR-0048: the files decide, even in a temp folder on the computer's
+    // disk (a copy of the SD), and they stay protected in any mode.
+    let s = setup();
+    let device = Path::new(&s.device);
+    yaoplm_test_support::emulator::write_to(device).unwrap();
+    let api = Api::new();
+    let inspect = |extra: Value| {
+        let mut request = json!({"type": "InspectDevice", "root": s.device});
+        for (key, value) in extra.as_object().unwrap() {
+            request[key] = value.clone();
+        }
+        call(&api, request).unwrap()
+    };
+    let codes = |device: &Value| -> Vec<String> {
+        device["advice"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["code"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    let info = inspect(json!({}));
+    assert_eq!(
+        (
+            &info["mode"]["mode"],
+            &info["mode"]["source"],
+            &info["mode"]["detected"]
+        ),
+        (&json!("emulator"), &json!("detected"), &json!("emulator"))
+    );
+    assert_eq!(
+        info["mode"]["placeText"],
+        "the files of a memory card emulator: .sd2psx, MemoryCards"
+    );
+    let sd = &info["emulator"];
+    assert_eq!(sd["kinds"], json!(["sd2psx"]));
+    assert_eq!(sd["folder"], "");
+    assert_eq!(
+        sd["protected"],
+        json!([".sd2psx", "MemoryCards", "civ.bin"])
+    );
+    assert_eq!(sd["variants"][0]["name"], "PS2");
+    assert_eq!(sd["variants"][0]["boot"][1]["name"], "PS2BBL");
+    assert_eq!(sd["variants"][0]["gameCards"], 1);
+    assert_eq!(sd["settings"][2]["name"], "PS2");
+    assert_eq!(
+        sd["settings"][2]["entries"][2],
+        json!({"key": "CardSize", "value": "64"})
+    );
+    // A copy on the computer: no rule of the SD, but its card size.
+    assert_eq!(codes(&info), ["emulatorCardSize", "emulatorCopy"]);
+    // Asked without OPL's folders: the answer decides whether they come.
+    assert_eq!(info["loader"]["detected"]["library"], false);
+    assert_eq!(info["askProfile"], true);
+
+    // Read as a stick, the doctor's rules change; the protection does not.
+    let key = info["loader"]["key"].as_str().unwrap().to_owned();
+    let as_stick = inspect(json!({"modeOverrides": [{"key": key, "mode": "ps2"}]}));
+    assert_eq!(as_stick["mode"]["mode"], "ps2");
+    assert_eq!(as_stick["mode"]["detected"], "emulator");
+    assert!(as_stick["emulator"].is_object());
+    assert_eq!(as_stick["askProfile"], false);
+    assert_eq!(
+        inspect(json!({"mode": "emulator"}))["mode"]["source"],
+        "explicit"
+    );
+
+    // OPL's folders go next to the emulator's files.
+    let plan = call(&api, json!({"type": "PlanInit", "root": s.device})).unwrap();
+    assert_eq!(plan["executable"], true, "{plan}");
+    assert!(execute(&api, &plan, false).error.is_none());
+    assert!(device.join("CD").is_dir() && device.join("DVD").is_dir());
+    for (path, bytes) in yaoplm_test_support::emulator::files() {
+        assert_eq!(fs::read(device.join(&path)).unwrap(), bytes, "{path}");
+    }
+    // On main a library folder could be made inside them.
+    for folder in ["MemoryCards", ".sd2psx", "memorycards"] {
+        let plan = call(
+            &api,
+            json!({"type": "PlanInit", "root": s.device, "folder": folder}),
+        )
+        .unwrap();
+        assert_eq!(plan["executable"], false, "{folder}: {plan}");
+        assert_eq!(plan["notices"][0]["code"], "emulatorServiceFile", "{plan}");
+        let refused = call(&api, json!({"type": "ExecutePlan", "plan": plan["id"]})).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::BadRequest, "{folder}");
+    }
+    assert!(!device.join("MemoryCards").join("CFG").exists());
+    assert!(!device.join(".sd2psx").join("CFG").exists());
+
+    // A folder inside the SD is the SD too.
+    let inner = device.join("CD");
+    let info = call(
+        &api,
+        json!({"type": "InspectDevice", "root": inner.to_string_lossy()}),
+    )
+    .unwrap();
+    assert_eq!(info["mode"]["mode"], "emulator");
+    assert_eq!(info["emulator"]["folder"], "CD");
+    assert_eq!(
+        info["emulator"]["variants"][0]["boot"][0]["name"],
+        "FMCB 1.966"
+    );
+}
+
+#[test]
 fn a_folder_on_the_computer_is_read_over_smb() {
     // ADR-0047: the place gives the mode. A temp folder is never removable.
     let s = setup();

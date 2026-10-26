@@ -1,7 +1,7 @@
 // Starts yaoplm-server for the e2e tests on a fresh fixture library
 // (TESTING.md): `make_library` writes the device root, the import sources,
-// the cover and loader mirrors and an empty stick into a temp folder; all
-// four become server roots.
+// the cover and loader mirrors, an empty stick and a memory card emulator's
+// SD into a temp folder; all of them become server roots.
 // The art cache goes to the same temp folder. Playwright runs this as its
 // webServer and kills the whole tree afterwards.
 import { spawn, spawnSync } from "node:child_process";
@@ -48,6 +48,8 @@ const server = spawn(
     path.join(dir, "mirror"),
     "--root",
     path.join(dir, "stick"),
+    "--root",
+    path.join(dir, "emulator"),
     "--data-dir",
     path.join(dir, "data"),
     ...extraRoots.flatMap((root) => ["--root", root]),

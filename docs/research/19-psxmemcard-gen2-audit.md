@@ -151,6 +151,14 @@ The rules come from research/06 §1.4, sd2psx.net `format-microsd.html` and the 
    - `.sd2psx/settings.ini` gains `EnableControllerCombo` and `MaxCardIdx`. 1.4.0 rewrites the file; when a `settings.ini` exists, it wins over the copy in flash (`settings_load_sd()`).
 5. Optional, the owner's choice: set `CardSize=8`, so new per-game cards are created at the size games expect. Existing cards keep their size.
 
+**A new `settings.ini` takes effect from the second power-on [V `src/main.c`, `src/settings.c`, `src/ps2/ps2_cardman.c` at `8a20bd9`; seen on the owner's Kingston 2026-10-26].**
+- At power-on the firmware reads its settings from flash (`settings_init()`), mounts the SD, then runs `ps2_init()`: that picks the card with the flash values (`ps2_cardman_init()` → `try_set_boot_card()` checks `Autoboot`). Only after it does `settings_load_sd()` read `settings.ini` and write any difference to flash. PS1 mode runs in the same order.
+- So the first power-on after `settings.ini` was replaced still uses the old values. On the Kingston, flash still held the defaults from the card's first start (`Autoboot=OFF`, §5.1), so the console got the plain card, not `BOOT`. The owner then switched Autoboot on in the device's menu.
+- That menu change is safe. `settings_update_part()` writes flash and then rewrites `settings.ini` whole in the firmware's own form (`settings_serialize()`): `[General]` `Mode`, `FlippedScreen`; `[PS1]` `Autoboot`, `GameID`, `EnableControllerCombo`, `MaxCardIdx`; `[PS2]` `Autoboot`, `GameID`, `CardSize`, `Variant`, `MaxCardIdx`; LF, every line terminated. `BootCard.ini` and the card images are not touched.
+- PS1 `Autoboot=OFF` was not a fault: it is the factory card's value, kept on purpose (§5.1).
+- Every `.ini` the firmware reads loses an unterminated last line: `ini_reader_sd()` (`ext/inih/ini.c`) gives up at the end of the file in the middle of a line. That is why the README asks for an empty last line.
+- For YAOPLM: a plan that changes `settings.ini` says that the change applies from the second power-on.
+
 ### 5.1 Done on 2026-10-26: the owner's Kingston 128 GB
 
 - **The card as bought:**

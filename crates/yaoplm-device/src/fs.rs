@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use yaoplm_i18n::Phrase;
 
+use crate::emulator::{self, EmulatorSd};
 use crate::mode::DeviceMode;
 use crate::source::ReadSeek;
 use crate::volume::{FsKind, VolumeKind, volume_for_path};
@@ -177,6 +178,9 @@ pub struct FsInfo {
     /// OPL reads the device over SMB (a network share, or a folder in SMB
     /// mode, ADR-0047): SMB's limits apply, BDM's fragment rule does not.
     pub smb: bool,
+    /// OPL reads the device through a memory card emulator's firmware
+    /// (MMCE, ADR-0048): no fragment rule, and exFAT is no sign of a loader.
+    pub mmce: bool,
     /// Changes when the stick is swapped or reformatted ([`crate::Volume::fingerprint`]).
     pub fingerprint: String,
 }
@@ -224,6 +228,11 @@ pub trait DeviceFs: Send + Sync {
     fn fragments(&self, _path: &RelPath) -> io::Result<Option<u32>> {
         Ok(None)
     }
+    /// The memory card emulator whose SD holds this root (ADR-0048): its
+    /// files at the root.
+    fn emulator(&self) -> io::Result<Option<EmulatorSd>> {
+        emulator::signs(self)
+    }
 }
 
 /// Finds an entry by name the way FAT, exFAT and SMB do: ignoring case.
@@ -269,8 +278,11 @@ pub fn write_atomic(fs: &dyn DeviceFs, path: &RelPath, bytes: &[u8]) -> io::Resu
 pub struct HostFs {
     root: PathBuf,
     /// The device's mode when the front end knows it; else a network share
-    /// counts as SMB.
-    smb: Option<bool>,
+    /// counts as SMB and a memory card emulator's SD as one.
+    mode: Option<DeviceMode>,
+    /// The memory card emulator whose SD holds the root, as it was when the
+    /// root was opened: its service files are never written (ADR-0048).
+    emulator: Option<EmulatorSd>,
 }
 
 struct HostFile(File);
@@ -308,6 +320,13 @@ fn outside_root(path: &Path) -> io::Error {
     )
 }
 
+fn emulator_file(path: &RelPath) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        format!("{path} belongs to the memory card emulator; YAOPLM does not change it"),
+    )
+}
+
 impl HostFs {
     /// `root` must be an existing folder; it is canonicalised.
     pub fn new(root: &Path) -> io::Result<Self> {
@@ -318,14 +337,42 @@ impl HostFs {
                 format!("{} is not a folder", root.display()),
             ));
         }
-        Ok(Self { root, smb: None })
+        let volume_root = volume_for_path(&root).ok().map(|v| v.root);
+        let emulator = emulator::find_on_host(&root, volume_root.as_deref());
+        Ok(Self {
+            root,
+            mode: None,
+            emulator,
+        })
     }
 
-    /// The same root as OPL reads it in `mode` (ADR-0047).
+    /// The same root as OPL reads it in `mode` (ADR-0047, ADR-0048).
     #[must_use]
     pub fn with_mode(mut self, mode: DeviceMode) -> Self {
-        self.smb = Some(mode == DeviceMode::Smb);
+        self.mode = Some(mode);
         self
+    }
+
+    /// Refuses a change to a memory card emulator's service file, whatever
+    /// the planner said (ADR-0048). At the SD's root the first name is also
+    /// checked as stored on disk: an alias the OS resolves (a FAT 8.3 short
+    /// name) leads to the folder it names.
+    fn guard(&self, path: &RelPath) -> io::Result<()> {
+        let Some(sd) = &self.emulator else {
+            return Ok(());
+        };
+        if sd.protects(path) {
+            return Err(emulator_file(path));
+        }
+        if sd.at.is_empty()
+            && let Some(first) = path.components().next()
+            && let Ok(real) = fs::canonicalize(self.root.join(first))
+            && let Some(name) = real.file_name().and_then(|n| n.to_str())
+            && sd.is_service_name(name)
+        {
+            return Err(emulator_file(path));
+        }
+        Ok(())
     }
 
     pub fn root(&self) -> &Path {
@@ -371,7 +418,12 @@ impl DeviceFs for HostFs {
             kind: volume.fs,
             free_bytes: volume.free_bytes,
             cluster_size: volume.cluster_size.unwrap_or(4096),
-            smb: self.smb.unwrap_or(volume.kind == VolumeKind::Remote),
+            smb: self
+                .mode
+                .map_or(volume.kind == VolumeKind::Remote, |m| m == DeviceMode::Smb),
+            mmce: self
+                .mode
+                .map_or(self.emulator.is_some(), |m| m == DeviceMode::Emulator),
             fingerprint: volume.fingerprint(),
         })
     }
@@ -414,6 +466,7 @@ impl DeviceFs for HostFs {
     }
 
     fn create(&self, path: &RelPath) -> io::Result<Box<dyn DeviceFile>> {
+        self.guard(path)?;
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -422,6 +475,7 @@ impl DeviceFs for HostFs {
     }
 
     fn create_dir(&self, path: &RelPath) -> io::Result<()> {
+        self.guard(path)?;
         let full = self.resolve_checked(path)?;
         match fs::create_dir(&full) {
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists && full.is_dir() => Ok(()),
@@ -430,15 +484,23 @@ impl DeviceFs for HostFs {
     }
 
     fn rename(&self, from: &RelPath, to: &RelPath) -> io::Result<()> {
+        self.guard(from)?;
+        self.guard(to)?;
         fs::rename(self.resolve_checked(from)?, self.resolve_checked(to)?)
     }
 
     fn remove_file(&self, path: &RelPath) -> io::Result<()> {
+        self.guard(path)?;
         fs::remove_file(self.resolve_checked(path)?)
     }
 
     fn remove_dir(&self, path: &RelPath) -> io::Result<()> {
+        self.guard(path)?;
         fs::remove_dir(self.resolve_checked(path)?)
+    }
+
+    fn emulator(&self) -> io::Result<Option<EmulatorSd>> {
+        Ok(self.emulator.clone())
     }
 
     fn fragments(&self, path: &RelPath) -> io::Result<Option<u32>> {
@@ -589,6 +651,112 @@ mod tests {
         assert_eq!(find_entry(&entries, "CD").unwrap().name, "cd");
         assert_eq!(find_entry(&entries, "игра.ISO").unwrap().name, "Игра.iso");
         assert!(find_entry(&entries, "DVD").is_none());
+    }
+
+    #[test]
+    fn an_emulator_s_service_files_are_never_written() {
+        // ADR-0048: whatever a plan says, the last line holds.
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".sd2psx")).unwrap();
+        fs::create_dir_all(dir.path().join("MemoryCards/PS2/BOOT")).unwrap();
+        fs::write(dir.path().join(".sd2psx/settings.ini"), b"[PS2]\n").unwrap();
+        fs::write(dir.path().join("civ.bin"), b"key").unwrap();
+        let host = HostFs::new(dir.path()).unwrap();
+        assert!(host.emulator().unwrap().is_some());
+        assert!(host.info().unwrap().mmce);
+        let denied = |result: io::Result<()>| {
+            assert_eq!(
+                result.err().map(|e| e.kind()),
+                Some(io::ErrorKind::PermissionDenied)
+            );
+        };
+        denied(
+            host.create(&rel("MemoryCards/PS2/BOOT/BootCard-2.mcd"))
+                .map(drop),
+        );
+        denied(host.create_dir(&rel("MemoryCards/PS1")));
+        denied(write_atomic(&host, &rel(".sd2psx/settings.ini"), b"x"));
+        denied(host.remove_file(&rel("civ.bin")));
+        denied(host.remove_dir(&rel("MemoryCards/PS2/BOOT")));
+        denied(host.rename(&rel(".sd2psx"), &rel("old")));
+        denied(host.rename(&rel("CD"), &rel("memorycards")));
+        assert_eq!(
+            fs::read(dir.path().join(".sd2psx/settings.ini")).unwrap(),
+            b"[PS2]\n"
+        );
+        assert!(dir.path().join("civ.bin").exists());
+        // Everything else is the SD's ordinary library space.
+        host.create_dir(&rel("CD")).unwrap();
+        write_atomic(&host, &rel("CD/note.txt"), b"ok").unwrap();
+        host.create_dir(&rel(".yaoplm")).unwrap();
+        // Read in another mode, the files stay protected.
+        let ps2 = HostFs::new(dir.path()).unwrap().with_mode(DeviceMode::Ps2);
+        assert!(!ps2.info().unwrap().mmce);
+        denied(ps2.remove_file(&rel("civ.bin")));
+        // A folder inside a service folder is protected through and through.
+        let inner = HostFs::new(&dir.path().join("MemoryCards/PS2")).unwrap();
+        assert_eq!(inner.emulator().unwrap().unwrap().at, "MemoryCards/PS2");
+        denied(inner.create_dir(&rel("Card2")));
+    }
+
+    /// An SD with the emulator's files, opened at its root.
+    fn emulator_sd() -> (tempfile::TempDir, HostFs) {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".sd2psx")).unwrap();
+        fs::create_dir_all(dir.path().join("MemoryCards/PS2/BOOT")).unwrap();
+        let host = HostFs::new(dir.path()).unwrap();
+        (dir, host)
+    }
+
+    #[test]
+    fn a_short_name_the_os_resolves_reaches_no_service_folder() {
+        // Review of PR 1: on FAT32 (and NTFS with 8.3 names) `MEMORY~1`
+        // opens `MemoryCards`. Where this volume makes short names, the
+        // real one is used; the name rule covers the rest.
+        let (dir, host) = emulator_sd();
+        let denied = |result: io::Result<()>| {
+            assert_eq!(
+                result.err().map(|e| e.kind()),
+                Some(io::ErrorKind::PermissionDenied)
+            );
+        };
+        denied(host.create_dir(&rel("MEMORY~1/CFG")));
+        denied(host.create_dir(&rel("SD2PSX~1/x")));
+        assert!(!dir.path().join("MemoryCards/CFG").exists());
+        if !dir.path().join("MEMORY~1").exists() {
+            eprintln!("this volume makes no 8.3 names: only the name rule was checked");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_sd_reaches_no_service_folder() {
+        // A copy of the SD on the computer may hold links: the name a path
+        // starts with is checked as it resolves on disk.
+        let (dir, host) = emulator_sd();
+        std::os::unix::fs::symlink(dir.path().join("MemoryCards"), dir.path().join("cards"))
+            .unwrap();
+        let err = host.create_dir(&rel("cards/PS1")).err().unwrap();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(!dir.path().join("MemoryCards/PS1").exists());
+    }
+
+    #[test]
+    fn a_plain_folder_is_no_emulator() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = HostFs::new(dir.path()).unwrap();
+        assert_eq!(host.emulator().unwrap(), None);
+        assert!(!host.info().unwrap().mmce);
+        assert!(
+            HostFs::new(dir.path())
+                .unwrap()
+                .with_mode(DeviceMode::Emulator)
+                .info()
+                .unwrap()
+                .mmce
+        );
+        // Without signs nothing is protected, even in that mode.
+        host.create_dir(&rel("MemoryCards")).unwrap();
     }
 
     #[cfg(unix)]

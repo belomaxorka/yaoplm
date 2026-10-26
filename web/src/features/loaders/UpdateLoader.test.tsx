@@ -12,7 +12,7 @@ import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
 import { DevicesPage } from "@/features/devices/DevicesPage";
-import { smbMode } from "@/features/devices/testDevice";
+import { emulatorInfo, emulatorMode, smbMode } from "@/features/devices/testDevice";
 import { build, device, file, installedLoader, offer, plan, storeSettings } from "@/features/loaders/fixtures";
 import { Providers } from "@/features/loaders/TestProviders";
 import i18n from "@/i18n";
@@ -270,4 +270,38 @@ describe("loader updates on the device card", () => {
     expect(screen.queryByTestId("device-install-loader")).toBeNull();
     expect(screen.queryByTestId("device-replace-loader")).toBeNull();
   });
+
+  it("puts no loader on a memory card emulator's SD in any mode (ADR-0048)", async () => {
+    // Even switched to "plugged into the console": the emulator's files keep
+    // it the emulator's SD, whose OPL runs from inside its boot card.
+    for (const mode of [emulatorMode, device().mode]) {
+      const core = fakeCore(() => [device({ mode, emulator: emulatorInfo, installed: [installedLoader()] })]);
+      const { unmount } = show(core);
+      const card = await screen.findByTestId("installed-loader");
+      expect(screen.getByTestId("emulator-panel")).toHaveTextContent("Memory card emulator SD");
+      expect(screen.queryByTestId("loader-update-dialog")).toBeNull();
+      expect(within(card).queryByTestId("installed-loader-update-to")).toBeNull();
+      expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
+      expect(screen.queryByTestId("device-install-loader")).toBeNull();
+      expect(screen.queryByTestId("device-replace-loader")).toBeNull();
+      unmount();
+    }
+  });
+
+  for (const simple of [true, false]) {
+    it(`the emulator's card in ${simple ? "simple" : "advanced"} mode: channels and protection always, details only in advanced`, async () => {
+      storeSettings({ simpleMode: simple });
+      show(fakeCore(() => [device({ mode: emulatorMode, emulator: emulatorInfo })]));
+      const panel = await screen.findByTestId("emulator-panel");
+      expect(panel).toHaveTextContent("does not change the emulator’s files (.sd2psx, MemoryCards, civ.bin)");
+      expect(panel).toHaveTextContent("puts no loader on it");
+      const channels = within(panel).getAllByTestId("emulator-boot-channel");
+      expect(channels[0]).toHaveTextContent("Channel 1");
+      expect(channels[0]).toHaveTextContent("FMCB 1.966");
+      expect(channels[1]).toHaveTextContent("no name in BootCard.ini");
+      expect(within(panel).queryByTestId("emulator-settings") === null).toBe(simple);
+      expect(within(panel).queryByTestId("emulator-cards") === null).toBe(simple);
+      if (!simple) expect(within(panel).getByTestId("emulator-settings")).toHaveTextContent("[PS2] CardSize=64");
+    });
+  }
 });

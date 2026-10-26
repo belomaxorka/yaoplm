@@ -2,6 +2,7 @@ import type { ActiveMode } from "@/api/generated/ActiveMode";
 import type { ActiveProfile } from "@/api/generated/ActiveProfile";
 import type { DetectedProfile } from "@/api/generated/DetectedProfile";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
+import type { EmulatorInfo } from "@/api/generated/EmulatorInfo";
 
 /** Test fixtures: a device as `InspectDevice` describes it. */
 
@@ -43,6 +44,37 @@ export const smbMode = mode({
   placeText: "a folder on the computer’s disk",
 });
 
+/** A memory card emulator's SD known by its files (ADR-0048). */
+export const emulatorMode = mode({
+  mode: "emulator",
+  detected: "emulator",
+  place: { key: "reasons.placeEmulator", params: { files: ".sd2psx, MemoryCards" } },
+  placeText: "the files of a memory card emulator: .sd2psx, MemoryCards",
+});
+
+/** The owner's factory card, as `InspectDevice` describes it (research/19). */
+export const emulatorInfo: EmulatorInfo = {
+  kinds: ["sd2psx"],
+  signs: [".sd2psx", "MemoryCards/PS2", "MemoryCards/PS1"],
+  folder: "",
+  protected: [".sd2psx", "MemoryCards", "civ.bin"],
+  variants: [
+    {
+      name: "PS2",
+      boot: [
+        { channel: 1, name: "FMCB 1.966", file: "MemoryCards/PS2/BOOT/BootCard-1.mcd", bytes: 8 << 20 },
+        { channel: 2, name: null, file: "MemoryCards/PS2/BOOT/BootCard-2.mcd", bytes: 8 << 20 },
+      ],
+      maxChannels: null,
+      cardSize: null,
+      cards: 3,
+      gameCards: 1,
+    },
+  ],
+  settings: [{ name: "PS2", entries: [{ key: "CardSize", value: "64" }] }],
+  damaged: [],
+};
+
 /** A FAT32 stick by default, prepared for OPL and asked about. */
 export function testDevice(patch: Partial<DeviceInfo> = {}): DeviceInfo {
   return {
@@ -69,6 +101,7 @@ export function testDevice(patch: Partial<DeviceInfo> = {}): DeviceInfo {
     mode: mode(),
     askProfile: true,
     installed: [],
+    emulator: null,
     ...patch,
   };
 }

@@ -24,10 +24,13 @@ use yaoplm_formats::{FragmentLimit, LoaderProfile, vmc};
 use crate::model::{Fragments, Game, GameLocation, Library, Warning};
 use crate::plan::Notice;
 
-/// Whether OPL reads this device over BDM, where the limits apply.
+/// Whether OPL reads this device over BDM, where the limits apply: not
+/// over SMB, and not through a memory card emulator, whose firmware reads
+/// files by handle (ADR-0048).
 pub fn applies(fs: &dyn DeviceFs) -> bool {
-    fs.info()
-        .is_ok_and(|info| !info.smb && matches!(info.kind, FsKind::Fat32 | FsKind::ExFat))
+    fs.info().is_ok_and(|info| {
+        !info.smb && !info.mmce && matches!(info.kind, FsKind::Fat32 | FsKind::ExFat)
+    })
 }
 
 /// Runs of clusters of each file; unknown as soon as one file's count is.

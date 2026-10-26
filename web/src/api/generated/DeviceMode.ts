@@ -3,4 +3,4 @@
 /**
  * How OPL reads a device (ADR-0047).
  */
-export type DeviceMode = "ps2" | "smb";
+export type DeviceMode = "ps2" | "smb" | "emulator";

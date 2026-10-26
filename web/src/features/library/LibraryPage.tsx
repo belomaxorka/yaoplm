@@ -68,7 +68,7 @@ import { useSettings, useSimpleMode } from "@/settings/context";
 import type { ViewMode } from "@/settings/settings";
 import { DeviceLines, SmbFolderHint } from "@/features/devices/DeviceMode";
 import { LoaderProfileHint } from "@/features/devices/LoaderProfile";
-import { smbStep } from "@/features/devices/smbStep";
+import { folderStep } from "@/features/devices/smbStep";
 import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 const LIST_ROW_HEIGHT = 56;
@@ -142,8 +142,9 @@ function LibraryView({
   // What the detection found: ZSO 1.1.0 cannot show, JPG art, several loaders.
   const loaderNotices = loader.active?.source === "detected" ? (loader.active.detected?.notices ?? []) : [];
   // A folder read over SMB gets its own next step (ADR-0047): a whole system
-  // disk is not filled with OPL's folders.
-  const smbNext = loader.device ? smbStep(loader.device) : null;
+  // disk is not filled with OPL's folders. A memory card emulator's SD gets
+  // them only once the user said which OPL with MMCE reads it (ADR-0048).
+  const folderNext = loader.device ? folderStep(loader.device) : null;
   const initFlow = usePlan();
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
@@ -321,7 +322,7 @@ function LibraryView({
         {loader.device && <LoaderProfileHint device={loader.device} />}
         {loaderNotices.length > 0 && <NoticeList notices={loaderNotices} />}
         {data && data.warnings.length > 0 && <NoticeList notices={data.warnings} />}
-        {missingFolders.length > 0 && smbNext === null && (
+        {missingFolders.length > 0 && folderNext === null && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 text-sm">
             <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
             <span className="flex-1">

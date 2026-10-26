@@ -10,7 +10,7 @@ import { SettingsProvider } from "@/settings/SettingsProvider";
 import { readSettings } from "@/settings/settings";
 
 import { LoaderProfileHint } from "./LoaderProfile";
-import { detected, KEY, loader, smbMode, testDevice } from "./testDevice";
+import { detected, emulatorInfo, emulatorMode, KEY, loader, smbMode, testDevice } from "./testDevice";
 
 function show(device: DeviceInfo) {
   return render(
@@ -44,6 +44,18 @@ describe("the loader profile question (ADR-0041, ADR-0047)", () => {
     const question = screen.getByTestId("loader-question");
     expect(question).toHaveTextContent("Which OPL reads this folder over the network?");
     expect(question).toHaveTextContent("ZSO images and JPG pictures");
+  });
+
+  it("asks a memory card emulator's SD about builds with MMCE only (ADR-0048)", async () => {
+    show(testDevice({ mode: emulatorMode, emulator: emulatorInfo, loader: loader({ detected: detected({ library: false }) }) }));
+    const question = screen.getByTestId("loader-question");
+    expect(question).toHaveTextContent("Which OPL with MMCE do you start?");
+    expect(question).toHaveTextContent("upstream OPL does not");
+    expect(screen.getByTestId("loader-answer-Opl120Beta")).toHaveTextContent("MMCE fork, YAOPL or wOPL");
+    expect(screen.queryByTestId("loader-answer-Opl110")).toBeNull();
+    expect(screen.queryByTestId("loader-answer-unknown")).toBeNull();
+    await userEvent.click(screen.getByTestId("loader-answer-unknownMmce"));
+    expect(readSettings().profileOverrides).toEqual({ [KEY]: "unknownMmce" });
   });
 
   it("does not ask when the core does not, or on a device unusable for OPL", () => {

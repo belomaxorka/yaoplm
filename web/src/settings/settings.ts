@@ -6,12 +6,23 @@ import type { ProfileOverride } from "@/api/generated/ProfileOverride";
 import { readStorage, writeStorage } from "@/lib/storage";
 
 export const profiles = ["Opl120Beta", "Opl110", "RiptOpl"] as const satisfies readonly LoaderProfile[];
-/** A profile chosen for one device, or `unknown`: the user does not know which OPL they run (ADR-0041). */
-export type ProfileOverrideValue = LoaderProfile | "unknown";
+/**
+ * A profile chosen for one device, or `unknown`: the user does not know which
+ * OPL they run (ADR-0041); on a memory card emulator's SD, `unknownMmce`:
+ * they do not know which OPL with MMCE (ADR-0048).
+ */
+export type ProfileOverrideValue = LoaderProfile | "unknown" | "unknownMmce";
 /** What "I don't know" gets: OPL 1.1.0's rules, the ones every OPL can read (ADR-0041). */
 export const UNKNOWN_RULES: LoaderProfile = "Opl110";
-/** How OPL reads a device (ADR-0047). */
-export const deviceModes = ["ps2", "smb"] as const satisfies readonly DeviceMode[];
+/**
+ * What "I don't know" gets on a memory card emulator's SD: the MMCE fork's
+ * rules, OPL 1.2.0 beta's; OPL 1.1.0 does not see games there (ADR-0048).
+ */
+export const UNKNOWN_MMCE_RULES: LoaderProfile = "Opl120Beta";
+/** The answers about a memory card emulator's SD: builds with MMCE only (ADR-0048). */
+export const mmceProfiles = ["Opl120Beta", "RiptOpl"] as const satisfies readonly LoaderProfile[];
+/** How OPL reads a device (ADR-0047, ADR-0048). */
+export const deviceModes = ["ps2", "smb", "emulator"] as const satisfies readonly DeviceMode[];
 export const nameStyles = ["idTitle", "title"] as const satisfies readonly NameStyle[];
 export const viewModes = ["grid", "list"] as const;
 export type ViewMode = (typeof viewModes)[number];
@@ -48,7 +59,8 @@ export interface Settings {
   /**
    * Modes chosen for single devices, by the same key (ADR-0047). Every other
    * device gets its place's: removable media plugged into the PS2, folders
-   * on the computer and network folders read over SMB.
+   * on the computer and network folders read over SMB; a memory card
+   * emulator's SD gets its own by its files (ADR-0048).
    */
   modeOverrides: Record<string, DeviceMode>;
   /** `ID.Title.iso` (ADR-0006) or `Title.iso`. */
@@ -111,7 +123,8 @@ function readOverrides(value: unknown): Record<string, ProfileOverrideValue> {
   if (typeof value !== "object" || value === null) return {};
   return Object.fromEntries(
     Object.entries(value).filter(
-      (entry): entry is [string, ProfileOverrideValue] => isProfile(entry[1]) || entry[1] === "unknown",
+      (entry): entry is [string, ProfileOverrideValue] =>
+        isProfile(entry[1]) || entry[1] === "unknown" || entry[1] === "unknownMmce",
     ),
   );
 }
@@ -133,7 +146,7 @@ export function deviceChoice(settings: Pick<Settings, "profileOverrides" | "mode
   return {
     overrides: Object.entries(settings.profileOverrides).map(([key, value]) => ({
       key,
-      profile: value === "unknown" ? UNKNOWN_RULES : value,
+      profile: value === "unknown" ? UNKNOWN_RULES : value === "unknownMmce" ? UNKNOWN_MMCE_RULES : value,
     })),
     modeOverrides: Object.entries(settings.modeOverrides).map(([key, mode]) => ({ key, mode })),
   };

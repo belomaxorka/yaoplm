@@ -428,8 +428,16 @@ impl PlanStore {
         &self,
         root: PathBuf,
         mode: Option<yaoplm_device::DeviceMode>,
-        plan: core::Plan,
+        mut plan: core::Plan,
     ) -> PlanView {
+        // Whoever made the plan, it may not touch a memory card emulator's
+        // files: the user sees why before confirming (ADR-0048).
+        if let Some(sd) = yaoplm_device::HostFs::new(&root)
+            .ok()
+            .and_then(|fs| yaoplm_device::DeviceFs::emulator(&fs).ok().flatten())
+        {
+            yaoplm_core::emulator::guard(&mut plan, &sd);
+        }
         let id = yaoplm_core::journal::new_id();
         let view = PlanView::new(id.clone(), &root, &plan);
         let mut plans = self.lock();

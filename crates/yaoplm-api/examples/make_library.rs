@@ -19,7 +19,8 @@
 //! pins the real 1.1.0 archive, which no fixture has);
 //! `<folder>/stick` is an empty device to install a loader on, and
 //! `<folder>/extras/` holds games to copy onto it: a ZSO and an ISO with a
-//! JPG cover (LDR-7). Pass
+//! JPG cover (LDR-7). `<folder>/emulator` is a memory card emulator's SD
+//! (ADR-0048): the factory card's layout with placeholder card images. Pass
 //! `--games N` to add N more games for virtualization checks. Nothing here
 //! is a real game or a real cover: every image is generated.
 
@@ -122,6 +123,9 @@ fn main() -> ExitCode {
     let sources = dir.join("sources");
     let mirror = dir.join("mirror");
     let stick = dir.join("stick");
+    let emulator = dir.join("emulator");
+    let _ = fs::remove_dir_all(&emulator);
+    yaoplm_test_support::emulator::write_to(&emulator).unwrap();
     let _ = fs::remove_dir_all(&library);
     let _ = fs::remove_dir_all(&sources);
     let _ = fs::remove_dir_all(&mirror);
@@ -357,5 +361,6 @@ fn main() -> ExitCode {
     println!("sources: {}", sources.display());
     println!("mirror: {}", mirror.display());
     println!("stick: {}", stick.display());
+    println!("emulator: {}", emulator.display());
     ExitCode::SUCCESS
 }

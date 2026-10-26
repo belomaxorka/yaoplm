@@ -15,6 +15,13 @@
 //! A folder OPL reads over SMB (ADR-0047, research/18) is not mounted by
 //! BDM: none of the above applies there, only SMB's own limits and the 4 GiB
 //! file size of a FAT volume on the computer.
+//!
+//! Nor is a memory card emulator's SD (ADR-0048, research/19 §5): its
+//! firmware mounts it, and OPL reads files through MMCE. sd2psXtd 1.4.0
+//! mounts MBR partition 1 only, FAT or exFAT (SdFat `SDFAT_FILE_TYPE 3`,
+//! `sd.begin()`; sd2psXtd/firmware@8a20bd9); its unreleased `develop` adds
+//! GPT and cards without a partition table (PR #112). Clusters and
+//! fragments do not matter there.
 
 use std::fmt;
 use std::fs;
@@ -94,6 +101,32 @@ pub enum Advice {
     /// macOS `._*` files in `CD/`, `DVD/`, `LNG/` or `APPS/`: OPL probes
     /// them on every scan, and `._lang_*.lng` shows up as a language.
     AppleDouble(usize),
+    /// A memory card emulator's firmware mounts MBR only (sd2psXtd 1.4.0).
+    EmulatorGpt,
+    EmulatorNoPartitionTable,
+    /// The data is not in partition 1, the only one the firmware mounts.
+    EmulatorPartition(u32),
+    /// The firmware reads FAT and exFAT only.
+    EmulatorFs(FsKind),
+    /// A copy of an emulator's SD on the computer: the firmware reads only
+    /// the SD itself, so no rule of the SD applies to the copy.
+    EmulatorCopy,
+    /// `.sd2psx/settings.ini` makes new cards larger than 8 MiB; the
+    /// firmware's README recommends 8 MiB: larger ones may get corrupted on
+    /// a slow SD.
+    EmulatorCardSize(u32),
+    /// Images the firmware could not use and moved aside as
+    /// `<folder>-<channel>.crp.<n>` (`ps2_cardman.c`).
+    EmulatorDamaged {
+        count: usize,
+        files: String,
+    },
+    /// An ini file whose last line has no line feed: the firmware never
+    /// reads that line.
+    EmulatorIniTail {
+        file: String,
+        line: String,
+    },
 }
 
 impl Advice {
@@ -104,19 +137,27 @@ impl Advice {
             | Self::FsUnreadable(_)
             | Self::ExfatNeedsOpl12
             | Self::SectorSize(_)
-            | Self::GptUnsupported => Level::Error,
+            | Self::GptUnsupported
+            | Self::EmulatorGpt
+            | Self::EmulatorNoPartitionTable
+            | Self::EmulatorPartition(_)
+            | Self::EmulatorFs(_) => Level::Error,
             Self::FatNeededToBoot
             | Self::ClusterTooLarge(_)
             | Self::NoPartitionTable
             | Self::SystemRoot(_)
             | Self::LowSpace { .. }
-            | Self::AppleDouble(_) => Level::Warning,
+            | Self::AppleDouble(_)
+            | Self::EmulatorCardSize(_)
+            | Self::EmulatorDamaged { .. }
+            | Self::EmulatorIniTail { .. } => Level::Warning,
             Self::LargeGamesAsUl
             | Self::ExfatRecommended
             | Self::Smb { .. }
             | Self::ClusterSmall(_)
             | Self::Misaligned(_)
-            | Self::NotExternal => Level::Info,
+            | Self::NotExternal
+            | Self::EmulatorCopy => Level::Info,
         }
     }
 
@@ -142,6 +183,14 @@ impl Advice {
             Self::Misaligned(_) => "misaligned",
             Self::NotExternal => "notExternal",
             Self::AppleDouble(_) => "appleDouble",
+            Self::EmulatorGpt => "emulatorGpt",
+            Self::EmulatorNoPartitionTable => "emulatorNoPartitionTable",
+            Self::EmulatorPartition(_) => "emulatorPartition",
+            Self::EmulatorFs(_) => "emulatorFs",
+            Self::EmulatorCopy => "emulatorCopy",
+            Self::EmulatorCardSize(_) => "emulatorCardSize",
+            Self::EmulatorDamaged { .. } => "emulatorDamaged",
+            Self::EmulatorIniTail { .. } => "emulatorIniTail",
         }
     }
 }
@@ -155,7 +204,13 @@ impl Advice {
     pub fn phrase(&self) -> Phrase {
         let phrase = Phrase::notice(self.code());
         match self {
-            Self::FsUnreadable(fs) => phrase.with("fs", fs.to_string()),
+            Self::FsUnreadable(fs) | Self::EmulatorFs(fs) => phrase.with("fs", fs.to_string()),
+            Self::EmulatorPartition(number) => phrase.with("number", *number),
+            Self::EmulatorCardSize(size) => phrase.with("size", *size),
+            Self::EmulatorDamaged { count, files } => {
+                phrase.with("count", *count).with("files", files)
+            }
+            Self::EmulatorIniTail { file, line } => phrase.with("file", file).with("line", line),
             Self::SectorSize(size) => phrase.with("size", *size),
             Self::ClusterTooLarge(size) | Self::ClusterSmall(size) => {
                 phrase.with("kib", kib(*size))
@@ -173,7 +228,10 @@ impl Advice {
             | Self::Smb { .. }
             | Self::GptUnsupported
             | Self::NoPartitionTable
-            | Self::NotExternal => phrase,
+            | Self::NotExternal
+            | Self::EmulatorGpt
+            | Self::EmulatorNoPartitionTable
+            | Self::EmulatorCopy => phrase,
         }
     }
 }
@@ -205,7 +263,36 @@ pub fn diagnose(volume: &Volume, options: &DiagnoseOptions) -> Vec<Advice> {
     match options.mode {
         DeviceMode::Ps2 => diagnose_ps2(volume, options),
         DeviceMode::Smb => diagnose_smb(volume, options),
+        DeviceMode::Emulator => diagnose_emulator(volume),
     }
+}
+
+/// A memory card emulator's SD: what its firmware mounts (ADR-0048). What
+/// its files say (card size, damaged images) comes from reading them.
+fn diagnose_emulator(volume: &Volume) -> Vec<Advice> {
+    let mut found = Vec::new();
+    if volume.read_only {
+        found.push(Advice::ReadOnly);
+    }
+    found.extend(low_space(volume));
+    if !volume.is_external() {
+        found.push(Advice::EmulatorCopy);
+        return sorted(found);
+    }
+    if !matches!(volume.fs, FsKind::Fat32 | FsKind::Fat16 | FsKind::ExFat) {
+        found.push(Advice::EmulatorFs(volume.fs));
+    }
+    if let Some(partition) = volume.partition {
+        match partition.style {
+            Some(PartitionStyle::Gpt) => found.push(Advice::EmulatorGpt),
+            Some(PartitionStyle::None) => found.push(Advice::EmulatorNoPartitionTable),
+            Some(PartitionStyle::Mbr) if partition.number > 1 => {
+                found.push(Advice::EmulatorPartition(partition.number));
+            }
+            _ => {}
+        }
+    }
+    sorted(found)
 }
 
 /// A folder read over SMB: writes stay inside it whatever the disk holds
@@ -385,6 +472,66 @@ mod tests {
         whole_volume: false,
         ..OPL12
     };
+    const EMULATOR: DiagnoseOptions = DiagnoseOptions {
+        mode: DeviceMode::Emulator,
+        ..OPL12
+    };
+
+    #[test]
+    fn an_emulator_s_sd_follows_its_firmware() {
+        // The factory card (research/19 §2): MBR, partition 1, exFAT with
+        // 32 KiB clusters. Nothing about clusters, exFAT or fragments.
+        let factory = stick(FsKind::ExFat, 32 * 1024);
+        assert!(codes(&factory, EMULATOR).is_empty());
+        assert!(codes(&stick(FsKind::Fat32, 4096), EMULATOR).is_empty());
+        // The profile does not matter: the firmware reads the file system.
+        let opl11 = DiagnoseOptions {
+            profile: LoaderProfile::Opl110,
+            ..EMULATOR
+        };
+        assert!(codes(&factory, opl11).is_empty());
+        let with = |style, number| {
+            let mut volume = stick(FsKind::ExFat, 128 * 1024);
+            volume.partition = Some(PartitionInfo {
+                style: Some(style),
+                number,
+                offset: 16 * MIB,
+                mbr_type: None,
+            });
+            volume
+        };
+        assert_eq!(
+            codes(&with(PartitionStyle::Gpt, 1), EMULATOR),
+            ["emulatorGpt"]
+        );
+        assert_eq!(
+            codes(&with(PartitionStyle::None, 0), EMULATOR),
+            ["emulatorNoPartitionTable"]
+        );
+        assert_eq!(
+            codes(&with(PartitionStyle::Mbr, 2), EMULATOR),
+            ["emulatorPartition"]
+        );
+        assert!(codes(&with(PartitionStyle::Mbr, 1), EMULATOR).is_empty());
+        let mut ntfs = stick(FsKind::Ntfs, 4096);
+        ntfs.sector_size = Some(4096);
+        assert_eq!(codes(&ntfs, EMULATOR), ["emulatorFs"]);
+        let mut read_only = factory.clone();
+        read_only.read_only = true;
+        assert_eq!(codes(&read_only, EMULATOR), ["readOnly"]);
+        // A copy of the SD on the computer: no rule of the SD applies.
+        let mut copy = stick(FsKind::Ntfs, 4096);
+        copy.kind = VolumeKind::Fixed;
+        copy.bus = Some(Bus::Nvme);
+        copy.system = true;
+        copy.total_bytes = 2 << 40;
+        copy.free_bytes = 1 << 40;
+        assert_eq!(codes(&copy, EMULATOR), ["emulatorCopy"]);
+        // Little free space shows here as everywhere.
+        let mut full = factory;
+        full.free_bytes = 1 << 30;
+        assert_eq!(codes(&full, EMULATOR), ["lowSpace"]);
+    }
 
     #[test]
     fn fat32_stick() {
@@ -621,6 +768,20 @@ mod phrase_tests {
             Advice::Misaligned(32_256),
             Advice::NotExternal,
             Advice::AppleDouble(3),
+            Advice::EmulatorGpt,
+            Advice::EmulatorNoPartitionTable,
+            Advice::EmulatorPartition(2),
+            Advice::EmulatorFs(FsKind::Ntfs),
+            Advice::EmulatorCopy,
+            Advice::EmulatorCardSize(64),
+            Advice::EmulatorDamaged {
+                count: 1,
+                files: "MemoryCards/PS2/Card1/Card1-1.crp.0".into(),
+            },
+            Advice::EmulatorIniTail {
+                file: ".sd2psx/settings.ini".into(),
+                line: "CardSize=8".into(),
+            },
         ];
         for advice in &all {
             let phrase = advice.phrase();

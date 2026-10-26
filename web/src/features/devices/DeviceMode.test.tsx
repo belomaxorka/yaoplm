@@ -1,7 +1,7 @@
 import "@/i18n";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,10 +15,10 @@ import { MockTransport, RpcError } from "@/api/transport";
 import i18n from "@/i18n";
 import { JobsProvider } from "@/jobs/JobsProvider";
 import { SettingsProvider } from "@/settings/SettingsProvider";
-import { readSettings } from "@/settings/settings";
+import { deviceChoice, readSettings } from "@/settings/settings";
 
 import { DeviceLines, SmbFolderHint } from "./DeviceMode";
-import { detected, KEY, loader, mode, smbMode, testDevice } from "./testDevice";
+import { detected, emulatorInfo, emulatorMode, KEY, loader, mode, smbMode, testDevice } from "./testDevice";
 
 const systemRoot = {
   level: "warning",
@@ -214,6 +214,55 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
       }
     });
   }
+
+  it("a memory card emulator's SD: its own connection, MMCE builds only, folders after the answer (ADR-0048)", async () => {
+    const sd = (patch: Partial<DeviceInfo> = {}) =>
+      testDevice({
+        root: "G:\\",
+        fileSystem: "exFAT",
+        mode: emulatorMode,
+        emulator: emulatorInfo,
+        loader: loader({ detected: detected({ library: false }) }),
+        ...patch,
+      });
+    show(<DeviceLines device={sd({ askProfile: false })} />);
+    expect(screen.getByTestId("device-mode")).toHaveTextContent(
+      "Connection to the PS2: in a memory card emulator (MMCE) — the files of a memory card emulator: .sd2psx, MemoryCards",
+    );
+    await userEvent.click(screen.getByTestId("device-choice-change"));
+    // OPL 1.1.0 and its "I don't know" see no games on the SD.
+    expect(await screen.findByTestId("loader-profile-Opl120Beta")).toHaveTextContent("MMCE fork, YAOPL or wOPL");
+    expect(screen.queryByTestId("loader-profile-Opl110")).toBeNull();
+    expect(screen.queryByTestId("loader-profile-unknown")).toBeNull();
+    expect(screen.getByTestId("device-mode-emulator")).toBeVisible();
+    await userEvent.click(screen.getByTestId("loader-profile-unknownMmce"));
+    expect(readSettings().profileOverrides).toEqual({ [KEY]: "unknownMmce" });
+    // "I don't know" there is the MMCE fork's rules, OPL 1.2.0 beta's.
+    expect(deviceChoice(readSettings()).overrides).toEqual([{ key: KEY, profile: "Opl120Beta" }]);
+    cleanup();
+
+    // While the question shows, no folders; once answered, OPL's folders.
+    const { container } = show(<SmbFolderHint device={sd()} />);
+    expect(container).toBeEmptyDOMElement();
+    cleanup();
+    const fake = core();
+    show(<SmbFolderHint device={sd({ askProfile: false })} />, fake.transport);
+    expect(screen.getByTestId("emulator-init")).toHaveTextContent("next to the emulator’s files");
+    await userEvent.click(screen.getByTestId("smb-init-button"));
+    await screen.findByTestId("plan-dialog");
+    expect(fake.planned).toEqual([{ type: "PlanInit", root: "G:\\" }]);
+    cleanup();
+    // A prepared SD, or one the doctor refuses, gets no step.
+    const gpt = { level: "error", code: "emulatorGpt", message: "GPT partition table" } as const;
+    for (const device of [
+      sd({ askProfile: false, loader: loader({ detected: detected({ library: true }) }) }),
+      sd({ askProfile: false, advice: [gpt] }),
+    ]) {
+      const shown = show(<SmbFolderHint device={device} />);
+      expect(shown.container).toBeEmptyDOMElement();
+      shown.unmount();
+    }
+  });
 
   it("a server's roots are its administrator's: only the warning", () => {
     const fake = core();

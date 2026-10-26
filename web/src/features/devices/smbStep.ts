@@ -12,3 +12,20 @@ export function smbStep(device: DeviceInfo): "folder" | "init" | null {
   if (device.advice.some((notice) => notice.code === "systemRoot")) return "folder";
   return device.loader.detected && !device.loader.detected.library ? "init" : null;
 }
+
+/**
+ * The next step of a memory card emulator's SD (ADR-0048): first which OPL
+ * with MMCE reads it (`ask`, the version question), then OPL's folders next
+ * to the emulator's files. It never gets a loader: OPL runs from inside its
+ * boot card.
+ */
+export function emulatorStep(device: DeviceInfo): "ask" | "init" | null {
+  if (device.mode.mode !== "emulator" || worstLevel(device.advice) === "error") return null;
+  if (device.askProfile) return "ask";
+  return device.loader.detected && !device.loader.detected.library ? "init" : null;
+}
+
+/** The step that comes before anything else in the device's library. */
+export function folderStep(device: DeviceInfo): "folder" | "init" | "ask" | null {
+  return smbStep(device) ?? emulatorStep(device);
+}

@@ -712,10 +712,12 @@ fn detect_with(fs: &dyn DeviceFs, known: &[KnownElf]) -> io::Result<Detection> {
     } = scan;
 
     let images = zso_images(fs)?;
-    // Over SMB OPL never sees the computer's file system.
+    // Over SMB OPL never sees the computer's file system; through a memory
+    // card emulator every MMCE build reads exFAT, and 1.1.0 none at all
+    // (ADR-0048).
     let exfat = fs
         .info()
-        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb);
+        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb && !info.mmce);
     // exFAT and ZSO beat what weaker signs say about 1.1.0.
     let not_110 = exfat || images > 0;
     let mut notices = Vec::new();

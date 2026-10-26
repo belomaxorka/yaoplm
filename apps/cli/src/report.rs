@@ -5,8 +5,9 @@ use std::path::Path;
 
 use yaoplm_api::art::{ArtLogState, Attribution};
 use yaoplm_api::devices::{
-    ActiveMode, ActiveProfile, DeviceInfo, DeviceMode, DriveBus, DriveKind, FileSystem,
-    InstalledLoader, LoaderFreshness, LoaderKnownBy, ModeSource, PartitionTable, ProfileSource,
+    ActiveMode, ActiveProfile, DeviceInfo, DeviceMode, DriveBus, DriveKind, EmulatorInfo,
+    EmulatorKind, FileSystem, InstalledLoader, LoaderFreshness, LoaderKnownBy, ModeSource,
+    PartitionTable, ProfileSource,
 };
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
@@ -364,6 +365,7 @@ pub fn mode_line(mode: &ActiveMode) -> String {
     let name = match mode.mode {
         DeviceMode::Ps2 => "plugged into the PS2",
         DeviceMode::Smb => "over the network (SMB)",
+        DeviceMode::Emulator => "in a memory card emulator (MMCE)",
     };
     match mode.source {
         ModeSource::Override => format!("{name} (chosen for this device)"),
@@ -379,11 +381,70 @@ fn profile_question(mode: DeviceMode) -> String {
     let question = match mode {
         DeviceMode::Ps2 => "Which OPL do you start with this device?",
         DeviceMode::Smb => "Which OPL reads this folder over the network?",
+        // Only builds with MMCE see games on the SD (ADR-0048).
+        DeviceMode::Emulator => {
+            return "? Which OPL with MMCE do you start? Nothing on the SD tells: pass \
+                    --profile opl-1.2 (the MMCE fork, YAOPL or wOPL; also if you do not know) \
+                    or riptopl"
+                .to_owned();
+        }
     };
     format!(
         "? {question} Nothing on it tells: pass --profile opl-1.2, opl-1.1 or riptopl \
          (opl-1.1 if you do not know)"
     )
+}
+
+/// What a memory card emulator's SD holds (ADR-0048).
+fn emulator_lines(out: &mut String, sd: &EmulatorInfo) {
+    let kinds: Vec<&str> = sd
+        .kinds
+        .iter()
+        .map(|kind| match kind {
+            EmulatorKind::Sd2psx => "sd2psx or sd2psXtd",
+            EmulatorKind::MemcardPro2 => "MemCard PRO 2",
+        })
+        .collect();
+    let _ = writeln!(out, "Emulator:   {} SD", kinds.join(" and "));
+    if !sd.folder.is_empty() {
+        let _ = writeln!(out, "            this folder is {} on the SD", sd.folder);
+    }
+    let _ = writeln!(
+        out,
+        "            YAOPLM never changes {}, puts no loader on the SD and does not format it",
+        sd.protected.join(", ")
+    );
+    for variant in &sd.variants {
+        let mut line = format!(
+            "Cards {:<4}  {} boot, {} numbered, {} per game",
+            variant.name,
+            variant.boot.len(),
+            variant.cards,
+            variant.game_cards
+        );
+        if let Some(max) = variant.max_channels {
+            let _ = write!(line, "; MaxChannels={max}");
+        }
+        let _ = writeln!(out, "{line}");
+        for boot in &variant.boot {
+            let name = boot.name.as_deref().unwrap_or("(no name in BootCard.ini)");
+            let _ = writeln!(
+                out,
+                "  boot {:>2}  {name}  {}  {}",
+                boot.channel,
+                boot.file,
+                size(boot.bytes)
+            );
+        }
+    }
+    for section in &sd.settings {
+        let pairs: Vec<String> = section
+            .entries
+            .iter()
+            .map(|e| format!("{}={}", e.key, e.value))
+            .collect();
+        let _ = writeln!(out, "settings.ini [{}] {}", section.name, pairs.join(" "));
+    }
 }
 
 pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
@@ -407,8 +468,10 @@ pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     out
 }
 
-/// A loader on the device, its build and where it stands (LDR-4).
-fn installed_line(loader: &InstalledLoader) -> String {
+/// A loader on the device, its build and where it stands (LDR-4). On a
+/// memory card emulator's SD (`actions` false) no loader command works, so
+/// none is named (ADR-0048).
+fn installed_line(loader: &InstalledLoader, actions: bool) -> String {
     let mut line = match (&loader.build, &loader.version) {
         (Some(build), Some(version)) => format!("{build} {version}"),
         (None, Some(version)) => format!("{} {version}", loader.family),
@@ -425,16 +488,19 @@ fn installed_line(loader: &InstalledLoader) -> String {
         line.push_str("; replaced since YAOPLM installed it");
     }
     match (loader.freshness, &loader.latest) {
-        (LoaderFreshness::Update, Some(latest)) => {
+        (LoaderFreshness::Update, Some(latest)) if actions => {
             let _ = write!(line, "; update to {latest}: `yaoplm loader update`");
         }
+        (LoaderFreshness::Update, Some(latest)) => {
+            let _ = write!(line, "; {latest} is newer");
+        }
         (LoaderFreshness::Current, _) => line.push_str("; up to date"),
-        _ if loader.build.is_some() => {
+        _ if loader.build.is_some() && actions => {
             line.push_str("; not checked for updates: `yaoplm loader update`")
         }
         _ => {}
     }
-    if let Some(backup) = &loader.backup {
+    if let Some(backup) = loader.backup.as_ref().filter(|_| actions) {
         let _ = write!(
             line,
             "; backup {}: `yaoplm loader rollback`",
@@ -467,6 +533,9 @@ pub fn device(device: &DeviceInfo) -> String {
         let _ = writeln!(out, "Partition:  {line}");
     }
     let _ = writeln!(out, "Mode:       {}", mode_line(&device.mode));
+    if let Some(sd) = &device.emulator {
+        emulator_lines(&mut out, sd);
+    }
     let _ = writeln!(out, "OPL:        {}", loader_line(&device.loader));
     if let Some(detected) = &device.loader.detected {
         for loader in &detected.loaders {
@@ -482,7 +551,11 @@ pub fn device(device: &DeviceInfo) -> String {
         plan_notices(&mut out, "", &detected.notices);
     }
     for loader in &device.installed {
-        let _ = writeln!(out, "Installed:  {}", installed_line(loader));
+        let _ = writeln!(
+            out,
+            "Installed:  {}",
+            installed_line(loader, device.emulator.is_none())
+        );
     }
     if device.ask_profile {
         let _ = writeln!(out, "{}", profile_question(device.mode.mode));

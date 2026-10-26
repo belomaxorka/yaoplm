@@ -3,6 +3,7 @@ import type { ActiveMode } from "./ActiveMode";
 import type { ActiveProfile } from "./ActiveProfile";
 import type { DriveBus } from "./DriveBus";
 import type { DriveKind } from "./DriveKind";
+import type { EmulatorInfo } from "./EmulatorInfo";
 import type { FileSystem } from "./FileSystem";
 import type { InstalledLoader } from "./InstalledLoader";
 import type { Partition } from "./Partition";
@@ -53,4 +54,9 @@ askProfile: boolean,
  * The loaders on the device as the catalogue knows them, with what
  * YAOPLM knows of newer builds, without the network (LDR-4).
  */
-installed: Array<InstalledLoader>, };
+installed: Array<InstalledLoader>, 
+/**
+ * The device is (on) a memory card emulator's SD (ADR-0048): no loader
+ * goes on it, no format, and its service files are never changed.
+ */
+emulator: EmulatorInfo | null, };

@@ -1,10 +1,12 @@
-//! How OPL reads a device: plugged into the PS2 or over SMB (ADR-0047,
-//! research/18).
+//! How OPL reads a device: plugged into the PS2, over SMB (ADR-0047,
+//! research/18) or through a memory card emulator (ADR-0048, research/19).
 //!
 //! A folder on an internal disk can reach a PS2 only over the network, so
-//! the device's place, not its contents, gives the mode: an empty folder
-//! gets the right one at once. Users switch it for the exceptions (a USB
-//! disk shared over the network).
+//! the device's place, not its contents, gives the first two: an empty
+//! folder gets the right one at once. Users switch it for the exceptions (a
+//! USB disk shared over the network). A card reader cannot tell a memory
+//! card emulator's SD from one for MX4SIO, so that mode comes from the
+//! emulator's files ([`crate::emulator`]) or from the user's choice.
 
 use std::fs;
 use std::path::Path;
@@ -21,6 +23,9 @@ pub enum DeviceMode {
     Ps2,
     /// Shared from a computer and read over the network (SMB).
     Smb,
+    /// The SD of a memory card emulator: OPL builds with MMCE read it
+    /// through the emulator's firmware, not BDM (ADR-0048).
+    Emulator,
 }
 
 /// Where a device is, which gives its mode unless the user chose one.
