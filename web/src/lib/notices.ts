@@ -4,6 +4,7 @@ import type { Notice } from "@/api/generated/Notice";
 import type { NoticeLevel } from "@/api/generated/NoticeLevel";
 import type { PlanNotice } from "@/api/generated/PlanNotice";
 import { phraseText } from "@/lib/phrase";
+import { useSimpleMode } from "@/settings/context";
 
 /**
  * Plan notices, game warnings, device advice and skip reasons come as a
@@ -12,8 +13,15 @@ import { phraseText } from "@/lib/phrase";
  */
 export function useNoticeText() {
   // Re-renders the caller when the language changes.
-  useTranslation();
-  return (notice: Notice | PlanNotice): string => phraseText(notice.phrase, notice.message);
+  const { t } = useTranslation();
+  const simple = useSimpleMode();
+  return (notice: Notice | PlanNotice): string => {
+    // Where a picture comes from: simple mode names the source, not the
+    // mirror's path or the URL after it.
+    const source = notice.phrase?.params.source;
+    if (simple && notice.code === "artFrom" && typeof source === "string") return t("plan.artFrom", { source });
+    return phraseText(notice.phrase, notice.message);
+  };
 }
 
 /** The worst level among notices, for a verdict badge. */

@@ -49,7 +49,16 @@ const SHARE_FOLDER = "PS2";
  * device or goes back to auto. While the version question shows, it stands
  * for the version line. Shown wherever the question can be.
  */
-export function DeviceLines({ device, className }: { device: DeviceInfo; className?: string }) {
+export function DeviceLines({
+  device,
+  className,
+  profileLine = true,
+}: {
+  device: DeviceInfo;
+  className?: string;
+  /** The version line; off where a loader block on the card names the same build. */
+  profileLine?: boolean;
+}) {
   const { t } = useTranslation();
   const { settings, update } = useSettings();
   const key = device.loader.key;
@@ -121,7 +130,7 @@ export function DeviceLines({ device, className }: { device: DeviceInfo; classNa
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {!device.askProfile && <LoaderProfileLine loader={device.loader} className={className} />}
+      {!device.askProfile && profileLine && <LoaderProfileLine loader={device.loader} className={className} />}
     </>
   );
 }

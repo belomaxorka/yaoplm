@@ -210,21 +210,35 @@ export function PlanDetails({
           </ul>
         </section>
       )}
-      {plan.skipped.length > 0 && (
-        <section data-testid="plan-skipped">
-          <h3 className="mb-2 text-sm font-medium">{t("plan.skipped", { count: plan.skipped.length })}</h3>
-          <ul className="flex flex-col gap-1.5">
-            {plan.skipped.map((skipped) => (
-              <li key={skipped.path} className="rounded-md border px-2 py-1.5 text-sm">
-                <div className="truncate font-mono text-xs" title={skipped.path}>
-                  {skipped.path}
-                </div>
-                <NoticeList notices={[skipped.reason]} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {plan.skipped.length > 0 &&
+        // A bulk picture download skips far more than it writes: simple
+        // mode keeps the list behind its count.
+        (simple ? (
+          <details data-testid="plan-skipped-details">
+            <summary className="cursor-pointer text-sm font-medium">{t("plan.skipped", { count: plan.skipped.length })}</summary>
+            <SkippedList skipped={plan.skipped} />
+          </details>
+        ) : (
+          <section data-testid="plan-skipped">
+            <h3 className="mb-2 text-sm font-medium">{t("plan.skipped", { count: plan.skipped.length })}</h3>
+            <SkippedList skipped={plan.skipped} />
+          </section>
+        ))}
     </div>
+  );
+}
+
+function SkippedList({ skipped }: { skipped: PlanView["skipped"] }) {
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {skipped.map((item) => (
+        <li key={item.path} className="rounded-md border px-2 py-1.5 text-sm">
+          <div className="truncate font-mono text-xs" title={item.path}>
+            {item.path}
+          </div>
+          <NoticeList notices={[item.reason]} />
+        </li>
+      ))}
+    </ul>
   );
 }

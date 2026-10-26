@@ -12,6 +12,7 @@ import { MockTransport, RpcError } from "@/api/transport";
 import { App } from "@/App";
 import i18n from "@/i18n";
 import { gameKey } from "@/lib/gameKey";
+import { device } from "@/features/loaders/fixtures";
 
 const ROOT = "E:\\";
 
@@ -83,6 +84,9 @@ function core(): MockTransport {
         };
       case "ListVmc":
         return { type: "Vmcs", cards: [] };
+      // The open device answers: without it the library shows "not available".
+      case "InspectDevice":
+        return { type: "Device", ...device({ root: ROOT }) };
       default:
         throw new RpcError({ code: "NotFound", message: `${request.type} is not faked` });
     }

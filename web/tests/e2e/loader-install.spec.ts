@@ -47,7 +47,11 @@ test("the recommended build goes onto a fresh stick, and the card names it", asy
 
   await dialog.getByTestId("loader-install-done").click();
   await expect(dialog).toBeHidden();
-  await expect(stickCard(page).getByTestId("loader-profile-reason")).toContainText("UPDT/OPL.ELF");
+  // The loader block names the build and its place (release pass 1.3). The
+  // version line stays here: the server reads the stand-in as a folder over
+  // SMB, where the ELF is a copy and the line says so; on a stick plugged
+  // into the PS2 it would only repeat the block (DevicesPage.test.tsx).
+  await expect(stickCard(page).getByTestId("installed-loader")).toHaveAttribute("data-path", "UPDT/OPL.ELF");
 });
 
 test("a program that is not OPL is replaced only when ticked, and kept as a backup", async ({ page, request }) => {

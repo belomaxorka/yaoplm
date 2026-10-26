@@ -412,3 +412,49 @@ fn a_channel_offers_only_the_releases_the_catalogue_allows() {
     ));
     assert_eq!(offer["version"], "v1.2.0-Beta-2360-1234abc-yaopl");
 }
+
+#[test]
+fn rolling_back_to_another_build_names_the_builds_and_says_when_nothing_changes() {
+    // The plan says which build comes back in place of which, as the
+    // replace window does, and that no game is affected when none is
+    // (release pass 1.4). On main the title named only the path and the
+    // plan was silent about the games.
+    let s = setup();
+    let stable = s.stable();
+    s.install("opl-stable", &stable);
+    let beta = s.beta();
+    s.install("opl-beta", &beta);
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanRollbackLoader", "root": s.root, "path": "UPDT/OPL.ELF"}),
+    )
+    .unwrap();
+    assert_eq!(plan["kind"], "rollbackLoader");
+    assert_eq!(
+        plan["title"],
+        "Put back OPL 1.1.0 in place of OPL 1.2.0 beta"
+    );
+    let nothing = notice(&plan, "rollbackNothingAffected");
+    assert_eq!(nothing["level"], "info");
+    assert_eq!(
+        nothing["message"],
+        "The rules of OPL 1.1.0 differ, but none of the games on this device is affected"
+    );
+    assert_eq!(plan["executable"], true, "{plan}");
+
+    // With a ZSO game the warning stands alone.
+    write(
+        &s.device.join("DVD/SLUS_200.62.Retail Game.zso"),
+        &zso_of(&Variant::Retail.build().to_vec()),
+    );
+    let plan = call(
+        &s.api,
+        json!({"type": "PlanRollbackLoader", "root": s.root, "path": "UPDT/OPL.ELF"}),
+    )
+    .unwrap();
+    assert!(codes(&plan).contains(&"rollbackZso".to_owned()), "{plan}");
+    assert!(
+        !codes(&plan).contains(&"rollbackNothingAffected".to_owned()),
+        "{plan}"
+    );
+}

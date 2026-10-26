@@ -46,7 +46,9 @@ async function installBeta(request: APIRequestContext, stick: string) {
 
 async function openReplace(page: Page) {
   await page.goto("/devices");
-  await stickCard(page).getByTestId("device-replace-loader").click();
+  // Replacing waits in the card's menu: "Open library" is its one main button.
+  await stickCard(page).getByTestId("device-more").click();
+  await page.getByTestId("device-replace-loader").click();
   return page.getByTestId("loader-install-dialog");
 }
 

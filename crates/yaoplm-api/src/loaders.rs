@@ -1608,6 +1608,7 @@ pub(crate) fn plan_replace(
                     format: game.format.to_string(),
                     kind,
                     file: cover.png,
+                    source: label.rsplit('/').next().unwrap_or(&label).to_owned(),
                     origin: label,
                 }),
                 Err(_) => plan.skipped.push(Skipped {

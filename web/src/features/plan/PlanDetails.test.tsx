@@ -143,3 +143,50 @@ describe("plans and logs keep their details out of the way", () => {
     expect(simple.container.innerHTML).toBe("");
   });
 });
+
+/** A picture plan with more skipped than written, as a bulk download is. */
+const sparse: PlanView = {
+  ...plan,
+  transactions: [
+    {
+      ...plan.transactions[1]!,
+      notices: [
+        {
+          level: "info",
+          code: "artFrom",
+          message: "From libretro (C:\\mirror\\libretro\\x.png)",
+          phrase: { key: "notices.artFrom", params: { source: "libretro", origin: "C:\\mirror\\libretro\\x.png" } },
+        },
+      ],
+    },
+  ],
+  skipped: ["ICO", "COV2", "BG", "SCR", "LGO"].map((kind) => ({
+    path: `SLUS_200.62 Grand Theft Auto III (${kind})`,
+    reason: { level: "info", code: "artNotFound", message: "Not found in oplm" },
+  })),
+};
+
+describe("a picture plan in simple mode (release pass 1.12)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  // On main simple mode listed every skipped picture in its own box and
+  // the mirror's path after each source.
+  it("folds the skipped pictures away and names only the source", () => {
+    show(true, <PlanDetails plan={sparse} />);
+    const folded = screen.getByTestId("plan-skipped-details");
+    expect(folded.tagName).toBe("DETAILS");
+    expect(folded).not.toHaveAttribute("open");
+    expect(folded).toHaveTextContent("Skipped: 5");
+    expect(screen.getByText("From libretro")).toBeInTheDocument();
+    expect(screen.queryByText(/x\.png/)).toBeNull();
+  });
+
+  it("lists them in advanced mode, with where each picture comes from", () => {
+    show(false, <PlanDetails plan={sparse} />);
+    expect(screen.queryByTestId("plan-skipped-details")).toBeNull();
+    expect(screen.getAllByText("Not found in oplm")).toHaveLength(5);
+    expect(screen.getByText("From libretro (C:\\mirror\\libretro\\x.png)")).toBeInTheDocument();
+  });
+});

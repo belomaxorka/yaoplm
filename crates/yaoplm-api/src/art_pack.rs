@@ -251,6 +251,7 @@ impl Collector<'_> {
                     format: target.format.clone(),
                     kind: picture.kind,
                     file: cover.png,
+                    source: set.to_owned(),
                     origin: label,
                 };
                 self.chosen.insert(slot, Chosen { rank, item });

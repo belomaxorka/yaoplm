@@ -836,7 +836,8 @@ pub(crate) fn fetch_job(
                 format: target.format.clone(),
                 kind: *kind,
                 file: cover.png,
-                origin: format!("{} ({})", cover.source, cover.origin),
+                source: cover.source.clone(),
+                origin: cover.origin.clone(),
             }),
             None => {
                 let label = if *kind == ArtKind::Cov {
@@ -1120,10 +1121,21 @@ pub(crate) fn set_art(
         format: game.format,
         kind: params.kind,
         file: cover.png,
+        source: short_name(&label),
         origin: label,
     };
     let fs = HostFs::new(&params.root).map_err(ApiError::internal_error)?;
     plan_set_art(&fs, &HostSources, &[item], params.overwrite).map_err(ApiError::internal_error)
+}
+
+/// The last part of a path or label, for "From …" in a plan.
+fn short_name(label: &str) -> String {
+    label
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(label)
+        .to_owned()
 }
 
 /// A file the user picked that cannot be read.
