@@ -46,6 +46,7 @@ Other behaviour:
   - Example: `cdrom0:\AB\x01CD;1` gives `AB`.
 - **Exactly 64 printable characters leave the buffer unterminated.**
   - The ID is still defined when it fits inside those 64 bytes.
+  - So is an empty ID: a `;` inside the buffer right after the `:` (and any `\`) gives length 0, and the game is hidden like any empty ID. Until 2026-10-26 YAOPLM returned an empty ID here instead (`GetStartupExecName`, `src/supportbase.c`, ps2homebrew/Open-PS2-Loader@b3a21997).
   - Otherwise YAOPLM reports `Unpredictable`.
 - **Only `\` is skipped after the colon:** `cdrom0:/SLUS_200.62;1` gives `/SLUS_200.6`.
 
