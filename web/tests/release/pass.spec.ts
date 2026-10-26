@@ -3,7 +3,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { emptyStick, job, joinPath, openLibrary, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
+import { emptyStick, job, joinPath, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
 
 // The release UI pass (docs/plans/release-ui-consistency.md): every screen
 // and state in both interface modes, both languages and both themes at
@@ -83,7 +83,14 @@ async function layoutProblems(page: Page): Promise<string[]> {
     const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => {
       const r = el.getBoundingClientRect();
       const style = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && !el.closest("[aria-hidden=true], [inert]");
+      // Chromium keeps the boxes of what a closed <details> holds: checkVisibility says.
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        el.checkVisibility() &&
+        style.visibility !== "hidden" &&
+        !el.closest("[aria-hidden=true], [inert]")
+      );
     });
     // Behind an open dialog or menu, only it counts (menus are not modal: the
     // page behind them stays in the accessibility tree).
@@ -584,12 +591,14 @@ for (const run of runs) {
     });
     await pass.escape();
     if (!run.simple) await pass.state("vmc-new", async () => {
+      await openSection(page.getByTestId("game-settings"), "cards");
       await page.getByTestId("cfg-vmc-create-0").click();
       await expect(page.getByRole("dialog")).toBeVisible();
     });
     await pass.escape();
     await pass.state("cfg-plan", async () => {
       const settings = page.getByTestId("game-settings");
+      await openSection(settings, "modes");
       await settings.getByRole("checkbox", { name: w.mode2 }).check();
       await page.getByTestId("cfg-save").click();
       await expect(page.getByTestId("plan-dialog").getByTestId("plan-cfg-changes")).toBeVisible();

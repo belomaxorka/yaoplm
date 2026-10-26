@@ -1330,6 +1330,10 @@
     "loading": "Reading the game’s settings…",
     "libconfig": "{{path}} is in wOPL’s libconfig format: YAOPLM shows it but does not change it.",
     "modes": "Compatibility modes",
+    "cards": "Memory cards",
+    "video": "Video",
+    "cheatsPad": "Cheats and gamepad",
+    "sectionSet": "set",
     "modesHint": "Turn a mode on only when the game does not start, freezes or shows glitches; the OPL compatibility list says which one helps.",
     "modeHints": {
       "1": "Reads at the speed and in the way of the console’s drive",

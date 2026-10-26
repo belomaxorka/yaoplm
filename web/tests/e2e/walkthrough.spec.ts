@@ -130,7 +130,14 @@ async function layoutProblems(page: Page): Promise<string[]> {
     const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => {
       const r = el.getBoundingClientRect();
       const style = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && !el.closest("[aria-hidden=true], [inert]");
+      // Chromium keeps the boxes of what a closed <details> holds: checkVisibility says.
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        el.checkVisibility() &&
+        style.visibility !== "hidden" &&
+        !el.closest("[aria-hidden=true], [inert]")
+      );
     });
     // Behind an open dialog or menu, only it counts (menus are not modal: the
     // page behind them stays in the accessibility tree).
