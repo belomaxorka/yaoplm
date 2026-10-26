@@ -464,6 +464,23 @@ impl<R: Read + Seek> Card<R> {
         self.entries(dir.cluster, dir.length)
     }
 
+    /// The allocatable clusters an entry's data occupies, in chain order:
+    /// as many as its length needs (a directory's entries, a file's bytes),
+    /// fewer when its chain ends early.
+    pub fn clusters(&mut self, entry: &Entry) -> Result<Vec<u32>, CardError> {
+        let cluster_size = u64::from(self.geometry.cluster_size());
+        let bytes = if entry.is_dir() {
+            u64::from(entry.length) * ENTRY_SIZE as u64
+        } else {
+            u64::from(entry.length)
+        };
+        let needed = u32::try_from(bytes.div_ceil(cluster_size).max(1)).unwrap_or(u32::MAX);
+        if needed > self.geometry.alloc_end {
+            return Err(CardError::ChainTooLong(entry.cluster));
+        }
+        self.chain(entry.cluster, needed)
+    }
+
     /// The bytes of file `file`, refused past `max` bytes.
     pub fn read(&mut self, file: &Entry, max: u64) -> Result<Vec<u8>, CardError> {
         let len = u64::from(file.length);
