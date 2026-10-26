@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openLibrary } from "./helpers";
+import { openLibrary, openSection } from "./helpers";
 
 // A game's settings and memory cards (CFG-2, VMC-1, ADR-0036). The fixture's
 // Retail Game has a CFG with modes 1 and 3 and names a zero-filled card in
@@ -11,17 +11,22 @@ test("advanced: modes, GSM and a new card in slot 2 through one plan", async ({ 
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Dual Layer Quest/ }).click();
   const settings = page.getByTestId("game-settings");
-  await expect(settings.getByTestId("cfg-modes")).toBeVisible();
+  // No CFG yet: every section is folded.
+  await expect(settings.getByTestId("cfg-section-modes")).not.toHaveAttribute("open");
   await expect(settings.getByTestId("cfg-save")).toBeDisabled();
 
+  await openSection(settings, "modes");
+  await expect(settings.getByTestId("cfg-modes")).toBeVisible();
   await settings.getByRole("checkbox", { name: /Mode 2/ }).check();
   await settings.getByRole("checkbox", { name: /Mode 5/ }).check();
+  await openSection(settings, "video");
   const gsm = settings.getByTestId("cfg-gsm");
   await gsm.getByRole("radio", { name: "This game’s own" }).click();
   await gsm.getByRole("switch", { name: "Force a video mode" }).click();
   await gsm.getByRole("combobox", { name: "Video mode" }).click();
   await page.getByRole("option", { name: "HDTV 480p, 60 Hz", exact: true }).click();
 
+  await openSection(settings, "cards");
   await settings.getByTestId("cfg-vmc-create-1").click();
   const dialog = page.getByRole("dialog", { name: "New memory card" });
   await expect(dialog.getByLabel("Name")).toHaveValue("SLUS_212.18_1");
@@ -56,6 +61,9 @@ test("simple: the broken card in slot 1 is replaced by a formatted one", async (
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
   await expect(page.getByTestId("cfg-vmc-0")).toContainText("OPL does not take SLUS_200.62_0");
   const settings = page.getByTestId("game-settings");
+  // Mode 1 and the card in slot 1 are saved: both sections come open.
+  await expect(settings.getByTestId("cfg-section-modes")).toHaveAttribute("open");
+  await expect(settings.getByTestId("cfg-section-cards")).toHaveAttribute("open");
   await expect(settings.getByRole("checkbox", { name: /Mode 1/ })).toBeChecked();
   await expect(settings.getByTestId("cfg-vmc-1")).toHaveCount(0);
   await expect(settings.getByTestId("cfg-gsm")).toHaveCount(0);
@@ -96,10 +104,13 @@ for (const language of ["en", "ru"] as const) {
       });
       await page.goto("/library");
       await page.getByRole("listitem", { name: /Dual Layer Quest/ }).click();
+      await expect(settings.getByTestId("cfg-section-cheats")).toBeVisible();
+      await shot("cfg-advanced", settings);
+      for (const section of ["modes", "cards", "video", "cheats"]) await openSection(settings, section);
       await expect(settings.getByTestId("cfg-gsm")).toBeVisible();
       // The whole section in one picture: a window taller than the card.
       await page.setViewportSize({ width: 1280, height: 2400 });
-      await shot("cfg-advanced", settings);
+      await shot("cfg-advanced-open", settings);
       await page.setViewportSize({ width: 1280, height: 900 });
 
       await settings.getByRole("checkbox", { name: /Mode 4|Режим 4/ }).check();

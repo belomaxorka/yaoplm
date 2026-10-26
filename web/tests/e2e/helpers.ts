@@ -1,7 +1,7 @@
 import { readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
-import type { APIRequestContext, Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page } from "@playwright/test";
 
 interface Device {
   root: string;
@@ -34,6 +34,15 @@ export function joinPath(root: string, ...names: string[]): string {
 }
 
 /** Opens the fixture library before the page loads, like a user who picked it earlier. */
+/** Unfolds one section of a game's settings; a section with saved values is open already. */
+export async function openSection(settings: Locator, section: string): Promise<void> {
+  const details = settings.getByTestId(`cfg-section-${section}`);
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await details.locator("summary").click();
+  }
+  await expect(details).toHaveAttribute("open");
+}
+
 export async function openLibrary(
   page: Page,
   request: APIRequestContext,

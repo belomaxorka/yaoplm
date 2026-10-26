@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { Plus, Save } from "lucide-react";
+import { ChevronRight, Plus, Save } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -137,6 +137,15 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
   let shownMask = 0;
   for (const bit of shownBits) shownMask |= bit;
   const otherBits = current.compatibility & ~shownMask;
+  const slots = simple ? [0] : [0, 1];
+  // A section opens when the saved settings give it a value; the rest stay
+  // folded, so a game's page is one screen (release pass 2.3, variant A).
+  const saved = {
+    modes: base.compatibility !== 0 || base.altStartup !== "",
+    cards: slots.some((slot) => (base.vmc[slot] ?? "") !== ""),
+    video: base.gsm.perGame,
+    cheats: base.cheats.perGame || base.padEmu.perGame,
+  };
 
   const setSlot = (slot: number, name: string, card?: NewVmc) => {
     const vmc = [...current.vmc];
@@ -152,9 +161,10 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
 
   return (
     <Section>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3">
+        <Group id="modes" title={t("cfg.modes")} open={saved.modes}>
         <fieldset className="flex flex-col gap-2" data-testid="cfg-modes">
-          <legend className="mb-1 text-sm font-medium">{t("cfg.modes")}</legend>
+          <legend className="sr-only">{t("cfg.modes")}</legend>
           <p className="text-xs text-muted-foreground">{t("cfg.modesHint")}</p>
           <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             {shownBits.map((bit) => (
@@ -180,26 +190,42 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
             </p>
           )}
         </fieldset>
-
-        {[0, 1]
-          .filter((slot) => !simple || slot === 0)
-          .map((slot) => (
-            <VmcSlot
-              key={slot}
-              slot={slot}
-              view={view}
-              name={current.vmc[slot] ?? ""}
-              cards={cards.data ?? []}
-              pending={newCards[slot] ?? null}
-              onChange={(name, card) => setSlot(slot, name, card)}
+        {!simple && (
+          <div className="flex flex-col gap-1.5" data-testid="cfg-alt-startup">
+            <Label htmlFor={`${ids}-alt`}>{t("cfg.altStartup")}</Label>
+            <Input
+              id={`${ids}-alt`}
+              value={current.altStartup}
+              maxLength={Math.max(ALT_STARTUP_MAX, current.altStartup.length)}
+              className="font-mono sm:w-80"
+              onChange={(event) => set({ altStartup: event.target.value.toUpperCase() })}
             />
-          ))}
+            <p className="text-xs text-muted-foreground">{t("cfg.altStartupHint", { max: ALT_STARTUP_MAX })}</p>
+          </div>
+        )}
+        </Group>
+
+        <Group id="cards" title={t("cfg.cards")} open={saved.cards}>
+        {slots.map((slot) => (
+          <VmcSlot
+            key={slot}
+            slot={slot}
+            view={view}
+            name={current.vmc[slot] ?? ""}
+            cards={cards.data ?? []}
+            pending={newCards[slot] ?? null}
+            onChange={(name, card) => setSlot(slot, name, card)}
+          />
+        ))}
+        </Group>
 
         {!simple && (
           <>
+            <Group id="video" title={t("cfg.video")} open={saved.video}>
             <SourceGroup
               title={t("cfg.gsm")}
               testId="cfg-gsm"
+              titleHidden
               perGame={current.gsm.perGame}
               onPerGame={(perGame) => set({ gsm: { ...current.gsm, perGame } })}
             >
@@ -258,7 +284,9 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
                 onChange={(fieldFix) => set({ gsm: { ...current.gsm, fieldFix } })}
               />
             </SourceGroup>
+            </Group>
 
+            <Group id="cheats" title={t("cfg.cheatsPad")} open={saved.cheats}>
             <SourceGroup
               title={t("cfg.cheats")}
               testId="cfg-cheats"
@@ -341,18 +369,7 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
                 )}
               </div>
             </SourceGroup>
-
-            <div className="flex flex-col gap-1.5" data-testid="cfg-alt-startup">
-              <Label htmlFor={`${ids}-alt`}>{t("cfg.altStartup")}</Label>
-              <Input
-                id={`${ids}-alt`}
-                value={current.altStartup}
-                maxLength={Math.max(ALT_STARTUP_MAX, current.altStartup.length)}
-                className="font-mono sm:w-80"
-                onChange={(event) => set({ altStartup: event.target.value.toUpperCase() })}
-              />
-              <p className="text-xs text-muted-foreground">{t("cfg.altStartupHint", { max: ALT_STARTUP_MAX })}</p>
-            </div>
+            </Group>
 
             <details className="text-sm" data-testid="cfg-keys">
               <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
@@ -408,6 +425,21 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
       </div>
       <PlanDialog flow={flow} />
     </Section>
+  );
+}
+
+/** One folded part of the settings: open when the saved CFG gives it a value. */
+function Group({ id, title, open, children }: { id: string; title: string; open: boolean; children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <details className="group rounded-md border px-3 py-2" open={open} data-testid={`cfg-section-${id}`}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+        {title}
+        {open && <span className="text-xs font-normal text-muted-foreground">{t("cfg.sectionSet")}</span>}
+      </summary>
+      <div className="mt-3 flex flex-col gap-4">{children}</div>
+    </details>
   );
 }
 
@@ -493,12 +525,15 @@ function OffsetInput({
 function SourceGroup({
   title,
   testId,
+  titleHidden,
   perGame,
   onPerGame,
   children,
 }: {
   title: string;
   testId: string;
+  /** The section's own title says it already. */
+  titleHidden?: boolean;
   perGame: boolean;
   onPerGame: (perGame: boolean) => void;
   children: ReactNode;
@@ -507,7 +542,7 @@ function SourceGroup({
   const id = useId();
   return (
     <fieldset className="flex flex-col gap-3" data-testid={testId}>
-      <legend className="mb-1 text-sm font-medium">{title}</legend>
+      <legend className={titleHidden ? "sr-only" : "mb-1 text-sm font-medium"}>{title}</legend>
       <RadioGroup
         value={perGame ? "game" : "global"}
         onValueChange={(value) => onPerGame(value === "game")}

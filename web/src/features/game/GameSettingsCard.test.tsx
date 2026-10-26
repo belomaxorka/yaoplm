@@ -131,6 +131,25 @@ describe("game settings (CFG-2, VMC-1)", () => {
     await i18n.changeLanguage("en");
   });
 
+  // A game's page is one screen: only the sections the saved CFG gives a
+  // value are open (release pass 2.3, variant A).
+  for (const simple of [true, false]) {
+    it(`opens the sections with saved values only (${simple ? "simple" : "advanced"} mode)`, async () => {
+      show(core([]).transport, simple);
+      expect(await screen.findByTestId("cfg-section-modes")).toHaveAttribute("open");
+      expect(screen.getByTestId("cfg-section-modes")).toHaveTextContent("Compatibility modesset");
+      expect(screen.getByTestId("cfg-section-cards")).not.toHaveAttribute("open");
+      if (simple) {
+        expect(screen.queryByTestId("cfg-section-video")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("cfg-section-cheats")).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByTestId("cfg-section-video")).not.toHaveAttribute("open");
+        expect(screen.getByTestId("cfg-section-cheats")).not.toHaveAttribute("open");
+        expect(screen.getByTestId("cfg-section-modes")).toContainElement(screen.getByTestId("cfg-alt-startup"));
+      }
+    });
+  }
+
   it("plans a mode change and keeps bits the loader does not show", async () => {
     const fake = core([]);
     show(fake.transport, false);
