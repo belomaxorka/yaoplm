@@ -12,7 +12,7 @@
 | UI unit | Компоненты, транспорт, i18n: ключи и формы множественного числа во всех языках, плейсхолдеры, дубли, типографика, перевод каждой фразы ядра и значений перечислений, совпадение параметров каждой фразы в Rust с плейсхолдерами шаблона (`docs/I18N.md`) | vitest |
 | UI e2e | Сценарии в браузере против `yaoplm-server` с фикстурной библиотекой из `make_library` | Playwright, `web/tests/e2e/` |
 | Desktop e2e | Позже: `tauri-driver` (WebDriver) на Windows и Linux | — |
-| Железо | Реальная PS2 и OPL, чек-листы из ROADMAP и подробные списки в `docs/testing/` (M4: [m4-console-checklist.md](testing/m4-console-checklist.md); M5: [m5-pr1-console-checklist.md](testing/m5-pr1-console-checklist.md), [m5-pr2a-console-checklist.md](testing/m5-pr2a-console-checklist.md), [m5-pr2b-console-checklist.md](testing/m5-pr2b-console-checklist.md)) | пользователь |
+| Железо | Реальная PS2 и OPL, чек-листы из ROADMAP и подробные списки в `docs/testing/`; всё, что ещё ждёт консоли, и как пройдёт проверка — [testing/README.md](testing/README.md) | пользователь |
 
 ## Фикстуры
 
