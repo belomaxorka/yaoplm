@@ -871,6 +871,7 @@
         "sd2psx": "sd2psx или sd2psXtd",
         "memcardPro2": "MemCard PRO 2"
       },
+      "summary": "Загрузочные карты: {{counts}}",
       "protected": "Файлы эмулятора YAOPLM не трогает; OPL запускается из загрузочной карты.",
       "folder": "Эта папка — {{folder}} на SD.",
       "bootCards": "Загрузочные карты {{variant}}",

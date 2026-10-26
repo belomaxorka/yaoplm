@@ -9,7 +9,7 @@ import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
 import { DevicesPage } from "@/features/devices/DevicesPage";
-import { detected, loader, smbMode, testDevice } from "@/features/devices/testDevice";
+import { detected, emulatorInfo, emulatorMode, loader, smbMode, testDevice } from "@/features/devices/testDevice";
 import { build, device, installedLoader, storeSettings } from "@/features/loaders/fixtures";
 import { Providers } from "@/features/loaders/TestProviders";
 import i18n from "@/i18n";
@@ -146,5 +146,32 @@ describe("the device card's order and notes (release pass 1.1, 1.14, 5.5)", () =
     expect(cards).toHaveLength(2);
     expect(within(cards[0]!).queryAllByText(/OPL reads this folder over SMB/)).toHaveLength(1);
     expect(within(cards[1]!).queryAllByText(/OPL reads this folder over SMB/)).toHaveLength(0);
+  });
+});
+
+describe("the emulator's panel on the device card (UI-7, ADR-0048)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false, root: "D:\\Games" });
+  });
+
+  // The owner's remark of 2026-10-27: the boot cards of every variant made
+  // the card a screen tall. One line says what the SD is and how many boot
+  // cards it has; the channels come when the panel is opened.
+  it("comes folded with one line of summary, and opens to the boot channels", async () => {
+    show(testDevice({ root: "G:\\", emulator: emulatorInfo, mode: emulatorMode }));
+    const panel = await screen.findByTestId("emulator-panel");
+    const details = within(panel).getByTestId("emulator-details");
+    expect(details).not.toHaveAttribute("open");
+    const summary = within(panel).getByTestId("emulator-summary");
+    expect(summary).toHaveTextContent("Memory card emulator SD");
+    expect(summary).toHaveTextContent("— sd2psx or sd2psXtd");
+    expect(summary).toHaveTextContent("Boot cards: PS2 — 2");
+    expect(within(panel).getByTestId("emulator-protected")).not.toBeVisible();
+    expect(within(panel).getAllByTestId("emulator-boot-channel")[0]).not.toBeVisible();
+    await userEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(within(panel).getByTestId("emulator-protected")).toBeVisible();
+    expect(within(panel).getAllByTestId("emulator-boot-channel")[0]).toHaveTextContent("FMCB 1.966");
   });
 });

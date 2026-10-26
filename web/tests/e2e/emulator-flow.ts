@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { type APIRequestContext, expect, type Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page } from "@playwright/test";
 
 import { openLibrary, roots } from "./helpers";
 
@@ -17,6 +17,16 @@ export function emulatorCard(page: Page) {
     .getByTestId("device-card")
     .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]emulator$/ }) })
     .first();
+}
+
+/** The emulator's panel comes folded (UI-7): open it before reaching into it. */
+export async function openEmulatorPanel(card: Locator): Promise<Locator> {
+  const panel = card.getByTestId("emulator-panel");
+  const details = panel.getByTestId("emulator-details");
+  await expect(details).not.toHaveAttribute("open");
+  await panel.getByTestId("emulator-summary").click();
+  await expect(details).toHaveAttribute("open");
+  return panel;
 }
 
 /** Every file under `root`, relative, with its bytes. */
@@ -54,8 +64,12 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   await expect(mode.getByTestId("device-mode-reason")).toHaveText(
     "— the files of a memory card emulator: .sd2psx, MemoryCards",
   );
-  const panel = card.getByTestId("emulator-panel");
-  await expect(panel).toContainText("Memory card emulator SD");
+  // Folded: one line names the SD and counts its boot cards.
+  await expect(card.getByTestId("emulator-summary")).toContainText("Memory card emulator SD");
+  await expect(card.getByTestId("emulator-summary")).toContainText("Boot cards: PS2 — 2");
+  await expect(card.getByTestId("emulator-protected")).toBeHidden();
+  const panel = await openEmulatorPanel(card);
+  await expect(panel.getByTestId("emulator-protected")).toBeVisible();
   await expect(panel).toContainText("left alone");
   await expect(panel.getByTestId("emulator-boot-channel").first()).toContainText("FMCB 1.966");
   await expect(panel.getByTestId("emulator-settings")).toHaveCount(simple ? 0 : 1);
