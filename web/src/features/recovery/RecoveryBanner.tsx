@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { useDevice } from "@/features/recovery/useDevice";
+import { useSimpleMode } from "@/settings/context";
 
 /**
  * A journal on the device means an earlier operation did not finish
@@ -13,6 +14,7 @@ import { useDevice } from "@/features/recovery/useDevice";
  */
 export function RecoveryBanner({ root }: { root: string }) {
   const { t } = useTranslation();
+  const simple = useSimpleMode();
   const device = useDevice(root);
   const flow = usePlan();
   const unfinished = device.data?.unfinished ?? [];
@@ -27,25 +29,24 @@ export function RecoveryBanner({ root }: { root: string }) {
         <AlertTitle>{t("recovery.title", { count: unfinished.length })}</AlertTitle>
         <AlertDescription>
           <p>{t("recovery.description")}</p>
-          <ul className="font-mono text-xs">
-            {unfinished.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
-          </ul>
+          {!simple && (
+            <ul className="font-mono text-xs">
+              {unfinished.map((id) => (
+                <li key={id}>{id}</li>
+              ))}
+            </ul>
+          )}
+          {/* One main button (UI-6): finishing the write is the usual way out. */}
           <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => void flow.request({ type: "PlanRecovery", root, action: "resume", ...mode })}>
+              {t("recovery.resume")}
+            </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => void flow.request({ type: "PlanRecovery", root, action: "rollback", ...mode })}
             >
               {t("recovery.rollback")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void flow.request({ type: "PlanRecovery", root, action: "resume", ...mode })}
-            >
-              {t("recovery.resume")}
             </Button>
           </div>
         </AlertDescription>

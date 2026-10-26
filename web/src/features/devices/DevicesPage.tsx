@@ -187,8 +187,10 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   // Simple mode keeps the advice that explains the verdict; what the loader
   // detection found (several loaders, JPG art) shows in both, unless a
   // profile was chosen instead.
+  // Notes (info) are for the open device: the same SMB rules under every
+  // folder say nothing new. Simple mode keeps what explains the verdict.
   const advice = [
-    ...(simple ? device.advice.filter((notice) => notice.level !== "info") : device.advice),
+    ...(simple || !current ? device.advice.filter((notice) => notice.level !== "info") : device.advice),
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
@@ -214,67 +216,10 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     >
       <div className="flex flex-wrap items-start gap-3">
         <HardDrive className="mt-1 size-6 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
-            {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
-            <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
-            {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
-            {!simple && <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>}
-            {device.system && (
-              <Badge variant={systemIsFact ? "outline" : "destructive"}>{t("devices.systemDisk")}</Badge>
-            )}
-            {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
-            {current && <Badge>{t("devices.current")}</Badge>}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <Progress value={used} className="h-1.5 w-full max-w-xs" aria-label={t("devices.used", { percent: used })} />
-            <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-col gap-1 text-sm">
-            <DeviceLines device={device} profileLine={!namedByLoader} />
-          </div>
-          {device.emulator && <EmulatorPanel emulator={device.emulator} className="mt-2" />}
-          <LoaderProfileHint device={device} className="mt-2" />
-          <SmbFolderHint device={device} className="mt-2" />
-          {device.installed.map((loader) => (
-            <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
-          ))}
-          {!simple && (
-            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              {device.model && (
-                <div>
-                  <dt className="inline">{t("devices.model")}: </dt>
-                  <dd className="inline">{device.model}</dd>
-                </div>
-              )}
-              {device.serial && (
-                <div>
-                  <dt className="inline">{t("devices.serial")}: </dt>
-                  <dd className="inline font-mono">{device.serial}</dd>
-                </div>
-              )}
-              {device.clusterSize !== null && (
-                <div>
-                  <dt className="inline">{t("devices.cluster")}: </dt>
-                  <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
-                </div>
-              )}
-              {device.partition?.table && (
-                <div>
-                  <dt className="inline">{t("devices.partition")}: </dt>
-                  <dd className="inline">
-                    {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          )}
-        </div>
-        {/* Beside the details when there is room, under them when there is not. */}
-        <div className="ml-auto flex flex-col items-end gap-2">
+        {/* First in the DOM, so Tab reaches the main button before the card's
+            questions; drawn beside the details when there is room, under them
+            when there is not. */}
+        <div className="order-last ml-auto flex flex-col items-end gap-2">
           <span
             className={cn(
               "flex items-center gap-1.5 text-sm font-medium",
@@ -321,6 +266,65 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
+            {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
+            <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
+            {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
+            {!simple && <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>}
+            {device.system && (
+              <Badge variant={systemIsFact ? "outline" : "destructive"}>{t("devices.systemDisk")}</Badge>
+            )}
+            {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
+            {current && <Badge>{t("devices.current")}</Badge>}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <Progress value={used} className="h-1.5 w-full max-w-xs" aria-label={t("devices.used", { percent: used })} />
+            <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+              {t("devices.free", { free: formatBytes(device.freeBytes), total: formatBytes(device.totalBytes) })}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-col gap-1 text-sm">
+            <DeviceLines device={device} profileLine={!namedByLoader} />
+          </div>
+          {device.emulator && <EmulatorPanel emulator={device.emulator} className="mt-2" />}
+          <SmbFolderHint device={device} className="mt-2" />
+          <LoaderProfileHint device={device} className="mt-2" />
+          {device.installed.map((loader) => (
+            <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
+          ))}
+          {!simple && (
+            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {device.model && (
+                <div>
+                  <dt className="inline">{t("devices.model")}: </dt>
+                  <dd className="inline">{device.model}</dd>
+                </div>
+              )}
+              {device.serial && (
+                <div>
+                  <dt className="inline">{t("devices.serial")}: </dt>
+                  <dd className="inline font-mono">{device.serial}</dd>
+                </div>
+              )}
+              {device.clusterSize !== null && (
+                <div>
+                  <dt className="inline">{t("devices.cluster")}: </dt>
+                  <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
+                </div>
+              )}
+              {device.partition?.table && (
+                <div>
+                  <dt className="inline">{t("devices.partition")}: </dt>
+                  <dd className="inline">
+                    {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
+                  </dd>
+                </div>
+              )}
+            </dl>
           )}
         </div>
       </div>

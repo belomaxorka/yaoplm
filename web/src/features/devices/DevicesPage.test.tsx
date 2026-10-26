@@ -9,18 +9,19 @@ import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
 import { DevicesPage } from "@/features/devices/DevicesPage";
+import { detected, loader, smbMode, testDevice } from "@/features/devices/testDevice";
 import { build, device, installedLoader, storeSettings } from "@/features/loaders/fixtures";
 import { Providers } from "@/features/loaders/TestProviders";
 import i18n from "@/i18n";
 
-/** A core with one device, as `ListDevices` describes it. */
-function core(info: DeviceInfo) {
+/** A core with the given devices, as `ListDevices` describes them. */
+function core(...infos: DeviceInfo[]) {
   const transport = new MockTransport((request: Request): Response => {
     switch (request.type) {
       case "ListJobs":
         return { type: "Jobs", jobs: [] };
       case "ListDevices":
-        return { type: "Devices", devices: [info] };
+        return { type: "Devices", devices: infos };
       case "LoaderCatalog":
         return { type: "LoaderCatalog", schema: 1, builds: [build("opl-stable"), build("opl-beta")], source: "builtIn", fetchedAt: null };
       case "DiscardPlan":
@@ -54,9 +55,9 @@ const prepared = device({
   },
 });
 
-function show(info: DeviceInfo) {
+function show(...infos: DeviceInfo[]) {
   render(
-    <Providers transport={core(info)}>
+    <Providers transport={core(...infos)}>
       <DevicesPage />
     </Providers>,
   );
@@ -101,5 +102,49 @@ describe("the device card with a loader on it (release pass 1.3)", () => {
     const card = await screen.findByTestId("device-card");
     await within(card).findByTestId("installed-loader");
     expect(within(card).getByTestId("loader-profile")).toHaveTextContent("OPL 1.1.0");
+  });
+});
+
+const smbRules = { level: "info", code: "smbRules", message: "OPL reads this folder over SMB: SMBv1 only, image names up to 159 bytes, at most 10 ul parts" } as const;
+
+/** A folder on the computer's disk without OPL's folders, read over SMB. */
+const emptyFolder = (root: string, patch: Partial<DeviceInfo> = {}) =>
+  testDevice({
+    root,
+    mode: smbMode,
+    external: true,
+    kind: "fixed",
+    askProfile: true,
+    loader: loader({ key: `path:${root}`, detected: detected({ library: false }) }),
+    advice: [smbRules],
+    ...patch,
+  });
+
+describe("the device card's order and notes (release pass 1.1, 1.14, 5.5)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false, root: "D:\\Games" });
+  });
+
+  // The folder's next step comes before the version question, and the
+  // main button before both: that is also the Tab order.
+  it("puts the main button first, then the folder step, then the question", async () => {
+    show(emptyFolder("D:\\Games"));
+    const card = await screen.findByTestId("device-card");
+    const open = within(card).getByTestId("device-open");
+    const init = within(card).getByTestId("smb-init");
+    const question = within(card).getByTestId("loader-question");
+    const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(open, init)).toBe(true);
+    expect(before(init, question)).toBe(true);
+  });
+
+  // The SMB rules are one note for the open folder, not one under every card.
+  it("shows the SMB note on the open folder only", async () => {
+    show(emptyFolder("D:\\Games"), emptyFolder("D:\\More"));
+    const cards = await screen.findAllByTestId("device-card");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).queryAllByText(/OPL reads this folder over SMB/)).toHaveLength(1);
+    expect(within(cards[1]!).queryAllByText(/OPL reads this folder over SMB/)).toHaveLength(0);
   });
 });
