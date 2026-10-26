@@ -284,6 +284,14 @@ fn title_cfg(
     put(fs, path, doc.to_bytes())
 }
 
+/// The device is exFAT as OPL reads it: over SMB OPL never sees the
+/// computer's file system, and through a memory card emulator every MMCE
+/// build reads exFAT (ADR-0047, ADR-0048).
+pub(crate) fn opl_reads_exfat(fs: &dyn DeviceFs) -> bool {
+    fs.info()
+        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb && !info.mmce)
+}
+
 /// Plans the install. A refused path or an unconfirmed foreign file shows
 /// as an error notice: the plan cannot run until the request changes.
 pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Result<Plan> {
@@ -323,11 +331,8 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
         return Ok(plan);
     }
     // 1.1.0 reads no exFAT: the rule replacing (`impact`) and detection
-    // already follow. Over SMB OPL never sees the computer's file system.
-    let exfat = fs
-        .info()
-        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb && !info.mmce);
-    if build.profile == LoaderProfile::Opl110 && exfat {
+    // already follow.
+    if build.profile == LoaderProfile::Opl110 && opl_reads_exfat(fs) {
         plan.notices
             .push(Notice::error(Phrase::notice("loaderExfatOpl110")));
         return Ok(plan);

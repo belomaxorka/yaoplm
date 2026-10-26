@@ -360,6 +360,96 @@ fn rolling_back_to_another_program_drops_the_manifest_entry() {
 }
 
 #[test]
+fn rolling_back_to_1_1_0_is_refused_on_exfat() {
+    // Replacing and installing refuse OPL 1.1.0 on exFAT; on main a
+    // rollback to a 1.1.0 backup planned it.
+    let place = |fs: &MemFs, now: &str, back: &str| {
+        fs.insert_file("UPDT/OPL.ELF", &opl_elf(now));
+        fs.insert_file(
+            ".yaoplm/backup/loader/20251025-134640/UPDT_OPL.ELF",
+            &opl_elf(back),
+        );
+    };
+    let codes = |plan: &Plan| -> Vec<String> {
+        plan.notices
+            .iter()
+            .filter(|n| n.level == Level::Error)
+            .map(|n| n.code.clone())
+            .collect()
+    };
+    let exfat = MemFs::new(FsKind::ExFat);
+    place(&exfat, OLD, "v1.1.0");
+    let plan = plan_rollback(&exfat, "UPDT/OPL.ELF", catalog(), NOW).unwrap();
+    assert_eq!(codes(&plan), ["replaceExfatOpl110"]);
+    assert!(plan.transactions.is_empty() && !plan.is_executable());
+    // The same rollback on FAT32, over SMB, or within the betas runs.
+    let fat = MemFs::new(FsKind::Fat32);
+    place(&fat, OLD, "v1.1.0");
+    let smb = MemFs::new(FsKind::ExFat).with_smb(true);
+    place(&smb, OLD, "v1.1.0");
+    let betas = MemFs::new(FsKind::ExFat);
+    place(&betas, NEW, OLD);
+    for fs in [&fat, &smb, &betas] {
+        let plan = plan_rollback(fs, "UPDT/OPL.ELF", catalog(), NOW).unwrap();
+        assert!(codes(&plan).is_empty(), "{:?}", plan.notices);
+    }
+}
+
+#[test]
+fn what_a_rollback_loses_is_said_as_the_replace_window_says_it() {
+    use yaoplm_core::loaders::impact::{Impact, ImpactGame};
+    use yaoplm_core::loaders::rollback::impact_notices;
+    use yaoplm_formats::LoaderProfile;
+    let game = ImpactGame {
+        startup: "SLUS_200.62".into(),
+        title: "Game".into(),
+        path: None,
+        size: 1,
+        fragments: Some(3),
+    };
+    let impact = Impact {
+        from: LoaderProfile::Opl120Beta,
+        to: LoaderProfile::Opl110,
+        blocked: None,
+        zso: Vec::new(),
+        fragmented: vec![game.clone(), game.clone()],
+        unknown_fragments: vec![game],
+        art: Vec::new(),
+    };
+    let notices = impact_notices(&impact, "OPL 1.1.0");
+    let said: Vec<(&str, Level, &str)> = notices
+        .iter()
+        .map(|n| (n.code.as_str(), n.level, n.message.as_str()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (
+                "rollbackFragmented",
+                Level::Warning,
+                "Games in several pieces, which OPL 1.1.0 will not start: 2. Copy them to the computer, format the device and add them back"
+            ),
+            (
+                "rollbackUnknownFragments",
+                Level::Warning,
+                "Games whose pieces cannot be counted: 1. OPL 1.1.0 starts a game only when each of its files is one piece"
+            ),
+        ]
+    );
+    assert!(
+        impact_notices(
+            &Impact {
+                fragmented: Vec::new(),
+                unknown_fragments: Vec::new(),
+                ..impact
+            },
+            "OPL 1.1.0"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
 fn without_a_backup_there_is_nothing_to_roll_back() {
     let d = Device::new();
     let beta = build("opl-beta");

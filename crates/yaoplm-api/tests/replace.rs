@@ -189,6 +189,68 @@ fn moving_to_opl_110_converts_zso_first_and_puts_the_loader_last() {
     assert_eq!(card["loader"]["profile"], "Opl110");
 }
 
+fn codes(plan: &Value) -> Vec<String> {
+    plan["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["code"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn notice<'a>(plan: &'a Value, code: &str) -> &'a Value {
+    plan["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["code"] == code)
+        .unwrap_or_else(|| panic!("no {code} in {plan}"))
+}
+
+#[test]
+fn rolling_back_to_another_build_says_what_changes_for_the_games() {
+    // A rollback across builds checks what replacing does (LDR-4, LDR-7):
+    // on main it planned the old ELF back without a word about the games.
+    let s = setup();
+    let iso = Variant::Retail.build().to_vec();
+    write(
+        &s.device.join("DVD/SLUS_200.62.Retail Game.zso"),
+        &zso_of(&iso),
+    );
+    let stable = s.stable();
+    s.install("opl-stable", &stable);
+    let beta = s.beta();
+    s.install("opl-beta", &beta);
+    let rollback = || {
+        call(
+            &s.api,
+            json!({"type": "PlanRollbackLoader", "root": s.root, "path": "UPDT/OPL.ELF"}),
+        )
+        .unwrap()
+    };
+
+    // Back to 1.1.0: the ZSO game would vanish; "Replace…" converts it.
+    let plan = rollback();
+    let zso = notice(&plan, "rollbackZso");
+    assert_eq!(zso["level"], "warning");
+    assert_eq!(
+        zso["message"],
+        "ZSO games OPL 1.1.0 cannot show: 1. “Replace…” converts them to ISO in the same plan"
+    );
+    // A warning: the user may still go back.
+    assert_eq!(plan["executable"], true, "{plan}");
+    execute(&s.api, &plan, false);
+
+    // Back to the beta: a JPG cover would not load; "Replace…" re-encodes.
+    write(&s.device.join("ART/SLUS_200.62_COV.jpg"), &jpeg());
+    let plan = rollback();
+    assert_eq!(notice(&plan, "rollbackArt")["level"], "warning");
+    assert!(
+        !codes(&plan).contains(&"rollbackZso".to_owned()),
+        "the beta shows ZSO: {plan}"
+    );
+}
+
 #[test]
 fn leaving_opl_110_re_encodes_its_jpg_pictures() {
     let s = setup();

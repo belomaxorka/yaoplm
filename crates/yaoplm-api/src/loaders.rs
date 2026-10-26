@@ -1104,10 +1104,26 @@ pub(crate) fn plan_update(
 }
 
 /// Plans putting back the newest backup of the loader at `path` (LDR-4).
-pub(crate) fn plan_rollback(net: &Net, fs: &dyn DeviceFs, path: &str) -> Result<Plan, ApiError> {
+/// Back to a build with other rules, the games are checked as for
+/// replacing (LDR-7): what they lose comes as warnings.
+pub(crate) fn plan_rollback(
+    net: &Net,
+    root: &Path,
+    fs: &dyn DeviceFs,
+    path: &str,
+) -> Result<Plan, ApiError> {
     let store = net.loader_store();
     let (catalog, _, _) = effective(&store)?;
-    rollback::plan_rollback(fs, path.trim_start_matches('/'), &catalog, now()).map_err(io_error)
+    let path = path.trim_start_matches('/');
+    let mut plan = rollback::plan_rollback(fs, path, &catalog, now()).map_err(io_error)?;
+    if plan.is_executable()
+        && let Some((here, back)) = rollback::crossing(fs, path, &catalog).map_err(io_error)?
+    {
+        let (_, found) = analyse(root, here.profile, back.profile)?;
+        plan.notices
+            .extend(rollback::impact_notices(&found, &back.name));
+    }
+    Ok(plan)
 }
 
 /// The newest release of a build's channel YAOPLM read, from the store
