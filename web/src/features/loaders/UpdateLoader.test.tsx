@@ -214,7 +214,7 @@ describe("loader updates on the device card", () => {
     await user.click(within(card).getByTestId("installed-loader-check"));
     await waitFor(() => expect(core.of("LoaderRelease")).toEqual([{ type: "LoaderRelease", build: "opl-beta" }]));
     await waitFor(() => expect(core.of("ListDevices").length).toBeGreaterThan(listed));
-    expect(await within(card).findByText("This is the newest build of its channel")).toBeTruthy();
+    expect(await within(card).findByText("Nothing newer")).toBeTruthy();
 
     await user.click(within(card).getByRole("button", { name: /Put back v1.2.0-Beta-2260/ }));
     await screen.findByTestId("plan-dialog");
@@ -233,13 +233,13 @@ describe("loader updates on the device card", () => {
     show(core);
     const card = await screen.findByTestId("installed-loader");
     expect(card.textContent).toContain("version unknown");
-    expect(card.textContent).toContain("Known only by its name");
+    expect(card.textContent).toContain("Build not recognised");
     expect(within(card).queryByTestId("installed-loader-check")).toBeNull();
     expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
     // Only the family is known: "Replace…" alone (§5.10.1), in the card's menu.
     await userEvent.click(screen.getByTestId("device-more"));
     expect(screen.queryByTestId("device-install-loader")).toBeNull();
-    expect((await screen.findByTestId("device-replace-loader")).textContent).toContain("Replace loader…");
+    expect((await screen.findByTestId("device-replace-loader")).textContent).toContain("Switch OPL…");
   });
 
   it("stays open with the reason when the update's write fails", async () => {
@@ -294,8 +294,8 @@ describe("loader updates on the device card", () => {
       storeSettings({ simpleMode: simple });
       show(fakeCore(() => [device({ mode: emulatorMode, emulator: emulatorInfo })]));
       const panel = await screen.findByTestId("emulator-panel");
-      expect(panel).toHaveTextContent("does not change the emulator’s files (.sd2psx, MemoryCards, civ.bin)");
-      expect(panel).toHaveTextContent("puts no loader on it");
+      expect(panel).toHaveTextContent("The emulator’s files are left alone");
+      expect(panel).toHaveTextContent("OPL runs from the boot card");
       const channels = within(panel).getAllByTestId("emulator-boot-channel");
       expect(channels[0]).toHaveTextContent("Channel 1");
       expect(channels[0]).toHaveTextContent("FMCB 1.966");
@@ -305,8 +305,8 @@ describe("loader updates on the device card", () => {
       if (!simple) expect(within(panel).getByTestId("emulator-settings")).toHaveTextContent("[PS2] CardSize=64");
       // What each image holds shows in both modes; the OPL builds inside,
       // with MMCE, in advanced mode only.
-      expect(channels[0]).toHaveTextContent("Holds: FreeMcBoot");
-      expect(channels[1]).toHaveTextContent("Holds: SD Builder’s FMCB 1.963");
+      expect(channels[0]).toHaveTextContent("FreeMcBoot");
+      expect(channels[1]).toHaveTextContent("SD Builder’s FMCB 1.963");
       const [first] = channels;
       if (!first) throw new Error("no boot channel");
       const loaders = within(first).queryAllByTestId("emulator-boot-loader");

@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { ChevronDown, FolderPlus } from "lucide-react";
+import { ChevronDown, FolderPlus, Info } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -28,11 +28,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { wroteAll } from "@/jobs/outcome";
 import { phraseText } from "@/lib/phrase";
-import { useSettings } from "@/settings/context";
+import { useSettings, useSimpleMode } from "@/settings/context";
 import { deviceModes, mmceProfiles, profiles } from "@/settings/settings";
 
 import { LoaderProfileLine } from "./LoaderProfile";
@@ -89,10 +90,7 @@ export function DeviceLines({
         <span className="font-medium" data-testid="device-mode-name">
           {t(`devices.modes.${mode.mode}`)}
         </span>
-        <span className="text-muted-foreground" data-testid="device-mode-reason">
-          {" "}
-          — {reason}
-        </span>{" "}
+        <Reason text={reason} testId="device-mode-reason" />{" "}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="link" size="sm" className="h-auto p-0 align-baseline text-xs" data-testid="device-choice-change">
@@ -131,6 +129,42 @@ export function DeviceLines({
         </DropdownMenu>
       </div>
       {!device.askProfile && profileLine && <LoaderProfileLine loader={device.loader} className={className} />}
+    </>
+  );
+}
+
+/**
+ * Why a value is what it is. Simple mode keeps it behind an icon (texts are
+ * for end users, docs/I18N.md); advanced mode shows it after a dash. Screen
+ * readers and tests get the text either way.
+ */
+export function Reason({ text, testId }: { text: string; testId: string }) {
+  const { t } = useTranslation();
+  const simple = useSimpleMode();
+  if (!simple) {
+    return (
+      <span className="text-muted-foreground" data-testid={testId}>
+        {" "}
+        — {text}
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className="sr-only" data-testid={testId}>
+        {" "}
+        — {text}
+      </span>{" "}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="-my-1 inline-flex size-6 items-center justify-center rounded-sm align-middle text-muted-foreground" aria-label={t("devices.why")}>
+              <Info className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">{text}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </>
   );
 }
@@ -175,7 +209,7 @@ export function SmbFolderHint({ device, className }: { device: DeviceInfo; class
   const emulator = emulatorStep(device) === "init";
   const step = emulator ? "init" : smbStep(device);
   if (step === null || (step === "folder" && transport.kind === "http")) return null;
-  const hint = emulator ? "devices.emulatorInitHint" : step === "folder" ? "devices.smbFolderHint" : "devices.smbInitHint";
+  const hint = step === "folder" && !emulator ? "devices.smbFolderHint" : "devices.smbInitHint";
 
   return (
     <div

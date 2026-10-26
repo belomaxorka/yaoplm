@@ -56,7 +56,7 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   );
   const panel = card.getByTestId("emulator-panel");
   await expect(panel).toContainText("Memory card emulator SD");
-  await expect(panel).toContainText("puts no loader on it");
+  await expect(panel).toContainText("left alone");
   await expect(panel.getByTestId("emulator-boot-channel").first()).toContainText("FMCB 1.966");
   await expect(panel.getByTestId("emulator-settings")).toHaveCount(simple ? 0 : 1);
   // The factory card makes 64 MiB cards: the doctor says so in both modes.
@@ -67,7 +67,7 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   // What the boot cards hold, read from their own file systems: in both
   // modes the launcher, in advanced mode the OPL builds and MMCE.
   const first = panel.getByTestId("emulator-boot-channel").first();
-  await expect(first).toContainText("Holds: FreeMcBoot");
+  await expect(first).toContainText("FreeMcBoot");
   await expect(first.getByTestId("emulator-boot-loader")).toHaveCount(simple ? 0 : 1);
   if (!simple) await expect(first.getByTestId("emulator-boot-loader")).toContainText("v1.2.0-Beta-2216-bb415d2");
   // The MMCE build inside boot card 1 answers which OPL reads the SD, so

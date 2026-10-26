@@ -612,69 +612,70 @@
     }
   },
   "loader": {
-    "title": "Версия OPL",
-    "byOverride": "выбран для этого носителя",
+    "title": "OPL",
+    "byOverride": "ваш выбор",
     "byExplicit": "выбран для всех носителей",
     "unreadable": "носитель не удалось прочитать",
     "change": "Изменить",
-    "forThisDevice": "Версия OPL этого носителя",
-    "auto": "Авто (по файлам)",
-    "byUnknown": "версия не известна: правила, которые подходят любому OPL",
-    "unknown": "Не знаю (правила для любого OPL)",
-    "question": "Какой OPL вы запускаете с этим носителем?",
-    "questionHint": "На носителе есть папки OPL, но нет загрузчика и его следов — похоже, OPL запускается с карты памяти. От версии зависят правила для ZSO, exFAT, картинок и игр, лежащих несколькими кусками.",
-    "questionSmb": "Какой OPL читает эту папку по сети?",
-    "questionHintSmb": "OPL запускается с карты памяти или флешки и не оставляет в общей папке следов своей версии, пока консоль её не пролистает. От версии зависит, можно ли использовать образы ZSO и картинки JPG.",
+    "forThisDevice": "Какой OPL",
+    "auto": "По носителю",
+    "byUnknown": "подойдёт любому OPL",
+    "unknown": "Не знаю",
+    "question": "Какой OPL у вас на карте памяти?",
+    "questionHint": "От версии зависят правила для ZSO, exFAT, картинок и игр в несколько кусков.",
+    "questionSmb": "Какой OPL будет читать эту папку?",
+    "questionHintSmb": "От версии зависит, можно ли использовать образы ZSO и картинки JPG.",
     "answers": {
-      "Opl120Beta": "OPL 1.2 или YAOPL",
+      "Opl120Beta": "OPL 1.2 (beta, YAOPL)",
       "Opl110": "OPL 1.1.0",
       "RiptOpl": "RiptOPL"
     },
-    "filesSay": "По файлам носителя это {{profile}}: {{reason}}",
-    "backToAuto": "Вернуть «Авто»",
-    "questionEmulator": "Какой OPL с MMCE вы запускаете?",
-    "questionHintEmulator": "Игры с этой SD видят только сборки OPL с MMCE, официальный OPL — нет. От версии зависят правила, по которым YAOPLM пишет игры и картинки.",
+    "filesSay": "На носителе {{profile}}: {{reason}}",
+    "backToAuto": "Определять по носителю",
+    "questionEmulator": "Какой OPL с MMCE?",
+    "questionHintEmulator": "Игры с этой SD видят только сборки OPL с MMCE.",
     "answersEmulator": {
       "Opl120Beta": "Форк OPL с MMCE, YAOPL или wOPL",
       "RiptOpl": "RiptOPL"
     },
-    "unknownMmce": "Не знаю (правила форка с MMCE)",
-    "byUnknownMmce": "версия не известна: правила форка OPL с MMCE"
+    "unknownMmce": "Не знаю",
+    "byUnknownMmce": "подойдёт любому OPL с MMCE"
   },
   "loaderInstall": {
-    "title": "Установка загрузчика",
-    "description": "OPL на {{root}}: игры, обложки и настройки на нём остаются как есть",
-    "targetLegend": "Где будет работать носитель?",
+    "title": "Установка OPL",
+    "description": "Игры и настройки на носителе остаются",
+    "targetLegend": "Куда вставите носитель?",
     "targets": {
-      "usb": "USB-порт",
-      "mx4sio": "MX4SIO (SD-карта в слоте карты памяти)"
+      "usb": "USB",
+      "mx4sio": "MX4SIO"
     },
     "targetHints": {
       "usb": "Флешка или картридер в USB-порту консоли",
-      "mx4sio": "OPL видит её как MX4SIO, лаунчеры — как massX: или mx4sio:"
+      "mx4sio": "SD-карта в слоте карты памяти консоли"
     },
     "loadingCatalog": "Чтение каталога загрузчиков…",
     "methodLegend": "Как вы запускаете OPL?",
     "methods": {
       "fmcb": "FreeMcBoot с карты памяти",
-      "fmcbHint": "Пункт OPL в меню FreeMcBoot 1.966 запускает {{path}}",
+      "fmcbHint": "Файл: {{path}}",
       "ps2bbl": "PS2BBL",
-      "ps2bblHint": "Стандартный конфиг PS2BBL первым запускает {{path}}",
+      "ps2bblHint": "Файл: {{path}}",
       "unknown": "Не знаю",
-      "unknownHint": "Загрузчик ставится в оба стандартных места: {{paths}}",
+      "unknownHint": "OPL кладётся в оба обычных места",
       "app": "Папкой приложения",
-      "appHint": "{{path}} с title.cfg: его запускают OSDMenu и страница «Приложения» другого OPL",
+      "appHint": "Файл: {{path}}",
       "appMx4sio": "PS2BBL-MX4SIO или OSDMenu",
-      "appMx4sioHint": "{{path}} с title.cfg; строки для лаунчера будут показаны после установки",
+      "appMx4sioHint": "Файл: {{path}}",
       "card": "OPL уже на карте памяти",
-      "cardHint": "На носителе создаются только папки OPL",
+      "cardHint": "Создаются только папки OPL",
       "custom": "Свой путь",
-      "customHint": "Любой путь .ELF на носителе; строки для лаунчера будут показаны после установки"
+      "customHint": "Любой путь .ELF на носителе"
     },
     "path": "Путь",
-    "buildLegend": "Какой OPL поставить?",
+    "buildLegend": "Какой OPL?",
     "recommended": "Рекомендуем",
     "fork": "Форк",
+    "aboutFork": "О форке",
     "loadingRelease": "Чтение сведений о релизе…",
     "version": "Версия",
     "stored": "Скачано",
@@ -729,7 +730,7 @@
       "wiki": "Вики",
       "fork": "О форке"
     },
-    "limits": "Ограничения: {{text}}",
+    "limits": "{{text}}",
     "otherVersion": "Другая версия…",
     "reinstallTitle": "Переустановка {{build}}",
     "versionLegend": "Релиз",
@@ -753,21 +754,21 @@
     "versionUnknown": "версия неизвестна",
     "current": "Актуально",
     "available": "Обновление: {{version}}",
-    "manifestStale": "Заменён без YAOPLM: программа ставила сюда другую сборку",
+    "manifestStale": "Файл заменили вне YAOPLM",
     "knownBy": {
       "manifest": "Установлен YAOPLM",
-      "checksum": "Опознан по контрольной сумме официального выпуска",
-      "version": "Опознан по версии внутри файла",
-      "name": "Опознан только по имени: сборка неизвестна"
+      "checksum": "по контрольной сумме официального выпуска",
+      "version": "по версии в файле",
+      "name": "Сборка не распознана"
     },
     "updateTo": "Обновить до {{version}}",
     "check": "Проверить обновления",
     "rollbackTo": "Вернуть {{version}}",
     "rollbackFile": "Вернуть прежний файл",
-    "newest": "Это самая новая сборка своего канала"
+    "newest": "Новее нет"
   },
   "loaderReplace": {
-    "title": "Замена загрузчика",
+    "title": "Смена OPL",
     "description": "Сейчас: {{build}} {{version}} в {{path}} на {{root}}. Игры, обложки, CFG, VMC и читы остаются.",
     "installed": "Установлена",
     "impactLegend": "Что изменится для игр",
@@ -791,9 +792,10 @@
     "nothingAffected": "Правила новой сборки другие, но игр на этом носителе это не касается."
   },
   "devices": {
-    "intro": "Тома и папки, каждый проверен под загрузчик, для которого он подготовлен. Откройте том или папку, чтобы увидеть игры.",
+    "intro": "Флешки, SD-карты и папки для OPL. Откройте носитель, чтобы увидеть игры.",
     "showAll": "Показывать все тома",
     "refresh": "Обновить",
+    "why": "Почему",
     "openFolder": "Открыть папку…",
     "loading": "Поиск томов…",
     "emptyTitle": "Носителей нет",
@@ -831,27 +833,27 @@
     "verdict": {
       "ok": "Подходит для OPL",
       "info": "Подходит для OPL",
-      "warning": "Проверьте замечания",
+      "warning": "Есть замечания",
       "error": "Не подходит для OPL"
     },
     "open": "Открыть библиотеку",
     "changeDevice": "Сменить носитель",
-    "connection": "Подключение к PS2",
+    "connection": "К консоли",
     "modes": {
-      "ps2": "вставляется в консоль",
-      "smb": "по сети (SMB)",
-      "emulator": "в эмуляторе карты памяти (MMCE)"
+      "ps2": "напрямую",
+      "smb": "по сети",
+      "emulator": "через эмулятор карты памяти"
     },
     "modeOptions": {
-      "ps2": "Вставляется в консоль",
-      "smb": "По сети (SMB)",
-      "emulator": "В эмуляторе карты памяти (MMCE)"
+      "ps2": "Напрямую (USB, SD-карта)",
+      "smb": "По сети",
+      "emulator": "Через эмулятор карты памяти"
     },
-    "modeAuto": "Авто (по месту и файлам)",
-    "modeForThisDevice": "Подключение этого носителя",
+    "modeAuto": "Определять по носителю",
+    "modeForThisDevice": "Как подключён носитель",
     "modeByOverride": "выбрано для этого носителя",
     "modeByExplicit": "выбрано для всех носителей",
-    "smbInitHint": "Папок OPL здесь пока нет. Создайте их и добавьте игры: консоль будет читать эту папку по сети.",
+    "smbInitHint": "Папок OPL здесь нет. Создайте их — и можно добавлять игры.",
     "createOplFolders": "Создать папки OPL",
     "smbFolderHint": "Создайте на этом диске папку библиотеки: YAOPLM откроет её, а консоли вы откроете к ней общий доступ.",
     "createFolder": "Создать папку…",
@@ -859,25 +861,24 @@
     "folderDialogDescription": "Папка в корне {{root}} с папками OPL внутри. Откройте к ней общий доступ по сети, чтобы консоль могла её читать.",
     "folderName": "Имя папки",
     "folderSubmit": "Показать план",
-    "installLoader": "Установить загрузчик…",
-    "reinstallLoader": "Переустановить загрузчик…",
+    "installLoader": "Установить OPL…",
+    "reinstallLoader": "Переустановить OPL…",
     "moreActions": "Ещё действия",
-    "replaceLoader": "Заменить загрузчик…",
-    "emulatorInitHint": "Игры для OPL с MMCE лежат в обычных папках OPL в корне SD, рядом с файлами эмулятора. Создайте их и добавьте игры.",
+    "replaceLoader": "Сменить OPL…",
     "emulator": {
       "title": "SD эмулятора карты памяти",
       "kinds": {
         "sd2psx": "sd2psx или sd2psXtd",
         "memcardPro2": "MemCard PRO 2"
       },
-      "protected": "Файлы эмулятора ({{files}}) YAOPLM не меняет, SD не форматирует и загрузчик на неё не ставит: OPL запускается изнутри загрузочной карты.",
+      "protected": "Файлы эмулятора YAOPLM не трогает; OPL запускается из загрузочной карты.",
       "folder": "Эта папка — {{folder}} на SD.",
       "bootCards": "Загрузочные карты {{variant}}",
       "noBootCards": "Загрузочных карт нет: сам эмулятор ничего не запустит.",
       "channel": "Канал {{channel}}",
       "noName": "без имени в BootCard.ini",
       "cards": "Номерные карты: {{cards}}; карты игр: {{games}}",
-      "holds": "Внутри: {{what}}",
+      "holds": "{{what}}",
       "builderImage": "{{name}} из SD Builder",
       "unreadable": "Содержимое карты прочитать не удалось",
       "mmce": "MMCE",
@@ -927,7 +928,7 @@
     "clearArtCacheFailed": "Кэш удалось очистить не полностью: {{error}}",
     "interface": "Интерфейс",
     "simpleMode": "Простой режим",
-    "simpleModeHint": "Прячет сортировку, счётчики, конвертацию, импорт наборов картинок, страницу заданий и технические подробности. Выключите, чтобы видеть всё.",
+    "simpleModeHint": "Только нужное для подготовки носителя и игр.",
     "language": "Язык",
     "theme": "Тема",
     "themes": {

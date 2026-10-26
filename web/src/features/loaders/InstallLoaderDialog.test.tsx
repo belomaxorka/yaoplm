@@ -231,7 +231,7 @@ describe("InstallLoaderDialog", () => {
 
     await user.click(within(dialog).getByTestId("loader-target-usb"));
     await user.click(within(dialog).getByTestId("loader-method-unknown"));
-    expect(within(dialog).getByText(/UPDT\/OPL\.ELF, APPS\/OPNPS2LD\.ELF/)).toBeTruthy();
+    expect(within(dialog).getByText("OPL goes to both usual places")).toBeTruthy();
     await user.click(within(dialog).getByTestId("loader-install-start"));
     await screen.findByTestId("plan-dialog");
     expect(core.of("PlanInstallLoader")[0]).toMatchObject({ presets: ["fmcb", "ps2bbl"], device: "usb" });

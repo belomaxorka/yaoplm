@@ -83,14 +83,14 @@ describe("the device card with a loader on it (release pass 1.3)", () => {
     expect(within(card).getByTestId("installed-loader-version")).toHaveTextContent("v1.2.0-Beta-2271");
 
     await userEvent.click(within(card).getByTestId("device-more"));
-    expect(await screen.findByTestId("device-install-loader")).toHaveTextContent("Reinstall loader…");
-    expect(screen.getByTestId("device-replace-loader")).toHaveTextContent("Replace loader…");
+    expect(await screen.findByTestId("device-install-loader")).toHaveTextContent("Reinstall OPL…");
+    expect(screen.getByTestId("device-replace-loader")).toHaveTextContent("Switch OPL…");
   });
 
   it("offers Install loader… outright on a stick without one", async () => {
     show(device());
     const card = await screen.findByTestId("device-card");
-    expect(await within(card).findByTestId("device-install-loader")).toHaveTextContent("Install loader…");
+    expect(await within(card).findByTestId("device-install-loader")).toHaveTextContent("Install OPL…");
     expect(within(card).queryByTestId("device-more")).toBeNull();
     // Nothing to name: the profile line says what the device is prepared for.
     expect(within(card).getByTestId("loader-profile")).toBeInTheDocument();

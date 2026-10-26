@@ -1200,6 +1200,14 @@ fn vmc_create_assign_and_list() {
 
 #[test]
 fn loader_ls_lists_the_catalogue() {
+    // The built-in catalogue, not one a "Check for updates" stored in the
+    // real app data folder.
+    let data = tempfile::tempdir().unwrap();
+    let yaoplm = || {
+        let mut command = yaoplm();
+        command.env("YAOPLM_DATA_DIR", data.path());
+        command
+    };
     let output = yaoplm().args(["loader", "ls"]).output().unwrap();
     assert!(output.status.success());
     let text = stdout(&output);
@@ -1218,7 +1226,11 @@ fn loader_ls_lists_the_catalogue() {
         .args(["loader", "ls", "--lang", "ru"])
         .output()
         .unwrap();
-    assert!(stdout(&ru).contains("Официальная бета"), "{}", stdout(&ru));
+    assert!(
+        stdout(&ru).contains("Свежая официальная сборка"),
+        "{}",
+        stdout(&ru)
+    );
 
     let json = yaoplm().args(["loader", "ls", "--json"]).output().unwrap();
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();

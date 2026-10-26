@@ -17,12 +17,12 @@ url = "https://github.com/belomaxorka/yaopl/blob/master/LICENSE"
 authors = "belomaxorka, on top of ps2homebrew and the Open PS2 Loader contributors"
 
 [summary]
-en = "The YAOPLM author’s fork of the 1.2.0 beta with fixes for hangs and crashes on unusual files: cheats, ISO, ZSO, SYSTEM.CNF, ul.cfg, CFG and VMC. The same format rules as the beta."
-ru = "Форк автора YAOPLM: та же бета 1.2.0 плюс исправления зависаний и падений на необычных файлах — читы, ISO, ZSO, SYSTEM.CNF, ul.cfg, CFG, VMC. Правила форматов те же."
+en = "The same 1.2.0 beta with the YAOPLM author’s fixes."
+ru = "Та же бета 1.2.0 с исправлениями автора YAOPLM."
 
 [limits]
-en = "Not an official OPL build. Only the newest build is published so far."
-ru = "Не официальная сборка OPL. Пока публикуется только последняя сборка."
+en = "Unofficial build."
+ru = "Неофициальная сборка."
 
 [[docs]]
 kind = "fork"

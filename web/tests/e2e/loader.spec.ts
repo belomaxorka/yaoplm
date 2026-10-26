@@ -35,8 +35,8 @@ test("auto reads the device, an override wins, auto comes back", async ({ page, 
   await page.getByTestId("loader-profile-Opl110").click();
   const line = card.getByTestId("loader-profile");
   await expect(line).toHaveAttribute("data-source", "override");
-  await expect(line).toContainText("OPL version: OPL 1.1.0");
-  await expect(line.getByTestId("loader-profile-reason")).toHaveText("— chosen for this device");
+  await expect(line).toContainText("OPL: OPL 1.1.0");
+  await expect(line.getByTestId("loader-profile-reason")).toHaveText("— your choice");
   await expect(card.getByTestId("loader-question")).toHaveCount(0);
   await expect(sources.getByTestId("loader-question")).toBeVisible();
 
@@ -62,7 +62,7 @@ test("a loader's settings file on the device decides the profile", async ({ page
     await openLibrary(page, request, { language: "ru" });
     await page.goto("/library");
     const header = page.getByTestId("loader-profile");
-    await expect(header).toContainText("Версия OPL: RiptOPL");
+    await expect(header).toContainText("OPL: RiptOPL");
     // The fixture is a folder read over SMB: the loader's files there are a
     // copy of what the console runs (ADR-0047).
     await expect(header.getByTestId("loader-profile-reason")).toHaveText(
@@ -90,7 +90,7 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   // Still read from the device: no signs there, so it is asked.
   await expect(page.getByTestId("loader-question")).toBeVisible();
   await page.getByTestId("device-choice-change").click();
-  await expect(page.getByTestId("loader-profile-auto")).toHaveText("Авто (по файлам)");
+  await expect(page.getByTestId("loader-profile-auto")).toHaveText("По носителю");
   await expect(page.getByTestId("loader-profile-auto")).toHaveAttribute("data-state", "checked");
 });
 
@@ -104,7 +104,7 @@ test("a server folder is read over SMB and asked about its OPL (ADR-0047)", asyn
   await expect(mode).toHaveAttribute("data-source", "detected");
   await expect(mode.getByTestId("device-mode-reason")).toHaveText("— a folder on the server");
   await expect(card).not.toHaveAttribute("data-verdict", "error");
-  await expect(card.getByTestId("loader-question")).toContainText("Which OPL reads this folder over the network?");
+  await expect(card.getByTestId("loader-question")).toContainText("Which OPL will read this folder?");
   // One "Change" for the connection and the version.
   await expect(card.getByTestId("device-choice-change")).toHaveCount(1);
 
@@ -160,7 +160,7 @@ test("the mode is switched per device and goes back to auto (ADR-0047)", async (
   const header = page.getByTestId("device-mode");
   await expect(header).toHaveAttribute("data-mode", "ps2");
   await page.getByTestId("device-choice-change").click();
-  await expect(page.getByTestId("device-mode-auto")).toHaveText("Авто (по месту и файлам)");
+  await expect(page.getByTestId("device-mode-auto")).toHaveText("Определять по носителю");
   await page.getByTestId("device-mode-auto").click();
   await expect(header).toHaveAttribute("data-mode", "smb");
   await expect(header).toHaveAttribute("data-source", "detected");

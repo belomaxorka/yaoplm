@@ -906,8 +906,8 @@ mod tests {
                 "https",
             ),
             (
-                "en = \"Not an official",
-                "de = \"Not an official",
+                "en = \"Unofficial build.\"",
+                "de = \"Unofficial build.\"",
                 "no en text",
             ),
         ];

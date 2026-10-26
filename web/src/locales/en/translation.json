@@ -584,69 +584,70 @@
     }
   },
   "loader": {
-    "title": "OPL version",
-    "byOverride": "chosen for this device",
+    "title": "OPL",
+    "byOverride": "your choice",
     "byExplicit": "chosen for every device",
     "unreadable": "the device could not be read",
     "change": "Change",
-    "forThisDevice": "OPL version of this device",
-    "auto": "Auto (by its files)",
-    "byUnknown": "version not known: rules every OPL can read",
-    "unknown": "I don’t know (rules for any OPL)",
-    "question": "Which OPL do you start with this device?",
-    "questionHint": "The device has OPL’s folders but no loader and no sign of one: OPL probably starts from the memory card. The version decides the rules for ZSO, exFAT, pictures and games in several pieces.",
-    "questionSmb": "Which OPL reads this folder over the network?",
-    "questionHintSmb": "OPL starts from the memory card or a stick and leaves no sign of its version in a shared folder until the console lists it. The version decides whether ZSO images and JPG pictures can be used.",
+    "forThisDevice": "Which OPL",
+    "auto": "By the device",
+    "byUnknown": "works with any OPL",
+    "unknown": "I don’t know",
+    "question": "Which OPL is on your memory card?",
+    "questionHint": "The version decides the rules for ZSO, exFAT, pictures and games in several pieces.",
+    "questionSmb": "Which OPL will read this folder?",
+    "questionHintSmb": "The version decides whether ZSO images and JPG pictures can be used.",
     "answers": {
-      "Opl120Beta": "OPL 1.2 or YAOPL",
+      "Opl120Beta": "OPL 1.2 (beta, YAOPL)",
       "Opl110": "OPL 1.1.0",
       "RiptOpl": "RiptOPL"
     },
-    "filesSay": "The device’s files say {{profile}}: {{reason}}",
-    "backToAuto": "Back to auto",
-    "questionEmulator": "Which OPL with MMCE do you start?",
-    "questionHintEmulator": "Only OPL builds with MMCE see games on this SD; upstream OPL does not. The version decides the rules YAOPLM writes games and pictures by.",
+    "filesSay": "The device has {{profile}}: {{reason}}",
+    "backToAuto": "Decide by the device",
+    "questionEmulator": "Which OPL with MMCE?",
+    "questionHintEmulator": "Only OPL builds with MMCE see games on this SD.",
     "answersEmulator": {
       "Opl120Beta": "MMCE fork, YAOPL or wOPL",
       "RiptOpl": "RiptOPL"
     },
-    "unknownMmce": "I don’t know (rules of the MMCE fork)",
-    "byUnknownMmce": "version not known: the rules of the OPL fork with MMCE"
+    "unknownMmce": "I don’t know",
+    "byUnknownMmce": "works with any OPL with MMCE"
   },
   "loaderInstall": {
-    "title": "Install loader",
-    "description": "OPL on {{root}}: games, covers and settings on it stay as they are",
-    "targetLegend": "Where will this device work?",
+    "title": "Install OPL",
+    "description": "Games and settings on the device stay",
+    "targetLegend": "Where does the device go?",
     "targets": {
-      "usb": "USB port",
-      "mx4sio": "MX4SIO (SD card in a memory card slot)"
+      "usb": "USB",
+      "mx4sio": "MX4SIO"
     },
     "targetHints": {
-      "usb": "A USB stick or a card reader in the console’s USB port",
-      "mx4sio": "OPL reads it as MX4SIO; launchers see it as massX: or mx4sio:"
+      "usb": "A stick or a card reader in the console’s USB port",
+      "mx4sio": "An SD card in the console’s memory card slot"
     },
     "loadingCatalog": "Reading the loader catalogue…",
     "methodLegend": "How do you start OPL?",
     "methods": {
       "fmcb": "FreeMcBoot from the memory card",
-      "fmcbHint": "The OPL item of FreeMcBoot 1.966’s menu starts {{path}}",
+      "fmcbHint": "File: {{path}}",
       "ps2bbl": "PS2BBL",
-      "ps2bblHint": "PS2BBL’s stock config starts {{path}} first",
+      "ps2bblHint": "File: {{path}}",
       "unknown": "I don’t know",
-      "unknownHint": "The loader goes to both stock places: {{paths}}",
+      "unknownHint": "OPL goes to both usual places",
       "app": "As an app folder",
-      "appHint": "{{path}} with title.cfg: OSDMenu and the Apps page of another OPL start it",
+      "appHint": "File: {{path}}",
       "appMx4sio": "PS2BBL-MX4SIO or OSDMenu",
-      "appMx4sioHint": "{{path}} with title.cfg; the lines for the launcher are shown after the install",
+      "appMx4sioHint": "File: {{path}}",
       "card": "OPL is on the memory card already",
-      "cardHint": "Only OPL’s folders are created on the device",
+      "cardHint": "Only OPL’s folders are created",
       "custom": "My own path",
-      "customHint": "Any .ELF path on the device; the lines for the launcher are shown after the install"
+      "customHint": "Any .ELF path on the device"
     },
     "path": "Path",
-    "buildLegend": "Which OPL to install?",
+    "buildLegend": "Which OPL?",
     "recommended": "Recommended",
     "fork": "Fork",
+    "aboutFork": "About the fork",
     "loadingRelease": "Reading the release…",
     "version": "Version",
     "stored": "Downloaded",
@@ -701,7 +702,7 @@
       "wiki": "Wiki",
       "fork": "About the fork"
     },
-    "limits": "Limits: {{text}}",
+    "limits": "{{text}}",
     "otherVersion": "Another version…",
     "reinstallTitle": "Reinstall {{build}}",
     "versionLegend": "Release",
@@ -725,21 +726,21 @@
     "versionUnknown": "version unknown",
     "current": "Up to date",
     "available": "Update: {{version}}",
-    "manifestStale": "Replaced without YAOPLM: it installed another build here",
+    "manifestStale": "Replaced outside YAOPLM",
     "knownBy": {
       "manifest": "Installed by YAOPLM",
-      "checksum": "Known by the checksum of an official release",
-      "version": "Known by the version inside the file",
-      "name": "Known only by its name: the build is unknown"
+      "checksum": "by the checksum of an official release",
+      "version": "by the version in the file",
+      "name": "Build not recognised"
     },
     "updateTo": "Update to {{version}}",
     "check": "Check for updates",
     "rollbackTo": "Put back {{version}}",
     "rollbackFile": "Put back the previous file",
-    "newest": "This is the newest build of its channel"
+    "newest": "Nothing newer"
   },
   "loaderReplace": {
-    "title": "Replace the loader",
+    "title": "Switch OPL",
     "description": "Now: {{build}} {{version}} in {{path}} on {{root}}. Games, covers, CFG, VMC and cheats stay.",
     "installed": "Installed",
     "impactLegend": "What changes for the games",
@@ -763,9 +764,10 @@
     "nothingAffected": "The new build’s rules differ, but none of the games on this device is affected."
   },
   "devices": {
-    "intro": "Volumes and folders, each checked for the loader it is prepared for. Open one to see its games.",
+    "intro": "Sticks, SD cards and folders for OPL. Open one to see its games.",
     "showAll": "Show all volumes",
     "refresh": "Refresh",
+    "why": "Why",
     "openFolder": "Open folder…",
     "loading": "Looking for volumes…",
     "emptyTitle": "No devices",
@@ -801,29 +803,29 @@
       "none": "no table"
     },
     "verdict": {
-      "ok": "Ready for OPL",
-      "info": "Ready for OPL",
-      "warning": "Check the notes",
+      "ok": "Usable for OPL",
+      "info": "Usable for OPL",
+      "warning": "Has notes",
       "error": "Not usable for OPL"
     },
     "open": "Open library",
     "changeDevice": "Change device",
-    "connection": "Connection to the PS2",
+    "connection": "To the console",
     "modes": {
-      "ps2": "plugged into the console",
-      "smb": "over the network (SMB)",
-      "emulator": "in a memory card emulator (MMCE)"
+      "ps2": "directly",
+      "smb": "over the network",
+      "emulator": "through a memory card emulator"
     },
     "modeOptions": {
-      "ps2": "Plugged into the console",
-      "smb": "Over the network (SMB)",
-      "emulator": "In a memory card emulator (MMCE)"
+      "ps2": "Directly (USB, SD card)",
+      "smb": "Over the network",
+      "emulator": "Through a memory card emulator"
     },
-    "modeAuto": "Auto (by place and files)",
-    "modeForThisDevice": "Connection of this device",
+    "modeAuto": "Decide by the device",
+    "modeForThisDevice": "How this device connects",
     "modeByOverride": "chosen for this device",
     "modeByExplicit": "chosen for every device",
-    "smbInitHint": "OPL’s folders are not here yet. Create them and add games: the console reads this folder over the network.",
+    "smbInitHint": "No OPL folders here yet. Create them, then add games.",
     "createOplFolders": "Create OPL folders",
     "smbFolderHint": "Create a library folder on this disk: YAOPLM opens it, and you share it with the console.",
     "createFolder": "Create folder…",
@@ -831,25 +833,24 @@
     "folderDialogDescription": "A folder at the root of {{root}} with OPL’s folders in it. Share it over the network so the console can read it.",
     "folderName": "Folder name",
     "folderSubmit": "Preview plan",
-    "installLoader": "Install loader…",
-    "reinstallLoader": "Reinstall loader…",
+    "installLoader": "Install OPL…",
+    "reinstallLoader": "Reinstall OPL…",
     "moreActions": "More actions",
-    "replaceLoader": "Replace loader…",
-    "emulatorInitHint": "Games for OPL with MMCE go into OPL’s usual folders at the SD’s root, next to the emulator’s files. Create them and add games.",
+    "replaceLoader": "Switch OPL…",
     "emulator": {
       "title": "Memory card emulator SD",
       "kinds": {
         "sd2psx": "sd2psx or sd2psXtd",
         "memcardPro2": "MemCard PRO 2"
       },
-      "protected": "YAOPLM does not change the emulator’s files ({{files}}), does not format the SD and puts no loader on it: OPL runs from inside the boot card.",
+      "protected": "The emulator’s files are left alone; OPL runs from the boot card.",
       "folder": "This folder is {{folder}} on the SD.",
       "bootCards": "Boot cards {{variant}}",
       "noBootCards": "No boot cards: the emulator starts nothing by itself.",
       "channel": "Channel {{channel}}",
       "noName": "no name in BootCard.ini",
       "cards": "Numbered cards: {{cards}}; game cards: {{games}}",
-      "holds": "Holds: {{what}}",
+      "holds": "{{what}}",
       "builderImage": "SD Builder’s {{name}}",
       "unreadable": "The card’s contents could not be read",
       "mmce": "MMCE",
@@ -897,7 +898,7 @@
     "clearArtCacheFailed": "The cache could not be cleared completely: {{error}}",
     "interface": "Interface",
     "simpleMode": "Simple mode",
-    "simpleModeHint": "Hides sorting, counters, conversions, picture sets, the jobs page and technical details. Turn it off to see everything.",
+    "simpleModeHint": "Only what preparing a device and its games needs.",
     "language": "Language",
     "theme": "Theme",
     "themes": {
