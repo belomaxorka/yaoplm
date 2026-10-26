@@ -34,7 +34,7 @@ The backup is in `$YAOPLM_TESTDATA\backups\psxmemcard-gen2-sd-2026-10-26\`: ever
 - **The update done on 2026-10-26.**
   - File: `sd2psx.uf2` from release 1.4.0, 2 361 344 bytes, SHA-256 `0551bb60…7024`, equal to the release digest. It holds 4 612 UF2 blocks, family `0xe48bff56` (RP2040), addresses `0x10000000–0x10120400`.
   - It was copied to `RPI-RP2`; the card rebooted on its own, which the ROM only does after a complete image.
-  - The factory firmware version was not recorded. The version on the device has not been confirmed yet: it needs the SD back in the card, after which the Info menu and the CDC port show it.
+  - The factory firmware version was not recorded. The owner confirmed 1.4.0 in the device's Info menu the same day, with the Kingston card inserted. The CDC port has not been tried yet.
 
 ## 2. The factory microSD
 
@@ -132,6 +132,40 @@ The rules come from research/06 §1.4, sd2psx.net `format-microsd.html` and the 
    - `.sd2psx/settings.ini` gains `EnableControllerCombo` and `MaxCardIdx`. 1.4.0 rewrites the file; when a `settings.ini` exists, it wins over the copy in flash (`settings_load_sd()`).
 5. Optional, the owner's choice: set `CardSize=8`, so new per-game cards are created at the size games expect. Existing cards keep their size.
 
+### 5.1 Done on 2026-10-26: the owner's Kingston 128 GB
+
+- **The card as bought:**
+  - SDXC, 125 098 786 816 bytes, MBR with disk signature 0;
+  - one partition in entry 1: type `0x07`, not active, from 16 MiB;
+  - exFAT, cluster 128 KiB, volume serial `0008-0E00`.
+
+  This is SD-specification formatting and was kept as it is, with no reformat. Without admin rights the exFAT boot sector could not be read raw, so the cluster heap alignment is unchecked.
+- **What firmware 1.4.0 made on the blank card** (the owner had inserted it in the emulator first):
+  - `.sd2psx/settings.ini` with its defaults after the update: PS2 `Autoboot=OFF`, `CardSize=8`, `EnableControllerCombo=ON`, `MaxCardIdx=0` in both modes;
+  - blank `MemoryCards/PS2/Card1/Card1-1.mcd` and `Card1-2.mcd` (8 MiB each);
+  - blank `MemoryCards/PS1/Card1/Card1-1.mcd`.
+
+  It made **no `BOOT` folder**, so FreeMcBoot would not have started from that card. The blank cards were kept. The firmware's `settings.ini` was saved to `$YAOPLM_TESTDATA\backups\kingston-128-before-layout-2026-10-26\` before it was replaced.
+- **What was written** (the owner's choices: the order the factory names intend, every SD Builder PS2 image, 8 MiB cards). Each file went to a temporary name and was then renamed, and its SHA-256 was checked against the source (`written-layout.tsv` in the same backup folder):
+
+  | Channel | Name in the new `BootCard.ini` | Image |
+  |---|---|---|
+  | 1 | FMCB 1.966 | factory BootCard-1 (customised FMCB 1.966) |
+  | 2 | FunTuna | factory BootCard-2 |
+  | 3 | FMCB 1.965 | factory BootCard-6 = builder `FMCB-1965.mcd` |
+  | 4 | FMCB 1.963 | factory BootCard-3 = builder `FMCB-1963.mcd` |
+  | 5 | FMCB 1.953 | factory BootCard-4 = builder `FMCB-1953.mcd` |
+  | 6 | PS2BBL | factory BootCard-5 = builder `PS2BBL.mcd` |
+  | 7 | FMCB 1.964 | builder `FMCB-1964.mcd` |
+  | 8 | UMCS beta PS2BBL_FMCB | builder `UMCS-beta-PS2BBL_FMCB.mcd` |
+  | 9 | UMCS beta SLIMTUNA_PS2BBL_FMCB | builder `UMCS-beta-SLIMTUNA_PS2BBL_FMCB.mcd` |
+
+  - **PS1 and COH:** the factory boot cards, named `Unirom` and `wLaunchELF 4.43x_isr_coh`.
+  - **ini files:** every `BootCard.ini` is written in the SD Builder's form — `[ChannelName]` plus `[Settings] MaxChannels=<n>` and `CardSize=8`, LF line ends, an empty last line. `MaxChannels` keeps the firmware from making blank channels past the last one.
+  - **`settings.ini`** keeps the factory values in the builder's key order (`Mode=PS2`; PS1 `Autoboot=OFF`, `GameID=ON`; PS2 `Autoboot=ON`, `GameID=ON`, `Variant=RETAIL`), plus `EnableControllerCombo=ON`, `MaxCardIdx=0` and `CardSize=8`.
+  - **No image was modified.** The swapped ELF names in channel 6 (PS2BBL) come from the SD Builder image itself and were left alone: PS2BBL's hotkeys may name those files.
+  - mymcplusplus `check` passes on the three images that were new to this audit.
+
 **Without the original card**, a new SD can be built three ways:
 - **SD Builder** (`sd2psXtd.github.io/sd_builder`). In the browser it writes `.sd2psx/` and `MemoryCards/` with chosen boot cards: FMCB 1.953, 1.963, 1.964, 1.965 and 1.966, PS2BBL, two UMCS betas, the arcade wLaunchELF, and PS1 FreePSXBoot for 22 BIOS versions. Four of the factory boot cards are exactly these images.
 - **The firmware alone.** It creates missing folders and blank cards at `CardSize` (`ps2_cardman.c`). A blank boot card boots nothing, so FMCB or PS2BBL still has to come from somewhere.
@@ -182,7 +216,7 @@ Mapped to SPEC:
 
 ## 7. Still to check
 
-- On the device: the Info menu shows 1.4.0, and the CDC port answers `help`.
+- On the device: the CDC port answers `help`, and the Info menu shows the Kingston card.
 - On the console:
   - boot card channel 1 starts FreeMcBoot;
   - OPL 2216 (MMCE) lists games put in `CD/` and `DVD/` on the SD;
