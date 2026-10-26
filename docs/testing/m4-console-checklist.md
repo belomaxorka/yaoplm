@@ -8,12 +8,12 @@
 
 - [ ] 1. Установить сборку из релиза `v0.1.0` (`YAOPLM_0.1.0_x64-setup.exe`) или запустить `pnpm tauri dev` из `apps/desktop`. В «Настройки → О программе» версия `0.1.0`, режим «Приложение».
 - [ ] 2. «Настройки → Библиотека»: профиль `OPL 1.2.0 beta`, имена `ID.Название.iso`. «Настройки → Обложки»: оба источника включены, поля «Зеркало» пустые (нужен интернет).
-- [ ] 3. Файлы для импорта лежат на D::
-  - `D:\yaoplm-testdata\out\m4-fixture\library\CD\SLUS_200.62.Retail Game.iso` (ID GTA III, обложка есть у xlenore);
-  - `D:\yaoplm-testdata\out\m4-fixture\library\DVD\SLUS_212.18.Dual Layer Quest.iso` (ID Tak, обложка есть);
-  - `D:\yaoplm-testdata\out\YAOP_000.01.wLaunchELF.iso` (загрузочный homebrew, обложки нет нигде).
-  - Для ручной замены: `D:\yaoplm-testdata\out\m4-fixture\mirror\custom-cover.jpg` (полосатая картинка, её легко отличить на экране).
-  - Если папки `m4-fixture` нет: `cargo run -p yaoplm-api --example make_library -- D:\yaoplm-testdata\out\m4-fixture`.
+- [ ] 3. Файлы для импорта лежат в папке тестовых данных (`$YAOPLM_TESTDATA`; `. scripts/testdata.ps1` находит её и задаёт переменную):
+  - `$YAOPLM_TESTDATA\out\m4-fixture\library\CD\SLUS_200.62.Retail Game.iso` (ID GTA III, обложка есть у xlenore);
+  - `$YAOPLM_TESTDATA\out\m4-fixture\library\DVD\SLUS_212.18.Dual Layer Quest.iso` (ID Tak, обложка есть);
+  - `$YAOPLM_TESTDATA\out\YAOP_000.01.wLaunchELF.iso` (загрузочный homebrew, обложки нет нигде).
+  - Для ручной замены: `$YAOPLM_TESTDATA\out\m4-fixture\mirror\custom-cover.jpg` (полосатая картинка, её легко отличить на экране).
+  - Если папки `m4-fixture` нет: `cargo run -p yaoplm-api --example make_library -- $env:YAOPLM_TESTDATA\out\m4-fixture` (PowerShell).
 
 ## В YAOPLM на Windows
 

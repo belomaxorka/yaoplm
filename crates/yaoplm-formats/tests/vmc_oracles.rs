@@ -8,7 +8,7 @@
 //!
 //! Both live in the reference clones (`$YAOPLM_TESTDATA/refs`, research
 //! REFERENCES.md); nothing of them is copied here. Run with
-//! `YAOPLM_TESTDATA=D:\yaoplm-testdata cargo test -p yaoplm-formats --test vmc_oracles -- --ignored`.
+//! `YAOPLM_TESTDATA` set: `cargo test -p yaoplm-formats --test vmc_oracles -- --ignored`.
 //! `YAOPLM_PYTHON` picks the Python (3.9 or later).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]

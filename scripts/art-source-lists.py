@@ -14,16 +14,17 @@ from saved HTML files (libretro_<folder>.html) and the xlenore list from
 xlenore_default.txt there, instead of the network.
 
 Usage:
-  python scripts/art-source-lists.py <out dir> [--from DIR]
+  python scripts/art-source-lists.py [<out dir>] [--from DIR]
 
-The output belongs in the test data folder (D:\\yaoplm-testdata\\art-lists),
-never in the repository.
+The output belongs in the test data folder, never in the repository;
+without <out dir> it goes to $YAOPLM_TESTDATA/art-lists.
 """
 
 from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -52,11 +53,17 @@ def libretro_names(index: str) -> list[str]:
     return sorted(names)
 
 
+def testdata(*parts: str) -> Path:
+    """The default output folder inside the test data folder."""
+    root = os.environ.get("YAOPLM_TESTDATA")
+    if not root:
+        raise SystemExit("Give the output folder or set YAOPLM_TESTDATA (scripts/testdata.ps1).")
+    return Path(root, *parts)
+
+
 def main() -> None:
     args = sys.argv[1:]
-    if not args:
-        raise SystemExit(__doc__)
-    out = Path(args[0])
+    out = Path(args[0]) if args and not args[0].startswith("--") else testdata("art-lists")
     source = Path(args[args.index("--from") + 1]) if "--from" in args else None
     out.mkdir(parents=True, exist_ok=True)
     for folder in FOLDERS:

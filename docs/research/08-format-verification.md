@@ -188,4 +188,4 @@ RiptOPL also guards short names in `isValidIsoName` and the 16-byte name copy in
 
 - **`yaoplm-test-support` writes its own ISO9660 images** (ADR-0016). Images are generated on the fly through `Read + Seek`, so 4+ GiB fixtures use no disk space.
 - **Ten variants** cover the cases above: retail, LF-only, no BOOT2, lower-case key, ELF in a subfolder, long ID, PS1, no `;1`, lower-case name, DVD-9.
-- **Console test disc:** `make_boot_iso` packs an open homebrew ELF as a bootable disc with ID `YAOP_000.01`. It used wLaunchELF `BOOT.ELF` from the `latest` release (SHA-256 `8199fbd0…f410`, matching the GitHub release digest); the file is kept outside the repo in `D:\yaoplm-testdata\homebrew\`.
+- **Console test disc:** `make_boot_iso` packs an open homebrew ELF as a bootable disc with ID `YAOP_000.01`. It used wLaunchELF `BOOT.ELF` from the `latest` release (SHA-256 `8199fbd0…f410`, matching the GitHub release digest); the file is kept outside the repo in `$YAOPLM_TESTDATA\homebrew\`.

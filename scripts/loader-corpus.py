@@ -19,17 +19,18 @@ crashes), and `-` where no version can be read (OPL 0.x: not LZMA-packed,
 known by its checksum instead).
 
 Usage:
-  python scripts/loader-corpus.py fetch <out dir>
-  python scripts/loader-corpus.py expect <out dir>
+  python scripts/loader-corpus.py fetch [<out dir>]
+  python scripts/loader-corpus.py expect [<out dir>]
 
-The output belongs in the test data folder
-(D:\\yaoplm-testdata\\downloads\\loaders), never in the repository. Releases
+The output belongs in the test data folder, never in the repository;
+without <out dir> it goes to $YAOPLM_TESTDATA/downloads/loaders. Releases
 are open source (AFL-3.0); no game, BIOS or POPS file is fetched (ADR-0007).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -181,10 +182,18 @@ def expect(root: pathlib.Path) -> None:
     print(len(rows), "rows;", sum(r.endswith("\t?") for r in rows), "unknown")
 
 
+def testdata(*parts: str) -> pathlib.Path:
+    """The default output folder inside the test data folder."""
+    root = os.environ.get("YAOPLM_TESTDATA")
+    if not root:
+        raise SystemExit("Give the output folder or set YAOPLM_TESTDATA (scripts/testdata.ps1).")
+    return pathlib.Path(root, *parts)
+
+
 def main() -> None:
-    if len(sys.argv) != 3 or sys.argv[1] not in ("fetch", "expect"):
+    if len(sys.argv) not in (2, 3) or sys.argv[1] not in ("fetch", "expect"):
         sys.exit(__doc__)
-    out = pathlib.Path(sys.argv[2])
+    out = pathlib.Path(sys.argv[2]) if len(sys.argv) == 3 else testdata("downloads", "loaders")
     out.mkdir(parents=True, exist_ok=True)
     fetch(out) if sys.argv[1] == "fetch" else expect(out)
 

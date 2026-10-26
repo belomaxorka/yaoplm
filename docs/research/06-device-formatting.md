@@ -4,7 +4,7 @@ Research date: 2026-10-22. Context: ADR-0013 accepts formatting for v0.2 (SPEC D
 
 **Method**
 - WebSearch, WebFetch and `gh api`, read only.
-- Read-only reading of the local reference clones in `D:\yaoplm-testdata\refs\` (see [REFERENCES.md](REFERENCES.md)), and of source files saved as text.
+- Read-only reading of the local reference clones in `$YAOPLM_TESTDATA\refs\` (see [REFERENCES.md](REFERENCES.md)), and of source files saved as text.
 - No downloaded code was built or run.
 - One read-only probe on the dev machine (Windows 11 26200, not elevated): open `\\.\PhysicalDriveN` with access 0 and query it.
 - psx-place.com, consolemods.org, ps2-home.com and psdevwiki returned Cloudflare 403. We did not bypass the check; those sources appear only as search snippets.

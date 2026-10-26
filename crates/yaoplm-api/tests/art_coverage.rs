@@ -9,7 +9,7 @@
 //! and `scripts/oplm-backup-toc.py`:
 //!
 //! ```text
-//! YAOPLM_TESTDATA=D:\yaoplm-testdata cargo test -p yaoplm-api --test art_coverage -- --ignored --nocapture
+//! YAOPLM_TESTDATA=<test data folder> cargo test -p yaoplm-api --test art_coverage -- --ignored --nocapture
 //! ```
 
 use std::collections::{HashMap, HashSet};

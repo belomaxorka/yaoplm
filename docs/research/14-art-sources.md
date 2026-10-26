@@ -4,7 +4,7 @@ Date: 2026-10-24. Scope: milestone M5, ART-1, ART-2, ART-4, META-4 (ADR-0035). G
 
 Legend: **[verified]** a request was made or the primary page or file was read; **[secondary]** third-party code, docs or forums; **[unverified]** not confirmed.
 
-Method: about 75 small HTTP requests with UA `YAOPLM-research/0.1 (+https://github.com/belomaxorka/yaoplm)` and a 1 s gap. Largest downloads: four libretro directory indexes (about 2 MB each), the xlenore `covers/default` tree (2.3 MB JSON), the TheGamesDB spec (66 KB), four libretro box arts. No archive was downloaded whole, no credentials were used. Local data: the table of contents of `OPLM_ART_2024_09` (`D:\yaoplm-testdata\oplm-art\OPLM_ART_2024_09.tsv`, from `scripts/oplm-backup-toc.py`), the source file lists (`D:\yaoplm-testdata\art-lists\`, from `scripts/art-source-lists.py`) and the reference clones (REFERENCES.md).
+Method: about 75 small HTTP requests with UA `YAOPLM-research/0.1 (+https://github.com/belomaxorka/yaoplm)` and a 1 s gap. Largest downloads: four libretro directory indexes (about 2 MB each), the xlenore `covers/default` tree (2.3 MB JSON), the TheGamesDB spec (66 KB), four libretro box arts. No archive was downloaded whole, no credentials were used. Local data: the table of contents of `OPLM_ART_2024_09` (`$YAOPLM_TESTDATA\oplm-art\OPLM_ART_2024_09.tsv`, from `scripts/oplm-backup-toc.py`), the source file lists (`$YAOPLM_TESTDATA\art-lists\`, from `scripts/art-source-lists.py`) and the reference clones (REFERENCES.md).
 
 ## 1. Result
 
@@ -144,8 +144,8 @@ EU `SCES-50003` ("Dead or Alive 2 (Europe) (En,Fr,De,Es,It)"; PCSX2 wrongly titl
 
 ## 6. Measuring coverage
 
-- `scripts/art-source-lists.py <dir>` writes the file lists of xlenore (one GitHub API request for the tree) and libretro (four directory indexes); `scripts/oplm-backup-toc.py` the table of contents of the backup. They go to `D:\yaoplm-testdata\art-lists\` and `oplm-art\`, never into the repository.
-- `YAOPLM_TESTDATA=D:\yaoplm-testdata cargo test -p yaoplm-api --test art_coverage -- --ignored --nocapture` prints the table of §1 with the source that answered first per type. It uses `sources::order`, `sources::candidates` (libretro names and their region filter), `oplm::Index::pictures` with the cross-region flag and `titles::Database::same_title`, as `ArtService::fetch_cover` does; only the files' existence is looked up in the lists instead of asked for.
+- `scripts/art-source-lists.py <dir>` writes the file lists of xlenore (one GitHub API request for the tree) and libretro (four directory indexes); `scripts/oplm-backup-toc.py` the table of contents of the backup. They go to `$YAOPLM_TESTDATA\art-lists\` and `oplm-art\`, never into the repository.
+- With `YAOPLM_TESTDATA` set, `cargo test -p yaoplm-api --test art_coverage -- --ignored --nocapture` prints the table of §1 with the source that answered first per type. It uses `sources::order`, `sources::candidates` (libretro names and their region filter), `oplm::Index::pictures` with the cross-region flag and `titles::Database::same_title`, as `ArtService::fetch_cover` does; only the files' existence is looked up in the lists instead of asked for.
 
 ## 7. Open
 
