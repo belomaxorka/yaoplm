@@ -130,12 +130,15 @@ describe("simple mode (UI-4)", () => {
     expect(defaultSettings.checkOnAdd).toBe(false);
     // No keyboard card (owner, 2026-10-26): the keys are the usual ones.
     expect(screen.queryByText("Keyboard")).toBeNull();
+    // Dump checks are an advanced tool (ADR-0034): no Redump card in simple mode.
+    expect(screen.queryByText("Dump checks (Redump)")).toBeNull();
     // Cards explain nothing under their titles (release pass 2.2).
     expect(screen.queryByText(/The loader profile is read from each device/)).toBeNull();
     expect(screen.queryByText(/Where OPL builds for installing come from/)).toBeNull();
 
     await userEvent.click(switches[0]!);
     expect(screen.queryByText("Keyboard")).toBeNull();
+    expect(screen.getByText("Dump checks (Redump)")).toBeInTheDocument();
     expect(screen.getByTestId("art-source-xlenore")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Jobs" })).toBeInTheDocument();
   });

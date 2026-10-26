@@ -148,7 +148,7 @@ export function InstallLoaderDialog({
 }) {
   const { t, i18n } = useTranslation();
   const { transport } = useApi();
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const simple = useSimpleMode();
   const queryClient = useQueryClient();
   const ids = useId();
@@ -266,6 +266,12 @@ export function InstallLoaderDialog({
       void queryClient.invalidateQueries({ queryKey: ["devices"] });
       void queryClient.invalidateQueries({ queryKey: ["library", device.root] });
       void queryClient.invalidateQueries({ queryKey: ["loaderRelease"] });
+      // The loader on the device decides the rules now (SPEC §5.11.2): an
+      // answer to the version question given before would contradict it.
+      if (device.loader.key in settings.profileOverrides) {
+        const { [device.loader.key]: _old, ...others } = settings.profileOverrides;
+        update({ profileOverrides: others });
+      }
       const problem = writeProblem(info, t);
       if (problem) {
         setError(problem);

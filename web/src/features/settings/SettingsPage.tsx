@@ -213,14 +213,16 @@ export function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.dumps")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <RedumpPanel compact={simple} />
-          </CardContent>
-        </Card>
+        {!simple && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("settings.dumps")}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <RedumpPanel compact={false} />
+            </CardContent>
+          </Card>
+        )}
 
 
 

@@ -365,3 +365,20 @@ describe("Reinstall loader", () => {
     expect(core.of("PlanInstallLoader")[0]).toMatchObject({ build: "opl-beta", presets: ["fmcb"] });
   });
 });
+
+describe("an answer to the version question", () => {
+  // The installed build decides the rules now (SPEC §5.11.2); an answer
+  // given before the install would contradict it (release pass 1.6).
+  it("is dropped once a loader is installed", async () => {
+    const info = device();
+    storeSettings({ profileOverrides: { [info.loader.key]: "Opl110" } });
+    const core = fakeCore();
+    show(core, info);
+    await screen.findByTestId("loader-offer");
+    await userEvent.click(screen.getByTestId("loader-install-start"));
+    await userEvent.click(await screen.findByTestId("plan-confirm"));
+    await screen.findByTestId("loader-boot-hints");
+    const settings = JSON.parse(window.localStorage.getItem("yaoplm.settings") ?? "{}") as { profileOverrides?: Record<string, string> };
+    expect(settings.profileOverrides?.[info.loader.key]).toBeUndefined();
+  });
+});
