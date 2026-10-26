@@ -158,7 +158,7 @@ export function Reason({ text, testId }: { text: string; testId: string }) {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" className="inline-flex align-middle text-muted-foreground" aria-label={t("devices.why")}>
+            <button type="button" className="-my-1 inline-flex size-6 items-center justify-center rounded-sm align-middle text-muted-foreground" aria-label={t("devices.why")}>
               <Info className="size-3.5" aria-hidden />
             </button>
           </TooltipTrigger>
