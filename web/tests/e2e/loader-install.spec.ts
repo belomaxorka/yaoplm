@@ -127,3 +127,26 @@ for (const language of ["en", "ru"] as const) {
     });
   }
 }
+
+// OPL 1.1.0 reads no exFAT: the wizard shows it disabled with the reason,
+// as replacing does (LDR-6). On main it was offered and planned.
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`OPL 1.1.0 is not offered on an exFAT stick, ${language} ${theme}`, async ({ page, request }) => {
+      await emptyStick(request);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await openLibrary(page, request, { language, theme });
+      await stickAsUsb(page, { fileSystem: "exFAT" });
+      await page.goto("/devices");
+      await stickCard(page).getByTestId("device-install-loader").click();
+      const dialog = page.getByTestId("loader-install-dialog");
+      const stable = dialog.getByTestId("loader-build-opl-stable");
+      await expect(stable).toBeDisabled();
+      await expect(dialog.getByTestId("loader-build-opl-beta")).toHaveAttribute("data-state", "checked");
+      await expect(dialog).toContainText(language === "en" ? "OPL 1.1.0 cannot read exFAT" : "OPL 1.1.0 не читает exFAT");
+      await stable.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `test-results/screenshots/loader-install-exfat-${language}-${theme}-1280.png` });
+    });
+  }
+}
