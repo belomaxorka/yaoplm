@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRightLeft, ImageDown, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ImageDown, MoreHorizontal, Pencil, Replace, ShieldCheck, Trash2 } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
@@ -11,6 +11,7 @@ import { NoticeList } from "@/components/Notices";
 import { PageScroll } from "@/components/PageScroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -148,32 +149,37 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                 <Pencil aria-hidden />
                 {t("game.rename")}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  afterPlan.current = cardOf(game.startup);
-                  void flow.request({ type: "MoveGame", root, game: gameRef(game), media: otherMedia });
-                }}
-              >
-                <ArrowRightLeft aria-hidden />
-                {t("game.moveTo", { media: otherMedia })}
-              </Button>
-              {!simple && (
-                <>
-                  <Button variant="outline" onClick={() => setConvertOpen(true)} data-testid="game-convert">
-                    <Replace aria-hidden />
-                    {t("game.convert")}
-                  </Button>
-                  <Button variant="outline" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
-                    <ShieldCheck aria-hidden />
-                    {t("game.verify")}
-                  </Button>
-                </>
-              )}
               <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
                 <Trash2 aria-hidden />
                 {t("game.delete")}
               </Button>
+              {/* The rest waits in a menu (owner, 2026-10-26): the card's own
+                  actions are renaming and deleting. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label={t("game.moreActions")} data-testid="game-more">
+                    <MoreHorizontal aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-max">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      afterPlan.current = cardOf(game.startup);
+                      void flow.request({ type: "MoveGame", root, game: gameRef(game), media: otherMedia });
+                    }}
+                    data-testid="game-move"
+                  >
+                    <ArrowRightLeft aria-hidden />
+                    {t("game.moveTo", { media: otherMedia })}
+                  </DropdownMenuItem>
+                  {!simple && (
+                    <DropdownMenuItem onSelect={() => setConvertOpen(true)} data-testid="game-convert">
+                      <Replace aria-hidden />
+                      {t("game.convert")}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             {game.warnings.length > 0 && (
               <section className="rounded-lg border bg-card p-3" data-testid="game-warnings">
@@ -214,16 +220,25 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
               )}
               {(!simple || game.dump) && (
                 <Fact label={t("game.dump")}>
-                  {game.dump ? (
-                    <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                      <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
-                      {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground" data-testid="game-dump">
-                      {t("game.dumpUnchecked")}
-                    </span>
-                  )}
+                  {/* "Check dump" sits by the verdict it changes (owner, 2026-10-26). */}
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {game.dump ? (
+                      <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
+                        <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
+                        {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground" data-testid="game-dump">
+                        {t("game.dumpUnchecked")}
+                      </span>
+                    )}
+                    {!simple && (
+                      <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
+                        <ShieldCheck aria-hidden />
+                        {t("game.verify")}
+                      </Button>
+                    )}
+                  </span>
                 </Fact>
               )}
               {!simple && (
@@ -231,9 +246,6 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                   <Fact label={t("game.path")} mono>
                     {game.path}
                   </Fact>
-                  {game.nameFormat !== null && (
-                    <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
-                  )}
                   {game.layer1Start !== null && (
                     <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
                   )}

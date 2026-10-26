@@ -64,6 +64,7 @@ test("the game card shows the verdict and checks one game from the cache", async
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Split Game/ }).click();
   await expect(page.getByTestId("game-dump").getByTestId("dump-badge")).toHaveAttribute("data-status", "badDump");
+  // By the "Dump" fact in the details (owner, 2026-10-26).
   await page.getByTestId("game-verify").click();
   const dialog = page.getByTestId("verify-dialog");
   await dialog.getByTestId("verify-start").click();
@@ -78,6 +79,7 @@ test("the game card shows the verdict and checks one game from the cache", async
 async function convert(page: Page, title: RegExp, target: "iso" | "zso", step: string) {
   await page.goto("/library");
   await page.getByRole("listitem", { name: title }).click();
+  await page.getByTestId("game-more").click();
   await page.getByTestId("game-convert").click();
   const dialog = page.getByTestId("convert-dialog");
   await dialog.getByTestId(`convert-target-${target}`).click();
@@ -121,9 +123,12 @@ test("the add page offers ZSO and the bulk dialog counts the games", async ({ pa
 test("games are added with their covers and checked as they are written", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library/add");
-  // Both are on by default (ART-8, GAME-5).
+  // Pictures are on by default (ART-8).
   await expect(page.getByTestId("covers-on-add")).toBeChecked();
-  await expect(page.getByTestId("check-on-add")).toBeChecked();
+  // Off by default (owner, 2026-10-26): checking reads nothing extra, but
+  // a beginner needs no verdicts; it is turned on here.
+  await expect(page.getByTestId("check-on-add")).not.toBeChecked();
+  await page.getByTestId("check-on-add").check();
   await page.getByTestId("browse-server").click();
   const browser = page.getByTestId("folder-browser");
   await browser.getByRole("button", { name: "sources" }).click();
@@ -199,6 +204,7 @@ for (const language of ["en", "ru"] as const) {
       await page.getByRole("listitem", { name: /Retail Game/ }).click();
       await expect(page.getByTestId("game-dump")).toBeVisible();
       await shot("game-dump");
+      await page.getByTestId("game-more").click();
       await page.getByTestId("game-convert").click();
       await expect(page.getByTestId("convert-dialog")).toBeVisible();
       await page.waitForTimeout(400);

@@ -96,7 +96,8 @@ export const defaultSettings: Settings = {
   root: null,
   view: "grid",
   verify: true,
-  checkOnAdd: true,
+  // Off by default (owner, 2026-10-26): a beginner needs no verdicts.
+  checkOnAdd: false,
   coversOnAdd: true,
   titlesFromDb: true,
   artSources: {

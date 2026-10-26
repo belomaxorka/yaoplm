@@ -278,6 +278,7 @@
     "notFoundDescription": "It may have been renamed or deleted. Rescan the library.",
     "backToLibrary": "Back to the library",
     "actions": "Actions",
+    "moreActions": "More actions",
     "rename": "Rename",
     "moveTo": "Move to {{media}}",
     "delete": "Delete",
@@ -285,11 +286,6 @@
     "details": "Details",
     "imageId": "ID in the image",
     "path": "Path",
-    "nameFormat": "File name",
-    "nameFormats": {
-      "old": "ID.Title: OPL takes the ID from the name",
-      "new": "Title only: OPL reads SYSTEM.CNF"
-    },
     "layers": "Layers",
     "dualLayer": "Dual layer (DVD-9); the second layer starts at sector {{sector}}",
     "fragments": "Pieces on the device",
@@ -908,14 +904,6 @@
       "light": "Light",
       "dark": "Dark",
       "system": "System"
-    },
-    "keyboard": "Keyboard",
-    "keys": {
-      "tab": "Move between controls",
-      "search": "Search the library",
-      "arrows": "Move between games",
-      "enter": "Open the selected game",
-      "escape": "Close a dialog"
     },
     "about": "About",
     "aboutDescription": "Versions, licences and the sources this app is built on.",

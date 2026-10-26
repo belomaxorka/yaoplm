@@ -1,6 +1,6 @@
 import "@/i18n";
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -8,6 +8,7 @@ import type { Game } from "@/api/generated/Game";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
+import { defaultSettings } from "@/settings/settings";
 import { MockTransport, RpcError } from "@/api/transport";
 import { App } from "@/App";
 import i18n from "@/i18n";
@@ -113,8 +114,13 @@ describe("simple mode (UI-4)", () => {
     expect(screen.queryByTestId("art-source-xlenore")).not.toBeInTheDocument();
     expect(screen.queryByText("Check IDs inside images while scanning")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Jobs" })).not.toBeInTheDocument();
+    // Dump checks on add are off by default (owner, 2026-10-26).
+    expect(defaultSettings.checkOnAdd).toBe(false);
+    // No keyboard card (owner, 2026-10-26): the keys are the usual ones.
+    expect(screen.queryByText("Keyboard")).toBeNull();
 
     await userEvent.click(switches[0]!);
+    expect(screen.queryByText("Keyboard")).toBeNull();
     expect(screen.getByTestId("art-source-xlenore")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Jobs" })).toBeInTheDocument();
   });
@@ -151,8 +157,21 @@ describe("simple mode (UI-4)", () => {
       await screen.findByTestId("game-title");
       const actions = screen.getByRole("group", { name: "Actions" });
       expect(within(actions).getByRole("button", { name: "Rename" })).toBeInTheDocument();
-      expect(within(actions).getByRole("button", { name: "Move to DVD" })).toBeInTheDocument();
       expect(within(actions).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+      // Moving, converting and checking wait in a menu in both modes (owner,
+      // 2026-10-26): the card's own actions are renaming and deleting.
+      expect(within(actions).queryByRole("button", { name: "Move to DVD" })).toBeNull();
+      await userEvent.click(within(actions).getByTestId("game-more"));
+      expect(await screen.findByTestId("game-move")).toHaveTextContent("Move to DVD");
+      // Converting is an advanced tool (ADR-0034); checking the dump sits by
+      // the "Dump" fact, not in the menu (owner, 2026-10-26).
+      expect(within(screen.getByRole("menu")).queryByTestId("game-verify")).not.toBeInTheDocument();
+      if (simple) expect(screen.queryByTestId("game-convert")).not.toBeInTheDocument();
+      else expect(screen.getByTestId("game-convert")).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByTestId("game-move")).not.toBeInTheDocument());
+      if (simple) expect(screen.queryByTestId("game-verify")).not.toBeInTheDocument();
+      else expect(within(screen.getByTestId("game-dump").parentElement!).getByTestId("game-verify")).toHaveTextContent("Check dump");
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
       expect(screen.getByTestId("game-warnings")).toBeInTheDocument();
       // Game settings (ADR-0036): the modes and slot 1 in both modes.
@@ -161,8 +180,6 @@ describe("simple mode (UI-4)", () => {
       expect(screen.getByRole("checkbox", { name: /Mode 6/ })).toBeInTheDocument();
       expect(screen.queryByRole("checkbox", { name: /Mode 7/ })).not.toBeInTheDocument();
       const advanced = [
-        screen.queryByTestId("game-convert"),
-        screen.queryByTestId("game-verify"),
         screen.queryByText(game.path),
         screen.queryByTestId("game-fragments"),
         screen.queryByTestId("cfg-vmc-1"),
