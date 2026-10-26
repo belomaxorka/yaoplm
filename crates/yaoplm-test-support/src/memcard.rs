@@ -59,7 +59,10 @@ fn entry_in(
 pub fn card(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut folders: Vec<Folder> = Vec::new();
     for (path, bytes) in files {
-        let (folder, name) = path.split_once('/').expect("FOLDER/file");
+        // A save folder holds every file; a path without one is skipped.
+        let Some((folder, name)) = path.split_once('/') else {
+            continue;
+        };
         match folders.iter_mut().find(|f| f.name == folder) {
             Some(f) => f.files.push((name, bytes)),
             None => folders.push(Folder {
