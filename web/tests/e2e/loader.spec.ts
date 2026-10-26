@@ -84,7 +84,7 @@ test("there is no global profile: an old saved one is ignored (ADR-0040)", async
   });
   await openLibrary(page, request, { language: "ru" });
   await page.goto("/settings");
-  await expect(page.getByText("Профиль загрузчика определяется по файлам каждого носителя")).toBeVisible();
+  await expect(page.getByText("Имена файлов")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Профиль загрузчика" })).toHaveCount(0);
   await page.goto("/library");
   // Still read from the device: no signs there, so it is asked.
