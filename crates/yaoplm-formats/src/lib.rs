@@ -24,6 +24,7 @@ pub mod iso_name;
 pub mod media;
 pub mod profile;
 pub mod ps2_elf;
+pub mod ps2mc;
 pub mod sd2psx_ini;
 pub mod serial;
 pub mod system_cnf;
