@@ -256,6 +256,24 @@ describe("InstallLoaderDialog", () => {
     expect(within(planDialog).getByTestId("loader-replace-foreign").getAttribute("data-state")).toBe("checked");
   });
 
+  it("shows OPL 1.1.0 unavailable on exFAT with the reason, as replacing does", async () => {
+    const user = userEvent.setup();
+    const exfat = device({ fileSystem: "exFAT", fsName: "exFAT" });
+    // "Reinstall…" of a 1.1.0 found there starts on a build that can work.
+    render(
+      <Providers transport={fakeCore().transport}>
+        <InstallLoaderDialog device={exfat} open onOpenChange={() => {}} initial={{ build: "opl-stable", preset: "fmcb" }} />
+      </Providers>,
+    );
+    const dialog = await screen.findByTestId("loader-install-dialog");
+    const stable = await within(dialog).findByTestId("loader-build-opl-stable");
+    expect(stable).toBeDisabled();
+    expect(within(dialog).getByText(/OPL 1\.1\.0 cannot read exFAT/)).toBeTruthy();
+    expect(within(dialog).getByTestId("loader-build-opl-beta").getAttribute("data-state")).toBe("checked");
+    await user.click(stable);
+    expect(within(dialog).getByTestId("loader-build-opl-beta").getAttribute("data-state")).toBe("checked");
+  });
+
   it("with OPL on the memory card, creates only the folders", async () => {
     const user = userEvent.setup();
     const core = fakeCore();

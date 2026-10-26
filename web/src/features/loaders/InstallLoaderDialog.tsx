@@ -189,10 +189,15 @@ export function InstallLoaderDialog({
   const builds = (catalog.data?.builds ?? []).filter((b) => b.devices.includes(target) && b.presets.length > 0);
   // Replacing starts on another build, the recommended one when it is.
   const other = (b: LoaderBuild) => !replace || b.id !== replace.build;
+  // 1.1.0 reads no exFAT: shown with the reason, never chosen; the plan and
+  // replacing refuse it too (`loaderExfatOpl110`, `replaceExfatOpl110`).
+  const unavailable = (b: LoaderBuild) => b.profile === "Opl110" && device.fileSystem === "exFAT";
+  const usable = (b: LoaderBuild) => !unavailable(b);
   const build =
-    builds.find((b) => b.id === form.build) ??
-    builds.find((b) => b.recommended && other(b)) ??
-    builds.find(other) ??
+    builds.find((b) => b.id === form.build && usable(b)) ??
+    builds.find((b) => b.recommended && other(b) && usable(b)) ??
+    builds.find((b) => other(b) && usable(b)) ??
+    builds.find(usable) ??
     builds[0];
   // A replacement keeps the loader's place: a path of its own needs "custom".
   const methods = methodsFor(build, target, !simple || (replace !== undefined && replace.preset === null)).filter(
@@ -474,11 +479,12 @@ export function InstallLoaderDialog({
                         <Label
                           key={b.id}
                           htmlFor={`${ids}-build-${b.id}`}
-                          className="items-start rounded-md border p-3 font-normal has-[[data-state=checked]]:border-primary"
+                          className="items-start rounded-md border p-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-disabled]]:cursor-not-allowed"
                         >
                           <RadioGroupItem
                             id={`${ids}-build-${b.id}`}
                             value={b.id}
+                            disabled={unavailable(b)}
                             className="mt-0.5"
                             data-testid={`loader-build-${b.id}`}
                           />
@@ -496,10 +502,14 @@ export function InstallLoaderDialog({
                             <span className="block text-xs text-muted-foreground">
                               {b.summary[uiLanguage] ?? b.summary.en}
                             </span>
-                            {(b.limits[uiLanguage] ?? b.limits.en) && (
-                              <span className="mt-0.5 block text-xs text-muted-foreground/80">
-                                {t("loaderInstall.limits", { text: b.limits[uiLanguage] ?? b.limits.en ?? "" })}
-                              </span>
+                            {unavailable(b) ? (
+                              <span className="mt-0.5 block text-xs text-destructive">{t("notices.loaderExfatOpl110")}</span>
+                            ) : (
+                              (b.limits[uiLanguage] ?? b.limits.en) && (
+                                <span className="mt-0.5 block text-xs text-muted-foreground/80">
+                                  {t("loaderInstall.limits", { text: b.limits[uiLanguage] ?? b.limits.en ?? "" })}
+                                </span>
+                              )
                             )}
                           </span>
                         </Label>

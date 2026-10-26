@@ -86,18 +86,26 @@ const isStick = (root: unknown) => typeof root === "string" && /[\\/]stick$/.tes
 /**
  * The stick is a temp folder on this machine's system disk, where no loader
  * may go (§5.10.1); the device list shows it as the FAT32 USB stick it
- * stands for. The plan and everything after it are the server's own.
+ * stands for (FAT32 unless told otherwise). The plan and everything after
+ * it are the server's own.
  */
-export async function stickAsUsb(page: Page): Promise<void> {
+export async function stickAsUsb(page: Page, { fileSystem = "FAT32" }: { fileSystem?: "FAT32" | "exFAT" } = {}): Promise<void> {
   await page.route("**/api/rpc", async (route) => {
     const body = route.request().postDataJSON() as { type?: string } | null;
     if (body?.type !== "ListDevices") return route.fallback();
-    const response = await route.fetch();
+    let response;
+    try {
+      response = await route.fetch();
+    } catch {
+      // The device list refreshes on a timer: a refresh in flight when the
+      // test ends throws "Test ended" (seen in loader-update.spec.ts).
+      return;
+    }
     const json = (await response.json()) as { devices: Record<string, unknown>[] };
     for (const device of json.devices.filter((d) => isStick(d.root))) {
       Object.assign(device, {
-        fileSystem: "FAT32",
-        fsName: "FAT32",
+        fileSystem,
+        fsName: fileSystem,
         kind: "removable",
         bus: "usb",
         external: true,
