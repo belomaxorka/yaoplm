@@ -98,7 +98,7 @@ export function DeviceLines({
               <ChevronDown aria-hidden />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-max">
+          <DropdownMenuContent align="start">
             <DropdownMenuLabel>{t("devices.modeForThisDevice")}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={chosenMode} onValueChange={chooseMode}>
               <DropdownMenuRadioItem value="auto" data-testid="device-mode-auto">

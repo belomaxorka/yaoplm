@@ -258,7 +258,7 @@ function LibraryView({
                     <ChevronDown aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-max">
+                <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => setImportOpen(true)} data-testid="import-pictures">
                     <FolderInput aria-hidden />
                     {t("library.importPictures")}

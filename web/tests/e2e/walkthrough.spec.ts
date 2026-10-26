@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
-import { openLibrary } from "./helpers";
+import { menuItemProblems, openLibrary } from "./helpers";
 
 // The UI at every window size (UI-5, docs/plans/m5-ui-simple-mode.md).
 
@@ -81,6 +81,10 @@ const sizes = [
  * window. Returns one line per problem.
  */
 async function layoutProblems(page: Page): Promise<string[]> {
+  return [...(await boxProblems(page)), ...(await menuItemProblems(page))];
+}
+
+async function boxProblems(page: Page): Promise<string[]> {
   // Animations (dialogs zooming in) settle first.
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   return page.evaluate(() => {

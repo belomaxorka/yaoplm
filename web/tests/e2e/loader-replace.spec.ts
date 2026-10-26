@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
-import { emptyStick, job, joinPath, openLibrary, roots, rpc, stickAsUsb, stickCard } from "./helpers";
+import { emptyStick, job, joinPath, menuItemProblems, openLibrary, roots, rpc, stickAsUsb, stickCard } from "./helpers";
 
 // Replacing the loader (LDR-6, LDR-7, ADR-0046) on the fixture's stick:
 // "What changes for the games" for both directions between OPL 1.1.0 and
@@ -48,6 +48,9 @@ async function openReplace(page: Page) {
   await page.goto("/devices");
   // Replacing waits in the card's menu: "Open library" is its one main button.
   await stickCard(page).getByTestId("device-more").click();
+  // The menu is as wide as its longest item: nothing wraps or is cut (UI-5).
+  await expect(page.getByRole("menu")).toBeVisible();
+  expect(await menuItemProblems(page)).toEqual([]);
   await page.getByTestId("device-replace-loader").click();
   return page.getByTestId("loader-install-dialog");
 }
