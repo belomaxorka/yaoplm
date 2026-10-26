@@ -32,7 +32,19 @@ const game: Game = {
   cfg: { path: "CFG/SLUS_200.62.cfg", oplSyntax: true, compatibility: 0, vmc: [null, null] },
   art: [],
   cheats: null,
-  warnings: [{ code: "test", message: "A warning" }],
+  warnings: [
+    { code: "test", message: "A warning" },
+    {
+      code: "vmcInvalid",
+      message: "VMC slot 1: VMC/SLUS_200.62_0.bin is unusable: not a PS2 memory card image",
+      phrase: { key: "notices.vmcInvalid", params: { slot: 1, name: "SLUS_200.62_0", reason: { key: "reasons.vmcBadMagic", params: {} } } },
+    },
+    {
+      code: "vmcMissing",
+      message: "VMC slot 2: VMC/SLUS_200.62_1.bin does not exist",
+      phrase: { key: "notices.vmcMissing", params: { slot: 2, name: "SLUS_200.62_1" } },
+    },
+  ],
   knownTitle: null,
   dump: null,
   fragments: { kind: "known", total: 1, files: [1], limit: 64 },
@@ -181,7 +193,13 @@ describe("simple mode (UI-4)", () => {
       if (simple) expect(screen.queryByTestId("game-verify")).not.toBeInTheDocument();
       else expect(within(screen.getByTestId("game-dump").parentElement!).getByTestId("game-verify")).toHaveTextContent("Check dump");
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
-      expect(screen.getByTestId("game-warnings")).toBeInTheDocument();
+      // A VMC warning belongs to its slot (release pass 1.10): the list
+      // repeats only what no slot on screen shows (slot 2 in simple mode).
+      const warnings = screen.getByTestId("game-warnings");
+      expect(warnings).toHaveTextContent("A warning");
+      expect(warnings).not.toHaveTextContent("VMC slot 1");
+      if (simple) expect(warnings).toHaveTextContent("VMC slot 2");
+      else expect(warnings).not.toHaveTextContent("VMC slot 2");
       // Game settings (ADR-0036): the modes and slot 1 in both modes.
       expect(await screen.findByTestId("cfg-modes")).toBeInTheDocument();
       expect(screen.getByTestId("cfg-vmc-0")).toBeInTheDocument();

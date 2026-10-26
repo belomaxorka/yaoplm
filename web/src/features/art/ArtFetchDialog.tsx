@@ -204,7 +204,7 @@ function FetchBody({
         <div className="flex flex-col gap-4">
           <fieldset data-testid="art-kinds">
             <legend className="mb-2 text-sm font-medium">{t("art.kindsLegend")}</legend>
-            <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               {artTypes
                 .filter((kind) => fetchable.types.has(kind))
                 .map((kind) => (

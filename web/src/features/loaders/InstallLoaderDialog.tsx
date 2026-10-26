@@ -397,7 +397,7 @@ export function InstallLoaderDialog({
                   : t("loaderInstall.description", { root: device.root })}
             </DialogDescription>
           </DialogHeader>
-          <div className="relative min-h-0 flex-1 overflow-auto pr-1">
+          <div className="relative min-h-0 flex-1 overflow-auto pr-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50" tabIndex={0}>
             {done ? (
               <BootHints hints={done.hints} card={done.card} target={planned === "card" ? target : (planned?.device ?? target)} build={build} />
             ) : (

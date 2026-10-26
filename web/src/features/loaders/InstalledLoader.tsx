@@ -118,7 +118,8 @@ export function InstalledLoaderRow({
               {t("loaderUpdate.check")}
             </Button>
           )}
-          {backup && (
+          {/* After a rollback the backup is the build on offer: "Update to …" says it once. */}
+          {backup && backup.version !== loader.latest && (
             <Button
               size="sm"
               variant="ghost"
