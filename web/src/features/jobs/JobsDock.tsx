@@ -15,11 +15,15 @@ import { useSimpleMode } from "@/settings/context";
 export function JobsDock() {
   const { t } = useTranslation();
   const { cancel } = useJobs();
-  const active = useJobs().active.filter(isUserJob);
+  // Writes run one at a time, oldest first: what runs leads, then the queue
+  // in the order it will run. Every one stays in reach (the list scrolls):
+  // in simple mode this is the only place to stop one.
+  const active = useJobs()
+    .active.filter(isUserJob)
+    .sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || a.id - b.id);
   const { pathname } = useLocation();
   const simple = useSimpleMode();
   if (active.length === 0 || pathname === "/jobs") return null;
-  const shown = active.slice(0, 3);
   return (
     <aside
       className="fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
@@ -38,8 +42,8 @@ export function JobsDock() {
           </Button>
         )}
       </div>
-      <ul className="flex flex-col gap-3">
-        {shown.map((job) => (
+      <ul className="relative flex max-h-60 flex-col gap-3 overflow-y-auto" data-testid="jobs-dock-list">
+        {active.map((job) => (
           <li key={job.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">
               <JobStatusIcon job={job} />

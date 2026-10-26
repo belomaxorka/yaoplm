@@ -1,7 +1,7 @@
 import "@/i18n";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -26,11 +26,43 @@ const systemRoot = {
   message: "The whole system disk is open: for sharing over the network, a separate folder such as C:\\PS2 is better",
 } as const;
 
-/** A core that records the plans asked for. */
-function core() {
+/**
+ * A core that records the plans asked for. Its writes finish; with
+ * `failWrite` a transaction fails, which still ends the job as finished,
+ * with the error in its report.
+ */
+function core({ failWrite = false }: { failWrite?: boolean } = {}) {
   const planned: Extract<Request, { type: "PlanInit" }>[] = [];
+  const polled: number[] = [];
   const transport = new MockTransport((request: Request): Response => {
     switch (request.type) {
+      case "ExecutePlan":
+        return { type: "Job", job: 1 };
+      case "GetJob":
+        polled.push(request.job);
+        return {
+          type: "JobState",
+          id: 1,
+          kind: "executePlan",
+          title: "Create folder Games",
+          root: "C:\\",
+          status: "finished",
+          done: 0,
+          total: null,
+          rate: null,
+          item: null,
+          error: null,
+          log: [],
+          result: {
+            type: "Execution",
+            outcomes: [failWrite ? "rolledBack" : "done"],
+            cancelled: false,
+            error: failWrite ? "Could not create C:\\PS2: access denied" : null,
+            journal: null,
+            checks: [],
+            notices: [],
+          },
+        };
       case "ListJobs":
         return { type: "Jobs", jobs: [] };
       case "PlanInit": {
@@ -57,7 +89,7 @@ function core() {
         throw new RpcError({ code: "NotFound", message: `${request.type} is not faked` });
     }
   });
-  return { transport, planned };
+  return { transport, planned, polled };
 }
 
 function show(ui: React.ReactNode, transport = core().transport) {
@@ -164,6 +196,24 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
     await screen.findByTestId("plan-dialog");
     expect(fake.planned).toEqual([{ type: "PlanInit", root: "C:\\", folder: "Games" }]);
   });
+
+  for (const failWrite of [false, true]) {
+    it(failWrite ? "a folder whose write failed is not opened" : "the new folder opens once written", async () => {
+      const fake = core({ failWrite });
+      show(<SmbFolderHint device={emptyFolder({ root: "C:\\", system: true, advice: [systemRoot] })} />, fake.transport);
+      await userEvent.click(screen.getByTestId("smb-create-folder-button"));
+      await userEvent.click(screen.getByTestId("smb-folder-submit"));
+      await userEvent.click(within(await screen.findByTestId("plan-dialog")).getByTestId("plan-confirm"));
+      await waitFor(() => expect(fake.polled.length).toBeGreaterThan(0));
+      if (failWrite) {
+        // Rolled back: nothing to open, and the toast says why.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(readSettings().root).not.toBe("C:\\PS2");
+      } else {
+        await waitFor(() => expect(readSettings().root).toBe("C:\\PS2"));
+      }
+    });
+  }
 
   it("a server's roots are its administrator's: only the warning", () => {
     const fake = core();

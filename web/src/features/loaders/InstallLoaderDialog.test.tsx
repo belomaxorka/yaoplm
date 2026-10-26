@@ -34,7 +34,18 @@ const fmcbHint: LoaderBootHint = {
 };
 
 /** The core as the dialog sees it; `plans` answers each PlanInstallLoader in turn. */
-function fakeCore({ languages = false, plans = [plan()] }: { languages?: boolean; plans?: Response[] } = {}) {
+/**
+ * How the write ends: done, failed in a transaction (the job still
+ * finishes, with the error in its report), or held running until a
+ * CancelJob comes.
+ */
+type Write = "done" | "failed" | "held";
+
+function fakeCore({
+  languages = false,
+  plans = [plan()],
+  write = "done",
+}: { languages?: boolean; plans?: Response[]; write?: Write } = {}) {
   const requests: Request[] = [];
   const jobs = new Map<number, JobInfo>();
   let planned = 0;
@@ -79,8 +90,31 @@ function fakeCore({ languages = false, plans = [plan()] }: { languages?: boolean
         return plans[Math.min(planned++, plans.length - 1)] ?? plan();
       case "PlanInit":
         return plan([], "initLibrary");
-      case "ExecutePlan":
-        return start("executePlan", null);
+      case "ExecutePlan": {
+        const started = start("executePlan", null) as Extract<Response, { type: "Job" }>;
+        const job = jobs.get(started.job);
+        if (job && write === "failed") {
+          job.result = {
+            type: "Execution",
+            outcomes: ["rolledBack"],
+            cancelled: false,
+            error: "Could not write UPDT/OPL.ELF: device removed",
+            journal: null,
+            checks: [],
+            notices: [],
+          };
+        }
+        if (job && write === "held") job.status = "running";
+        return started;
+      }
+      case "CancelJob": {
+        const job = jobs.get(request.job);
+        if (job) {
+          job.status = "cancelled";
+          job.result = { type: "Execution", outcomes: ["rolledBack"], cancelled: true, error: null, journal: null, checks: [], notices: [] };
+        }
+        return { type: "Ack" };
+      }
       case "GetJob": {
         const info = jobs.get(request.job);
         if (!info) throw new RpcError({ code: "NotFound", message: `no job ${request.job}` });
@@ -149,6 +183,38 @@ describe("InstallLoaderDialog", () => {
     expect(within(hints).getByText(/stock config starts mass:\/UPDT\/OPL\.ELF/)).toBeTruthy();
     expect(within(hints).getByText(/USB device start mode to Auto/)).toBeTruthy();
     expect(core.of("LoaderBootHints")[0]).toMatchObject({ build: "opl-beta", presets: ["fmcb"], device: "usb" });
+  });
+
+  it("says a write that failed did not install, rather than how to start it", async () => {
+    const user = userEvent.setup();
+    const core = fakeCore({ write: "failed" });
+    show(core);
+    const dialog = await screen.findByTestId("loader-install-dialog");
+    await within(dialog).findByText("v1.2.0-Beta-2271-b3a2199");
+    await user.click(within(dialog).getByTestId("loader-install-start"));
+    await user.click(within(await screen.findByTestId("plan-dialog")).getByTestId("plan-confirm"));
+    // The wizard comes back once the plan dialog is gone.
+    const after = await screen.findByTestId("loader-install-dialog");
+    expect(await within(after).findByRole("alert")).toHaveTextContent("Could not write UPDT/OPL.ELF: device removed");
+    expect(screen.queryByTestId("loader-boot-hints")).toBeNull();
+  });
+
+  it("lets the write it waits for be cancelled from the wizard", async () => {
+    const user = userEvent.setup();
+    const core = fakeCore({ write: "held" });
+    show(core);
+    const dialog = await screen.findByTestId("loader-install-dialog");
+    await within(dialog).findByText("v1.2.0-Beta-2271-b3a2199");
+    await user.click(within(dialog).getByTestId("loader-install-start"));
+    await user.click(within(await screen.findByTestId("plan-dialog")).getByTestId("plan-confirm"));
+    // The wizard covers the jobs dock: its own Cancel stops the write.
+    const after = await screen.findByTestId("loader-install-dialog");
+    const stop = await within(after).findByTestId("loader-install-cancel-write");
+    expect((stop as HTMLButtonElement).disabled).toBe(false);
+    await user.click(stop);
+    await waitFor(() => expect(core.of("CancelJob")).toHaveLength(1));
+    expect(await within(after).findByRole("alert")).toHaveTextContent("Cancelled: the loader stays as it was");
+    expect(screen.queryByTestId("loader-boot-hints")).toBeNull();
   });
 
   it("starts on MX4SIO for an SD card, and “I don’t know” takes both stock paths on USB", async () => {

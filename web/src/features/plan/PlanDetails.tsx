@@ -181,11 +181,13 @@ export function PlanDetails({
   const { t } = useTranslation();
   const simple = useSimpleMode();
   const blockers = plan.notices.filter((n) => n.level === "error");
-  // Simple mode lists the games an operation touches, not the housekeeping
-  // around them (backup folders, ul.cfg): the summary counts it all.
-  const shown = plan.transactions
-    .map((transaction, index) => ({ transaction, index }))
-    .filter(({ transaction }) => !simple || transaction.game !== null);
+  // Simple mode lists the games an operation touches and the loader it puts
+  // on the device, not the housekeeping around them (backup folders, ul.cfg,
+  // the manifest): the summary counts it all. A plan of housekeeping alone
+  // (creating OPL's folders) lists it: that is all it does.
+  const all = plan.transactions.map((transaction, index) => ({ transaction, index }));
+  const essential = all.filter(({ transaction }) => transaction.game !== null || transaction.loader === true);
+  const shown = !simple || essential.length === 0 ? all : essential;
   return (
     <div className="flex flex-col gap-4">
       <PlanSummary plan={plan} />

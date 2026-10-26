@@ -25,6 +25,8 @@ import { errorText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
 
 import { compareUrl, useLoaderBuild, versionLabel } from "./versions";
+import { writeProblem } from "./writeProblem";
+import { CancelWrite, WaitedWrite } from "./writes";
 
 /**
  * "Update available" (LDR-4, SPEC §5.10.1): the installed build and the
@@ -52,6 +54,8 @@ export function UpdateLoaderDialog({
   const queryClient = useQueryClient();
   const build = useLoaderBuild(loader.build);
   const [busy, setBusy] = useState<"download" | "finish" | null>(null);
+  // The write the dialog waits for, which its own Cancel can stop.
+  const [writing, setWriting] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const flow = usePlan({ onExecuted: (job) => void finish(job) });
   const offer = useQuery({
@@ -67,18 +71,21 @@ export function UpdateLoaderDialog({
 
   async function finish(job: JobId) {
     setBusy("finish");
+    setWriting(job);
     try {
       const info = await waitForJob(transport, job);
-      if (info.status !== "finished") {
-        setError(info.error ? errorText(info.error) : t("loaderInstall.notFinished"));
+      await queryClient.invalidateQueries({ queryKey: ["devices"] });
+      const problem = writeProblem(info, t);
+      if (problem) {
+        setError(problem);
         return;
       }
-      await queryClient.invalidateQueries({ queryKey: ["devices"] });
       close();
     } catch (err) {
       setError(errorText(err));
     } finally {
       setBusy(null);
+      setWriting(null);
     }
   }
 
@@ -160,6 +167,7 @@ export function UpdateLoaderDialog({
                 </p>
               </>
             )}
+            {writing !== null && <WaitedWrite job={writing} />}
             {(error ?? offer.error) && (
               <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive" role="alert">
                 {error ?? errorText(offer.error)}
@@ -167,9 +175,13 @@ export function UpdateLoaderDialog({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={close} disabled={busy !== null} data-testid="loader-update-later">
-              {offered ? t("loaderUpdate.notNow") : t("common.cancel")}
-            </Button>
+            {writing !== null ? (
+              <CancelWrite job={writing} />
+            ) : (
+              <Button variant="outline" onClick={close} disabled={busy !== null} data-testid="loader-update-later">
+                {offered ? t("loaderUpdate.notNow") : t("common.cancel")}
+              </Button>
+            )}
             <Button onClick={() => void update()} disabled={!latest || busy !== null} data-testid="loader-update-start">
               {busy !== null ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />}
               {busy === "download" ? t("loaderInstall.downloading") : busy === "finish" ? t("loaderInstall.finishing") : t("loaderUpdate.update")}

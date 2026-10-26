@@ -61,6 +61,7 @@ pub fn plan_rollback(
             .with("path", path)
             .with("backup", &backup.file),
     );
+    tx.loader = true;
     let mut planned = Vec::new();
     // What is there now becomes the newest backup; a second rollback
     // brings it back.

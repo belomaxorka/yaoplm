@@ -45,6 +45,8 @@ import { useSettings, useSimpleMode } from "@/settings/context";
 
 import { ReplaceImpact } from "./ReplaceImpact";
 import { versionLabel } from "./versions";
+import { writeProblem } from "./writeProblem";
+import { CancelWrite, WaitedWrite } from "./writes";
 
 type InstallRequest = Extract<Request, { type: "PlanInstallLoader" }>;
 type ReplaceRequest = Extract<Request, { type: "PlanReplaceLoader" }>;
@@ -156,6 +158,8 @@ export function InstallLoaderDialog({
       : { ...freshForm(), build: initial?.build ?? null, method: initial?.preset ?? null };
   const [form, setForm] = useState<Form>(start);
   const [busy, setBusy] = useState<"download" | "finish" | null>(null);
+  // The write the wizard waits for, which its own Cancel can stop.
+  const [writing, setWriting] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
   // What was planned last: a re-plan (replace the foreign file) starts from it.
   const [planned, setPlanned] = useState<InstallRequest | ReplaceRequest | "card" | null>(null);
@@ -239,13 +243,15 @@ export function InstallLoaderDialog({
 
   async function finish(job: JobId) {
     setBusy("finish");
+    setWriting(job);
     try {
       const info = await waitForJob(transport, job);
       void queryClient.invalidateQueries({ queryKey: ["devices"] });
       void queryClient.invalidateQueries({ queryKey: ["library", device.root] });
       void queryClient.invalidateQueries({ queryKey: ["loaderRelease"] });
-      if (info.status !== "finished") {
-        setError(info.error ? errorText(info.error) : t("loaderInstall.notFinished"));
+      const problem = writeProblem(info, t);
+      if (problem) {
+        setError(problem);
         return;
       }
       if (planned === "card" || planned === null) {
@@ -263,6 +269,7 @@ export function InstallLoaderDialog({
       setError(errorText(err));
     } finally {
       setBusy(null);
+      setWriting(null);
     }
   }
 
@@ -640,6 +647,11 @@ export function InstallLoaderDialog({
                 )}
               </div>
             )}
+            {writing !== null && (
+              <div className="mt-4">
+                <WaitedWrite job={writing} />
+              </div>
+            )}
             {error && (
               <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
                 {error}
@@ -653,9 +665,13 @@ export function InstallLoaderDialog({
               </Button>
             ) : (
               <>
-                <Button variant="outline" onClick={close} disabled={busy !== null}>
-                  {t("common.cancel")}
-                </Button>
+                {writing !== null ? (
+                  <CancelWrite job={writing} />
+                ) : (
+                  <Button variant="outline" onClick={close} disabled={busy !== null}>
+                    {t("common.cancel")}
+                  </Button>
+                )}
                 <Button onClick={() => void install()} disabled={!ready} data-testid="loader-install-start">
                   {busy !== null ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />}
                   {busy === "download"
