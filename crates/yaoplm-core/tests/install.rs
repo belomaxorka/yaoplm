@@ -326,6 +326,26 @@ fn reserved_and_odd_paths_are_refused() {
 }
 
 #[test]
+fn opl_1_1_0_is_not_put_on_exfat() {
+    // Replacing already refused it (`replaceExfatOpl110`); on main a plain
+    // install planned it, and the device card showed the conflict after.
+    let mut s = setup("1.1.0");
+    s.fs = MemFs::new(FsKind::ExFat);
+    let stable = build("opl-stable");
+    let plan = plan_install(&s.fs, &request(stable, &s, vec![preset(stable, "fmcb")])).unwrap();
+    assert_eq!(errors(&plan), ["loaderExfatOpl110"]);
+    assert!(plan.transactions.is_empty() && !plan.is_executable());
+    // Every other build reads exFAT.
+    let beta = build("opl-beta");
+    let plan = plan_install(&s.fs, &request(beta, &s, vec![preset(beta, "fmcb")])).unwrap();
+    assert!(errors(&plan).is_empty(), "{:?}", plan.notices);
+    // Over SMB OPL never sees the computer's file system (ADR-0047).
+    s.fs = MemFs::new(FsKind::ExFat).with_smb(true);
+    let plan = plan_install(&s.fs, &request(stable, &s, vec![preset(stable, "fmcb")])).unwrap();
+    assert!(errors(&plan).is_empty(), "{:?}", plan.notices);
+}
+
+#[test]
 fn a_language_pack_and_starter_settings() {
     let s = setup("v1.2.0-Beta-2271-b3a2199");
     s.fs.insert_file("LNG/lang_Russian.lng", b"old");

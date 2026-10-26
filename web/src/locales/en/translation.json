@@ -193,6 +193,7 @@
     "loaderNothingToDo": "Everything is in place already",
     "loaderNoBackup": "There is no backup of {{path}} to put back",
     "replaceExfatOpl110": "OPL 1.1.0 cannot read exFAT: on this device it would show no games. Keep the current build, or prepare the device again in FAT32 after copying the games to the computer",
+    "loaderExfatOpl110": "OPL 1.1.0 cannot read exFAT: on this device it would show no games. Choose another build, or prepare the device again in FAT32 after copying the games to the computer",
     "emulatorGpt": "GPT partition table: firmware 1.4.0 of a memory card emulator mounts MBR only, so the SD will not mount",
     "emulatorNoPartitionTable": "No partition table: firmware 1.4.0 of a memory card emulator mounts MBR partition 1 only",
     "emulatorPartition": "The data is in partition {{number}}: a memory card emulator’s firmware mounts partition 1 only",

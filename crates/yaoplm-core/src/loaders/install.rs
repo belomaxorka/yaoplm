@@ -26,9 +26,9 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 
 use yaoplm_device::fs::{find_entry, list_or_empty};
-use yaoplm_device::{DeviceFs, RelPath};
+use yaoplm_device::{DeviceFs, FsKind, RelPath};
 use yaoplm_formats::cfg::CfgDocument;
-use yaoplm_formats::ps2_elf;
+use yaoplm_formats::{LoaderProfile, ps2_elf};
 use yaoplm_i18n::Phrase;
 
 use super::catalog::{Build, Target};
@@ -320,6 +320,16 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
     if fs.emulator()?.is_some() {
         plan.notices
             .push(Notice::error(Phrase::notice("loaderOnEmulatorSd")));
+        return Ok(plan);
+    }
+    // 1.1.0 reads no exFAT: the rule replacing (`impact`) and detection
+    // already follow. Over SMB OPL never sees the computer's file system.
+    let exfat = fs
+        .info()
+        .is_ok_and(|info| info.kind == FsKind::ExFat && !info.smb && !info.mmce);
+    if build.profile == LoaderProfile::Opl110 && exfat {
+        plan.notices
+            .push(Notice::error(Phrase::notice("loaderExfatOpl110")));
         return Ok(plan);
     }
     if request.targets.is_empty() {
