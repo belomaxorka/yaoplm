@@ -358,8 +358,9 @@ fn a_memory_card_emulator_s_sd_is_known_by_its_files() {
         sd["settings"][2]["entries"][2],
         json!({"key": "CardSize", "value": "64"})
     );
-    // A copy on the computer: no rule of the SD, but its card size.
-    assert_eq!(codes(&info), ["emulatorCardSize", "emulatorCopy"]);
+    // A copy on the computer: no rule of the SD, but its card size; the
+    // warning first, the note (information) after it.
+    assert_eq!(codes(&info), ["emulatorCopy", "emulatorCardSize"]);
     // What the boot cards hold, from their own file systems.
     let one = &sd["variants"][0]["boot"][0]["contents"];
     assert_eq!(one["launchers"], json!(["FreeMcBoot"]));
