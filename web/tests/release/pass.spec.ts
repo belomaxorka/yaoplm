@@ -164,7 +164,12 @@ class Pass {
   /** A screenshot tall enough for everything the screen or dialog scrolls. */
   async shot(name: string): Promise<void> {
     await this.page.waitForTimeout(400);
-    const extra = await this.page.evaluate(() => {
+    // A menu is kept inside the window by its own rules and closes when the
+    // window changes size: it is shot as the user sees it, at 1024 × 768.
+    // (A taller window put the page back to its top on the way back, and
+    // the layout check then found the menu below the window.)
+    const menuOpen = (await this.page.getByRole("menu").count()) > 0;
+    const extra = menuOpen ? 0 : await this.page.evaluate(() => {
       let extra = 0;
       for (const el of document.querySelectorAll<HTMLElement>("body *")) {
         const style = getComputedStyle(el);
@@ -203,6 +208,12 @@ class Pass {
     await this.page.keyboard.press("Escape");
     await expect(this.page.getByRole("menu")).toHaveCount(0);
     await card.getByTestId("device-choice-change").click();
+    await expect(this.page.getByRole("menu")).toBeVisible();
+  }
+
+  /** The card's "⋯" menu, opened unless it is open already. */
+  async openMore(card: Locator): Promise<void> {
+    if ((await this.page.getByRole("menu").count()) === 0) await card.getByTestId("device-more").click();
     await expect(this.page.getByRole("menu")).toBeVisible();
   }
 
@@ -362,10 +373,12 @@ for (const run of runs) {
     });
     // The card's "⋯" menu under its icon button: as wide as its items (UI-5).
     await pass.state("stick-more-menu", async () => {
-      await stickCard(page).getByTestId("device-more").click();
-      await expect(page.getByRole("menu")).toBeVisible();
+      // The install's toast is still fading: axe would measure its contrast mid-way.
+      await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 });
+      await pass.openMore(stickCard(page));
     });
     await pass.state("reinstall-wizard", async () => {
+      await pass.openMore(stickCard(page));
       await page.getByTestId("device-install-loader").click();
       await expect(dialog.getByTestId("loader-offer")).toBeVisible();
     });
