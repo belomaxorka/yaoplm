@@ -244,6 +244,19 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
         "parts that come from libretro-database and is distributed with YAOPLM under",
         "GPL-3.0-or-later (ADR-0002).",
         "",
+    ]
+    for entry in attribution.get("other", []):
+        lines += [
+            f"### {entry['name']}",
+            "",
+            f"- File: `{entry['file']}`",
+            f"- Source: <{entry['url']}> at `{entry['version']}`",
+            f"- Licence: {entry['license']} (<{entry['licenseUrl']}>)",
+            f"- Credits: {entry['credits']}",
+            f"- Used for: {entry['use']}",
+            "",
+        ]
+    lines += [
         "## Picture sources (never bundled)",
         "",
         "Pictures are downloaded only when the user asks for them, cached locally and",

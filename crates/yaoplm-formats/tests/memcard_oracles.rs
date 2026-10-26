@@ -52,7 +52,13 @@ fn mymc(card: &Path, args: &[&str]) -> String {
 fn mode_bits(mode: u16) -> String {
     let bits = b"rwxpfdD81C+KPH4";
     (0..15)
-        .map(|bit| if mode & (1 << bit) != 0 { bits[bit] as char } else { '-' })
+        .map(|bit| {
+            if mode & (1 << bit) != 0 {
+                bits[bit] as char
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -92,7 +98,11 @@ fn compare(image: &Path) -> (usize, usize) {
     let len = std::fs::metadata(&copy).unwrap().len();
     let mut card = Card::open(File::open(&copy).unwrap(), len).unwrap();
     let root = card.root().unwrap();
-    assert_eq!(ours(&root), theirs(&mymc(&copy, &["ls", "/"])), "{image:?} /");
+    assert_eq!(
+        ours(&root),
+        theirs(&mymc(&copy, &["ls", "/"])),
+        "{image:?} /"
+    );
     let mut dirs = 0;
     let mut files = 0;
     for (path, entry) in card.walk(8).unwrap() {
@@ -108,7 +118,10 @@ fn compare(image: &Path) -> (usize, usize) {
             let bytes = card.read(&entry, 2 << 20).unwrap();
             let out = dir.path().join("extracted");
             let _ = std::fs::remove_file(&out);
-            mymc(&copy, &["extract", "-o", out.to_str().unwrap(), &format!("/{path}")]);
+            mymc(
+                &copy,
+                &["extract", "-o", out.to_str().unwrap(), &format!("/{path}")],
+            );
             assert!(std::fs::read(&out).unwrap() == bytes, "{image:?} {path}");
             files += 1;
         }
@@ -125,7 +138,11 @@ fn the_factory_cards_read_as_mymcplusplus_reads_them() {
         .join("files")
         .join("MemoryCards");
     let mut images: Vec<PathBuf> = (1..=6)
-        .map(|n| sd.join("PS2").join("BOOT").join(format!("BootCard-{n}.mcd")))
+        .map(|n| {
+            sd.join("PS2")
+                .join("BOOT")
+                .join(format!("BootCard-{n}.mcd"))
+        })
         .collect();
     images.push(sd.join("PS2").join("Card1").join("Card1-1.mcd"));
     images.push(sd.join("COH").join("BOOT").join("BootCard-1.mcd"));
@@ -138,9 +155,64 @@ fn the_factory_cards_read_as_mymcplusplus_reads_them() {
 #[test]
 #[ignore = "needs YAOPLM_TESTDATA with the ps2vmc-tool clone and Python"]
 fn genvmc_cards_with_saves_read_as_mymcplusplus_reads_them() {
-    let samples = testdata().join("refs").join("bucanero__ps2vmc-tool").join("samples");
+    let samples = testdata()
+        .join("refs")
+        .join("bucanero__ps2vmc-tool")
+        .join("samples");
     for name in ["oplcard.bin", "card16mb.bin", "card32mb.bin", "ps2card.vmc"] {
         let (dirs, files) = compare(&samples.join(name));
         println!("{name}: {dirs} folders, {files} files match");
+    }
+}
+
+#[test]
+#[ignore = "needs YAOPLM_TESTDATA with the factory SD's copy and the ps2vmc-tool clone"]
+fn ps1_cards_from_real_data() {
+    use yaoplm_formats::ps1mc::{Ps1Card, SlotState};
+    let sd = testdata()
+        .join("backups")
+        .join("psxmemcard-gen2-sd-2026-10-26")
+        .join("files")
+        .join("MemoryCards")
+        .join("PS1");
+    // The factory's blank cards: every frame free and sound.
+    for blank in ["Card1/Card1-1.mcd", "Card4/Card4-1.mcd"] {
+        let card = Ps1Card::parse(&std::fs::read(sd.join(blank)).unwrap()).unwrap();
+        assert!(card.saves.is_empty(), "{blank}");
+        assert!(
+            card.slots
+                .iter()
+                .all(|s| s.state == SlotState::Free && s.checksum_ok),
+            "{blank}"
+        );
+    }
+    // FreePSXBoot: read as it is, its odd frames reported, nothing fixed.
+    let boot = Ps1Card::parse(&std::fs::read(sd.join("BOOT/BootCard-1.mcd")).unwrap()).unwrap();
+    for save in &boot.saves {
+        println!(
+            "PS1 boot card: {} {:?} {} bytes {:?}",
+            save.name, save.blocks, save.size, save.title
+        );
+    }
+    let odd: Vec<_> = boot
+        .slots
+        .iter()
+        .filter(|s| !s.checksum_ok || matches!(s.state, SlotState::Corrupt(_)))
+        .collect();
+    println!("PS1 boot card: {} odd frames", odd.len());
+    // ePSXe's card from ps2vmc-tool's samples.
+    let sample = testdata()
+        .join("refs")
+        .join("bucanero__ps2vmc-tool")
+        .join("samples")
+        .join("epsxe000.mcr");
+    let card = Ps1Card::parse(&std::fs::read(sample).unwrap()).unwrap();
+    assert!(!card.saves.is_empty());
+    for save in &card.saves {
+        assert!(!save.blocks.is_empty() && save.blocks.len() <= 15);
+        println!(
+            "epsxe000.mcr: {} {:?} {:?}",
+            save.name, save.blocks, save.title
+        );
     }
 }

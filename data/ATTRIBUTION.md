@@ -27,6 +27,14 @@ The derived database keeps the share-alike terms of CC BY-SA 4.0 for the
 parts that come from libretro-database and is distributed with YAOPLM under
 GPL-3.0-or-later (ADR-0002).
 
+### sd2psXtd SD Builder boot card images (names and SHA-256 only)
+
+- File: `data/emulator/sd-builder.tsv`
+- Source: <https://github.com/sd2psXtd/sd2psXtd.github.io/tree/main/sd_builder> at `7a204d9`
+- Licence: MIT (<https://github.com/sd2psXtd/sd2psXtd.github.io/blob/main/LICENSE>)
+- Credits: sd2psXtd team; the images carry FreeMcBoot, PS2BBL, wLaunchELF and FreePSXBoot by their authors
+- Used for: telling a memory card emulator's boot card that is byte for byte an SD Builder image; the images themselves are never bundled or downloaded (ADR-0007, ADR-0048)
+
 ## Picture sources (never bundled)
 
 Pictures are downloaded only when the user asks for them, cached locally and

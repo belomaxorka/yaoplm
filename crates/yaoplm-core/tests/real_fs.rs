@@ -166,10 +166,18 @@ fn emulator_service_folders_on_real_fat32() {
     std::fs::create_dir_all(sd.join(".sd2psx")).unwrap();
     std::fs::create_dir_all(sd.join("MemoryCards").join("PS2").join("BOOT")).unwrap();
     // The driver made a short name, and it leads to the long one.
-    assert!(sd.join("MEMORY~1").join("PS2").is_dir(), "no 8.3 alias on this mount");
+    assert!(
+        sd.join("MEMORY~1").join("PS2").is_dir(),
+        "no 8.3 alias on this mount"
+    );
     let host = HostFs::new(&sd).unwrap();
     assert!(host.emulator().unwrap().is_some());
-    for path in ["MEMORY~1/CFG", "memory~1/PS1", "MemoryCards/PS1", "SD2PSX~1/x"] {
+    for path in [
+        "MEMORY~1/CFG",
+        "memory~1/PS1",
+        "MemoryCards/PS1",
+        "SD2PSX~1/x",
+    ] {
         let rel = yaoplm_device::RelPath::new(path).unwrap();
         let err = host.create_dir(&rel).err().unwrap();
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied, "{path}");

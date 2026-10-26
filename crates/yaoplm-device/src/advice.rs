@@ -127,6 +127,14 @@ pub enum Advice {
         file: String,
         line: String,
     },
+    /// A boot channel's name in `BootCard.ini` says something its image
+    /// does not hold (research/19 §4).
+    EmulatorChannelName {
+        variant: String,
+        channel: u32,
+        name: String,
+        holds: String,
+    },
 }
 
 impl Advice {
@@ -150,7 +158,8 @@ impl Advice {
             | Self::AppleDouble(_)
             | Self::EmulatorCardSize(_)
             | Self::EmulatorDamaged { .. }
-            | Self::EmulatorIniTail { .. } => Level::Warning,
+            | Self::EmulatorIniTail { .. }
+            | Self::EmulatorChannelName { .. } => Level::Warning,
             Self::LargeGamesAsUl
             | Self::ExfatRecommended
             | Self::Smb { .. }
@@ -191,6 +200,7 @@ impl Advice {
             Self::EmulatorCardSize(_) => "emulatorCardSize",
             Self::EmulatorDamaged { .. } => "emulatorDamaged",
             Self::EmulatorIniTail { .. } => "emulatorIniTail",
+            Self::EmulatorChannelName { .. } => "emulatorChannelName",
         }
     }
 }
@@ -211,6 +221,16 @@ impl Advice {
                 phrase.with("count", *count).with("files", files)
             }
             Self::EmulatorIniTail { file, line } => phrase.with("file", file).with("line", line),
+            Self::EmulatorChannelName {
+                variant,
+                channel,
+                name,
+                holds,
+            } => phrase
+                .with("variant", variant)
+                .with("channel", *channel)
+                .with("name", name)
+                .with("holds", holds),
             Self::SectorSize(size) => phrase.with("size", *size),
             Self::ClusterTooLarge(size) | Self::ClusterSmall(size) => {
                 phrase.with("kib", kib(*size))
@@ -781,6 +801,12 @@ mod phrase_tests {
             Advice::EmulatorIniTail {
                 file: ".sd2psx/settings.ini".into(),
                 line: "CardSize=8".into(),
+            },
+            Advice::EmulatorChannelName {
+                variant: "PS2".into(),
+                channel: 3,
+                name: "FMCB 1.965".into(),
+                holds: "FMCB 1.963".into(),
             },
         ];
         for advice in &all {

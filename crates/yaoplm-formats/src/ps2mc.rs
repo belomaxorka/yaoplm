@@ -66,7 +66,9 @@ pub enum CardError {
     NotACard,
     #[error("the superblock's geometry is impossible: {0}")]
     Geometry(&'static str),
-    #[error("the file is {file} bytes; the superblock describes {plain} (or {with_spare} with spare bytes)")]
+    #[error(
+        "the file is {file} bytes; the superblock describes {plain} (or {with_spare} with spare bytes)"
+    )]
     Size {
         file: u64,
         plain: u64,
@@ -150,7 +152,9 @@ impl Geometry {
             return Err(CardError::Geometry("pages per cluster"));
         }
         if page_size * pages_per_cluster < ENTRY_SIZE as u32 {
-            return Err(CardError::Geometry("cluster smaller than a directory entry"));
+            return Err(CardError::Geometry(
+                "cluster smaller than a directory entry",
+            ));
         }
         if clusters_per_card == 0 || clusters_per_card > MAX_CLUSTERS {
             return Err(CardError::Geometry("clusters per card"));
@@ -258,7 +262,8 @@ pub struct Entry {
 
 impl Entry {
     fn parse(bytes: &[u8]) -> Self {
-        let u32_at = |i: usize| u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+        let u32_at =
+            |i: usize| u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
         let raw_name = &bytes[0x40..0x40 + NAME_MAX];
         let end = raw_name.iter().position(|&b| b == 0).unwrap_or(NAME_MAX);
         Self {
@@ -343,7 +348,8 @@ impl<R: Read + Seek> Card<R> {
         let mut out = Vec::with_capacity(g.cluster_size() as usize);
         let mut page = vec![0u8; g.page_size as usize];
         for i in 0..u64::from(g.pages_per_cluster) {
-            self.reader.seek(SeekFrom::Start((first_page + i) * raw_page))?;
+            self.reader
+                .seek(SeekFrom::Start((first_page + i) * raw_page))?;
             self.reader.read_exact(&mut page)?;
             out.extend_from_slice(&page);
         }
@@ -491,7 +497,11 @@ impl<R: Read + Seek> Card<R> {
             else {
                 return Ok(None);
             };
-            entries = if entry.is_dir() { self.list(&entry)? } else { Vec::new() };
+            entries = if entry.is_dir() {
+                self.list(&entry)?
+            } else {
+                Vec::new()
+            };
             found = Some(entry);
         }
         Ok(found)
@@ -581,7 +591,10 @@ mod tests {
             Geometry::parse(sb, 7 << 20),
             Err(CardError::Size { .. })
         ));
-        assert!(matches!(Geometry::parse(&[0; 0x200], 8 << 20), Err(CardError::NotACard)));
+        assert!(matches!(
+            Geometry::parse(&[0; 0x200], 8 << 20),
+            Err(CardError::NotACard)
+        ));
     }
 
     #[test]
@@ -605,7 +618,10 @@ mod tests {
             (0x50, &9000u32.to_le_bytes()[..]),
             (0x50, &u32::MAX.to_le_bytes()[..]),
         ] {
-            assert!(matches!(set(at, bytes), Err(CardError::Geometry(_))), "{at:#x} {bytes:?}");
+            assert!(
+                matches!(set(at, bytes), Err(CardError::Geometry(_))),
+                "{at:#x} {bytes:?}"
+            );
         }
     }
 

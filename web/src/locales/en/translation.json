@@ -202,7 +202,8 @@
     "emulatorDamaged": "The emulator’s firmware moved damaged cards aside ({{count}}): {{files}}",
     "emulatorIniTail": "The last line of {{file}} has no line break, so the emulator’s firmware never reads it: “{{line}}”",
     "emulatorServiceFile": "{{path}} belongs to the memory card emulator: YAOPLM does not change it",
-    "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card"
+    "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card",
+    "emulatorChannelName": "{{variant}} boot channel {{channel}} is named “{{name}}” in BootCard.ini, but its image holds {{holds}}"
   },
   "library": {
     "title": "Library",
