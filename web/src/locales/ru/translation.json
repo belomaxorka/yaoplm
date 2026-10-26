@@ -663,13 +663,13 @@
       "unknown": "Не знаю",
       "unknownHint": "OPL кладётся в оба обычных места",
       "app": "Папкой приложения",
-      "appHint": "{{path}} с title.cfg: его запускают OSDMenu и страница «Приложения» другого OPL",
+      "appHint": "Файл: {{path}}",
       "appMx4sio": "PS2BBL-MX4SIO или OSDMenu",
-      "appMx4sioHint": "{{path}} с title.cfg; строки для лаунчера будут показаны после установки",
+      "appMx4sioHint": "Файл: {{path}}",
       "card": "OPL уже на карте памяти",
-      "cardHint": "На носителе создаются только папки OPL",
+      "cardHint": "Создаются только папки OPL",
       "custom": "Свой путь",
-      "customHint": "Любой путь .ELF на носителе; строки для лаунчера будут показаны после установки"
+      "customHint": "Любой путь .ELF на носителе"
     },
     "path": "Путь",
     "buildLegend": "Какой OPL?",

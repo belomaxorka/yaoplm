@@ -635,13 +635,13 @@
       "unknown": "I don’t know",
       "unknownHint": "OPL goes to both usual places",
       "app": "As an app folder",
-      "appHint": "{{path}} with title.cfg: OSDMenu and the Apps page of another OPL start it",
+      "appHint": "File: {{path}}",
       "appMx4sio": "PS2BBL-MX4SIO or OSDMenu",
-      "appMx4sioHint": "{{path}} with title.cfg; the lines for the launcher are shown after the install",
+      "appMx4sioHint": "File: {{path}}",
       "card": "OPL is on the memory card already",
-      "cardHint": "Only OPL’s folders are created on the device",
+      "cardHint": "Only OPL’s folders are created",
       "custom": "My own path",
-      "customHint": "Any .ELF path on the device; the lines for the launcher are shown after the install"
+      "customHint": "Any .ELF path on the device"
     },
     "path": "Path",
     "buildLegend": "Which OPL?",
