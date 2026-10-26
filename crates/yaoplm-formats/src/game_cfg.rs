@@ -249,7 +249,7 @@ impl GameSettings {
             (self.gsm.y_offset, before.gsm.y_offset),
         ];
         for (offset, was) in offsets {
-            if offset != was && offset.abs() > GSM_OFFSET_MAX {
+            if offset != was && !(-GSM_OFFSET_MAX..=GSM_OFFSET_MAX).contains(&offset) {
                 return Err(SettingsError::GsmOffset(offset));
             }
         }
@@ -596,6 +596,26 @@ mod tests {
             bad.apply(&mut cfg, OPL),
             Err(SettingsError::VmcName { slot: 0, .. })
         ));
+    }
+
+    #[test]
+    fn offsets_far_out_of_range_are_refused() {
+        // `i32::MIN.abs()` overflows: debug builds panic, release builds
+        // get i32::MIN back, which passed the range check.
+        for offset in [i32::MIN, i32::MIN + 1, -101, 101, i32::MAX] {
+            let mut settings = GameSettings::default();
+            settings.gsm.x_offset = offset;
+            assert_eq!(
+                settings.validate(&GameSettings::default(), OPL),
+                Err(SettingsError::GsmOffset(offset))
+            );
+            settings.gsm.x_offset = 0;
+            settings.gsm.y_offset = offset;
+            assert_eq!(
+                settings.validate(&GameSettings::default(), OPL),
+                Err(SettingsError::GsmOffset(offset))
+            );
+        }
     }
 
     #[test]
