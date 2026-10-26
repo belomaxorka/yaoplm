@@ -1426,6 +1426,42 @@ fn loader_install_writes_through_a_plan_and_says_how_to_start_it() {
 }
 
 #[test]
+fn an_emulator_s_sd_is_offered_no_loader_command() {
+    // ADR-0048, review of PR 1: `yaoplm loader update` and `rollback` are
+    // always refused on a memory card emulator's SD, so `device` names
+    // neither, though it still lists the ELF it finds.
+    use yaoplm_test_support::loaders::opl_elf;
+    let dir = tempfile::tempdir().unwrap();
+    let sd = dir.path().join("sd");
+    yaoplm_test_support::emulator::write_to(&sd).unwrap();
+    std::fs::create_dir_all(sd.join("UPDT")).unwrap();
+    std::fs::write(sd.join("UPDT/OPL.ELF"), opl_elf("v1.2.0-Beta-2271-b3a2199")).unwrap();
+    let backup = sd.join(".yaoplm/backup/loader/20261025-120000");
+    std::fs::create_dir_all(&backup).unwrap();
+    std::fs::write(
+        backup.join("UPDT_OPL.ELF"),
+        opl_elf("v1.2.0-Beta-2260-0000000"),
+    )
+    .unwrap();
+    let output = yaoplm()
+        .args(["device".as_ref(), sd.as_os_str()])
+        .env("YAOPLM_DATA_DIR", dir.path().join("data"))
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    assert!(
+        text.contains("Mode:       in a memory card emulator (MMCE)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Installed:  opl-beta v1.2.0-Beta-2271-b3a2199 at UPDT/OPL.ELF"),
+        "{text}"
+    );
+    assert!(!text.contains("yaoplm loader"), "{text}");
+}
+
+#[test]
 fn loader_update_and_rollback_through_plans() {
     use yaoplm_test_support::loaders::{ReleaseMirror, opl_elf};
     let dir = tempfile::tempdir().unwrap();

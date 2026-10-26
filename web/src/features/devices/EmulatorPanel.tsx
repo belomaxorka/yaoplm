@@ -1,5 +1,6 @@
 import { cn } from "cn";
 import { MemoryStick } from "lucide-react";
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { EmulatorInfo } from "@/api/generated/EmulatorInfo";
@@ -15,16 +16,18 @@ import { useSimpleMode } from "@/settings/context";
 export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo; className?: string }) {
   const { t } = useTranslation();
   const simple = useSimpleMode();
+  // One per card: the page lists every SD the computer sees.
+  const titleId = useId();
   const kinds = emulator.kinds.map((kind) => t(`devices.emulator.kinds.${kind}`)).join(", ");
   return (
     <section
       className={cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className)}
-      aria-labelledby="emulator-title"
+      aria-labelledby={titleId}
       data-testid="emulator-panel"
     >
       <div className="flex flex-wrap items-center gap-2">
         <MemoryStick className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <h3 id="emulator-title" className="font-medium">
+        <h3 id={titleId} className="font-medium">
           {t("devices.emulator.title")}
         </h3>
         {kinds && <span className="text-muted-foreground">— {kinds}</span>}

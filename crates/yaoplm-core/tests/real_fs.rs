@@ -153,3 +153,28 @@ fn import_onto_mounted_images() {
     }
     assert!(ran > 0, "set YAOPLM_FAT32_DIR and/or YAOPLM_EXFAT_DIR");
 }
+
+/// A memory card emulator's SD on the real FAT32 driver (ADR-0048, review
+/// of PR 1): the driver opens `MEMORY~1` as `MemoryCards`, and no write
+/// through that alias, or the long name, gets in.
+#[test]
+#[ignore = "needs YAOPLM_FAT32_DIR: a mounted FAT32 image"]
+fn emulator_service_folders_on_real_fat32() {
+    let dir = std::env::var("YAOPLM_FAT32_DIR").expect("set YAOPLM_FAT32_DIR");
+    let sd = Path::new(&dir).join("emulator-sd");
+    let _ = std::fs::remove_dir_all(&sd);
+    std::fs::create_dir_all(sd.join(".sd2psx")).unwrap();
+    std::fs::create_dir_all(sd.join("MemoryCards").join("PS2").join("BOOT")).unwrap();
+    // The driver made a short name, and it leads to the long one.
+    assert!(sd.join("MEMORY~1").join("PS2").is_dir(), "no 8.3 alias on this mount");
+    let host = HostFs::new(&sd).unwrap();
+    assert!(host.emulator().unwrap().is_some());
+    for path in ["MEMORY~1/CFG", "memory~1/PS1", "MemoryCards/PS1", "SD2PSX~1/x"] {
+        let rel = yaoplm_device::RelPath::new(path).unwrap();
+        let err = host.create_dir(&rel).err().unwrap();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied, "{path}");
+    }
+    assert!(!sd.join("MemoryCards").join("CFG").exists());
+    assert!(!sd.join("MemoryCards").join("PS1").exists());
+    std::fs::remove_dir_all(&sd).unwrap();
+}

@@ -354,12 +354,25 @@ impl HostFs {
     }
 
     /// Refuses a change to a memory card emulator's service file, whatever
-    /// the planner said (ADR-0048).
+    /// the planner said (ADR-0048). At the SD's root the first name is also
+    /// checked as stored on disk: an alias the OS resolves (a FAT 8.3 short
+    /// name) leads to the folder it names.
     fn guard(&self, path: &RelPath) -> io::Result<()> {
-        match &self.emulator {
-            Some(sd) if sd.protects(path) => Err(emulator_file(path)),
-            _ => Ok(()),
+        let Some(sd) = &self.emulator else {
+            return Ok(());
+        };
+        if sd.protects(path) {
+            return Err(emulator_file(path));
         }
+        if sd.at.is_empty()
+            && let Some(first) = path.components().next()
+            && let Ok(real) = fs::canonicalize(self.root.join(first))
+            && let Some(name) = real.file_name().and_then(|n| n.to_str())
+            && sd.is_service_name(name)
+        {
+            return Err(emulator_file(path));
+        }
+        Ok(())
     }
 
     pub fn root(&self) -> &Path {
@@ -684,6 +697,48 @@ mod tests {
         let inner = HostFs::new(&dir.path().join("MemoryCards/PS2")).unwrap();
         assert_eq!(inner.emulator().unwrap().unwrap().at, "MemoryCards/PS2");
         denied(inner.create_dir(&rel("Card2")));
+    }
+
+    /// An SD with the emulator's files, opened at its root.
+    fn emulator_sd() -> (tempfile::TempDir, HostFs) {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".sd2psx")).unwrap();
+        fs::create_dir_all(dir.path().join("MemoryCards/PS2/BOOT")).unwrap();
+        let host = HostFs::new(dir.path()).unwrap();
+        (dir, host)
+    }
+
+    #[test]
+    fn a_short_name_the_os_resolves_reaches_no_service_folder() {
+        // Review of PR 1: on FAT32 (and NTFS with 8.3 names) `MEMORY~1`
+        // opens `MemoryCards`. Where this volume makes short names, the
+        // real one is used; the name rule covers the rest.
+        let (dir, host) = emulator_sd();
+        let denied = |result: io::Result<()>| {
+            assert_eq!(
+                result.err().map(|e| e.kind()),
+                Some(io::ErrorKind::PermissionDenied)
+            );
+        };
+        denied(host.create_dir(&rel("MEMORY~1/CFG")));
+        denied(host.create_dir(&rel("SD2PSX~1/x")));
+        assert!(!dir.path().join("MemoryCards/CFG").exists());
+        if !dir.path().join("MEMORY~1").exists() {
+            eprintln!("this volume makes no 8.3 names: only the name rule was checked");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_sd_reaches_no_service_folder() {
+        // A copy of the SD on the computer may hold links: the name a path
+        // starts with is checked as it resolves on disk.
+        let (dir, host) = emulator_sd();
+        std::os::unix::fs::symlink(dir.path().join("MemoryCards"), dir.path().join("cards"))
+            .unwrap();
+        let err = host.create_dir(&rel("cards/PS1")).err().unwrap();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(!dir.path().join("MemoryCards/PS1").exists());
     }
 
     #[test]

@@ -468,8 +468,10 @@ pub fn devices(devices: &[DeviceInfo], all: bool) -> String {
     out
 }
 
-/// A loader on the device, its build and where it stands (LDR-4).
-fn installed_line(loader: &InstalledLoader) -> String {
+/// A loader on the device, its build and where it stands (LDR-4). On a
+/// memory card emulator's SD (`actions` false) no loader command works, so
+/// none is named (ADR-0048).
+fn installed_line(loader: &InstalledLoader, actions: bool) -> String {
     let mut line = match (&loader.build, &loader.version) {
         (Some(build), Some(version)) => format!("{build} {version}"),
         (None, Some(version)) => format!("{} {version}", loader.family),
@@ -486,16 +488,19 @@ fn installed_line(loader: &InstalledLoader) -> String {
         line.push_str("; replaced since YAOPLM installed it");
     }
     match (loader.freshness, &loader.latest) {
-        (LoaderFreshness::Update, Some(latest)) => {
+        (LoaderFreshness::Update, Some(latest)) if actions => {
             let _ = write!(line, "; update to {latest}: `yaoplm loader update`");
         }
+        (LoaderFreshness::Update, Some(latest)) => {
+            let _ = write!(line, "; {latest} is newer");
+        }
         (LoaderFreshness::Current, _) => line.push_str("; up to date"),
-        _ if loader.build.is_some() => {
+        _ if loader.build.is_some() && actions => {
             line.push_str("; not checked for updates: `yaoplm loader update`")
         }
         _ => {}
     }
-    if let Some(backup) = &loader.backup {
+    if let Some(backup) = loader.backup.as_ref().filter(|_| actions) {
         let _ = write!(
             line,
             "; backup {}: `yaoplm loader rollback`",
@@ -546,7 +551,11 @@ pub fn device(device: &DeviceInfo) -> String {
         plan_notices(&mut out, "", &detected.notices);
     }
     for loader in &device.installed {
-        let _ = writeln!(out, "Installed:  {}", installed_line(loader));
+        let _ = writeln!(
+            out,
+            "Installed:  {}",
+            installed_line(loader, device.emulator.is_none())
+        );
     }
     if device.ask_profile {
         let _ = writeln!(out, "{}", profile_question(device.mode.mode));

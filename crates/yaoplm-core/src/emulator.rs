@@ -86,9 +86,10 @@ fn boot_channel(name: &str) -> Option<u32> {
         .get(..9)
         .filter(|p| p.eq_ignore_ascii_case("BootCard-"))?;
     let digits = &stem[number.len()..];
-    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
-        .then(|| digits.parse().ok())
-        .flatten()
+    // `BootCard-%d.mcd` from channel 1: no sign, no leading zero.
+    let channel: u32 = digits.parse().ok()?;
+    (channel >= 1 && digits.bytes().all(|b| b.is_ascii_digit()) && channel.to_string() == digits)
+        .then_some(channel)
 }
 
 /// `Card12` is a numbered card folder.
@@ -321,6 +322,11 @@ mod tests {
         assert_eq!(boot_channel("BootCard-12.mcd"), Some(12));
         assert_eq!(boot_channel("bootcard-3.MCD"), Some(3));
         assert_eq!(boot_channel("BootCard.mcd"), Some(1));
+        // The firmware opens `BootCard-%d.mcd` from channel 1 only
+        // (`ps2_cardman.c`): no leading zeros, no channel 0.
+        for name in ["BootCard-01.mcd", "BootCard-0.mcd", "BootCard-+1.mcd"] {
+            assert_eq!(boot_channel(name), None, "{name}");
+        }
         for name in [
             "BootCard-.mcd",
             "BootCard-1a.mcd",

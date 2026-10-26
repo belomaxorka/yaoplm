@@ -29,6 +29,8 @@
 const READ_MAX: usize = 199;
 /// `MAX_SECTION - 1`.
 const SECTION_MAX: usize = 49;
+/// `MAX_NAME - 1`: the name a continuation line is reported under.
+const NAME_MAX: usize = 49;
 
 /// One `name=value` the firmware sees, in file order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,10 +153,14 @@ impl Ini {
                 Some(_) => {
                     let split = find_or_comment(line, b"=:");
                     if matches!(line.get(split), Some(b'=' | b':')) {
-                        let name = text(trim(&line[..split]));
+                        let raw_name = trim(&line[..split]);
+                        let name = text(raw_name);
                         let value = &line[split + 1..];
                         let value = trim(&value[..find_or_comment(value, b"")]);
-                        prev_name = Some(name.clone());
+                        // inih keeps the name in 50 bytes and continues only
+                        // after a non-empty one.
+                        prev_name = (!raw_name.is_empty())
+                            .then(|| text(&raw_name[..raw_name.len().min(NAME_MAX)]));
                         ini.entries.push(Entry {
                             section: section.clone(),
                             key: name,
@@ -227,10 +233,32 @@ pub fn card_size(value: &str) -> Option<u32> {
     }
 }
 
+/// The last value of `section`/`key` that `accept` takes: the firmware's
+/// handlers ignore values they do not accept and keep the earlier one.
+fn last_accepted<T>(
+    ini: &Ini,
+    section: &str,
+    key: &str,
+    accept: impl Fn(&str) -> Option<T>,
+) -> Option<T> {
+    ini.entries
+        .iter()
+        .filter(|e| e.section == section && e.key == key)
+        .filter_map(|e| accept(&e.value))
+        .last()
+}
+
 /// The card size of `.sd2psx/settings.ini` (`[PS2] CardSize`), the size the
 /// firmware creates new PS2 cards with.
 pub fn settings_card_size(ini: &Ini) -> Option<u32> {
-    ini.get("PS2", "CardSize").and_then(card_size)
+    last_accepted(ini, "PS2", "CardSize", card_size)
+}
+
+/// `MaxChannels`: 1 to 255.
+fn max_channels(value: &str) -> Option<u32> {
+    Some(atoi(value))
+        .filter(|n| (1..=i64::from(u8::MAX)).contains(n))
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 /// What a card folder's ini says (`card_config.c`).
@@ -262,15 +290,10 @@ impl CardIni {
             }
         }
         names.sort_by_key(|(c, _)| *c);
-        let max_channels = ini
-            .get("Settings", "MaxChannels")
-            .map(atoi)
-            .filter(|n| (1..=i64::from(u8::MAX)).contains(n))
-            .and_then(|n| u32::try_from(n).ok());
         Self {
             names,
-            max_channels,
-            card_size: ini.get("Settings", "CardSize").and_then(card_size),
+            max_channels: last_accepted(ini, "Settings", "MaxChannels", max_channels),
+            card_size: last_accepted(ini, "Settings", "CardSize", card_size),
         }
     }
 
@@ -382,6 +405,29 @@ mod tests {
         assert_eq!(CardIni::read(&ini).max_channels, Some(255));
         let ini = Ini::parse(b"[Settings]\nMaxChannels=256\n");
         assert_eq!(CardIni::read(&ini).max_channels, None);
+    }
+
+    #[test]
+    fn a_bad_repeat_keeps_the_last_good_value() {
+        // The firmware's handlers only take values they accept, so a later
+        // bad one leaves the earlier good one (`settings.c`, `card_config.c`).
+        let ini = Ini::parse(b"[PS2]\nCardSize=64\nCardSize=abc\nCardSize=3\n");
+        assert_eq!(settings_card_size(&ini), Some(64));
+        let ini =
+            Ini::parse(b"[Settings]\nMaxChannels=4\nMaxChannels=0\nCardSize=8\nCardSize=12\n");
+        let card = CardIni::read(&ini);
+        assert_eq!((card.max_channels, card.card_size), (Some(4), Some(8)));
+    }
+
+    #[test]
+    fn an_empty_name_starts_no_continuation() {
+        // inih continues only after a non-empty name (`*prev_name`).
+        let ini = Ini::parse(b"[ChannelName]\n=nameless\n  1=after\n");
+        assert_eq!(CardIni::read(&ini).name(1), Some("after"));
+        // A long name continues under its first 49 bytes, as inih keeps it.
+        let long = "k".repeat(60);
+        let ini = Ini::parse(format!("[S]\n{long}=a\n  b\n").as_bytes());
+        assert_eq!(ini.entries[1].key, "k".repeat(49));
     }
 
     #[test]

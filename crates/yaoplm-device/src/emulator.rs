@@ -58,18 +58,23 @@ impl EmulatorSd {
 
     /// `path` (relative to the opened root) is one of the emulator's files
     /// or inside one: YAOPLM does not change it outside explicit card
-    /// features (ADR-0048).
+    /// features (ADR-0048). A FAT 8.3 alias of one (`MEMORY~1`) counts as
+    /// the name it stands for: the OS resolves it.
     pub fn protects(&self, path: &RelPath) -> bool {
         let first = self
             .at
             .split('/')
             .chain(path.components())
             .find(|c| !c.is_empty());
-        first.is_some_and(|first| {
-            self.service_files()
-                .iter()
-                .any(|name| first.eq_ignore_ascii_case(name))
-        })
+        first.is_some_and(|first| self.is_service_name(first))
+    }
+
+    /// `name` (a top-level name on the SD) is one of the emulator's files
+    /// or an 8.3 alias of one.
+    pub fn is_service_name(&self, name: &str) -> bool {
+        self.service_files()
+            .iter()
+            .any(|service| name.eq_ignore_ascii_case(service) || is_short_alias(name, service))
     }
 
     /// The same SD seen from a folder at `at` on it.
@@ -77,6 +82,40 @@ impl EmulatorSd {
         self.at = at;
         self
     }
+}
+
+/// `alias` may be the FAT 8.3 short name the OS gives `long` (`MEMORY~1`,
+/// `SD2PSX~1` for `.sd2psx`; after four of a kind Windows takes two letters
+/// and four hex digits, `ME1A2B~1`). Long names that are valid 8.3 names
+/// (`civ.bin`, `PS2`) get no alias.
+fn is_short_alias(alias: &str, long: &str) -> bool {
+    let base: String = long
+        .trim_start_matches('.')
+        .chars()
+        .filter(|c| *c != '.' && *c != ' ')
+        .map(|c| match c {
+            '+' | ',' | ';' | '=' | '[' | ']' => '_',
+            c => c.to_ascii_uppercase(),
+        })
+        .collect();
+    let needs_alias = long.starts_with('.') || long.contains(' ') || base.len() > 8;
+    let Some((prefix, number)) = alias.split_once('~') else {
+        return false;
+    };
+    if !needs_alias
+        || prefix.is_empty()
+        || number.is_empty()
+        || number.starts_with('0')
+        || !number.bytes().all(|b| b.is_ascii_digit())
+        || prefix.len() + 1 + number.len() > 8
+    {
+        return false;
+    }
+    let prefix = prefix.to_ascii_uppercase();
+    let hashed = prefix.len() == 6
+        && base.get(..2).is_some_and(|two| prefix.starts_with(two))
+        && prefix[2..].bytes().all(|b| b.is_ascii_hexdigit());
+    base.starts_with(&prefix) || hashed
 }
 
 /// Reads the signs from a root's listing; `list` lists a folder by name.
@@ -98,7 +137,14 @@ fn read_signs(
     if let Some(cards) = dir("MemoryCards") {
         let inside = match list(&cards.name) {
             Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
-            other => other?,
+            // Failing closed: a card folder that cannot be read still makes
+            // this an emulator's SD.
+            Err(_) => {
+                found.sd2psx = true;
+                found.signs.push(cards.name.clone());
+                Vec::new()
+            }
+            Ok(inside) => inside,
         };
         for variant in VARIANTS {
             if let Some(entry) = find_entry(&inside, variant).filter(|e| e.is_dir) {
@@ -300,5 +346,55 @@ mod tests {
         fs::remove_dir(root.join("os")).unwrap();
         fs::write(root.join("mcp2.bin"), b"fw").unwrap();
         assert_eq!(find_on_host(&root, None).unwrap().signs, ["mcp2.bin"]);
+    }
+
+    #[test]
+    fn short_8_3_aliases_of_the_service_folders_are_protected_too() {
+        // On FAT32 the OS resolves `MEMORY~1` to `MemoryCards` and
+        // `SD2PSX~1` to `.sd2psx` (review of PR 1): the names alone must
+        // not let a plan through.
+        let root = sd(&[".sd2psx"], "");
+        for path in [
+            "MEMORY~1",
+            "MEMORY~1/CFG",
+            "memory~2/PS2/BOOT",
+            "MEMOR~12/x",
+            "SD2PSX~1/settings.ini",
+        ] {
+            assert!(root.protects(&rel(path)), "{path}");
+        }
+        for path in [
+            "MEMORYCA",
+            "MEMORY~",
+            "MEMORY~X",
+            "CD~1",
+            "GAMES~1/MEMORY~1",
+        ] {
+            assert!(!root.protects(&rel(path)), "{path}");
+        }
+        let mcp2 = EmulatorSd {
+            sd2psx: false,
+            mcp2: true,
+            signs: vec!["mcp2.bin".into()],
+            at: String::new(),
+        };
+        assert!(!mcp2.protects(&rel("MEMORY~1")));
+    }
+
+    #[test]
+    fn an_unreadable_card_folder_still_counts() {
+        // Failing closed: a `MemoryCards/` that cannot be listed keeps the
+        // SD protected instead of dropping the signs found so far.
+        let top = [DirEntry {
+            name: "MemoryCards".into(),
+            is_dir: true,
+            len: 0,
+        }];
+        let denied = |_: &str| -> io::Result<Vec<DirEntry>> {
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied"))
+        };
+        let found = read_signs(&top, &denied).unwrap().unwrap();
+        assert!(found.sd2psx);
+        assert_eq!(found.signs, ["MemoryCards"]);
     }
 }
