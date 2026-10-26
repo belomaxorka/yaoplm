@@ -29,10 +29,12 @@ pub fn sha256_reader(mut reader: impl Read) -> io::Result<String> {
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 64 * 1024];
     loop {
-        let n = reader.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
+        let n = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(err),
+        };
         hasher.update(&buffer[..n]);
     }
     Ok(hasher
@@ -44,6 +46,38 @@ pub fn sha256_reader(mut reader: impl Read) -> io::Result<String> {
 
 #[cfg(test)]
 mod sha256_tests {
+    use std::io::{self, Read};
+
+    /// Fails every other read with `Interrupted`, as a read cut short by a
+    /// signal does; the caller is expected to retry.
+    struct Interrupting {
+        data: &'static [u8],
+        interrupt: bool,
+    }
+
+    impl Read for Interrupting {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.interrupt = !self.interrupt;
+            if self.interrupt {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let n = buf.len().min(1);
+            self.data.read(&mut buf[..n])
+        }
+    }
+
+    #[test]
+    fn retries_interrupted_reads() {
+        let reader = Interrupting {
+            data: b"abc",
+            interrupt: false,
+        };
+        assert_eq!(
+            super::sha256_reader(reader).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
     #[test]
     fn known_vectors() {
         assert_eq!(
