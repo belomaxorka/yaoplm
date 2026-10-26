@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { MemoryStick } from "lucide-react";
+import { ChevronRight, MemoryStick } from "lucide-react";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -48,6 +48,10 @@ function BootHolds({ contents, simple }: { contents: BootContents; simple: boole
  * the emulator's files alone and puts no loader there. Simple mode keeps
  * exactly that; the card counts, `settings.ini` and the folder's place on
  * the SD are details.
+ *
+ * Folded by default (the owner, 2026-10-27, UI-7): the summary line says
+ * what the SD is and counts the boot cards of every variant; the channels
+ * are a click away. Whether it is open is not remembered.
  */
 export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo; className?: string }) {
   const { t } = useTranslation();
@@ -55,19 +59,31 @@ export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo;
   // One per card: the page lists every SD the computer sees.
   const titleId = useId();
   const kinds = emulator.kinds.map((kind) => t(`devices.emulator.kinds.${kind}`)).join(", ");
+  const counts = emulator.variants.map((variant) => `${variant.name} — ${variant.boot.length}`).join(", ");
   return (
     <section
-      className={cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className)}
+      className={cn("rounded-md border bg-card px-3 py-2 text-sm", className)}
       aria-labelledby={titleId}
       data-testid="emulator-panel"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <MemoryStick className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <h3 id={titleId} className="font-medium">
-          {t("devices.emulator.title")}
-        </h3>
-        {kinds && <span className="text-muted-foreground">— {kinds}</span>}
-      </div>
+      <details className="group" data-testid="emulator-details">
+        <summary
+          className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-0.5 select-none [&::-webkit-details-marker]:hidden"
+          data-testid="emulator-summary"
+        >
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+          <MemoryStick className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <h3 id={titleId} className="font-medium">
+            {t("devices.emulator.title")}
+          </h3>
+          {kinds && <span className="text-muted-foreground">— {kinds}</span>}
+          {counts && (
+            <span className="basis-full pl-12 text-xs text-muted-foreground">
+              {t("devices.emulator.summary", { counts })}
+            </span>
+          )}
+        </summary>
+        <div className="mt-2 flex flex-col gap-2">
       <p className="text-muted-foreground" data-testid="emulator-protected">
         {t("devices.emulator.protected", { files: emulator.protected.join(", ") })}
       </p>
@@ -116,6 +132,8 @@ export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo;
           ))}
         </div>
       )}
+        </div>
+      </details>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { openEmulatorPanel } from "./emulator-flow";
 import { libraryTool, openLibrary } from "./helpers";
 
 // Screenshots for PR review (TESTING.md): both themes, both languages, two widths.
@@ -174,6 +175,7 @@ for (const language of ["en", "ru"] as const) {
           .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]emulator$/ }) })
           .first();
         await expect(card.getByTestId("emulator-panel")).toBeVisible();
+        await openEmulatorPanel(card);
         await card.screenshot({
           path: `test-results/screenshots/emulator-card-${simple ? "simple" : "advanced"}-${language}-${theme}.png`,
         });

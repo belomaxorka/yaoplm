@@ -3,6 +3,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { openEmulatorPanel } from "../e2e/emulator-flow";
 import { emptyStick, job, joinPath, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
 
 // The release UI pass (docs/plans/release-ui-consistency.md): every screen
@@ -273,6 +274,11 @@ for (const run of runs) {
       },
       { tabs: 40 },
     );
+    // The emulator's panel comes folded (UI-7): its boot channels, opened.
+    await pass.state("devices-emulator-open", async () => {
+      const panel = await openEmulatorPanel(emulatorCard(page));
+      await expect(panel.getByTestId("emulator-boot-channel").first()).toBeVisible();
+    });
     await pass.state("devices-stick-answered", async () => {
       await stickCard(page).getByTestId("loader-answer-Opl110").click();
       await expect(stickCard(page).getByTestId("loader-profile")).toBeVisible();

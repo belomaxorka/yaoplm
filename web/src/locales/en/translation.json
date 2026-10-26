@@ -843,6 +843,7 @@
         "sd2psx": "sd2psx or sd2psXtd",
         "memcardPro2": "MemCard PRO 2"
       },
+      "summary": "Boot cards: {{counts}}",
       "protected": "The emulator’s files are left alone; OPL runs from the boot card.",
       "folder": "This folder is {{folder}} on the SD.",
       "bootCards": "Boot cards {{variant}}",
