@@ -161,7 +161,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                     <MoreHorizontal aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align="start" className="w-max">
                   <DropdownMenuItem
                     onSelect={() => {
                       afterPlan.current = cardOf(game.startup);
