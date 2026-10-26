@@ -34,7 +34,8 @@ The backup is in `$YAOPLM_TESTDATA\backups\psxmemcard-gen2-sd-2026-10-26\`: ever
 - **The update done on 2026-10-26.**
   - File: `sd2psx.uf2` from release 1.4.0, 2 361 344 bytes, SHA-256 `0551bb60…7024`, equal to the release digest. It holds 4 612 UF2 blocks, family `0xe48bff56` (RP2040), addresses `0x10000000–0x10120400`.
   - It was copied to `RPI-RP2`; the card rebooted on its own, which the ROM only does after a complete image.
-  - The factory firmware version was not recorded. The owner confirmed 1.4.0 in the device's Info menu the same day, with the Kingston card inserted. The CDC port has not been tried yet.
+  - The factory firmware version was not recorded. The owner confirmed 1.4.0 in the device's Info menu the same day, with the Kingston card inserted.
+  - **The CDC port works [V 2026-10-26].** With the Kingston card in, the device enumerates as VID `2E8A` PID `000A`: a serial port (COM3 here) plus a "Reset" interface. `help` (CR-terminated; the parser takes CR, LF or CR LF, `src/serial_input.c`) lists exactly 1.4.0's commands and ends with a `>` prompt. No other command was sent.
 
 ## 2. The factory microSD
 
@@ -113,6 +114,13 @@ The COH boot card is the builder's `wLaunchELF_Arcade.mcd`. The PS1 boot card ma
 - **An unpacked OPL ELF gives no version** (`OPNPS2LD10th.ELF`, the 10th-anniversary build; its `OPL/` save says "OpenPS2Loader 10TH_ANNIVERSARY"). This is a gap in research/16 §1.6 detection.
 - **OPL settings live inside the boot card**, as research/07 §2.7 expects: `OPL/conf_opl.cfg` on BootCard-1, CRLF.
   - It sets `default_device=4`, which is `MMCE_MODE` in the fork (upstream has modes 0–3), and has no `mmce_*` keys.
+  - **That config was last saved by a build without MMCE.** The fork writes `mmce_mode`, `mmce_slot` and `mmceigr_slot` on every save (`src/opl.c`, `mmce_support`). Without them the fork starts with MMCE **disabled** (`gMMCEStartMode = START_MODE_DISABLED`), so its game list from the SD stays hidden until the user sets the MMCE start mode to Auto in OPL's settings and saves. That save lands in this boot card's `OPL/conf_opl.cfg`.
+- **FreeMcBoot's menu on channel 1** (`SYS-CONF/FREEMCB.CNF`, the factory's customised one):
+  - item 3 "Open PS2 Loader": `mass:/UPDT/OPL.ELF` first, then `mc?:/APPS/OPNPS2LD.ELF` (2049, no MMCE). With a USB stick holding YAOPLM's FMCB preset `UPDT/OPL.ELF` plugged in, this item starts the stick's OPL instead;
+  - item 4 "Open PS2 Loader (MMCE Beta2)": `mass:/UPDT/OPL-MMCE-BETA2.ELF`, then `mc?:/APPS/OPL-MMCE-BETA2.ELF` (2216). This is the only entry that sees games on the SD;
+  - item 6 "Open PS2 Loader(10th)", items 7–9 the GB, FC and SNES emulators, items 1–2 wLaunchELF and ESR;
+  - hotkeys: R1 wLaunchELF, R2 ESR, L2 SMS, L1 HDLoader, Start the FMCB configurator, Down power-off; `OSDSYS_Skip_Logo=1`, `OSDSYS_Skip_MC=1`.
+- **The boot channel at power-on** [V `ps2_cardman.c` `try_set_boot_card()`]: with PS2 `Autoboot=ON` the firmware mounts `BOOT` on the **last boot channel used**. That index lives in the device's flash (`ps2_boot_channel`), not in any file on the SD. Choosing channel 1 once on the device makes FreeMcBoot 1.966 start at every power-on.
   - `OPL/conf_network.cfg` holds defaults: DHCP, no SMB server.
 - **Played games.** `BADATA-SYSTEM/history` holds one launched ID (`SLES_549.45`). The firmware's Game ID switching watches writes to this file.
 
@@ -216,7 +224,7 @@ Mapped to SPEC:
 
 ## 7. Still to check
 
-- On the device: the CDC port answers `help`, and the Info menu shows the Kingston card.
+- On the device: the Info menu shows the Kingston card.
 - On the console:
   - boot card channel 1 starts FreeMcBoot;
   - OPL 2216 (MMCE) lists games put in `CD/` and `DVD/` on the SD;
