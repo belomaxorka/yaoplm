@@ -92,7 +92,14 @@ export async function stickAsUsb(page: Page): Promise<void> {
   await page.route("**/api/rpc", async (route) => {
     const body = route.request().postDataJSON() as { type?: string } | null;
     if (body?.type !== "ListDevices") return route.fallback();
-    const response = await route.fetch();
+    let response;
+    try {
+      response = await route.fetch();
+    } catch {
+      // The device list refreshes on a timer: a refresh in flight when the
+      // test ends throws "Test ended" (seen in loader-update.spec.ts).
+      return;
+    }
     const json = (await response.json()) as { devices: Record<string, unknown>[] };
     for (const device of json.devices.filter((d) => isStick(d.root))) {
       Object.assign(device, {
