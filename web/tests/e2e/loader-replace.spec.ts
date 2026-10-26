@@ -94,6 +94,43 @@ test("moving to OPL 1.1.0 lists the ZSO games, ticked to convert", async ({ page
   await expect(dialog.getByTestId("loader-impact-nothing")).toContainText("Для игр ничего не меняется");
 });
 
+// "Restore v1.1.0" crosses builds as a replacement does: the plan says what
+// the games lose and points to "Replace…", in both modes (LDR-4, LDR-7).
+for (const simple of [false, true]) {
+  test(`a rollback to OPL 1.1.0 warns about the ZSO game, ${simple ? "simple" : "advanced"} mode`, async ({ page, request }) => {
+    const stick = await emptyStick(request);
+    copyExtras(stick, "DVD");
+    await installStable(request, stick);
+    await installBeta(request, stick);
+    await openLibrary(page, request, { language: "en", simple });
+    await stickAsUsb(page);
+    await page.goto("/devices");
+    await stickCard(page).getByTestId("installed-loader-rollback").click();
+    const plan = page.getByTestId("plan-dialog");
+    await expect(plan).toContainText("ZSO games OPL 1.1.0 cannot show: 1. “Replace…” converts them to ISO in the same plan");
+    await expect(plan.getByTestId("plan-confirm")).toBeEnabled();
+  });
+}
+
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`loader rollback screenshots ${language} ${theme}`, async ({ page, request }) => {
+      const stick = await emptyStick(request);
+      copyExtras(stick, "DVD");
+      await installStable(request, stick);
+      await installBeta(request, stick);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await openLibrary(page, request, { language, theme });
+      await stickAsUsb(page);
+      await page.goto("/devices");
+      await stickCard(page).getByTestId("installed-loader-rollback").click();
+      await expect(page.getByTestId("plan-dialog")).toContainText(language === "en" ? "ZSO games" : "ZSO-игры");
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `test-results/screenshots/loader-rollback-${language}-${theme}-1280.png` });
+    });
+  }
+}
+
 // The replace wizard for PR review (TESTING.md).
 for (const language of ["en", "ru"] as const) {
   for (const theme of ["light", "dark"] as const) {

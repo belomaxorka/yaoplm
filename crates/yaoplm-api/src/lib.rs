@@ -1053,7 +1053,7 @@ impl Api {
             }
             Request::PlanRollbackLoader { root, path } => {
                 let (root, fs) = self.root(&root)?;
-                let plan = loaders::plan_rollback(&self.net, &fs, &path)?;
+                let plan = loaders::plan_rollback(&self.net, &root, &fs, &path)?;
                 Ok(self.store(root, plan))
             }
             Request::LoaderReleases { build, mirror } => {

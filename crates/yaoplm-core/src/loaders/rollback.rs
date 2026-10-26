@@ -3,6 +3,10 @@
 //! newest backup, so a second rollback undoes the first. The manifest
 //! follows what is back: a catalogue build keeps its entry, another program
 //! loses it. The language pack stays: `LNG/` holds one per device.
+//!
+//! Going back to a build with other rules is checked as replacing is
+//! (LDR-7, [`super::impact`]): OPL 1.1.0 on exFAT is refused, and what the
+//! games lose comes as warnings that point to "Replace…", which converts.
 
 use std::io;
 
@@ -10,10 +14,13 @@ use yaoplm_device::fs::{find_entry, list_or_empty};
 use yaoplm_device::{DeviceFs, RelPath};
 use yaoplm_i18n::Phrase;
 
-use super::Catalog;
-use super::install::{BACKUP_DIR, backup_name, missing_parents, refused, stamp};
+use yaoplm_formats::LoaderProfile;
+
+use super::impact::Impact;
+use super::install::{BACKUP_DIR, backup_name, missing_parents, opl_reads_exfat, refused, stamp};
 use super::installed::{newest_backup, read_program};
 use super::manifest::{self, Installed, Manifest};
+use super::{Build, Catalog};
 use crate::device::DeviceState;
 use crate::ops::new_plan;
 use crate::plan::{Bytes, Expect, Notice, Plan, PlanKind, Step, Transaction};
@@ -60,6 +67,20 @@ pub fn plan_rollback(
         .map_err(|e| io::Error::other(e.to_string()))?;
     let backup_file = rel(&backup.file)?;
     let backup_folder = backup_file.parent().unwrap_or_else(RelPath::root);
+    let back = build_of(fs, &backup_file, catalog)?;
+    let here = match &current {
+        Some(current) => build_of(fs, current, catalog)?,
+        None => None,
+    };
+    // 1.1.0 reads no exFAT: replacing and installing refuse it too.
+    if back.is_some_and(|b| b.profile == LoaderProfile::Opl110)
+        && here.is_none_or(|b| b.profile != LoaderProfile::Opl110)
+        && opl_reads_exfat(fs)
+    {
+        plan.notices
+            .push(Notice::error(Phrase::notice("replaceExfatOpl110")));
+        return Ok(plan);
+    }
 
     let mut tx = Transaction::titled(
         Phrase::title("restoreLoader")
@@ -106,14 +127,8 @@ pub fn plan_rollback(
         .transpose()?;
     let mut manifest = Manifest::read(fs).map(|(m, _)| m).unwrap_or_default();
     let before = manifest.entry(path).cloned();
-    let (family, version, sha256) = read_program(fs, &backup_file)?;
-    let build = family
-        .zip(version.as_deref())
-        .and_then(|(family, version)| {
-            let version = super::BuildVersion::parse(version)?;
-            catalog.channel_of_version(family, &version)
-        });
-    match build {
+    let (_, version, sha256) = read_program(fs, &backup_file)?;
+    match back {
         Some(build) => manifest.put(Installed {
             build: build.id.clone(),
             tag: None,
@@ -152,4 +167,63 @@ pub fn plan_rollback(
         plan.transactions.push(tx);
     }
     Ok(plan)
+}
+
+/// The catalogue build of the program in `file`, if it is one.
+fn build_of<'c>(
+    fs: &dyn DeviceFs,
+    file: &RelPath,
+    catalog: &'c Catalog,
+) -> io::Result<Option<&'c Build>> {
+    let (family, version, _) = read_program(fs, file)?;
+    Ok(family
+        .zip(version.as_deref())
+        .and_then(|(family, version)| {
+            let version = super::BuildVersion::parse(version)?;
+            catalog.channel_of_version(family, &version)
+        }))
+}
+
+/// The builds a rollback of `path` goes from and to, when both are
+/// catalogue builds with other rules: what the games lose is then checked
+/// as for replacing ([`impact_notices`]).
+pub fn crossing<'c>(
+    fs: &dyn DeviceFs,
+    path: &str,
+    catalog: &'c Catalog,
+) -> io::Result<Option<(&'c Build, &'c Build)>> {
+    let Some(backup) = newest_backup(fs, path)? else {
+        return Ok(None);
+    };
+    let target = rel(path)?;
+    let parent = target.parent().unwrap_or_else(RelPath::root);
+    let Some(current) = find_entry(&list_or_empty(fs, &parent)?, target.file_name())
+        .filter(|e| !e.is_dir)
+        .map(|e| parent.join(&e.name))
+        .transpose()
+        .map_err(|e| io::Error::other(e.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let here = build_of(fs, &current, catalog)?;
+    let back = build_of(fs, &rel(&backup.file)?, catalog)?;
+    Ok(here
+        .zip(back)
+        .filter(|(here, back)| here.profile != back.profile))
+}
+
+/// What going back to `build` loses for the games, as the replace window
+/// lists it (LDR-7). Warnings, not errors: the user may go back anyway, and
+/// "Replace…" converts ZSO and re-encodes pictures in the same plan.
+pub fn impact_notices(impact: &Impact, build: &str) -> Vec<Notice> {
+    [
+        ("rollbackZso", impact.zso.len()),
+        ("rollbackFragmented", impact.fragmented.len()),
+        ("rollbackUnknownFragments", impact.unknown_fragments.len()),
+        ("rollbackArt", impact.art.len()),
+    ]
+    .into_iter()
+    .filter(|(_, count)| *count > 0)
+    .map(|(code, count)| Notice::warning(Phrase::notice(code).with("build", build).count(count)))
+    .collect()
 }
