@@ -150,13 +150,13 @@ describe("Replace loader", () => {
     const core = fakeCore();
     show(core);
     const dialog = await screen.findByTestId("loader-install-dialog");
-    expect(within(dialog).getByRole("heading", { name: "Replace the loader" })).toBeTruthy();
+    expect(within(dialog).getByRole("heading", { name: "Switch OPL" })).toBeTruthy();
     expect(dialog.textContent).toContain("Now: OPL 1.2.0 beta v1.2.0-Beta-2271 (b3a2199) in UPDT/OPL.ELF");
     // The installed build is marked; the recommended one is the installed one, so the next.
     const beta = await within(dialog).findByTestId("loader-build-opl-beta");
     expect(beta.closest("label")?.textContent).toContain("Installed");
     expect(within(dialog).getByTestId("loader-build-opl-stable").getAttribute("data-state")).toBe("checked");
-    expect(dialog.textContent).toContain("Limits: No exFAT or ZSO.");
+    expect(dialog.textContent).toContain("No exFAT or ZSO.");
     expect(within(dialog).getByTestId("loader-method-fmcb").getAttribute("data-state")).toBe("checked");
     expect(within(dialog).queryByTestId("loader-method-card")).toBeNull();
 

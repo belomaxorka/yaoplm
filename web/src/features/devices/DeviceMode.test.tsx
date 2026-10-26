@@ -126,9 +126,9 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
   it("shows the mode and its place, and switches it for this device", async () => {
     show(<DeviceLines device={emptyFolder({ askProfile: false })} />);
     const line = screen.getByTestId("device-mode");
-    expect(line).toHaveTextContent("Connection to the PS2: over the network (SMB) — a folder on the computer’s disk");
+    expect(line).toHaveTextContent("To the console: over the network — a folder on the computer’s disk");
     // The rules YAOPLM writes for, not a loader found on the device.
-    expect(screen.getByTestId("loader-profile")).toHaveTextContent("OPL version: OPL 1.2.0 beta — no signs of a loader");
+    expect(screen.getByTestId("loader-profile")).toHaveTextContent("OPL: OPL 1.2.0 beta — no signs of a loader");
     await userEvent.click(screen.getByTestId("device-choice-change"));
     await userEvent.click(await screen.findByTestId("device-mode-ps2"));
     expect(readSettings().modeOverrides).toEqual({ [KEY]: "ps2" });
@@ -160,7 +160,7 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
   it("an empty folder for SMB gets OPL's folders, not a loader", async () => {
     const fake = core();
     show(<SmbFolderHint device={emptyFolder()} />, fake.transport);
-    expect(screen.getByTestId("smb-init")).toHaveTextContent("OPL’s folders are not here yet");
+    expect(screen.getByTestId("smb-init")).toHaveTextContent("No OPL folders here yet");
     await userEvent.click(screen.getByTestId("smb-init-button"));
     await screen.findByTestId("plan-dialog");
     expect(fake.planned).toEqual([{ type: "PlanInit", root: "D:\\Games" }]);
@@ -227,7 +227,7 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
       });
     show(<DeviceLines device={sd({ askProfile: false })} />);
     expect(screen.getByTestId("device-mode")).toHaveTextContent(
-      "Connection to the PS2: in a memory card emulator (MMCE) — the files of a memory card emulator: .sd2psx, MemoryCards",
+      "To the console: through a memory card emulator — the files of a memory card emulator: .sd2psx, MemoryCards",
     );
     await userEvent.click(screen.getByTestId("device-choice-change"));
     // OPL 1.1.0 and its "I don't know" see no games on the SD.
@@ -247,7 +247,7 @@ describe("how the PS2 reads a device (ADR-0047)", () => {
     cleanup();
     const fake = core();
     show(<SmbFolderHint device={sd({ askProfile: false })} />, fake.transport);
-    expect(screen.getByTestId("emulator-init")).toHaveTextContent("next to the emulator’s files");
+    expect(screen.getByTestId("emulator-init")).toHaveTextContent("No OPL folders here yet");
     await userEvent.click(screen.getByTestId("smb-init-button"));
     await screen.findByTestId("plan-dialog");
     expect(fake.planned).toEqual([{ type: "PlanInit", root: "G:\\" }]);

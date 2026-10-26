@@ -16,12 +16,12 @@ url = "https://github.com/ps2homebrew/Open-PS2-Loader/blob/master/LICENSE"
 authors = "ps2homebrew and the Open PS2 Loader contributors"
 
 [summary]
-en = "The official beta, rebuilt on every change to OPL: exFAT, ZSO, up to 64 pieces per game and the latest compatibility fixes."
-ru = "Официальная бета, собирается при каждом изменении OPL: exFAT, ZSO, до 64 кусков на игру, свежие исправления совместимости."
+en = "The current official build: exFAT, compressed ZSO, the most games working."
+ru = "Свежая официальная сборка: exFAT, сжатые ZSO, больше совместимых игр."
 
 [limits]
-en = "A beta without a fixed version: the build behind the tag is replaced in place. Covers must be PNG."
-ru = "Бета без неизменной версии: сборка под тегом заменяется на месте. Обложки — только PNG."
+en = "Updated often; PNG covers only."
+ru = "Обновляется часто; обложки только PNG."
 
 [[docs]]
 kind = "readme"

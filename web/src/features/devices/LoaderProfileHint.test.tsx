@@ -28,7 +28,7 @@ describe("the loader profile question (ADR-0041, ADR-0047)", () => {
 
   it("asks when the core says so and remembers the answer", async () => {
     show(testDevice());
-    expect(screen.getByTestId("loader-question")).toHaveTextContent("Which OPL do you start with this device?");
+    expect(screen.getByTestId("loader-question")).toHaveTextContent("Which OPL is on your memory card?");
     await userEvent.click(screen.getByTestId("loader-answer-unknown"));
     expect(readSettings().profileOverrides).toEqual({ [KEY]: "unknown" });
   });
@@ -42,15 +42,15 @@ describe("the loader profile question (ADR-0041, ADR-0047)", () => {
   it("asks an empty folder read over SMB about the OPL on the console", () => {
     show(testDevice({ mode: smbMode, loader: loader({ detected: detected({ library: false }) }) }));
     const question = screen.getByTestId("loader-question");
-    expect(question).toHaveTextContent("Which OPL reads this folder over the network?");
+    expect(question).toHaveTextContent("Which OPL will read this folder?");
     expect(question).toHaveTextContent("ZSO images and JPG pictures");
   });
 
   it("asks a memory card emulator's SD about builds with MMCE only (ADR-0048)", async () => {
     show(testDevice({ mode: emulatorMode, emulator: emulatorInfo, loader: loader({ detected: detected({ library: false }) }) }));
     const question = screen.getByTestId("loader-question");
-    expect(question).toHaveTextContent("Which OPL with MMCE do you start?");
-    expect(question).toHaveTextContent("upstream OPL does not");
+    expect(question).toHaveTextContent("Which OPL with MMCE?");
+    expect(question).toHaveTextContent("builds with MMCE");
     expect(screen.getByTestId("loader-answer-Opl120Beta")).toHaveTextContent("MMCE fork, YAOPL or wOPL");
     expect(screen.queryByTestId("loader-answer-Opl110")).toBeNull();
     expect(screen.queryByTestId("loader-answer-unknown")).toBeNull();

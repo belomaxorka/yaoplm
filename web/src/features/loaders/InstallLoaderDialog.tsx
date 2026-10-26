@@ -521,12 +521,18 @@ export function InstallLoaderDialog({
                             </span>
                             <span className="block text-xs text-muted-foreground">
                               {b.summary[uiLanguage] ?? b.summary.en}
+                              {b.docs.find((d) => d.kind === "fork") && (
+                                <>
+                                  {" "}
+                                  <ExternalLink href={b.docs.find((d) => d.kind === "fork")?.url ?? ""}>{t("loaderInstall.aboutFork")}</ExternalLink>
+                                </>
+                              )}
                             </span>
                             {unavailable(b) ? (
                               <span className="mt-0.5 block text-xs text-destructive">{t("notices.loaderExfatOpl110")}</span>
                             ) : (
                               (b.limits[uiLanguage] ?? b.limits.en) && (
-                                <span className="mt-0.5 block text-xs text-muted-foreground/80">
+                                <span className="mt-0.5 block text-xs text-muted-foreground">
                                   {t("loaderInstall.limits", { text: b.limits[uiLanguage] ?? b.limits.en ?? "" })}
                                 </span>
                               )

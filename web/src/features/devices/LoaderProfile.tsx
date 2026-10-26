@@ -1,10 +1,14 @@
 import { cn } from "cn";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ActiveProfile } from "@/api/generated/ActiveProfile";
 import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useSimpleMode } from "@/settings/context";
+
+import { Reason } from "./DeviceMode";
 import { worstLevel } from "@/lib/notices";
 import { phraseText } from "@/lib/phrase";
 import { mmceProfiles, type ProfileOverrideValue, profiles } from "@/settings/settings";
@@ -41,10 +45,7 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
       <span className="font-medium" data-testid="loader-profile-name">
         {t(`settings.profiles.${loader.profile}`)}
       </span>
-      <span className="text-muted-foreground" data-testid="loader-profile-reason">
-        {" "}
-        — {reason}
-      </span>
+      <Reason text={reason} testId="loader-profile-reason" />
     </div>
   );
 }
@@ -68,6 +69,7 @@ export function LoaderProfileHint({ device, className }: { device: DeviceInfo; c
   const { t } = useTranslation();
   const loader = device.loader;
   const { choose } = useProfileChoice(loader);
+  const simple = useSimpleMode();
   const detected = loader.detected;
   const box = cn("flex flex-col gap-2 rounded-md border bg-card p-3 text-sm", className);
   if (worstLevel(device.advice) === "error") return null;
@@ -90,8 +92,20 @@ export function LoaderProfileHint({ device, className }: { device: DeviceInfo; c
         <div className="flex items-center gap-2 font-medium" id={`loader-question-${loader.key}`}>
           <CircleHelp className="size-4 text-muted-foreground" aria-hidden />
           {t(question)}
+          {simple && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="inline-flex text-muted-foreground" aria-label={t("devices.why")}>
+                    <Info className="size-3.5" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">{t(hint)}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
-        <p className="text-muted-foreground">{t(hint)}</p>
+        <p className={simple ? "sr-only" : "text-muted-foreground"}>{t(hint)}</p>
         <div className="flex flex-wrap gap-2">
           {answers.map(({ profile, label }) => (
             <Button key={profile} size="sm" variant="outline" onClick={() => choose(profile)} data-testid={`loader-answer-${profile}`}>
