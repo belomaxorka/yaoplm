@@ -3,7 +3,7 @@
 //! OPL is AFL-3.0, so its source is never copied into this repository
 //! (ADR-0002). These tests read it from a checkout at run time:
 //! - `YAOPLM_OPL_SRC`: an Open-PS2-Loader checkout. Locally
-//!   `D:\yaoplm-testdata\refs\ps2homebrew__Open-PS2-Loader`; CI downloads the
+//!   `$YAOPLM_TESTDATA\refs\ps2homebrew__Open-PS2-Loader`; CI downloads the
 //!   needed files at a pinned commit.
 //! - `YAOPLM_PYTHON` (optional): Python with the `lz4` package for `ziso.py`.
 //!

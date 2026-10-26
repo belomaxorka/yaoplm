@@ -1,5 +1,5 @@
 //! Real-world files from the reference corpus (docs/research/REFERENCES.md
-//! §5). Needs `YAOPLM_TESTDATA` (e.g. `D:\yaoplm-testdata`); run with
+//! §5). Needs `YAOPLM_TESTDATA` (`scripts/testdata.ps1`); run with
 //! `cargo test -p yaoplm-formats --test corpus -- --ignored --nocapture`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]

@@ -8,8 +8,8 @@
 
 - [ ] 1. Запустить `pnpm tauri dev` из `apps/desktop` (сборки релиза для M5 ещё нет). «Настройки → Библиотека»: профиль `OPL 1.2.0 beta`, имена `ID.Название.iso`.
 - [ ] 2. Тестовые файлы на D: (готовит агент; если папки нет — команды ниже):
-  - `D:\yaoplm-testdata\out\m5-packed\`: `YAOP_000.01.wLaunchELF.zip`, `.7z`, `(DVD).chd`, `(CD).chd` (с аудиодорожкой), `.cue` с `(Track 1).bin` и `(Track 2).bin`. Команда: `cargo run -p yaoplm-test-support --example pack -- D:\yaoplm-testdata\out\YAOP_000.01.wLaunchELF.iso D:\yaoplm-testdata\out\m5-packed`;
-  - `D:\yaoplm-testdata\out\YAOP_000.05.wLaunchELF 4300MiB.iso` (больше 4 ГиБ, загружается).
+  - `$YAOPLM_TESTDATA\out\m5-packed\`: `YAOP_000.01.wLaunchELF.zip`, `.7z`, `(DVD).chd`, `(CD).chd` (с аудиодорожкой), `.cue` с `(Track 1).bin` и `(Track 2).bin`. Команда (PowerShell): `cargo run -p yaoplm-test-support --example pack -- $env:YAOPLM_TESTDATA\out\YAOP_000.01.wLaunchELF.iso $env:YAOPLM_TESTDATA\out\m5-packed`;
+  - `$YAOPLM_TESTDATA\out\YAOP_000.05.wLaunchELF 4300MiB.iso` (больше 4 ГиБ, загружается).
 - [ ] 3. По желанию, для проверки по Redump: ваш собственный архив с игрой (zip или 7z с ISO внутри), скачанный раньше.
 - [ ] 4. «Носители» → карточка E: → «Открыть библиотеку». Если на флешке уже есть `YAOP_000.01`, удалите эту игру (её ID нужен ниже).
 

@@ -11,7 +11,7 @@
 1. Прочитай `CLAUDE.md`, затем `docs/ROADMAP.md` (веха M5), `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` (последние ADR — 0042…0047), `docs/TESTING.md`, `docs/I18N.md`. Формат OPL — `docs/research/02-opl-formats.md`.
 2. Проверь свою память (`MEMORY.md`): там правила работы со мной, факты о машине и список находок ревью.
 3. `git status`, `git log --oneline -8`, `gh pr list --state all --limit 6`. На 2026-10-26 `main` — `1971b44`, открытых PR нет.
-4. Перед сборкой и запуском — `powershell -NoProfile -File scripts/dev-processes.ps1`.
+4. Перед сборкой и запуском — `powershell -NoProfile -File scripts/dev-processes.ps1`; перед тестами на реальных данных и работой с флешкой — `. scripts/testdata.ps1`.
 
 ## Что сделано 2026-10-26 (всё в `main`)
 
@@ -30,15 +30,14 @@
 - 64 ГБ ОЗУ, 16 потоков, C: 2 ТБ — лимиты по памяти и диску больше не действуют.
 - Установлено: Rust 1.99.1 (из `rust-toolchain.toml`) + nightly и `cargo-fuzz`; Node 26, corepack, pnpm 12.15; Python 3.15 с `PyYAML` и `lz4`; Go 1.27; Chromium для Playwright; VS Build Tools 2026, WebView2; `gh` под `belomaxorka`. Подпись коммитов GPG работает без вопросов.
 - В старых оболочках может не быть PATH: добавь `$env:USERPROFILE\.cargo\bin` и `$env:APPDATA\npm`; в неинтерактивных — `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`.
-- **Буквы дисков плавают.** Сейчас тестовые данные на **F:** (`F:\yaoplm-testdata`, USB-диск владельца), тестовая флешка — **D:**, E: — пустой NVMe. В корне F: — мои личные файлы: ничего вне `yaoplm-testdata` не читай. CLAUDE.md, TESTING.md и скрипты пока пишут `D:\yaoplm-testdata`: ставь `YAOPLM_TESTDATA=F:\yaoplm-testdata`, `YAOPLM_OPL_SRC=F:\yaoplm-testdata\refs\ps2homebrew__Open-PS2-Loader` и сверяйся с `Get-Volume`.
-- Клоны в `refs/` принадлежат SID старой Windows: в глобальном git добавлен `safe.directory F:/yaoplm-testdata/refs/*`.
+- **Буквы дисков плавают**, поэтому документация пишет папку тестовых данных как `$YAOPLM_TESTDATA`. `. scripts/testdata.ps1` находит `yaoplm-testdata` по имени, задаёт `YAOPLM_TESTDATA` и `YAOPLM_OPL_SRC` и перечисляет тома с серийными номерами (в Git Bash — `eval "$(powershell -NoProfile -File scripts/testdata.ps1 -Bash)"`, в том же вызове, что и команда). На 2026-10-26 это F: (USB-диск владельца), тестовая флешка — D:, E: — пустой NVMe. В корне диска с тестовыми данными — мои личные файлы: ничего вне `yaoplm-testdata` не читай.
+- Клоны в `refs/` принадлежат SID старой Windows: в глобальном git добавлен `safe.directory F:/yaoplm-testdata/refs/*`. Если буква сменится и git откажется читать клон — скажи мне.
 - Параллельно: `cargo test` и E2E — да, E2E в своей папке сборки (`CARGO_TARGET_DIR=target\e2e`); `pnpm -C web test` — только отдельно (рядом со сборкой cargo тесты vitest падают по тайм-ауту).
 - Подводные камни: heredoc в Bash схлопывает `\\` (строки с обратными слешами правь через Edit); Python на Windows пишет CRLF, если не указать `newline=""`; цепочка команд в PowerShell не останавливается на ошибке (проверяй `$LASTEXITCODE`, особенно перед коммитом); удалять папки в корне диска защита среды не даёт — проси меня; `gh pr merge` может вернуть TLS timeout после фактического слияния — проверь `gh pr view` перед повтором.
-- Живой сервер с флешкой: локальная конфигурация в `.claude/launch.json` (не коммитить), например `cargo run --target-dir target\live -p yaoplm-server -- --bind 127.0.0.1:7878 --root D:\ --root F:\yaoplm-testdata\out --data-dir <scratchpad>\live-data`. Останавливай всё, что запустил.
+- Живой сервер с флешкой: локальная конфигурация в `.claude/launch.json` (не коммитить), например `cargo run --target-dir target\live -p yaoplm-server -- --bind 127.0.0.1:7878 --root <флешка>\ --root <папка тестовых данных>\out --data-dir <scratchpad>\live-data` (буквы — по `scripts/testdata.ps1`). Останавливай всё, что запустил.
 
 ## Незакрытое (по порядку)
 
-0. **Локальная ветка `m5/dev-machine-docs`** (не запушена): CLAUDE.md (железо, параллельные прогоны, Python 3.15, правило проверки исправлений) и этот KICKOFF. Спроси меня про буквы дисков — закреплю за USB-диском D: в «Управлении дисками» или правим пути в документации на поиск по имени, — доведи и открой PR.
 1. **Форматы (паники и тихие ошибки):** `crates/yaoplm-formats/src/game_cfg.rs:252` — `offset.abs()` переполняется на `i32::MIN` (в отладке паника, в релизе проверка диапазона ±100 пропускается); `cue.rs:175` — `(m * 60 + s) * 75 + f` переполняется (в релизе дорожка молча начинается не с того сектора), нужна и fuzz-цель для CUE; `cue.rs:198` — номера строк в ошибках удваиваются на CRLF; `system_cnf.rs:184` — пустой ID там, где OPL прячет игру (значение `BOOT2` ≥ 64 символов с `;` сразу после `:`; сверь с `src/supportbase.c` `GetStartupExecName`); `yaoplm-hash/src/lib.rs:28` — `sha256_reader` не повторяет `Interrupted`.
 2. **Сервер:** `crates/yaoplm-api/src/paths.rs:28` — `canonicalize` до проверки корней: страница в браузере через `<img src=…/media/art?path=\\хост\…>` заставит сервер на Windows открыть UNC-путь и отдать NTLM-хеш (отвергать путь по тексту до `canonicalize`, проверять `Sec-Fetch-Site`); нет `X-Frame-Options`/`frame-ancestors`; лимит тела axum 2 МБ против `SetArt` с байтами картинки; `YAOPLM_OFFLINE` не проверяет редиректы (`yaoplm-net/src/http.rs:100,236`); `?token=` сравнивается без URL-декодирования (`apps/server/src/auth.rs:97`); ошибки на краю сервера только по-английски; `Host: [::1]` без порта отвергается.
 3. **Мелочи загрузчика:** ELF, поставленный YAOPLM, но с нечитаемым упаковщиком, считается чужим — «Обновить» всегда падает (`core/src/loaders/install.rs:192`); повторный путь установки не схлопывается; срез строки в `core/src/loaders/release.rs:170` может паниковать; манифест более новой схемы перезаписывается целиком; порядок резервных копий по часам ПК.
@@ -48,4 +47,4 @@
 
 ## Процесс
 
-Ветка на задачу `m5/<slug>` от свежего `main`; Conventional Commits с ID требований; перед коммитом fmt, clippy, тесты; перед PR — полный CI локально (команды в CLAUDE.md) и живая проверка, где она возможна. PR: что сделано, ID требований, как проверено (с красными тестами), чек-лист для консоли. Вливаю я (или прошу тебя) обычным merge после зелёного CI. Начни с пункта 0, затем пункт 1.
+Ветка на задачу `m5/<slug>` от свежего `main`; Conventional Commits с ID требований; перед коммитом fmt, clippy, тесты; перед PR — полный CI локально (команды в CLAUDE.md) и живая проверка, где она возможна. PR: что сделано, ID требований, как проверено (с красными тестами), чек-лист для консоли. Вливаю я (или прошу тебя) обычным merge после зелёного CI. Начни с пункта 1.

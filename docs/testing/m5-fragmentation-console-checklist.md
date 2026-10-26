@@ -6,7 +6,7 @@
 
 - Тестовая флешка FAT32 (подойдёт E:) и около 2,5 ГБ свободного места на ней.
 - OPL 1.2.0 beta (последняя сборка). Если есть — OPL 1.1.0 для шага 4.
-- Тестовые образы homebrew из `D:\yaoplm-testdata\out\`: `YAOP_000.01.wLaunchELF.iso` (530 КиБ) и `YAOP_000.06.wLaunchELF 1000MiB.iso` (1 ГиБ). Оба запускают wLaunchELF, коммерческих игр не нужно.
+- Тестовые образы homebrew из `$YAOPLM_TESTDATA\out\`: `YAOP_000.01.wLaunchELF.iso` (530 КиБ) и `YAOP_000.06.wLaunchELF 1000MiB.iso` (1 ГиБ). Оба запускают wLaunchELF, коммерческих игр не нужно.
 - Утилита для игры «кусками» (пишет на флешку только `--out` и свой временный `<out>.filler`, который сама же удаляет; запускаете её вы):
 
 ```
@@ -21,8 +21,8 @@ cargo run -p yaoplm-test-support --example make_fragmented -- --image <обра�
    - В итоге записи нет предупреждения о кусках.
    - В карточке игры (расширенный режим, «Сведения») — «Кусков на носителе: 1 (OPL загружает игру не больше чем из 64)».
    - В OPL 1.2 игра запускается (появляется wLaunchELF).
-2. **Игра в 70 кусках.** Выполните:
-   `cargo run -p yaoplm-test-support --example make_fragmented -- --image "D:\yaoplm-testdata\out\YAOP_000.06.wLaunchELF 1000MiB.iso" --out "E:\DVD\YAOP_000.06.Fragmented.iso" --pieces 70`
+2. **Игра в 70 кусках.** Выполните в PowerShell:
+   `cargo run -p yaoplm-test-support --example make_fragmented -- --image "$env:YAOPLM_TESTDATA\out\YAOP_000.06.wLaunchELF 1000MiB.iso" --out "E:\DVD\YAOP_000.06.Fragmented.iso" --pieces 70`
    - Утилита пишет «… in 70 pieces» (или близкое число больше 64).
    - В YAOPLM после обновления библиотеки у игры есть предупреждение «Игра лежит на носителе кусками (частей: 70)…», а фильтр «Только игры с предупреждениями» её показывает.
    - `yaoplm scan E:\` показывает в колонке `PIECES` то же число.

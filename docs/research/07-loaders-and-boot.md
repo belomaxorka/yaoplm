@@ -4,7 +4,7 @@ Research date: 2026-10-22. Goal: let YAOPLM install a chosen loader (upstream OP
 
 How this was researched:
 - `gh api` for repo metadata and releases (assets, sizes and `digest`).
-- Shallow clones under `D:\yaoplm-testdata\refs\<owner>__<repo>` (outside the repo) to read code. Nothing was built or run, and no release binary was downloaded.
+- Shallow clones under `$YAOPLM_TESTDATA\refs\<owner>__<repo>` (outside the repo) to read code. Nothing was built or run, and no release binary was downloaded.
 - WebSearch for forum knowledge. psx-place.com, consolemods.org and playstationdev.wiki return bot checks or 403, so they appear only as search snippets.
 
 Clones and the commits read:
@@ -813,7 +813,7 @@ Every install is a plan:
 
 ## Sources
 
-**Repositories and files** (local clones under `D:\yaoplm-testdata\refs\`):
+**Repositories and files** (local clones under `$YAOPLM_TESTDATA\refs\`):
 
 - `ps2homebrew/Open-PS2-Loader`:
   - `Makefile`, `.github/workflows/compilation.yml`, `lng_pack.sh`

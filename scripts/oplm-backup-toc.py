@@ -9,17 +9,20 @@ The output, <out>/<item>.tsv, has one line per entry: name, size,
 compressed size, method, CRC-32 and local header offset.
 
 Usage:
-  python scripts/oplm-backup-toc.py <out dir> <item>...
+  python scripts/oplm-backup-toc.py [<out dir>] <item>...
 
 Items are named OPLM_ART_YYYY_MM (2018-11 to 2024-09), for example
 OPLM_ART_2024_09 and OPLM_ART_2023_07. The output belongs in the test data
-folder (D:\\yaoplm-testdata\\oplm-art), never in the repository.
+folder, never in the repository; without <out dir> (when the first argument
+is an item) it goes to $YAOPLM_TESTDATA/oplm-art.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import os
+import re
 import sys
 import urllib.request
 import zipfile
@@ -103,12 +106,24 @@ def table_of_contents(item: str, out: Path) -> None:
     )
 
 
+def testdata(*parts: str) -> Path:
+    """The default output folder inside the test data folder."""
+    root = os.environ.get("YAOPLM_TESTDATA")
+    if not root:
+        raise SystemExit("Give the output folder or set YAOPLM_TESTDATA (scripts/testdata.ps1).")
+    return Path(root, *parts)
+
+
 def main() -> None:
-    if len(sys.argv) < 3:
+    args = sys.argv[1:]
+    if args and re.fullmatch(r"OPLM_ART_\d{4}_\d{2}", args[0]):
+        out, items = testdata("oplm-art"), args
+    else:
+        out, items = (Path(args[0]) if args else None), args[1:]
+    if not items:
         raise SystemExit(__doc__)
-    out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
-    for item in sys.argv[2:]:
+    for item in items:
         table_of_contents(item, out)
 
 
