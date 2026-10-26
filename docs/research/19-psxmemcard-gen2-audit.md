@@ -36,6 +36,13 @@ The backup is in `$YAOPLM_TESTDATA\backups\psxmemcard-gen2-sd-2026-10-26\`: ever
   - It was copied to `RPI-RP2`; the card rebooted on its own, which the ROM only does after a complete image.
   - The factory firmware version was not recorded. The owner confirmed 1.4.0 in the device's Info menu the same day, with the Kingston card inserted.
   - **The CDC port works [V 2026-10-26].** With the Kingston card in, the device enumerates as VID `2E8A` PID `000A`: a serial port (COM3 here) plus a "Reset" interface. `help` (CR-terminated; the parser takes CR, LF or CR LF, `src/serial_input.c`) lists exactly 1.4.0's commands and ends with a `>` prompt. No other command was sent.
+  - **No file access over USB [V 2026-10-26].** Neither sd2psXtd nor the original sd2psx has USB mass storage; both only call `pico_enable_stdio_usb`. No branch reads or writes SD files over the port, and the tracker has no request for it.
+  - **The unreleased `develop` branch** (`b3c9a54`, 27 commits after 1.4.0) adds two things:
+    - read-only inspection over the port: `version`, plus `ls [path]` and `stat <path>`, both refused with `Busy` while the console uses the card (PR #106);
+    - GPT and partition-less SD cards (PR #112).
+
+    The 2026-10-09 "nightly" release was built from `main`, so it has neither yet.
+  - The plan for YAOPLM's two ways of working with the device (card reader for files, USB for control) is docs/plans/emulator-sd.md.
 
 ## 2. The factory microSD
 
@@ -130,7 +137,7 @@ The rules come from research/06 §1.4, sd2psx.net `format-microsd.html` and the 
 
 1. Before anything else, copy everything from the old card. Take `.sd2psx/` and `MemoryCards/` as they are; the 2026-10-26 backup above is one such copy. Make a fresh copy if the card has been used since.
 2. Partition the new card with **MBR**: one primary partition in entry 1, either exFAT (type `0x07`) or FAT32.
-   - **Never use GPT**: SdFat does not read it.
+   - **Never use GPT with 1.4.0**: its SdFat setup reads only MBR. The unreleased `develop` branch adds GPT and partition-less cards (PR #112); MBR stays the safe choice.
    - The SD Association's SD Memory Card Formatter does this for SDXC: exFAT with the cluster size and alignment the SD specification gives (128 KiB clusters for 64–512 GB).
    - Windows' own format dialog keeps the existing table; a factory SDXC card is MBR, but check in Disk Management.
 3. Copy `.sd2psx/` and `MemoryCards/` to the root of the new card unchanged. Games for MMCE loaders go next to them in the USB layout: `CD/`, `DVD/`, `CFG/`, `ART/`, `VMC/` (research/07 §2.7).
