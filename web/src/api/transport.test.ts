@@ -22,6 +22,24 @@ describe("HttpTransport", () => {
     });
   });
 
+  // A browser's "Failed to fetch" names nothing (release pass 1.16): the
+  // error says where the core is, and the link check hears about it.
+  it("names the core's address when a request never gets there, and tells the link check", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const transport = new HttpTransport({ baseUrl: "http://nas.local:7878" });
+    const heard = vi.fn();
+    transport.onLinkError(heard);
+
+    const error = await transport.call({ type: "Ping" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RpcError);
+    expect(error).toMatchObject({
+      code: "Internal",
+      message: "No connection to YAOPLM at nas.local:7878",
+      phrase: { key: "connection.unreachable", params: { address: "nas.local:7878" } },
+    });
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
   it("turns API errors into RpcError", async () => {
     vi.stubGlobal("fetch", () =>
       Promise.resolve(Response.json({ code: "Unauthorized", message: "missing token" }, { status: 401 })),

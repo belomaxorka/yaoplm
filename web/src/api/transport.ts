@@ -23,6 +23,12 @@ export interface Transport {
   call(request: Request): Promise<Response>;
   /** Streams job events until the returned function is called. */
   subscribe(handlers: EventHandlers): () => void;
+  /**
+   * Tells when a request never reached the core (the network, not an
+   * answer), until the returned function is called. Only a link that can
+   * drop has it.
+   */
+  onLinkError?(listener: () => void): () => void;
 }
 
 export class RpcError extends Error {
@@ -90,6 +96,7 @@ export class HttpTransport implements Transport {
   readonly address: string;
   readonly #baseUrl: string;
   readonly #token: string | null;
+  readonly #linkListeners = new Set<() => void>();
 
   constructor(options: { baseUrl?: string; token?: string | null } = {}) {
     this.#baseUrl = options.baseUrl ?? window.location.origin;
@@ -101,16 +108,36 @@ export class HttpTransport implements Transport {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.#token) headers.authorization = `Bearer ${this.#token}`;
 
-    const response = await fetch(new URL("/api/rpc", this.#baseUrl), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(request),
-    });
+    let response: globalThis.Response;
+    try {
+      response = await fetch(new URL("/api/rpc", this.#baseUrl), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(request),
+      });
+    } catch {
+      // The request never reached the core: a browser's "Failed to fetch"
+      // names nothing, so the error says where the core is and the link
+      // check decides whether it is gone (release pass 1.16).
+      for (const listener of this.#linkListeners) listener();
+      throw new RpcError({
+        code: "Internal",
+        message: `No connection to YAOPLM at ${this.address}`,
+        phrase: { key: "connection.unreachable", params: { address: this.address } },
+      });
+    }
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       throw toRpcError(body ?? { code: "Internal", message: `HTTP ${response.status}` });
     }
     return body as Response;
+  }
+
+  onLinkError(listener: () => void): () => void {
+    this.#linkListeners.add(listener);
+    return () => {
+      this.#linkListeners.delete(listener);
+    };
   }
 
   subscribe({ onEvent, onStatus }: EventHandlers): () => void {
