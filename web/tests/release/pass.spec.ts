@@ -479,7 +479,7 @@ for (const run of runs) {
       });
       await pass.escape();
       await pass.state("library-skipped-files", async () => {
-        await page.getByRole("button", { name: /files OPL ignores|OPL не видит/ }).click();
+        await page.getByRole("button", { name: /files OPL will not show|OPL не покажет/ }).click();
         await expect(page.getByRole("dialog")).toBeVisible();
       });
       await pass.escape();
