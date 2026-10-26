@@ -236,9 +236,10 @@ describe("loader updates on the device card", () => {
     expect(card.textContent).toContain("Known only by its name");
     expect(within(card).queryByTestId("installed-loader-check")).toBeNull();
     expect(within(card).queryByTestId("installed-loader-rollback")).toBeNull();
-    // Only the family is known: "Replace…" alone (§5.10.1).
+    // Only the family is known: "Replace…" alone (§5.10.1), in the card's menu.
+    await userEvent.click(screen.getByTestId("device-more"));
     expect(screen.queryByTestId("device-install-loader")).toBeNull();
-    expect(screen.getByTestId("device-replace-loader").textContent).toContain("Replace loader…");
+    expect((await screen.findByTestId("device-replace-loader")).textContent).toContain("Replace loader…");
   });
 
   it("stays open with the reason when the update's write fails", async () => {

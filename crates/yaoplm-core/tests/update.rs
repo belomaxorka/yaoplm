@@ -436,16 +436,26 @@ fn what_a_rollback_loses_is_said_as_the_replace_window_says_it() {
             ),
         ]
     );
-    assert!(
-        impact_notices(
-            &Impact {
-                fragmented: Vec::new(),
-                unknown_fragments: Vec::new(),
-                ..impact
-            },
-            "OPL 1.1.0"
-        )
-        .is_empty()
+    // Nothing lost: the plan says so, as the window does.
+    let none = impact_notices(
+        &Impact {
+            fragmented: Vec::new(),
+            unknown_fragments: Vec::new(),
+            ..impact
+        },
+        "OPL 1.1.0",
+    );
+    let said: Vec<(&str, Level, &str)> = none
+        .iter()
+        .map(|n| (n.code.as_str(), n.level, n.message.as_str()))
+        .collect();
+    assert_eq!(
+        said,
+        [(
+            "rollbackNothingAffected",
+            Level::Info,
+            "The rules of OPL 1.1.0 differ, but none of the games on this device is affected"
+        )]
     );
 }
 

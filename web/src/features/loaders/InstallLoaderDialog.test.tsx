@@ -13,7 +13,7 @@ import type { PlanNotice } from "@/api/generated/PlanNotice";
 import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
-import { build, device, file, offer, plan, SHA, storeSettings } from "@/features/loaders/fixtures";
+import { build, device, file, installedLoader, offer, plan, SHA, storeSettings } from "@/features/loaders/fixtures";
 import { Providers } from "@/features/loaders/TestProviders";
 import { InstallLoaderDialog } from "@/features/loaders/InstallLoaderDialog";
 import i18n from "@/i18n";
@@ -262,7 +262,12 @@ describe("InstallLoaderDialog", () => {
     // "Reinstall…" of a 1.1.0 found there starts on a build that can work.
     render(
       <Providers transport={fakeCore().transport}>
-        <InstallLoaderDialog device={exfat} open onOpenChange={() => {}} initial={{ build: "opl-stable", preset: "fmcb" }} />
+        <InstallLoaderDialog
+          device={exfat}
+          open
+          onOpenChange={() => {}}
+          reinstall={installedLoader({ build: "opl-stable", version: "v1.1.0", freshness: "current" })}
+        />
       </Providers>,
     );
     const dialog = await screen.findByTestId("loader-install-dialog");
@@ -324,5 +329,39 @@ describe("InstallLoaderDialog", () => {
     await user.click(start);
     await screen.findByTestId("plan-dialog");
     expect(core.of("PlanInstallLoader")[0]).toMatchObject({ presets: [], path: "APPS/MINE/OPL.ELF" });
+  });
+});
+
+function ReinstallOpener() {
+  const [open, setOpen] = useState(true);
+  return (
+    <InstallLoaderDialog
+      device={device({ installed: [installedLoader({ freshness: "current" })] })}
+      open={open}
+      onOpenChange={setOpen}
+      reinstall={installedLoader({ freshness: "current" })}
+    />
+  );
+}
+
+describe("Reinstall loader", () => {
+  // "Reinstall…" puts the same build in the same place (SPEC §5.10.1):
+  // no choice of build, the title names it (release pass 1.5). On main
+  // it opened the install wizard with every build on offer.
+  it("keeps the installed build, names it in the title and plans it again", async () => {
+    const core = fakeCore();
+    render(
+      <Providers transport={core.transport}>
+        <ReinstallOpener />
+      </Providers>,
+    );
+    expect(await screen.findByRole("heading", { name: "Reinstall OPL 1.2.0 beta" })).toBeInTheDocument();
+    await screen.findByTestId("loader-offer");
+    expect(screen.queryByTestId("loader-build-opl-stable")).toBeNull();
+    expect(screen.queryByTestId("loader-build-yaopl")).toBeNull();
+    expect(screen.getByTestId("loader-build-installed")).toHaveTextContent("OPL 1.2.0 beta");
+    await userEvent.click(screen.getByTestId("loader-install-start"));
+    await waitFor(() => expect(core.of("PlanInstallLoader")).toHaveLength(1));
+    expect(core.of("PlanInstallLoader")[0]).toMatchObject({ build: "opl-beta", presets: ["fmcb"] });
   });
 });

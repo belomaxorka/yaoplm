@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
-import { ArrowLeftRight, CheckCircle2, Cpu, FolderOpen, HardDrive, RefreshCw, Usb } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, Cpu, FolderOpen, HardDrive, MoreHorizontal, RefreshCw, Usb } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -15,6 +15,7 @@ import { NoticeIcon, NoticeList } from "@/components/Notices";
 import { PageScroll } from "@/components/PageScroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -199,6 +200,12 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   // server's system disk shows no step (its roots are the administrator's).
   const step = folderStep(device);
   const stepShown = step === "init" || (step === "folder" && transport.kind !== "http");
+  // The loader block names the build the version line would: one story,
+  // told once. A choice of the user's stays visible, as the files may disagree.
+  const namedByLoader =
+    device.loader.source === "detected" &&
+    device.installed.some((l) => l.build !== null) &&
+    /^reasons\.profileBy(ElfVersion|Checksum|Loader|Version)$/.test(device.loader.detected?.reason.key ?? "");
   return (
     <li
       className={cn("rounded-lg border bg-card p-4", current && "ring-2 ring-ring/40")}
@@ -227,7 +234,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             </span>
           </div>
           <div className="mt-2 flex flex-col gap-1 text-sm">
-            <DeviceLines device={device} />
+            <DeviceLines device={device} profileLine={!namedByLoader} />
           </div>
           {device.emulator && <EmulatorPanel emulator={device.emulator} className="mt-2" />}
           <LoaderProfileHint device={device} className="mt-2" />
@@ -286,17 +293,34 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <Button onClick={onOpen} variant={verdict === "error" || stepShown ? "outline" : "default"} data-testid="device-open">
             {t("devices.open")}
           </Button>
-          {canInstall && (present === undefined || known) && (
+          {/* Installing is the next step on a device without a loader; with
+              one, reinstalling and replacing wait in a menu (UI-6: one main button). */}
+          {canInstall && present === undefined && (
             <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
               <Cpu aria-hidden />
-              {present ? t("devices.reinstallLoader") : t("devices.installLoader")}
+              {t("devices.installLoader")}
             </Button>
           )}
           {canInstall && present && (
-            <Button variant="outline" size="sm" onClick={() => setReplacing(true)} data-testid="device-replace-loader">
-              <ArrowLeftRight aria-hidden />
-              {t("devices.replaceLoader")}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon-sm" aria-label={t("devices.moreActions")} data-testid="device-more">
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {known && (
+                  <DropdownMenuItem onSelect={() => setInstalling(true)} data-testid="device-install-loader">
+                    <Cpu aria-hidden />
+                    {t("devices.reinstallLoader")}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => setReplacing(true)} data-testid="device-replace-loader">
+                  <ArrowLeftRight aria-hidden />
+                  {t("devices.replaceLoader")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -306,7 +330,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           device={device}
           open={installing}
           onOpenChange={setInstalling}
-          initial={known ? { build: known.build, preset: known.preset } : undefined}
+          reinstall={known}
         />
       )}
       {canInstall && present && replacing && (

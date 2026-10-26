@@ -52,7 +52,7 @@ export function useLibrary() {
     if (scanned) void allowArt(scanned);
   }, [scanned, query.dataUpdatedAt]);
 
-  return { ...query, root, rescan };
+  return { ...query, root, rescan, deviceError: loader.error };
 }
 
 /**

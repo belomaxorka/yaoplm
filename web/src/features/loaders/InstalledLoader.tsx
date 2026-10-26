@@ -105,10 +105,11 @@ export function InstalledLoaderRow({
               {t("loaderUpdate.updateTo", { version: versionShort(loader.latest) })}
             </Button>
           )}
+          {/* Quiet links: the card's one main button is "Open library". */}
           {loader.build !== null && (
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => check.mutate()}
               disabled={check.isPending}
               data-testid="installed-loader-check"
@@ -120,7 +121,7 @@ export function InstalledLoaderRow({
           {backup && (
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => void rollback.request({ type: "PlanRollbackLoader", root: device.root, path: loader.path })}
               data-testid="installed-loader-rollback"
             >

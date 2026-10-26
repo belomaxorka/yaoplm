@@ -12,6 +12,7 @@ import type { Response } from "@/api/generated/Response";
 import { MockTransport, RpcError } from "@/api/transport";
 import { App } from "@/App";
 import i18n from "@/i18n";
+import { device } from "@/features/loaders/fixtures";
 
 const ROOT = "E:\\";
 
@@ -60,6 +61,9 @@ class FakeCore {
     switch (request.type) {
       case "ListJobs":
         return { type: "Jobs", jobs: [...this.jobs.values()] };
+      // The open device answers: without it the library shows "not available".
+      case "InspectDevice":
+        return { type: "Device", ...device({ root: ROOT }) };
       case "ScanLibrary": {
         const id = this.jobs.size + 1;
         this.jobs.set(id, this.#job(id, "scanLibrary", "running"));

@@ -91,6 +91,25 @@ export function LibraryPage() {
     );
   }
 
+  // A device that cannot be read (unplugged, or not a root this server may
+  // open) is not a scan that failed: nothing here works until another is
+  // chosen.
+  if (library.deviceError) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center p-6" data-testid="library-device-gone">
+        <EmptyState
+          icon={HardDrive}
+          title={t("library.deviceGoneTitle")}
+          description={t("library.deviceGoneDescription", { root: library.root, error: errorText(library.deviceError) })}
+        />
+        <Button onClick={() => void navigate("/devices")}>
+          <HardDrive aria-hidden />
+          {t("library.chooseDevice")}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <LibraryView
       root={library.root}

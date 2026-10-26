@@ -72,6 +72,14 @@ pub fn plan_rollback(
         Some(current) => build_of(fs, current, catalog)?,
         None => None,
     };
+    // Across builds the plan names them, as the replace window does.
+    if let Some((here, back)) = here.zip(back).filter(|(h, b)| h.profile != b.profile) {
+        plan.set_title(
+            Phrase::title("rollbackLoaderTo")
+                .with("from", &here.name)
+                .with("to", &back.name),
+        );
+    }
     // 1.1.0 reads no exFAT: replacing and installing refuse it too.
     if back.is_some_and(|b| b.profile == LoaderProfile::Opl110)
         && here.is_none_or(|b| b.profile != LoaderProfile::Opl110)
@@ -214,8 +222,18 @@ pub fn crossing<'c>(
 
 /// What going back to `build` loses for the games, as the replace window
 /// lists it (LDR-7). Warnings, not errors: the user may go back anyway, and
-/// "Replace…" converts ZSO and re-encodes pictures in the same plan.
+/// "Replace…" converts ZSO and re-encodes pictures in the same plan. When
+/// nothing is lost the plan says so, as the window does.
 pub fn impact_notices(impact: &Impact, build: &str) -> Vec<Notice> {
+    if impact.zso.is_empty()
+        && impact.fragmented.is_empty()
+        && impact.unknown_fragments.is_empty()
+        && impact.art.is_empty()
+    {
+        return vec![Notice::info(
+            Phrase::notice("rollbackNothingAffected").with("build", build),
+        )];
+    }
     [
         ("rollbackZso", impact.zso.len()),
         ("rollbackFragmented", impact.fragmented.len()),

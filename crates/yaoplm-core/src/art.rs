@@ -62,6 +62,9 @@ pub struct ArtItem {
     /// The PNG on the host, already the right size (ART-2).
     pub file: PathBuf,
     /// Where it came from, for the plan screen and the log.
+    /// Where it comes from, in a word: a picture source, a set, a file.
+    pub source: String,
+    /// The original in full: its URL, mirror path or file.
     pub origin: String,
 }
 
@@ -219,7 +222,9 @@ impl ArtFolder {
             ));
         }
         tx.notices.push(Notice::info(
-            Phrase::notice("artFrom").with("origin", &item.origin),
+            Phrase::notice("artFrom")
+                .with("source", &item.source)
+                .with("origin", &item.origin),
         ));
         Ok(Ok((tx, !existing.is_empty())))
     }

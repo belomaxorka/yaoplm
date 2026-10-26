@@ -24,7 +24,8 @@ fn item(startup: &str, file: &str) -> ArtItem {
         format: "ISO".into(),
         kind: ArtKind::Cov,
         file: PathBuf::from("cache").join(file),
-        origin: "xlenore".into(),
+        source: "xlenore".into(),
+        origin: "https://example.test/covers/x.jpg".into(),
     }
 }
 

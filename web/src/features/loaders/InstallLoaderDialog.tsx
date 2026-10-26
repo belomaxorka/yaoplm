@@ -135,14 +135,14 @@ export function InstallLoaderDialog({
   device,
   open,
   onOpenChange,
-  initial,
+  reinstall,
   replace,
 }: {
   device: DeviceInfo;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** "Reinstall…": the build and preset already on the device. */
-  initial?: { build: string | null; preset: string | null };
+  /** "Reinstall…": the same build again, in its place (SPEC §5.10.1); no choice of build. */
+  reinstall?: InstalledLoader;
   /** "Replace…": the loader to replace. */
   replace?: InstalledLoader;
 }) {
@@ -152,10 +152,16 @@ export function InstallLoaderDialog({
   const simple = useSimpleMode();
   const queryClient = useQueryClient();
   const ids = useId();
+  const installed = replace ?? reinstall;
   const start = (): Form =>
-    replace
-      ? { ...freshForm(), method: replace.preset ?? "custom", path: replace.preset ? "" : replace.path }
-      : { ...freshForm(), build: initial?.build ?? null, method: initial?.preset ?? null };
+    installed
+      ? {
+          ...freshForm(),
+          build: reinstall?.build ?? null,
+          method: installed.preset ?? "custom",
+          path: installed.preset ? "" : installed.path,
+        }
+      : freshForm();
   const [form, setForm] = useState<Form>(start);
   const [busy, setBusy] = useState<"download" | "finish" | null>(null);
   // The write the wizard waits for, which its own Cancel can stop.
@@ -194,14 +200,20 @@ export function InstallLoaderDialog({
   const unavailable = (b: LoaderBuild) => b.profile === "Opl110" && device.fileSystem === "exFAT";
   const usable = (b: LoaderBuild) => !unavailable(b);
   const build =
+    (reinstall && builds.find((b) => b.id === reinstall.build && usable(b))) ??
     builds.find((b) => b.id === form.build && usable(b)) ??
     builds.find((b) => b.recommended && other(b) && usable(b)) ??
     builds.find((b) => other(b) && usable(b)) ??
     builds.find(usable) ??
     builds[0];
   // A replacement keeps the loader's place: a path of its own needs "custom".
-  const methods = methodsFor(build, target, !simple || (replace !== undefined && replace.preset === null)).filter(
-    (m) => !replace || m.id !== "card",
+  // Reinstalling keeps the build; one the device cannot use (OPL 1.1.0 on
+  // exFAT) is replaced instead, so the choice of build opens.
+  const locked = reinstall !== undefined && build !== undefined && build.id === reinstall.build;
+  // A replacement or a reinstall keeps the loader's place: a path of its
+  // own needs "custom", and "OPL is on the memory card" is not on offer.
+  const methods = methodsFor(build, target, !simple || (installed !== undefined && installed.preset === null)).filter(
+    (m) => installed === undefined || m.id !== "card",
   );
   const fallback = build?.defaultPresets.find((d) => d.device === target)?.preset;
   const method =
@@ -368,7 +380,9 @@ export function InstallLoaderDialog({
                     : t("loaderInstall.installed")
                 : replace
                   ? t("loaderReplace.title")
-                  : t("loaderInstall.title")}
+                  : locked
+                    ? t("loaderInstall.reinstallTitle", { build: build.name })
+                    : t("loaderInstall.title")}
             </DialogTitle>
             <DialogDescription>
               {done
@@ -468,7 +482,13 @@ export function InstallLoaderDialog({
                   </fieldset>
                 )}
 
-                {build && !card && (
+                {build && locked && (
+                  <p className="flex flex-wrap items-center gap-2 text-sm" data-testid="loader-build-installed">
+                    <span className="font-medium">{build.name}</span>
+                    <Badge variant="secondary">{t("loaderReplace.installed")}</Badge>
+                  </p>
+                )}
+                {build && !card && !locked && (
                   <fieldset>
                     <legend className="mb-2 text-sm font-medium">{t("loaderInstall.buildLegend")}</legend>
                     <RadioGroup

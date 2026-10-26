@@ -32,6 +32,8 @@ export function useLoaderProfile(): {
   active: ActiveProfile | null;
   mode: DeviceMode | null;
   device: DeviceInfo | null;
+  /** Why the device could not be read: unplugged, or not a root the server may open. */
+  error: unknown;
   ready: boolean;
   usable: boolean;
 } {
@@ -43,6 +45,7 @@ export function useLoaderProfile(): {
     active,
     mode: device.data?.mode.mode ?? null,
     device: device.data ?? null,
+    error: device.error,
     ready: settings.root === null || device.data !== undefined || device.isError,
     usable: device.data === undefined || worstLevel(device.data.advice) !== "error",
   };
