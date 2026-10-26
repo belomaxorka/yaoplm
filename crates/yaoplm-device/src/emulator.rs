@@ -207,8 +207,16 @@ fn host_signs(dir: &Path) -> Option<EmulatorSd> {
 /// folder tells nothing.
 pub fn find_on_host(root: &Path, volume_root: Option<&Path>) -> Option<EmulatorSd> {
     let top = volume_root.and_then(|v| std::fs::canonicalize(v).ok());
+    // macOS reaches its data volume through firmlinks (`/private/var`,
+    // `/Users`), so a canonical path need not start with the volume's mount
+    // point `/System/Volumes/Data`; there the device number marks the volume.
+    let by_prefix = top.as_deref().is_some_and(|top| root.starts_with(top));
     for dir in root.ancestors() {
-        let inside = top.as_deref().is_some_and(|top| dir.starts_with(top));
+        let inside = match top.as_deref() {
+            Some(top) if by_prefix => dir.starts_with(top),
+            Some(_) => same_device(dir, root),
+            None => false,
+        };
         if dir != root && !inside {
             break;
         }
@@ -223,6 +231,21 @@ pub fn find_on_host(root: &Path, volume_root: Option<&Path>) -> Option<EmulatorS
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn same_device(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev(),
+        _ => false,
+    }
+}
+
+// Windows paths always start with their volume's root.
+#[cfg(not(unix))]
+fn same_device(_: &Path, _: &Path) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -330,6 +353,22 @@ mod tests {
         );
         // Nothing above the volume root counts.
         assert_eq!(find_on_host(&boot, Some(&copy.join("MemoryCards"))), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_volume_reached_through_a_firmlink_ends_where_its_device_does() {
+        // On macOS a temp folder is `/private/var/...` while its volume is
+        // mounted at `/System/Volumes/Data`; on main the search stopped at
+        // the folder itself.
+        let dir = tempfile::tempdir().unwrap();
+        let mount = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::create_dir_all(root.join("MemoryCards/PS2/BOOT")).unwrap();
+        fs::create_dir_all(root.join("CD")).unwrap();
+        let found = find_on_host(&root.join("CD"), Some(mount.path())).unwrap();
+        assert_eq!(found.at, "CD");
+        assert_eq!(found.signs, ["MemoryCards/PS2"]);
     }
 
     #[test]
