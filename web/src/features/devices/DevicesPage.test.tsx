@@ -175,3 +175,40 @@ describe("the emulator's panel on the device card (UI-7, ADR-0048)", () => {
     expect(within(panel).getAllByTestId("emulator-boot-channel")[0]).toHaveTextContent("FMCB 1.966");
   });
 });
+
+describe("the main button on the device card (UI-6, UI-7)", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false, root: "F:\\" });
+  });
+
+  // The owner's decision of 2026-10-27: the dark button marks the device
+  // that is open now. On main it marked any card without a step, so the
+  // first card kept it while the second was open.
+  it("darkens Open library on the open device only", async () => {
+    show(prepared, { ...prepared, root: "G:\\" });
+    const cards = await screen.findAllByTestId("device-card");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).getByTestId("device-open")).toHaveAttribute("data-variant", "default");
+    expect(within(cards[1]!).getByTestId("device-open")).toHaveAttribute("data-variant", "outline");
+  });
+
+  // Installing OPL is the stick's step, like creating the folders: it is
+  // the main button, open or not, and Open library steps back.
+  it("makes Install OPL… the main button on a stick without a loader", async () => {
+    show(device(), device({ root: "G:\\" }));
+    const cards = await screen.findAllByTestId("device-card");
+    for (const card of cards) {
+      expect(await within(card).findByTestId("device-install-loader")).toHaveAttribute("data-variant", "default");
+      expect(within(card).getByTestId("device-open")).toHaveAttribute("data-variant", "outline");
+    }
+  });
+
+  it("keeps the folder step as the main button of the open folder", async () => {
+    storeSettings({ offerLoaderUpdates: false, simpleMode: false, root: "D:\\Games" });
+    show(emptyFolder("D:\\Games"));
+    const card = await screen.findByTestId("device-card");
+    expect(within(card).getByTestId("smb-init-button")).toHaveAttribute("data-variant", "default");
+    expect(within(card).getByTestId("device-open")).toHaveAttribute("data-variant", "outline");
+  });
+});

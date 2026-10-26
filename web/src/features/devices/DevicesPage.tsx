@@ -202,6 +202,12 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
   // server's system disk shows no step (its roots are the administrator's).
   const step = folderStep(device);
   const stepShown = step === "init" || (step === "folder" && transport.kind !== "http");
+  // Installing OPL is a stick's step like the folders are a folder's.
+  const installStep = canInstall && present === undefined;
+  // The dark button marks the device that is open now (the owner,
+  // 2026-10-27, UI-7); a step comes before opening, and an unusable device
+  // has no main action. Every other card's "Open library" is plain.
+  const openIsMain = current && !stepShown && !installStep && verdict !== "error";
   // The loader block names the build the version line would: one story,
   // told once. A choice of the user's stays visible, as the files may disagree.
   const namedByLoader =
@@ -235,13 +241,13 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             )}
             {t(`devices.verdict.${verdict ?? "ok"}`)}
           </span>
-          <Button onClick={onOpen} variant={verdict === "error" || stepShown ? "outline" : "default"} data-testid="device-open">
+          <Button onClick={onOpen} variant={openIsMain ? "default" : "outline"} data-testid="device-open">
             {t("devices.open")}
           </Button>
           {/* Installing is the next step on a device without a loader; with
               one, reinstalling and replacing wait in a menu (UI-6: one main button). */}
-          {canInstall && present === undefined && (
-            <Button variant="outline" size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
+          {installStep && (
+            <Button size="sm" onClick={() => setInstalling(true)} data-testid="device-install-loader">
               <Cpu aria-hidden />
               {t("devices.installLoader")}
             </Button>
