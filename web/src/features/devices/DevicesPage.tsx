@@ -15,6 +15,7 @@ import { NoticeIcon, NoticeList } from "@/components/Notices";
 import { PageScroll } from "@/components/PageScroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Facts } from "@/components/ui/facts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -303,34 +304,28 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
           ))}
           {!simple && (
-            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <Facts className="mt-2 text-xs text-muted-foreground" data-testid="device-facts">
               {device.model && (
-                <div>
-                  <dt className="inline">{t("devices.model")}: </dt>
-                  <dd className="inline">{device.model}</dd>
-                </div>
+                <span>
+                  {t("devices.model")}: {device.model}
+                </span>
               )}
               {device.serial && (
-                <div>
-                  <dt className="inline">{t("devices.serial")}: </dt>
-                  <dd className="inline font-mono">{device.serial}</dd>
-                </div>
+                <span>
+                  {t("devices.serial")}: <span className="font-mono">{device.serial}</span>
+                </span>
               )}
               {device.clusterSize !== null && (
-                <div>
-                  <dt className="inline">{t("devices.cluster")}: </dt>
-                  <dd className="inline">{formatBytes(device.clusterSize, 0)}</dd>
-                </div>
+                <span>
+                  {t("devices.cluster")}: {formatBytes(device.clusterSize, 0)}
+                </span>
               )}
               {device.partition?.table && (
-                <div>
-                  <dt className="inline">{t("devices.partition")}: </dt>
-                  <dd className="inline">
-                    {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
-                  </dd>
-                </div>
+                <span>
+                  {t("devices.partition")}: {t(`devices.tables.${device.partition.table}`)} #{device.partition.number}
+                </span>
               )}
-            </dl>
+            </Facts>
           )}
         </div>
       </div>

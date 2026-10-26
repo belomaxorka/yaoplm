@@ -850,7 +850,7 @@
       "noBootCards": "No boot cards: the emulator starts nothing by itself.",
       "channel": "Channel {{channel}}",
       "noName": "no name in BootCard.ini",
-      "cards": "Numbered cards: {{cards}}; game cards: {{games}}",
+      "cards": "Numbered cards: {{cards}} · game cards: {{games}}",
       "holds": "{{what}}",
       "builderImage": "SD Builder’s {{name}}",
       "unreadable": "The card’s contents could not be read",

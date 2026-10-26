@@ -33,7 +33,7 @@ import { PlanDialog } from "@/features/plan/PlanDialog";
 import { usePlan } from "@/features/plan/usePlan";
 import { wroteAll } from "@/jobs/outcome";
 import { phraseText } from "@/lib/phrase";
-import { useSettings, useSimpleMode } from "@/settings/context";
+import { useSettings } from "@/settings/context";
 import { deviceModes, mmceProfiles, profiles } from "@/settings/settings";
 
 import { LoaderProfileLine } from "./LoaderProfile";
@@ -134,21 +134,13 @@ export function DeviceLines({
 }
 
 /**
- * Why a value is what it is. Simple mode keeps it behind an icon (texts are
- * for end users, docs/I18N.md); advanced mode shows it after a dash. Screen
- * readers and tests get the text either way.
+ * Why a value is what it is: behind an icon in both modes (texts are for
+ * end users, docs/I18N.md; the owner, 2026-10-27: the advanced mode differs
+ * by what it lists, not by how long a line is). Screen readers and tests
+ * get the text either way.
  */
 export function Reason({ text, testId }: { text: string; testId: string }) {
   const { t } = useTranslation();
-  const simple = useSimpleMode();
-  if (!simple) {
-    return (
-      <span className="text-muted-foreground" data-testid={testId}>
-        {" "}
-        — {text}
-      </span>
-    );
-  }
   return (
     <>
       <span className="sr-only" data-testid={testId}>
