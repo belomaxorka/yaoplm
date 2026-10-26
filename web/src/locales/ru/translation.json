@@ -294,11 +294,6 @@
     "details": "Сведения",
     "imageId": "ID в образе",
     "path": "Путь",
-    "nameFormat": "Имя файла",
-    "nameFormats": {
-      "old": "ID.Название: OPL берёт ID из имени",
-      "new": "Только название: OPL читает SYSTEM.CNF"
-    },
     "layers": "Слои",
     "dualLayer": "Двухслойный (DVD-9); второй слой начинается с сектора {{sector}}",
     "fragments": "Кусков на носителе",

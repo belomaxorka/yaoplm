@@ -565,7 +565,6 @@ for (const run of runs) {
     });
     await pass.escape();
     if (!run.simple) await pass.state("game-verify", async () => {
-      await page.getByTestId("game-more").click();
       await page.getByTestId("game-verify").click();
       await expect(page.getByTestId("verify-dialog")).toBeVisible();
     });

@@ -173,16 +173,10 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                     {t("game.moveTo", { media: otherMedia })}
                   </DropdownMenuItem>
                   {!simple && (
-                    <>
-                      <DropdownMenuItem onSelect={() => setConvertOpen(true)} data-testid="game-convert">
-                        <Replace aria-hidden />
-                        {t("game.convert")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setVerifyOpen(true)} data-testid="game-verify">
-                        <ShieldCheck aria-hidden />
-                        {t("game.verify")}
-                      </DropdownMenuItem>
-                    </>
+                    <DropdownMenuItem onSelect={() => setConvertOpen(true)} data-testid="game-convert">
+                      <Replace aria-hidden />
+                      {t("game.convert")}
+                    </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -226,16 +220,25 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
               )}
               {(!simple || game.dump) && (
                 <Fact label={t("game.dump")}>
-                  {game.dump ? (
-                    <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
-                      <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
-                      {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground" data-testid="game-dump">
-                      {t("game.dumpUnchecked")}
-                    </span>
-                  )}
+                  {/* "Check dump" sits by the verdict it changes (owner, 2026-10-26). */}
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {game.dump ? (
+                      <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
+                        <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
+                        {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground" data-testid="game-dump">
+                        {t("game.dumpUnchecked")}
+                      </span>
+                    )}
+                    {!simple && (
+                      <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setVerifyOpen(true)} data-testid="game-verify">
+                        <ShieldCheck aria-hidden />
+                        {t("game.verify")}
+                      </Button>
+                    )}
+                  </span>
                 </Fact>
               )}
               {!simple && (
@@ -243,9 +246,6 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                   <Fact label={t("game.path")} mono>
                     {game.path}
                   </Fact>
-                  {game.nameFormat !== null && (
-                    <Fact label={t("game.nameFormat")}>{t(`game.nameFormats.${game.nameFormat}`)}</Fact>
-                  )}
                   {game.layer1Start !== null && (
                     <Fact label={t("game.layers")}>{t("game.dualLayer", { sector: game.layer1Start })}</Fact>
                   )}

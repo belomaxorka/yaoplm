@@ -8,6 +8,7 @@ import type { Game } from "@/api/generated/Game";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { Request } from "@/api/generated/Request";
 import type { Response } from "@/api/generated/Response";
+import { defaultSettings } from "@/settings/settings";
 import { MockTransport, RpcError } from "@/api/transport";
 import { App } from "@/App";
 import i18n from "@/i18n";
@@ -113,6 +114,8 @@ describe("simple mode (UI-4)", () => {
     expect(screen.queryByTestId("art-source-xlenore")).not.toBeInTheDocument();
     expect(screen.queryByText("Check IDs inside images while scanning")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Jobs" })).not.toBeInTheDocument();
+    // Dump checks on add are off by default (owner, 2026-10-26).
+    expect(defaultSettings.checkOnAdd).toBe(false);
     // No keyboard card (owner, 2026-10-26): the keys are the usual ones.
     expect(screen.queryByText("Keyboard")).toBeNull();
 
@@ -160,13 +163,15 @@ describe("simple mode (UI-4)", () => {
       expect(within(actions).queryByRole("button", { name: "Move to DVD" })).toBeNull();
       await userEvent.click(within(actions).getByTestId("game-more"));
       expect(await screen.findByTestId("game-move")).toHaveTextContent("Move to DVD");
-      // Converting and checking the dump are advanced tools (ADR-0034).
-      for (const tool of ["game-convert", "game-verify"]) {
-        if (simple) expect(screen.queryByTestId(tool)).not.toBeInTheDocument();
-        else expect(screen.getByTestId(tool)).toBeInTheDocument();
-      }
+      // Converting is an advanced tool (ADR-0034); checking the dump sits by
+      // the "Dump" fact, not in the menu (owner, 2026-10-26).
+      expect(within(screen.getByRole("menu")).queryByTestId("game-verify")).not.toBeInTheDocument();
+      if (simple) expect(screen.queryByTestId("game-convert")).not.toBeInTheDocument();
+      else expect(screen.getByTestId("game-convert")).toBeInTheDocument();
       await userEvent.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByTestId("game-move")).not.toBeInTheDocument());
+      if (simple) expect(screen.queryByTestId("game-verify")).not.toBeInTheDocument();
+      else expect(within(screen.getByTestId("game-dump").parentElement!).getByTestId("game-verify")).toHaveTextContent("Check dump");
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
       expect(screen.getByTestId("game-warnings")).toBeInTheDocument();
       // Game settings (ADR-0036): the modes and slot 1 in both modes.

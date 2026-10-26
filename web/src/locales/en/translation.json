@@ -286,11 +286,6 @@
     "details": "Details",
     "imageId": "ID in the image",
     "path": "Path",
-    "nameFormat": "File name",
-    "nameFormats": {
-      "old": "ID.Title: OPL takes the ID from the name",
-      "new": "Title only: OPL reads SYSTEM.CNF"
-    },
     "layers": "Layers",
     "dualLayer": "Dual layer (DVD-9); the second layer starts at sector {{sector}}",
     "fragments": "Pieces on the device",

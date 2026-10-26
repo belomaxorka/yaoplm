@@ -293,7 +293,6 @@ describe("locales", () => {
       ["NoticeLevel", ["noticeLevel"]],
       ["NameStyle", ["settings.nameStyles", "settings.nameStyleHints"]],
       ["LoaderProfile", ["settings.profiles"]],
-      ["NameFormat", ["game.nameFormats"]],
       ["DriveBus", ["devices.bus"]],
       ["DriveKind", ["devices.kind"]],
       ["PartitionTable", ["devices.tables"]],
