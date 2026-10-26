@@ -42,7 +42,7 @@ The backup is in `$YAOPLM_TESTDATA\backups\psxmemcard-gen2-sd-2026-10-26\`: ever
     - GPT and partition-less SD cards (PR #112).
 
     The 2026-10-09 "nightly" release was built from `main`, so it has neither yet.
-  - The plan for YAOPLM's two ways of working with the device (card reader for files, USB for control) is docs/plans/emulator-sd.md.
+  - The plan is docs/plans/emulator-sd.md. After it was written the owner kept only the card reader: YAOPLM has no USB or serial code, because no firmware gives file access over USB (ADR-0048).
 
 ## 2. The factory microSD
 
@@ -100,6 +100,10 @@ Variant=RETAIL
   - The two blank cards are identical.
 - **COH** holds `boot.bin` and `ACJVLOAD.IRX`: the arcade build of wLaunchELF that `BootCard.ini` names.
 - **Corrupt images in 1.4.0 [V `ps2_cardman.c`].** The firmware moves an image it cannot use aside as `<folder>-<ch>.crp.<n>` and creates a new one. A tool listing cards should show those files rather than hide them.
+- **Other files the firmware owns [V sd2psXtd `8a20bd9`, sd2psx `2408cef`; checked 2026-10-26].**
+  - `civ.bin` at the SD root is the MagicGate key. `keystore_deploy()` (`src/keystore.c`) writes it to flash, deletes the file and keeps a copy as `.sd2psx/civ.bin`; the GUI has a "Deploy CIV.bin" item. A tool must never write, move or delete either file. The factory card has neither.
+  - Card folders per variant: `MemoryCards/PS2`, `PS1`, `COH` (arcade), `SC2`, `PROT` (`src/card_config.c`). Per-card ini files sit next to the image as `<folder>/<base>.ini`.
+  - The original sd2psx firmware uses the same `MemoryCards/PS2|PS1/…` layout with a single `BOOT/BootCard.mcd`, but keeps its settings in flash: its SD has no `.sd2psx/`. Detection therefore cannot rely on `.sd2psx/` alone (ADR-0048).
 
 ## 4. What the PS2 boot cards hold
 
