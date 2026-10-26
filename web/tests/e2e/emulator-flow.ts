@@ -65,7 +65,8 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   // advanced mode (the owner cannot change it in YAOPLM; release pass 1.8, 5.5).
   await expect(card).not.toContainText("The emulator makes 64 MiB cards");
   await card.getByTestId("device-open").click();
-  await page.goto("/devices");
+  // Back through the menu: a reload would put the test's root back.
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Devices" }).click();
   await expect(card.getByText("Open", { exact: true })).toBeVisible();
   if (simple) await expect(card).not.toContainText("The emulator makes 64 MiB cards");
   else await expect(card).toContainText("The emulator makes 64 MiB cards");
