@@ -13,6 +13,7 @@
   },
   "connection": {
     "lost": "No connection to YAOPLM at {{address}}. Actions are unavailable until it is back.",
+    "unreachable": "No connection to YAOPLM at {{address}}",
     "retrying": "Reconnecting…"
   },
   "theme": {

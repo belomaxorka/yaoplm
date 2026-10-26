@@ -23,6 +23,7 @@ class LinkTransport implements Transport {
   reachable = true;
   readonly #mock = new MockTransport();
   #handlers: EventHandlers | null = null;
+  readonly #linkListeners = new Set<() => void>();
 
   readonly kind: TransportKind;
 
@@ -31,8 +32,18 @@ class LinkTransport implements Transport {
   }
 
   call(request: Request): Promise<Response> {
-    if (!this.reachable) return Promise.reject(new RpcError({ code: "Internal", message: "Failed to fetch" }));
+    if (!this.reachable) {
+      for (const listener of this.#linkListeners) listener();
+      return Promise.reject(new RpcError({ code: "Internal", message: "No connection to YAOPLM at nas.local:7878" }));
+    }
     return this.#mock.call(request);
+  }
+
+  onLinkError(listener: () => void): () => void {
+    this.#linkListeners.add(listener);
+    return () => {
+      this.#linkListeners.delete(listener);
+    };
   }
 
   subscribe(handlers: EventHandlers): () => void {
@@ -105,6 +116,23 @@ describe("the link to the core (plan task 8)", () => {
     expect(screen.queryByTestId("connection-lost")).not.toBeInTheDocument();
     expect(container).not.toHaveAttribute("inert");
   }, 10_000);
+
+  // The stream may outlive the calls (a proxy passes the socket, the server
+  // is gone between two events): a request that never gets through asks
+  // the core the same way (release pass 1.16).
+  it("shows up when a request never reaches the core, although the event stream is up", async () => {
+    const transport = new LinkTransport("http");
+    render(<App transport={transport} />);
+    transport.set("open");
+    expect(screen.queryByTestId("connection-lost")).not.toBeInTheDocument();
+
+    transport.reachable = false;
+    await act(() => transport.call({ type: "Ping" }).catch(() => undefined));
+    expect(await screen.findByRole("alert", {}, { timeout: 4000 })).toHaveTextContent(lostText);
+
+    transport.reachable = true;
+    await waitFor(() => expect(screen.queryByTestId("connection-lost")).not.toBeInTheDocument(), { timeout: 7000 });
+  }, 15_000);
 
   it("names a core that cannot be reached when the page opens", async () => {
     const transport = new LinkTransport("http");

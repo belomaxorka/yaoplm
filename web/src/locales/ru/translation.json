@@ -13,6 +13,7 @@
   },
   "connection": {
     "lost": "Нет связи с YAOPLM на {{address}} — действия недоступны, пока связь не вернётся.",
+    "unreachable": "Нет связи с YAOPLM на {{address}}",
     "retrying": "Переподключение…"
   },
   "theme": {

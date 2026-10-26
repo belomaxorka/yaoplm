@@ -22,7 +22,10 @@ const RECHECK_MS = 5000;
  * socket) is not a loss: requests may still get through, and the stream
  * reconnects by itself. Only when the core does not answer a request either
  * does a banner name it, and everything behind the banner, dialogs opened
- * meanwhile included, takes no input until the stream is back.
+ * meanwhile included, takes no input until the stream is back. A request
+ * that never reaches the core while the stream is up (a proxy that passes
+ * the socket but not the calls, the server gone between two events) asks
+ * the same question.
  */
 export function ConnectionGuard() {
   const { t } = useTranslation();
@@ -33,10 +36,20 @@ export function ConnectionGuard() {
   const [seenOpen, setSeenOpen] = useState(false);
   if (status === "open" && !seenOpen) setSeenOpen(true);
   const streamDown = transport.kind === "http" && (status === "closed" || (status === "connecting" && seenOpen));
+  // A request failed on the way to the core: ask it until it answers.
+  const [probing, setProbing] = useState(false);
+  useEffect(() => transport.onLinkError?.(() => setProbing(true)), [transport]);
+  // The stream coming back is the core answering.
+  const [lastStatus, setLastStatus] = useState(status);
+  if (status !== lastStatus) {
+    setLastStatus(status);
+    if (status === "open") setProbing(false);
+  }
+  const down = streamDown || probing;
   const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
-    if (!streamDown) return;
+    if (!down) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const check = async () => {
@@ -49,6 +62,7 @@ export function ConnectionGuard() {
       }
       if (stopped) return;
       setUnreachable(!reachable);
+      if (reachable) setProbing(false);
       timer = setTimeout(() => void check(), RECHECK_MS);
     };
     timer = setTimeout(() => void check(), LINK_GRACE_MS);
@@ -57,9 +71,9 @@ export function ConnectionGuard() {
       clearTimeout(timer);
       setUnreachable(false);
     };
-  }, [streamDown, transport]);
+  }, [down, transport]);
 
-  const lost = streamDown && unreachable;
+  const lost = down && unreachable;
 
   useEffect(() => {
     if (!lost) return;
