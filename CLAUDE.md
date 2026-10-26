@@ -131,7 +131,7 @@ Update this section if they change.
 - Before every commit: fmt, clippy, tests. Before every PR: the full CI set locally where possible.
 - Every bug fix is proven (owner's rule, 2026-10-26): first a test that reproduces the bug and fails, then the fix, then the same test green, and the affected suites rerun more than once. Check the fix against upstream OPL and the other official repos in `refs/` before and after (rule 6), take their handling of the case where they have one, and say in the PR how it was verified.
 - For UI work, run `yaoplm-server` or the Vite dev server through `.claude/launch.json`. Check it in the browser preview or with Playwright, and attach screenshots (light/dark, en/ru) to the PR.
-- PR description: summary, requirement IDs, how it was tested, **PS2 test checklist** for the user.
+- PR description: summary, requirement IDs, how it was tested, **PS2 test checklist** for the user. The checklist also goes into `docs/testing/` as a file (in Russian) with a row in `docs/testing/README.md`, the list of everything still waiting for the console; results are recorded there when the owner runs it.
 - After merge: tick ROADMAP checkboxes and add an ADR if a decision was made.
 - Before a release tag (`v0.N.0`), and after PRs that change the device card, the library header, the storage doctor or the "what next" hints: run the UI consistency pass in `docs/plans/release-ui-consistency.md` (one story per device, no actions that cannot work, one main button, visible reasons, axe on every state).
 
