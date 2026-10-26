@@ -187,7 +187,7 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
                       <Replace aria-hidden />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-max">
+                  <DropdownMenuContent align="start">
                     <DropdownMenuItem
                       onSelect={() => {
                         if (desktop) void pickImage(t("art.imagesFilter")).then((path) => path && setArt(kind, { kind: "file", path }));

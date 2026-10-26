@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { openEmulatorPanel } from "../e2e/emulator-flow";
-import { emptyStick, job, joinPath, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
+import { emptyStick, job, joinPath, menuItemProblems, openLibrary, openSection, roots, rpc, stickAsUsb, stickCard } from "../e2e/helpers";
 
 // The release UI pass (docs/plans/release-ui-consistency.md): every screen
 // and state in both interface modes, both languages and both themes at
@@ -40,6 +40,10 @@ interface StateReport {
 
 /** The layout checks of walkthrough.spec.ts. */
 async function layoutProblems(page: Page): Promise<string[]> {
+  return [...(await boxProblems(page)), ...(await menuItemProblems(page))];
+}
+
+async function boxProblems(page: Page): Promise<string[]> {
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   return page.evaluate(() => {
     const problems: string[] = [];
@@ -160,7 +164,12 @@ class Pass {
   /** A screenshot tall enough for everything the screen or dialog scrolls. */
   async shot(name: string): Promise<void> {
     await this.page.waitForTimeout(400);
-    const extra = await this.page.evaluate(() => {
+    // A menu is kept inside the window by its own rules and closes when the
+    // window changes size: it is shot as the user sees it, at 1024 × 768.
+    // (A taller window put the page back to its top on the way back, and
+    // the layout check then found the menu below the window.)
+    const menuOpen = (await this.page.getByRole("menu").count()) > 0;
+    const extra = menuOpen ? 0 : await this.page.evaluate(() => {
       let extra = 0;
       for (const el of document.querySelectorAll<HTMLElement>("body *")) {
         const style = getComputedStyle(el);
@@ -199,6 +208,12 @@ class Pass {
     await this.page.keyboard.press("Escape");
     await expect(this.page.getByRole("menu")).toHaveCount(0);
     await card.getByTestId("device-choice-change").click();
+    await expect(this.page.getByRole("menu")).toBeVisible();
+  }
+
+  /** The card's "⋯" menu, opened unless it is open already. */
+  async openMore(card: Locator): Promise<void> {
+    if ((await this.page.getByRole("menu").count()) === 0) await card.getByTestId("device-more").click();
     await expect(this.page.getByRole("menu")).toBeVisible();
   }
 
@@ -356,8 +371,14 @@ for (const run of runs) {
       await expect(dialog).toBeHidden();
       await expect(stickCard(page).getByTestId("installed-loader")).toHaveAttribute("data-freshness", "current");
     });
+    // The card's "⋯" menu under its icon button: as wide as its items (UI-5).
+    await pass.state("stick-more-menu", async () => {
+      // The install's toast is still fading: axe would measure its contrast mid-way.
+      await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 });
+      await pass.openMore(stickCard(page));
+    });
     await pass.state("reinstall-wizard", async () => {
-      await stickCard(page).getByTestId("device-more").click();
+      await pass.openMore(stickCard(page));
       await page.getByTestId("device-install-loader").click();
       await expect(dialog.getByTestId("loader-offer")).toBeVisible();
     });
