@@ -59,12 +59,16 @@ export async function emulatorFlow(page: Page, request: APIRequestContext, simpl
   await expect(panel).toContainText("left alone");
   await expect(panel.getByTestId("emulator-boot-channel").first()).toContainText("FMCB 1.966");
   await expect(panel.getByTestId("emulator-settings")).toHaveCount(simple ? 0 : 1);
-  // The factory card makes 64 MiB cards: a note, kept for the advanced mode
-  // (the owner cannot change it in YAOPLM; release pass 1.8).
-  if (simple) await expect(card).not.toContainText("The emulator makes 64 MiB cards");
-  else await expect(card).toContainText("The emulator makes 64 MiB cards");
   await expect(card.getByTestId("device-install-loader")).toHaveCount(0);
   await expect(card.getByTestId("device-replace-loader")).toHaveCount(0);
+  // The factory card makes 64 MiB cards: a note for the open device in the
+  // advanced mode (the owner cannot change it in YAOPLM; release pass 1.8, 5.5).
+  await expect(card).not.toContainText("The emulator makes 64 MiB cards");
+  await card.getByTestId("device-open").click();
+  await page.goto("/devices");
+  await expect(card.getByText("Open", { exact: true })).toBeVisible();
+  if (simple) await expect(card).not.toContainText("The emulator makes 64 MiB cards");
+  else await expect(card).toContainText("The emulator makes 64 MiB cards");
 
   // What the boot cards hold, read from their own file systems: in both
   // modes the launcher, in advanced mode the OPL builds and MMCE.
