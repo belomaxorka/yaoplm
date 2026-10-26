@@ -2,7 +2,7 @@
 
 Date: 2026-10-25. Scope: milestone M5, loader installer (SPEC LDR-1…LDR-4, LDR-6, LDR-7, BOOT-1, DEV-4). Goal: how neighbouring tools actually download, install, update and replace PS2 loaders, and the current release facts our catalogue (`data/loaders/<id>.toml`) depends on. research/07 (catalogue, boot paths, configs, proposal) and research/16 (signs per build) are background and are not repeated here.
 
-Sources (local clones under `D:\yaoplm-testdata\refs\`, `git pull --ff-only` on 2026-10-25; nothing built or run; no release asset downloaded, only `gh api` metadata):
+Sources (local clones under `$YAOPLM_TESTDATA\refs\`, `git pull --ff-only` on 2026-10-25; nothing built or run; no release asset downloaded, only `gh api` metadata):
 
 | Tool / build | Clone | HEAD |
 |---|---|---|
@@ -524,7 +524,7 @@ Suggests:
 
 ## Sources
 
-**Code and CI** (clones under `D:\yaoplm-testdata\refs\`, commits in the table at the top):
+**Code and CI** (clones under `$YAOPLM_TESTDATA\refs\`, commits in the table at the top):
 - TinyPS2Manager: `internal/riptopl/{riptopl.go,doc.go,riptopl_test.go}`, `internal/api/{prepare.go,enrich.go}`, `riptopl.go`, `internal/transfer/disk.go`, `internal/art/art.go`, `OPL-Backup-Manager-SPEC.md` §2.7
 - OrbitPS2 Manager: `src/services/{update,library,apps,ps1-import,artwork}.service.ts`
 - PS2 HDD Manager: `fetch_payloads.sh`, `PROVISIONING.md`, `docs/INSTALLED_TITLE_AND_PC_GAMEID.md`, `src/core/OplConfig.cpp`, `src/core/Ps2HddFormat.cpp`, `src/formatter_main.cpp`, `src/ui/MainWindow.cpp`, `THIRD_PARTY_NOTICES.md`, `payload/banked-opl/SHA256.txt`

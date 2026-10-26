@@ -3,10 +3,10 @@
 An index of the code and forums that hold PS2/OPL knowledge outside the official docs: bug fixes, console and firmware quirks, format edge cases. Policy: ADR-0015 and CLAUDE.md rule 6.
 
 **Local clones.**
-- Path: `D:\yaoplm-testdata\refs\<owner>__<repo>` (Git Bash: `/d/yaoplm-testdata/refs/...`). The folder sits outside the YAOPLM repo, and nothing from it is ever committed.
+- Path: `$YAOPLM_TESTDATA\refs\<owner>__<repo>`, in the test data folder on whichever drive holds it (`scripts/testdata.ps1` finds it; in Git Bash: `eval "$(powershell -NoProfile -File scripts/testdata.ps1 -Bash)"`). It is outside the YAOPLM repo, and nothing from it is ever committed.
 - Clones are partial (`git clone --filter=blob:none`). They hold the full commit history; file contents outside the checkout are fetched on demand. `git log -p`, `git blame` and `git show <sha>:<path>` therefore need network access the first time.
 - Refresh one clone with `git -C <path> pull`. To refresh all of them (Git Bash):
-  `for d in /d/yaoplm-testdata/refs/*/; do git -C "$d" pull --ff-only -q || echo "failed: $d"; done`
+  `for d in "$YAOPLM_TESTDATA"/refs/*/; do git -C "$d" pull --ff-only -q || echo "failed: $d"; done`
 - Many repos set `* text=auto` in `.gitattributes`, so on Windows the working tree has CRLF line endings. For byte-exact data (CFG, CHT) read the blob: `git -C <dir> show HEAD:<path>`.
 - "Last commit" below is the checked-out HEAD on 2026-10-22, as date plus short SHA. For repos that were not cloned it is the date of the newest commit on the default branch, from the GitHub API.
 
@@ -139,7 +139,7 @@ Long tail from research/01 §2.7. Mostly small and 2025–26, many look LLM-assi
 | [Luden02/psx-ps2-opl-art-database](https://github.com/Luden02/psx-ps2-opl-art-database) | none ("assets belong to their respective owners") | 2025-08-14 | Static dump of the OPLM art DB, about 4 GB. Reference only; see ADR-0007 and research/03 | no |
 | [CosmicScale/HDD-OSD-Icon-Database](https://github.com/CosmicScale/HDD-OSD-Icon-Database) | none | 2026-10-16 | HDD-OSD/PSBBN icons, about 130 MB | no |
 | [es-de/emulationstation-de](https://gitlab.com/es-de/emulationstation-de) (GitLab) | MIT | 2026-10-24 (master, read raw) | ScreenScraper client: `es-app/src/scrapers/ScreenScraper.cpp` (XML `Data/jeu/medias/media` with `type`, `region`, `format`; quota in `ssuser`; region fallback), `ScreenScraper.h` (media type names, API base, PS2 = 58). research/14 §4 | no |
-| archive.org item [OPLM_ART_2024_09](https://archive.org/details/OPLM_ART_2024_09) | none | 2024-09-02 | The last OPL Manager art backup, a 5.5 GB stored zip64 read member by member (ADR-0035). Table of contents in `D:\yaoplm-testdata\oplm-art\` | no |
+| archive.org item [OPLM_ART_2024_09](https://archive.org/details/OPLM_ART_2024_09) | none | 2024-09-02 | The last OPL Manager art backup, a 5.5 GB stored zip64 read member by member (ADR-0035). Table of contents in `$YAOPLM_TESTDATA\oplm-art\` | no |
 
 Deliberately excluded:
 - **Sony POPS/BIOS binaries (ADR-0007):** AnimMouse/POPS-binaries and TonyLimaPHB/PopCraft. Neither is cloned.
