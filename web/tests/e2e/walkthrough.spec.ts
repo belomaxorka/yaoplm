@@ -132,8 +132,9 @@ async function layoutProblems(page: Page): Promise<string[]> {
       const style = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && !el.closest("[aria-hidden=true], [inert]");
     });
-    // Behind an open dialog, only the dialog counts.
-    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
+    // Behind an open dialog or menu, only it counts (menus are not modal: the
+    // page behind them stays in the accessibility tree).
+    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]');
     const shown = dialog ? visible.filter((el) => dialog.contains(el)) : visible;
     for (let i = 0; i < shown.length; i++) {
       const a = shown[i]!;
