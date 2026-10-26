@@ -359,8 +359,10 @@ impl<R: Read + Seek> Card<R> {
     fn read_u32s(&mut self, cluster: u32) -> Result<Vec<u32>, CardError> {
         Ok(self
             .read_cluster(cluster)?
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
             .collect())
     }
 
@@ -433,7 +435,7 @@ impl<R: Read + Seek> Card<R> {
         let mut entries = Vec::with_capacity(count as usize);
         for cluster in self.chain(first, needed)? {
             let bytes = self.read_cluster(cluster + self.geometry.alloc_offset)?;
-            for raw in bytes.chunks_exact(ENTRY_SIZE) {
+            for raw in bytes.as_chunks::<ENTRY_SIZE>().0 {
                 if entries.len() as u32 == count {
                     return Ok(entries);
                 }
