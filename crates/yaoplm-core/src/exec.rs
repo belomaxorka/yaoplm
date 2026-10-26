@@ -928,6 +928,16 @@ fn preflight(ctx: &Context<'_>, plan: &Plan) -> Result<(), ExecError> {
     if let Some(blocker) = plan.blockers().next() {
         return Err(ExecError::Blocked(Box::new(blocker.clone())));
     }
+    // A plan made elsewhere still may not touch a memory card emulator's
+    // files (ADR-0048).
+    if let Some(sd) = ctx
+        .fs
+        .emulator()
+        .map_err(ExecError::io(Phrase::error("cannotQueryDevice")))?
+        && let Some(refusal) = crate::emulator::refusal(plan, &sd)
+    {
+        return Err(ExecError::Blocked(Box::new(refusal)));
+    }
     let free = check_device(ctx, plan)?;
     journal::clean_temp(ctx.fs).map_err(ExecError::io(Phrase::error("cannotCleanJournals")))?;
     let (journals, unreadable) =

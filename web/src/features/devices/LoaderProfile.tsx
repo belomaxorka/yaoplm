@@ -7,14 +7,18 @@ import type { DeviceInfo } from "@/api/generated/DeviceInfo";
 import { Button } from "@/components/ui/button";
 import { worstLevel } from "@/lib/notices";
 import { phraseText } from "@/lib/phrase";
-import { type ProfileOverrideValue, profiles } from "@/settings/settings";
+import { mmceProfiles, type ProfileOverrideValue, profiles } from "@/settings/settings";
 
 import { useProfileChoice } from "./useLoaderProfile";
 
 /** Why the profile is in force, to follow it after a dash. */
 function useReason(loader: ActiveProfile, chosen: ProfileOverrideValue | "auto"): string {
   const { t } = useTranslation();
-  if (loader.source === "override") return t(chosen === "unknown" ? "loader.byUnknown" : "loader.byOverride");
+  if (loader.source === "override") {
+    if (chosen === "unknown") return t("loader.byUnknown");
+    if (chosen === "unknownMmce") return t("loader.byUnknownMmce");
+    return t("loader.byOverride");
+  }
   // Only the CLI forces a profile for every device (ADR-0040).
   if (loader.source === "explicit") return t("loader.byExplicit");
   if (!loader.detected) return t("loader.unreadable");
@@ -49,9 +53,10 @@ export function LoaderProfileLine({ loader, className }: { loader: ActiveProfile
  * What the loader line cannot say in a few words (ADR-0041, ADR-0047):
  * - a device with no sign of its loader asks which OPL it is for, when the
  *   core says so (`askProfile`): prepared for OPL (OPL starts from the
- *   memory card, the console has not listed the device yet), or a folder
- *   read over SMB, where the console leaves no other sign. An empty or
- *   foreign device plugged into the PS2 does not: it gets OPL installed
+ *   memory card, the console has not listed the device yet), a folder
+ *   read over SMB, where the console leaves no other sign, or a memory card
+ *   emulator's SD, asked only about builds with MMCE (ADR-0048). An empty
+ *   or foreign device plugged into the PS2 does not: it gets OPL installed
  *   first, which settles the question;
  * - a profile chosen for the device (or "I don't know") that its files now
  *   contradict offers to go back to auto.
@@ -68,22 +73,33 @@ export function LoaderProfileHint({ device, className }: { device: DeviceInfo; c
   if (worstLevel(device.advice) === "error") return null;
 
   if (device.askProfile) {
-    const smb = device.mode.mode === "smb";
+    const mode = device.mode.mode;
+    const emulator = mode === "emulator";
+    const question = emulator ? "loader.questionEmulator" : mode === "smb" ? "loader.questionSmb" : "loader.question";
+    const hint = emulator
+      ? "loader.questionHintEmulator"
+      : mode === "smb"
+        ? "loader.questionHintSmb"
+        : "loader.questionHint";
+    const unknown = emulator ? "unknownMmce" : "unknown";
+    const answers = emulator
+      ? mmceProfiles.map((profile) => ({ profile, label: t(`loader.answersEmulator.${profile}`) }))
+      : profiles.map((profile) => ({ profile, label: t(`loader.answers.${profile}`) }));
     return (
       <div className={box} role="group" aria-labelledby={`loader-question-${loader.key}`} data-testid="loader-question">
         <div className="flex items-center gap-2 font-medium" id={`loader-question-${loader.key}`}>
           <CircleHelp className="size-4 text-muted-foreground" aria-hidden />
-          {t(smb ? "loader.questionSmb" : "loader.question")}
+          {t(question)}
         </div>
-        <p className="text-muted-foreground">{t(smb ? "loader.questionHintSmb" : "loader.questionHint")}</p>
+        <p className="text-muted-foreground">{t(hint)}</p>
         <div className="flex flex-wrap gap-2">
-          {profiles.map((profile) => (
+          {answers.map(({ profile, label }) => (
             <Button key={profile} size="sm" variant="outline" onClick={() => choose(profile)} data-testid={`loader-answer-${profile}`}>
-              {t(`loader.answers.${profile}`)}
+              {label}
             </Button>
           ))}
-          <Button size="sm" variant="ghost" onClick={() => choose("unknown")} data-testid="loader-answer-unknown">
-            {t("loader.unknown")}
+          <Button size="sm" variant="ghost" onClick={() => choose(unknown)} data-testid={`loader-answer-${unknown}`}>
+            {t(emulator ? "loader.unknownMmce" : "loader.unknown")}
           </Button>
         </div>
       </div>

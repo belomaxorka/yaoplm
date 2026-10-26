@@ -187,13 +187,21 @@ impl Api {
     }
 
     /// How OPL reads the device at `path`: the mode a front end sends, else
+    /// a memory card emulator's (ADR-0048) when its files are there, else
     /// its place's (ADR-0047).
     fn mode_at(&self, path: &Path, mode: Option<DeviceMode>) -> yaoplm_device::DeviceMode {
-        match mode {
-            Some(mode) => mode.into(),
-            None => yaoplm_device::volume_for_path(path)
-                .map(|volume| yaoplm_device::Place::of(&volume, self.server()).mode())
-                .unwrap_or_default(),
+        if let Some(mode) = mode {
+            return mode.into();
+        }
+        let Ok(volume) = yaoplm_device::volume_for_path(path) else {
+            return yaoplm_device::DeviceMode::default();
+        };
+        let emulator = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|root| yaoplm_device::emulator::find_on_host(&root, Some(&volume.root)));
+        match emulator {
+            Some(_) => yaoplm_device::DeviceMode::Emulator,
+            None => yaoplm_device::Place::of(&volume, self.server()).mode(),
         }
     }
 

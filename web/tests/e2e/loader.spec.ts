@@ -160,7 +160,7 @@ test("the mode is switched per device and goes back to auto (ADR-0047)", async (
   const header = page.getByTestId("device-mode");
   await expect(header).toHaveAttribute("data-mode", "ps2");
   await page.getByTestId("device-choice-change").click();
-  await expect(page.getByTestId("device-mode-auto")).toHaveText("Авто (по месту)");
+  await expect(page.getByTestId("device-mode-auto")).toHaveText("Авто (по месту и файлам)");
   await page.getByTestId("device-mode-auto").click();
   await expect(header).toHaveAttribute("data-mode", "smb");
   await expect(header).toHaveAttribute("data-source", "detected");

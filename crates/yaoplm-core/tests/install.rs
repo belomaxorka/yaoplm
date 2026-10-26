@@ -317,24 +317,12 @@ fn reserved_and_odd_paths_are_refused() {
     assert_eq!(errors(&plan), ["loaderPathIsFolder"]);
     let plan = plan_install(&s.fs, &request(beta, &s, vec![])).unwrap();
     assert_eq!(errors(&plan), ["loaderNoPath"]);
-    // Nothing of an emulator's SD is in any plan.
+    // A memory card emulator's SD gets no loader at all (ADR-0048): on
+    // main the plan put OPL into `UPDT/` next to `MemoryCards/`.
     s.fs.insert_file("MemoryCards/PS2/BOOT/BootCard-1.mcd", b"card");
     let plan = plan_install(&s.fs, &request(beta, &s, vec![preset(beta, "fmcb")])).unwrap();
-    let paths: Vec<String> = plan
-        .transactions
-        .iter()
-        .flat_map(|tx| &tx.steps)
-        .filter_map(|step| match step {
-            Step::CreateDir { path }
-            | Step::WriteFile { path, .. }
-            | Step::PutFile { path, .. } => Some(path.to_string()),
-            _ => None,
-        })
-        .collect();
-    assert!(
-        paths.iter().all(|p| !p.starts_with("MemoryCards")),
-        "{paths:?}"
-    );
+    assert_eq!(errors(&plan), ["loaderOnEmulatorSd"]);
+    assert!(plan.transactions.is_empty() && !plan.is_executable());
 }
 
 #[test]

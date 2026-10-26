@@ -77,6 +77,7 @@ export function device(patch: Partial<DeviceInfo> = {}): DeviceInfo {
     },
     askProfile: false,
     installed: [],
+    emulator: null,
     ...patch,
   };
 }

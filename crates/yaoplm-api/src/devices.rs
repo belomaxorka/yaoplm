@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use yaoplm_device::advice::{self, Advice, DiagnoseOptions};
-use yaoplm_device::{Bus, FsKind, PartitionStyle, Place, Volume, VolumeKind};
+use yaoplm_device::fs::DeviceFs;
+use yaoplm_device::{Bus, EmulatorSd, FsKind, PartitionStyle, Place, Volume, VolumeKind};
 
 use yaoplm_core::loaders::installed;
 
@@ -124,6 +125,139 @@ pub struct DeviceInfo {
     /// The loaders on the device as the catalogue knows them, with what
     /// YAOPLM knows of newer builds, without the network (LDR-4).
     pub installed: Vec<InstalledLoader>,
+    /// The device is (on) a memory card emulator's SD (ADR-0048): no loader
+    /// goes on it, no format, and its service files are never changed.
+    pub emulator: Option<EmulatorInfo>,
+}
+
+/// Which firmware family an emulator's files belong to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum EmulatorKind {
+    /// sd2psx and sd2psXtd, on any sd2psx hardware (PSXMemCard Gen2...).
+    Sd2psx,
+    MemcardPro2,
+}
+
+/// One boot card image.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct BootCard {
+    pub channel: u32,
+    /// From `BootCard.ini`: says nothing of what the image holds.
+    pub name: Option<String>,
+    /// Relative to the SD's root.
+    pub file: String,
+    pub bytes: u64,
+}
+
+/// The cards of one variant folder: `PS2`, `PS1`, `COH`, `SC2`, `PROT`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CardVariant {
+    pub name: String,
+    pub boot: Vec<BootCard>,
+    pub max_channels: Option<u32>,
+    pub card_size: Option<u32>,
+    /// `Card<N>` folders.
+    pub cards: u32,
+    /// Folders the firmware made for a game ID.
+    pub game_cards: u32,
+}
+
+/// A `[section]` of an ini file, its entries as written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct IniSection {
+    pub name: String,
+    pub entries: Vec<IniEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct IniEntry {
+    pub key: String,
+    pub value: String,
+}
+
+/// A memory card emulator's SD as the device card shows it (ADR-0048).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct EmulatorInfo {
+    pub kinds: Vec<EmulatorKind>,
+    /// The files that told, relative to the SD's root.
+    pub signs: Vec<String>,
+    /// Where the opened folder lies on the SD; empty at its root.
+    pub folder: String,
+    /// Top-level names YAOPLM never changes.
+    pub protected: Vec<String>,
+    pub variants: Vec<CardVariant>,
+    /// `.sd2psx/settings.ini` as the firmware reads it.
+    pub settings: Vec<IniSection>,
+    /// Images the firmware moved aside as damaged.
+    pub damaged: Vec<String>,
+}
+
+impl EmulatorInfo {
+    fn new(sd: &EmulatorSd, survey: Option<&yaoplm_core::emulator::Survey>) -> Self {
+        let mut kinds = Vec::new();
+        if sd.sd2psx {
+            kinds.push(EmulatorKind::Sd2psx);
+        }
+        if sd.mcp2 {
+            kinds.push(EmulatorKind::MemcardPro2);
+        }
+        let variant = |v: &yaoplm_core::emulator::Variant| CardVariant {
+            name: v.name.clone(),
+            boot: v
+                .boot
+                .iter()
+                .map(|b| BootCard {
+                    channel: b.channel,
+                    name: b.name.clone(),
+                    file: b.file.clone(),
+                    bytes: b.bytes,
+                })
+                .collect(),
+            max_channels: v.max_channels,
+            card_size: v.card_size,
+            cards: v.cards,
+            game_cards: v.game_cards,
+        };
+        let section = |(name, entries): (String, Vec<(String, String)>)| IniSection {
+            name,
+            entries: entries
+                .into_iter()
+                .map(|(key, value)| IniEntry { key, value })
+                .collect(),
+        };
+        Self {
+            kinds,
+            signs: sd.signs.clone(),
+            folder: sd.at.clone(),
+            protected: sd.service_files().iter().map(|n| (*n).to_owned()).collect(),
+            variants: survey
+                .map(|s| s.variants.iter().map(variant).collect())
+                .unwrap_or_default(),
+            settings: survey
+                .and_then(|s| s.settings.as_ref())
+                .map(|ini| ini.sections().into_iter().map(section).collect())
+                .unwrap_or_default(),
+            damaged: survey.map(|s| s.damaged.clone()).unwrap_or_default(),
+        }
+    }
+}
+
+/// The SD's root for a device at `root` that lies `at` deep on it.
+fn sd_root(root: &std::path::Path, at: &str) -> std::path::PathBuf {
+    let depth = at.split('/').filter(|c| !c.is_empty()).count();
+    root.ancestors().nth(depth).unwrap_or(root).to_path_buf()
 }
 
 /// How YAOPLM knows which build a loader is (LDR-4, ADR-0040).
@@ -266,11 +400,17 @@ impl DeviceInfo {
         loaders: Option<&LoaderContext>,
     ) -> Self {
         let key = ActiveProfile::key_for(volume, &display_path(root));
-        let mode = ActiveMode::resolve(volume, &key, choice.mode);
+        let host = yaoplm_device::HostFs::new(root).ok();
+        let sd = host.as_ref().and_then(|fs| fs.emulator().ok().flatten());
+        let mode = ActiveMode::resolve(volume, &key, choice.mode, sd.as_ref());
         let smb = mode.mode == DeviceMode::Smb;
-        let fs = yaoplm_device::HostFs::new(root)
-            .ok()
-            .map(|fs| fs.with_mode(mode.mode.into()));
+        let fs = host.map(|fs| fs.with_mode(mode.mode.into()));
+        // What the SD holds, read from its root even when a folder on it is
+        // open.
+        let survey = sd.as_ref().and_then(|sd| {
+            let sd_fs = yaoplm_device::HostFs::new(&sd_root(fs.as_ref()?.root(), &sd.at)).ok()?;
+            yaoplm_core::emulator::survey(&sd_fs).ok()
+        });
         // In a folder read over SMB the loader's files are copies, and the
         // reason says so (research/18 §3).
         let detection = fs
@@ -303,14 +443,21 @@ impl DeviceInfo {
             mode: mode.mode.into(),
             whole_volume: volume.is_root(root),
         };
-        let found = advice::diagnose(volume, &options);
+        let mut found = advice::diagnose(volume, &options);
+        if let Some(survey) = &survey {
+            found.extend(survey.advice.iter().cloned());
+            found.sort_by_key(|a| std::cmp::Reverse(a.level()));
+        }
         let usable = found.iter().all(|a| a.level() != advice::Level::Error);
         let whole_system_disk = found.iter().any(|a| matches!(a, Advice::SystemRoot(_)));
+        // A memory card emulator's SD is asked even without OPL's folders:
+        // the answer decides whether they are offered (ADR-0048).
+        let emulator_mode = mode.mode == DeviceMode::Emulator;
         let ask_profile = usable
             && loader.source == ProfileSource::Detected
             && loader.detected.as_ref().is_some_and(|d| {
                 d.confidence == ProfileConfidence::Default
-                    && (d.library || (smb && !whole_system_disk))
+                    && (d.library || emulator_mode || (smb && !whole_system_disk))
             });
         Self {
             root: display_path(root),
@@ -358,6 +505,7 @@ impl DeviceInfo {
             mode,
             ask_profile,
             installed,
+            emulator: sd.as_ref().map(|sd| EmulatorInfo::new(sd, survey.as_ref())),
         }
     }
 
@@ -540,6 +688,9 @@ pub enum DeviceMode {
     Ps2,
     /// Read over the network from a shared folder.
     Smb,
+    /// The SD of a memory card emulator, read by OPL builds with MMCE
+    /// (ADR-0048).
+    Emulator,
 }
 
 impl From<DeviceMode> for yaoplm_device::DeviceMode {
@@ -547,6 +698,7 @@ impl From<DeviceMode> for yaoplm_device::DeviceMode {
         match mode {
             DeviceMode::Ps2 => Self::Ps2,
             DeviceMode::Smb => Self::Smb,
+            DeviceMode::Emulator => Self::Emulator,
         }
     }
 }
@@ -556,6 +708,7 @@ impl From<yaoplm_device::DeviceMode> for DeviceMode {
         match mode {
             yaoplm_device::DeviceMode::Ps2 => Self::Ps2,
             yaoplm_device::DeviceMode::Smb => Self::Smb,
+            yaoplm_device::DeviceMode::Emulator => Self::Emulator,
         }
     }
 }
@@ -569,7 +722,7 @@ pub enum ModeSource {
     Override,
     /// Forced by the request (the CLI's `--mode`).
     Explicit,
-    /// By the device's place.
+    /// By the device's place, or a memory card emulator's files.
     Detected,
 }
 
@@ -589,10 +742,12 @@ pub struct ModeOverride {
 pub struct ActiveMode {
     pub mode: DeviceMode,
     pub source: ModeSource,
-    /// The mode the device's place gives.
+    /// The mode the device's place gives, or a memory card emulator's
+    /// files.
     pub detected: DeviceMode,
     /// The device's place, to follow a dash: a removable device, a folder
-    /// on the computer's disk, a network folder, a folder on the server.
+    /// on the computer's disk, a network folder, a folder on the server; or
+    /// the files of a memory card emulator.
     pub place: Phrase,
     /// `place` in English.
     pub place_text: String,
@@ -609,11 +764,20 @@ pub struct ModeChoice<'a> {
 }
 
 impl ActiveMode {
-    /// The device's place, then the front end's choice: an override for the
-    /// device (`key`), then an explicit mode.
-    pub fn resolve(volume: &Volume, key: &str, choice: ModeChoice<'_>) -> Self {
+    /// The device's place (a memory card emulator's files, `sd`, come
+    /// first: a card reader cannot tell, ADR-0048), then the front end's
+    /// choice: an override for the device (`key`), then an explicit mode.
+    pub fn resolve(
+        volume: &Volume,
+        key: &str,
+        choice: ModeChoice<'_>,
+        sd: Option<&EmulatorSd>,
+    ) -> Self {
         let place = Place::of(volume, choice.server);
-        let detected = DeviceMode::from(place.mode());
+        let detected = match sd {
+            Some(_) => DeviceMode::Emulator,
+            None => DeviceMode::from(place.mode()),
+        };
         let (mode, source) = if let Some(chosen) = choice.overrides.iter().find(|o| o.key == key) {
             (chosen.mode, ModeSource::Override)
         } else if let Some(explicit) = choice.explicit {
@@ -621,7 +785,20 @@ impl ActiveMode {
         } else {
             (detected, ModeSource::Detected)
         };
-        let phrase = place.phrase();
+        let phrase = match sd {
+            Some(sd) => {
+                // `.sd2psx, MemoryCards`: the variant folders are details.
+                let mut top: Vec<&str> = Vec::new();
+                for sign in &sd.signs {
+                    let first = sign.split('/').next().unwrap_or(sign);
+                    if !top.contains(&first) {
+                        top.push(first);
+                    }
+                }
+                yaoplm_core::Phrase::reason("placeEmulator").with("files", top.join(", "))
+            }
+            None => place.phrase(),
+        };
         Self {
             mode,
             source,

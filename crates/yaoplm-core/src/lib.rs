@@ -5,6 +5,8 @@
 //! - [`import::plan_import`], [`ops`], [`convert`], [`art`] and [`settings`] build
 //!   [`plan::Plan`]s; nothing is written while planning.
 //! - [`verify`] hashes the images on a device for dump verification.
+//! - [`emulator`] reads a memory card emulator's SD and keeps plans off its
+//!   service files (ADR-0048).
 //! - [`exec::execute`] runs a plan with a journal, rollback before each
 //!   commit point and resume after it; [`recovery::plan_recovery`] picks up
 //!   what a crash left behind.
@@ -17,6 +19,7 @@ pub mod checks;
 pub mod convert;
 pub mod detect;
 pub mod device;
+pub mod emulator;
 pub mod exec;
 pub mod fragments;
 mod fsutil;

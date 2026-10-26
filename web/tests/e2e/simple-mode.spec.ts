@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
+import { emulatorFlow } from "./emulator-flow";
 import { emptyStick, job, joinPath, openLibrary, roots, rpc, stickAsUsb, stickCard } from "./helpers";
 
 // Simple mode end to end (UI-4, ADR-0034), the app's default. There is no
@@ -71,6 +72,15 @@ test("simple mode: a plan of housekeeping alone lists what it does", async ({ pa
   await expect(plan.getByTestId("plan-transaction")).toContainText("Create the OPL folders");
   await page.keyboard.press("Escape");
   await expect(plan).toHaveCount(0);
+});
+
+test("simple mode: a memory card emulator's SD names its plan, keeps its files and gets no loader", async ({
+  page,
+  request,
+}) => {
+  // ADR-0048: the question, then "Create OPL folders" through a plan that
+  // lists its transaction; the emulator's files stay byte for byte.
+  await emulatorFlow(page, request, true);
 });
 
 /** Build 2271 at FreeMcBoot's path, through the server, as the install screen would. */

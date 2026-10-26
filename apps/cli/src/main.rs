@@ -686,16 +686,19 @@ impl Profile {
     }
 }
 
-/// How OPL reads the device (ADR-0047).
+/// How OPL reads the device (ADR-0047, ADR-0048).
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum ModeArg {
     /// By the device's place: a USB stick or SD card is plugged into the
-    /// PS2, a folder on the computer or a network folder is read over SMB.
+    /// PS2, a folder on the computer or a network folder is read over SMB;
+    /// a memory card emulator's files make it the emulator's SD.
     Auto,
     /// Plugged into the PS2 (USB, MX4SIO, i.LINK).
     Ps2,
     /// Read by OPL over the network.
     Smb,
+    /// The SD of a memory card emulator, read by OPL builds with MMCE.
+    Emulator,
 }
 
 impl ModeArg {
@@ -705,6 +708,7 @@ impl ModeArg {
             Self::Auto => None,
             Self::Ps2 => Some(DeviceMode::Ps2),
             Self::Smb => Some(DeviceMode::Smb),
+            Self::Emulator => Some(DeviceMode::Emulator),
         }
     }
 }

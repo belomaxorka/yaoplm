@@ -18,7 +18,9 @@
 //! build is replaced; a file of another family, or one YAOPLM does not
 //! recognise, only with the user's "replace this file" (the backup is made
 //! all the same). Nothing is deleted. The memory card, launcher configs and
-//! the service files of a memory card emulator's SD are never touched.
+//! the service files of a memory card emulator's SD are never touched, and
+//! a memory card emulator's SD gets no loader at all: OPL runs from inside
+//! its boot card (ADR-0048).
 
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -44,7 +46,8 @@ use crate::plan::{
 pub const KEEP_BACKUPS: usize = 3;
 pub const BACKUP_DIR: &str = ".yaoplm/backup/loader";
 /// Top-level names a memory card emulator keeps on its SD (SD2PSX and
-/// sd2psXtd, MemCard PRO 2; research/07 §2.7): never written to.
+/// sd2psXtd, MemCard PRO 2; research/07 §2.7): never a loader's path on
+/// any device. On an emulator's SD no path is (ADR-0048).
 const EMULATOR_FILES: [&str; 6] = [".sd2psx", "MemoryCards", "PS1", "PS2", "mcp2.bin", "os"];
 /// A file this big at a loader's path is not read to tell what it is.
 const MAX_READ: u64 = 64 << 20;
@@ -314,6 +317,11 @@ pub fn plan_install(fs: &dyn DeviceFs, request: &InstallRequest<'_>) -> io::Resu
         on_device: false,
         check: None,
     });
+    if fs.emulator()?.is_some() {
+        plan.notices
+            .push(Notice::error(Phrase::notice("loaderOnEmulatorSd")));
+        return Ok(plan);
+    }
     if request.targets.is_empty() {
         plan.notices
             .push(Notice::error(Phrase::notice("loaderNoPath")));

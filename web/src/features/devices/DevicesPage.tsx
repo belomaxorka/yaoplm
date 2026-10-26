@@ -29,8 +29,9 @@ import { useSettings, useSimpleMode } from "@/settings/context";
 import { deviceChoice } from "@/settings/settings";
 
 import { DeviceLines, SmbFolderHint } from "./DeviceMode";
+import { EmulatorPanel } from "./EmulatorPanel";
 import { LoaderProfileHint } from "./LoaderProfile";
-import { smbStep } from "./smbStep";
+import { folderStep } from "./smbStep";
 
 /**
  * Device picker (DEV-1, DEV-2): every volume with its loader profile
@@ -140,10 +141,16 @@ export function DevicesPage() {
  * No loader can work from a system disk, a read-only volume or a device OPL
  * cannot use (§5.10.1). A folder read over SMB needs none: the console starts
  * OPL from its memory card or stick, and a loader there is a copy (ADR-0047).
+ * A memory card emulator's SD gets none in any mode: OPL runs from inside its
+ * boot card (ADR-0048).
  */
 function installable(device: DeviceInfo): boolean {
   return (
-    device.mode.mode === "ps2" && !device.system && !device.readOnly && worstLevel(device.advice) !== "error"
+    device.mode.mode === "ps2" &&
+    device.emulator === null &&
+    !device.system &&
+    !device.readOnly &&
+    worstLevel(device.advice) !== "error"
   );
 }
 
@@ -184,12 +191,13 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
     ...(device.loader.source === "detected" ? (device.loader.detected?.notices ?? []) : []),
   ];
   const used = device.totalBytes > 0 ? Math.round(((device.totalBytes - device.freeBytes) / device.totalBytes) * 100) : 0;
-  // A folder read over SMB may sit on the system disk (ADR-0047): the badge
-  // is a fact there, not a verdict.
-  const smb = device.mode.mode === "smb";
+  // A folder read over SMB, or a copy of a memory card emulator's SD, may sit
+  // on the system disk (ADR-0047, ADR-0048): the badge is a fact there, not
+  // a verdict.
+  const systemIsFact = device.mode.mode === "smb" || device.mode.mode === "emulator";
   // One main button: the folder's next step comes before opening it. A
   // server's system disk shows no step (its roots are the administrator's).
-  const step = smbStep(device);
+  const step = folderStep(device);
   const stepShown = step === "init" || (step === "folder" && transport.kind !== "http");
   return (
     <li
@@ -206,7 +214,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
             <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
             {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
             {!simple && <Badge variant="outline">{t(`devices.kind.${device.kind}`)}</Badge>}
-            {device.system && <Badge variant={smb ? "outline" : "destructive"}>{t("devices.systemDisk")}</Badge>}
+            {device.system && (
+              <Badge variant={systemIsFact ? "outline" : "destructive"}>{t("devices.systemDisk")}</Badge>
+            )}
             {device.readOnly && <Badge variant="destructive">{t("devices.readOnly")}</Badge>}
             {current && <Badge>{t("devices.current")}</Badge>}
           </div>
@@ -219,8 +229,9 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
           <div className="mt-2 flex flex-col gap-1 text-sm">
             <DeviceLines device={device} />
           </div>
-          <SmbFolderHint device={device} className="mt-2" />
+          {device.emulator && <EmulatorPanel emulator={device.emulator} className="mt-2" />}
           <LoaderProfileHint device={device} className="mt-2" />
+          <SmbFolderHint device={device} className="mt-2" />
           {device.installed.map((loader) => (
             <InstalledLoaderRow key={loader.path} device={device} loader={loader} actions={canInstall} />
           ))}

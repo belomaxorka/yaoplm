@@ -10,7 +10,7 @@ interface Device {
 /** The fixture roots the e2e server was started with (`server.mjs`). */
 export async function roots(
   request: APIRequestContext,
-): Promise<{ library: string; sources: string; mirror: string; stick: string }> {
+): Promise<{ library: string; sources: string; mirror: string; stick: string; emulator: string }> {
   const response = await request.post("/api/rpc", { data: { type: "ListDevices" } });
   const body = (await response.json()) as { devices: Device[] };
   const find = (name: string) => {
@@ -18,7 +18,13 @@ export async function roots(
     if (!device) throw new Error(`no fixture root ending in ${name}: ${JSON.stringify(body)}`);
     return device.root;
   };
-  return { library: find("library"), sources: find("sources"), mirror: find("mirror"), stick: find("stick") };
+  return {
+    library: find("library"),
+    sources: find("sources"),
+    mirror: find("mirror"),
+    stick: find("stick"),
+    emulator: find("emulator"),
+  };
 }
 
 /** `<root>/<name>` with the separator the server uses. */

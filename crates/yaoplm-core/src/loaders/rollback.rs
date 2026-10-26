@@ -36,6 +36,11 @@ pub fn plan_rollback(
         Phrase::title("rollbackLoader").with("path", path),
         &state,
     );
+    if fs.emulator()?.is_some() {
+        plan.notices
+            .push(Notice::error(Phrase::notice("loaderOnEmulatorSd")));
+        return Ok(plan);
+    }
     if let Some(why) = refused(path) {
         plan.notices.push(Notice::error(why));
         return Ok(plan);

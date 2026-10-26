@@ -680,6 +680,32 @@ fn a_foreign_file_blocks_the_plan_until_confirmed() {
     assert_eq!(std::fs::read(&backups[0]).unwrap(), foreign);
 }
 
+#[test]
+fn a_memory_card_emulator_s_sd_gets_no_loader() {
+    // ADR-0048: on main this plan put OPL into `UPDT/` next to
+    // `MemoryCards/`, where nothing starts it.
+    let s = setup();
+    let device = tempfile::tempdir().unwrap();
+    yaoplm_test_support::emulator::write_to(device.path()).unwrap();
+    let root = device.path().to_string_lossy().into_owned();
+    let got = file(run(
+        &s.api,
+        json!({"type": "DownloadLoader", "build": "opl-beta", "mirror": s.mirror}),
+    ));
+    for presets in [json!(["fmcb"]), json!(["ps2bbl", "app"])] {
+        let plan = call(
+            &s.api,
+            json!({"type": "PlanInstallLoader", "root": root, "build": "opl-beta", "sha256": got.sha256,
+                   "presets": presets, "device": "usb"}),
+        )
+        .unwrap();
+        assert_eq!(codes(&plan), ["loaderOnEmulatorSd"], "{plan}");
+        assert_eq!(plan["executable"], false);
+    }
+    assert!(!device.path().join("UPDT").exists());
+    assert!(!device.path().join("APPS").exists());
+}
+
 fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {

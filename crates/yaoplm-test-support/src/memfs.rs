@@ -193,6 +193,7 @@ impl MemFs {
                     free_bytes: 64 << 30,
                     cluster_size: 32 * 1024,
                     smb: false,
+                    mmce: false,
                     fingerprint: "MEM-0001".into(),
                 },
                 unplugged: false,
@@ -216,6 +217,12 @@ impl MemFs {
 
     pub fn with_smb(self, smb: bool) -> Self {
         self.lock().info.smb = smb;
+        self
+    }
+
+    /// Read through a memory card emulator's firmware (ADR-0048).
+    pub fn with_mmce(self, mmce: bool) -> Self {
+        self.lock().info.mmce = mmce;
         self
     }
 

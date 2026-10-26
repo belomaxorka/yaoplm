@@ -8,12 +8,14 @@ import type { Phrase } from "./Phrase";
  */
 export type ActiveMode = { mode: DeviceMode, source: ModeSource, 
 /**
- * The mode the device's place gives.
+ * The mode the device's place gives, or a memory card emulator's
+ * files.
  */
 detected: DeviceMode, 
 /**
  * The device's place, to follow a dash: a removable device, a folder
- * on the computer's disk, a network folder, a folder on the server.
+ * on the computer's disk, a network folder, a folder on the server; or
+ * the files of a memory card emulator.
  */
 place: Phrase, 
 /**

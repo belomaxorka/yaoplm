@@ -2,8 +2,10 @@
 //!
 //! - [`volume`]: which volumes are mounted, their file system, free space,
 //!   cluster size and serial number (DEV-1).
-//! - [`mode`]: whether OPL reads a device plugged into the PS2 or over SMB,
-//!   by the device's place (ADR-0047).
+//! - [`mode`]: whether OPL reads a device plugged into the PS2, over SMB
+//!   (by the device's place, ADR-0047) or through a memory card emulator.
+//! - [`emulator`]: a memory card emulator's SD and the files of it YAOPLM
+//!   never changes (ADR-0048).
 //! - [`advice`]: a read-only verdict on a volume for a loader profile and a
 //!   mode (DEV-2, research/06 §6.1).
 //! - [`fs`]: [`DeviceFs`], the only way the rest of YAOPLM writes to a
@@ -20,6 +22,7 @@
 
 pub mod advice;
 pub mod copy;
+pub mod emulator;
 pub mod fs;
 pub mod mode;
 pub mod source;
@@ -28,6 +31,7 @@ pub mod volume;
 
 pub use advice::{Advice, DiagnoseOptions, Level, diagnose};
 pub use copy::{CancelToken, CopyError, copy_exact};
+pub use emulator::EmulatorSd;
 pub use fs::{DeviceFile, DeviceFs, DirEntry, FileMeta, FsInfo, HostFs, PathError, RelPath};
 pub use mode::{DeviceMode, Place};
 pub use source::{HostSources, ReadSeek, SourceFs, SourceMeta};

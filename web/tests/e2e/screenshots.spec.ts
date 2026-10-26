@@ -158,3 +158,25 @@ for (const language of ["en", "ru"] as const) {
     }
   }
 }
+
+// A memory card emulator's SD on its device card (ADR-0048), in both modes:
+// the fixture root `emulator` with the version question still open.
+for (const language of ["en", "ru"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    for (const simple of [false, true]) {
+      test(`emulator card screenshots ${language} ${theme} ${simple ? "simple" : "advanced"}`, async ({ page, request }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await openLibrary(page, request, { language, theme, simple });
+        await page.goto("/devices");
+        const card = page
+          .getByTestId("device-card")
+          .filter({ has: page.locator("span.font-mono", { hasText: /[\\/]emulator$/ }) })
+          .first();
+        await expect(card.getByTestId("emulator-panel")).toBeVisible();
+        await card.screenshot({
+          path: `test-results/screenshots/emulator-card-${simple ? "simple" : "advanced"}-${language}-${theme}.png`,
+        });
+      });
+    }
+  }
+}

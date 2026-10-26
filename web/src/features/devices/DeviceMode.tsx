@@ -33,10 +33,10 @@ import { usePlan } from "@/features/plan/usePlan";
 import { wroteAll } from "@/jobs/outcome";
 import { phraseText } from "@/lib/phrase";
 import { useSettings } from "@/settings/context";
-import { deviceModes, profiles } from "@/settings/settings";
+import { deviceModes, mmceProfiles, profiles } from "@/settings/settings";
 
 import { LoaderProfileLine } from "./LoaderProfile";
-import { smbStep } from "./smbStep";
+import { emulatorStep, smbStep } from "./smbStep";
 import { useProfileChoice } from "./useLoaderProfile";
 
 /** The folder a whole system disk's library goes into by default. */
@@ -60,6 +60,13 @@ export function DeviceLines({ device, className }: { device: DeviceInfo; classNa
   };
   const profile = useProfileChoice(device.loader);
   const { mode } = device;
+  // On a memory card emulator's SD only builds with MMCE see the games
+  // (ADR-0048): neither OPL 1.1.0 nor its "I don't know" is offered there.
+  const emulator = mode.mode === "emulator";
+  const choices = emulator
+    ? mmceProfiles.map((value) => ({ value, label: t(`loader.answersEmulator.${value}`) }))
+    : profiles.map((value) => ({ value, label: t(`settings.profiles.${value}`) }));
+  const unknown = emulator ? "unknownMmce" : "unknown";
   const reason =
     mode.source === "override"
       ? t("devices.modeByOverride")
@@ -102,13 +109,13 @@ export function DeviceLines({ device, className }: { device: DeviceInfo; classNa
               <DropdownMenuRadioItem value="auto" data-testid="loader-profile-auto">
                 {t("loader.auto")}
               </DropdownMenuRadioItem>
-              {profiles.map((value) => (
+              {choices.map(({ value, label }) => (
                 <DropdownMenuRadioItem key={value} value={value} data-testid={`loader-profile-${value}`}>
-                  {t(`settings.profiles.${value}`)}
+                  {label}
                 </DropdownMenuRadioItem>
               ))}
-              <DropdownMenuRadioItem value="unknown" data-testid="loader-profile-unknown">
-                {t("loader.unknown")}
+              <DropdownMenuRadioItem value={unknown} data-testid={`loader-profile-${unknown}`}>
+                {t(emulator ? "loader.unknownMmce" : "loader.unknown")}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
@@ -129,7 +136,9 @@ function childPath(root: string, name: string): string {
  * What `smbStep` says, with its button: "Create OPL folders" (LIB-3), or
  * "Create folder…", which plans a library folder inside the disk and opens
  * it once written. A server's roots are its administrator's: there the
- * system disk keeps only the doctor's warning.
+ * system disk keeps only the doctor's warning. A memory card emulator's SD
+ * gets "Create OPL folders" once the version question is answered
+ * (`emulatorStep`, ADR-0048).
  */
 export function SmbFolderHint({ device, className }: { device: DeviceInfo; className?: string }) {
   const { t } = useTranslation();
@@ -154,16 +163,18 @@ export function SmbFolderHint({ device, className }: { device: DeviceInfo; class
       opening.current = null;
     },
   });
-  const step = smbStep(device);
+  const emulator = emulatorStep(device) === "init";
+  const step = emulator ? "init" : smbStep(device);
   if (step === null || (step === "folder" && transport.kind === "http")) return null;
+  const hint = emulator ? "devices.emulatorInitHint" : step === "folder" ? "devices.smbFolderHint" : "devices.smbInitHint";
 
   return (
     <div
       className={cn("flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 text-sm", className)}
-      data-testid={step === "folder" ? "smb-create-folder" : "smb-init"}
+      data-testid={emulator ? "emulator-init" : step === "folder" ? "smb-create-folder" : "smb-init"}
     >
       <FolderPlus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1">{t(step === "folder" ? "devices.smbFolderHint" : "devices.smbInitHint")}</span>
+      <span className="min-w-0 flex-1">{t(hint)}</span>
       {step === "folder" ? (
         <Button size="sm" onClick={() => setNaming(true)} data-testid="smb-create-folder-button">
           {t("devices.createFolder")}
