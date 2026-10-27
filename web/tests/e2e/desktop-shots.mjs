@@ -70,9 +70,9 @@ await shot("game");
 
 if (mirror) {
   // The cover's variants from the mirrors, up to the plan dialog.
-  await page.getByTestId("art-download-COV").click();
+  await page.getByTestId("art-choose-COV").click();
   await page.getByTestId("art-variant").first().waitFor({ timeout: 30_000 });
-  await shot("art-variants");
+  await shot("art-choose");
   await page.getByTestId("art-variant-use").click();
   await page.getByTestId("plan-dialog").waitFor({ timeout: 30_000 });
   await shot("art-plan");

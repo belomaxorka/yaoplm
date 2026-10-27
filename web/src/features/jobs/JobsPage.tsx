@@ -334,6 +334,7 @@ const kindIcons = {
   scanLibrary: ScanSearch,
   executePlan: ListChecks,
   fetchArt: ImageDown,
+  findArt: ImageDown,
   verifyGames: ShieldCheck,
   updateRedump: Database,
   importArt: FolderInput,

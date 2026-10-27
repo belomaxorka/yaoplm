@@ -894,6 +894,8 @@ fn other_picture_types_and_variants() {
     )
     .unwrap();
     let info = wait(&s.api, &started);
+    // Its own kind (ART-2): the interface keeps it out of the jobs list.
+    assert_eq!(info.kind, yaoplm_api::jobs::JobKind::FindArt);
     let Some(JobResult::ArtVariants(found)) = info.result else {
         panic!("expected variants: {info:?}");
     };

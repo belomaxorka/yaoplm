@@ -117,7 +117,10 @@ describe("library scans", () => {
     await waitFor(() => expect(core.of("CancelJob").map((r) => r.job)).toEqual([core.scans()[1]?.id]));
     core.finishScans();
 
-    // The jobs page lists the writes, not the scans.
+    // A slot's picture search is the card's own business (ART-2): not a job either.
+    core.runJob("findArt");
+
+    // The jobs page lists the writes, not the scans or the searches.
     const cards = await screen.findAllByTestId("job-card");
     expect(cards.map((card) => card.dataset.kind)).toEqual(["executePlan", "executePlan"]);
     expect(screen.queryByRole("link", { name: /active job/ })).not.toBeInTheDocument();
