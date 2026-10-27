@@ -57,15 +57,21 @@ test("a fragmented game: warnings filter, card and pieces", async ({ page, reque
   expect(title()).not.toBe("");
 
   // The warnings filter keeps the game (LIB-4); it is a box in the Filter menu (LIB-5).
-  await page.getByTestId("library-filter").click();
-  await page.getByTestId("filter-warnings").click();
-  await page.keyboard.press("Escape");
+  const warningsBox = async (on: boolean) => {
+    await page.getByTestId("library-filter").click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.getByTestId("filter-warnings").click();
+    await expect(page.getByTestId("filter-warnings")).toHaveAttribute("data-state", on ? "checked" : "unchecked");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+  };
+  await warningsBox(true);
+  await expect(page).toHaveURL(/warnings=1/);
   await page.getByRole("searchbox", { name: "Search" }).fill(title());
   await expect(page.getByRole("listitem").filter({ hasText: title() })).toHaveCount(1);
   await page.getByRole("searchbox", { name: "Search" }).fill("");
-  await page.getByTestId("library-filter").click();
-  await page.getByTestId("filter-warnings").click();
-  await page.keyboard.press("Escape");
+  await warningsBox(false);
+  await expect(page).not.toHaveURL(/warnings=1/);
 
   await openGame(page, title());
   await expect(page.getByTestId("game-warnings")).toContainText("is in 70 pieces on the device, more than the 64");
