@@ -63,15 +63,36 @@ Short names:
   - layer-1 probing happens only for DVD.
 - Whether a DVD game in `CD/` breaks is untested (console test).
 
+#### 3.1.1 Second look (2026-10-27, for `m5/walkthrough-core`; clones at the commits in REFERENCES.md)
+Read for walkthrough findings 1 and 6 (a small DVD game lands in `CD/`). What each tool does, with the file and line:
+
+| Tool | Rule | Source |
+|---|---|---|
+| OPL (BDM, USB, SMB) | Only the folder: `CD/` → `SCECdPS2CD`, `DVD/` → `SCECdPS2DVD`; the image is opened for `SYSTEM.CNF` alone. `ul.cfg`'s byte is copied as is; an unknown value counts as DVD everywhere. HDD takes the APA header's `discType`. | `src/supportbase.c:286-353,426`, `modules/iopcore/cdvdman/device-smb.c:84-86`, `src/hdd.c:163` |
+| OPL, what it reads | Only the layer-1 PVD, and only for a DVD; `mediaLsnCount` comes from the file size because, the comment says, badly mastered discs understate the PVD's volume size. | `supportbase.c:497-569`, `bdmsupport.c:471-498` |
+| OPL `pc/iso2opl` | The user passes `CD` or `DVD` (0x12/0x14). | `pc/iso2opl/src/iso2opl.c:163-166,519` |
+| hdl-dump CLI | `inject_cd`/`inject_dvd`: the user. `install`: `CD-XA001` at byte 1024 of sector 16 → CD, eight zero bytes → DVD, else unknown and > 750 MiB → DVD ("TODO: the following assumption might be incorrect"). Raw 2352/2336-byte sectors are un-rawed first and never used as a signal. | `isofs.c:274-289`, `hdl_dump.c:1182-1193`, `iin_cdrwin.c:152-165` |
+| hdl-dump GUI | The same XA probe, then > 800 MiB → DVD, then the user's combobox. | `gui/gui_main.c:557,599-602,772,799` |
+| OPL PC Tools | > 681,984,000 bytes (333,000 sectors) → DVD; BIN/CUE normalised to 2048-byte sectors; no choice in the UI. | `GameInstaller.cpp:56-59`, `BinCueDeviceSource.cpp:52` |
+| TinyPS2Manager | Per-hash user override → UDF (`NSR02`, but compared at byte 0 instead of 1, so it never matches a real volume) → PVD volume size ≤ 700 MiB → file size ≤ 700 MiB; a titles database that ships empty. `ul.cfg` always 0x14. | `internal/library/detect.go:88-143`, `isotool/info.go:59-117` |
+| OPLNova, PyOPLM, donydaily, Zsubzeroz, PS2IsoManager, dheison0, gpulch | A size threshold only: 1,000,000,000 bytes, 700 MiB, 700 MiB, 700 MiB, 700 MiB, 700,000,000 bytes, 800 MiB. | `Core/Game.cs:49-56`, `opl/games_manager.py:124`, `iso.py:18`, `core/splitter.py:100`, `Iso9660Reader.cs:94`, `manager/game.go:18-24`, `src-tauri/src/transfer.rs:4-7` |
+| Tihwin, opl-linux-toolbox, OrbitPS2 | The user: radio buttons, or the import mode (`ps2-cd` takes CUE, `ps2-dvd` takes ISO). | `MainAppUi.java:119-131`, `import.component.ts:30-43`, `library.service.ts:427-432` |
+| libopl, logi-26, opl-manager-next | Always DVD (`#FIXME: static media type`); logi-26 even drops HDD CD games from its list. | `libopl/opl.py:162`, `fx/AddGameSmbController.java:121-135`, `PS2Manager.jsx:19` |
+| ps2-opl-ripper, ps-disc-detect | A physical drive's profile (MMC 0x08-0x0A, Sony's 0xFF60 PS2 CD / 0xFF61 PS2 DVD); nothing from the image. | `optical/media_detector.py:15-30`, `include/disc_type.h:18-21` |
+
+In short: no tool asks a database (TinyPS2Manager's is empty), the thresholds range from 650 to 954 MiB, three managers always say DVD, and upstream OPL warns that the PVD's volume size can be too small. Nothing in the image tells a small DVD game from a CD except the XA mark of a CD.
+
 ### 3.2 YAOPLM order
 1. User override.
 2. A raw BIN dump → CD.
 3. Two layers → DVD.
 4. UDF descriptor in sectors 16-31 → DVD.
 5. `CD-XA001` → CD.
-6. Volume over 360,000 sectors → DVD, else CD.
+6. The title database (Redump dumps a CD as BIN/CUE and a DVD as one ISO; `data/titles.json.gz` keeps the disc of every serial) — since 2026-10-27, walkthrough finding 1.
+7. A game with the same ID already in `CD/`, `DVD/` or `ul.cfg` — walkthrough finding 6.
+8. Volume over 360,000 sectors → DVD, else CD.
 
-Conflicting hints (XA but bigger than a CD) give a warning.
+Conflicting hints (XA but bigger than a CD) give a warning; the plan names the step that decided.
 
 ## 4. Rename, delete, move
 

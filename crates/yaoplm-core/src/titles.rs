@@ -19,6 +19,8 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 use yaoplm_formats::serial::lookup_key;
 
+use crate::Media;
+
 static DATA: &[u8] = include_bytes!("../../../data/titles.json.gz");
 
 #[derive(Deserialize)]
@@ -38,6 +40,10 @@ struct RawGame {
     /// Redump `(name, region)` pairs from the DAT.
     #[serde(default)]
     d: Vec<(String, String)>,
+    /// `CD` or `DVD`: Redump dumps a CD as BIN/CUE and a DVD as one ISO,
+    /// so the roms' extensions in the DAT say which disc the serial is on.
+    #[serde(default)]
+    m: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -85,6 +91,8 @@ pub struct Entry {
     pub related: Vec<String>,
     /// Redump names of the discs with this serial.
     pub redump: Vec<RedumpName>,
+    /// The disc the serial was pressed on, when Redump dumped only one kind.
+    pub media: Option<Media>,
 }
 
 impl Entry {
@@ -249,6 +257,11 @@ impl Database {
                         .into_iter()
                         .map(|(name, region)| RedumpName { name, region })
                         .collect(),
+                    media: match g.m.as_deref() {
+                        Some("CD") => Some(Media::Cd),
+                        Some("DVD") => Some(Media::Dvd),
+                        _ => None,
+                    },
                 };
                 (serial, entry)
             })
@@ -351,6 +364,11 @@ pub fn known_title(id: &str) -> Option<String> {
     database().lookup(id).and_then(Entry::preferred_title)
 }
 
+/// The disc `id` was pressed on, if the database knows it (IMP-1).
+pub fn known_media(id: &str) -> Option<Media> {
+    database().lookup(id).and_then(|entry| entry.media)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +380,20 @@ mod tests {
         assert_eq!(db.info().format, 1);
         assert!(db.info().built.starts_with("20"));
         assert!(!db.info().libretro_version.is_empty());
+    }
+
+    // Redump dumps a CD as BIN/CUE and a DVD as one ISO: the database keeps
+    // which it was for every serial (IMP-1).
+    #[test]
+    fn database_knows_the_disc_type() {
+        assert_eq!(known_media("SLUS_200.62"), Some(Media::Dvd), "GTA III");
+        assert_eq!(
+            known_media("SCUS_906.82"),
+            Some(Media::Dvd),
+            "Gran Turismo 4"
+        );
+        assert_eq!(known_media("SLUS_200.02"), Some(Media::Cd), "Ridge Racer V");
+        assert_eq!(known_media("ZZZZ_000.00"), None);
     }
 
     #[test]
@@ -418,6 +450,7 @@ mod tests {
                 name: "Karat PS2-you Pro Action Replay (Japan) (v1.7)".into(),
                 region: "Japan".into(),
             }],
+            media: None,
         };
         assert_eq!(
             dat_only.preferred_title().as_deref(),
@@ -449,6 +482,7 @@ mod tests {
                     region: "Germany".into(),
                 },
             ],
+            media: None,
         };
         let names: Vec<&str> = entry
             .redump_names_by_region()

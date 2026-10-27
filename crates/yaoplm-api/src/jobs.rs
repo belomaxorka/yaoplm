@@ -25,6 +25,7 @@ use crate::library::Library;
 use crate::loaders::{LoaderCatalog, LoaderFile, LoaderImpact, LoaderOffer, LoaderReleaseList};
 use crate::phrase::Phrase;
 use crate::plans::{PlanNotice, PlanView, StepOp};
+use crate::rate::RateMeter;
 use crate::verify::{
     GameVerification, RedumpResult, UnknownReason, VerificationReport, VerifyStatus,
 };
@@ -318,9 +319,9 @@ pub struct JobContext {
     id: JobId,
     inner: Arc<Inner>,
     cancel: CancelToken,
-    started: Instant,
     last_event: Mutex<Option<Instant>>,
-    rate: bool,
+    /// For jobs that move bytes: the rate behind the front ends' "time left".
+    rate: Option<Mutex<RateMeter>>,
 }
 
 impl JobContext {
@@ -347,11 +348,10 @@ impl JobContext {
         item_phrase: Option<&yaoplm_core::Phrase>,
     ) {
         let item_phrase = item_phrase.map(Phrase::from);
-        let rate = self.rate.then(|| {
-            let secs = self.started.elapsed().as_secs_f64();
-            (secs > 0.5).then(|| (done as f64 / secs) as u64)
-        });
-        let rate = rate.flatten();
+        let rate = self
+            .rate
+            .as_ref()
+            .and_then(|meter| lock(meter).record(Instant::now(), done));
         {
             let mut jobs = lock(&self.inner.jobs);
             if let Some(record) = jobs.get_mut(&self.id.0) {
@@ -606,9 +606,9 @@ fn run_job(inner: &Arc<Inner>, id: JobId, cancel: CancelToken, kind: JobKind, wo
         id,
         inner: Arc::clone(inner),
         cancel,
-        started: Instant::now(),
         last_event: Mutex::new(None),
-        rate: matches!(kind, JobKind::ExecutePlan | JobKind::VerifyGames),
+        rate: matches!(kind, JobKind::ExecutePlan | JobKind::VerifyGames)
+            .then(|| Mutex::new(RateMeter::new(Instant::now()))),
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&context)))
         .unwrap_or_else(|_| {

@@ -49,6 +49,8 @@ pub struct IsoBuilder {
     root: Dir,
     min_bytes: u64,
     layer0_sectors: Option<u64>,
+    /// `CD-XA001` in the volume descriptor, as on every PS2 CD.
+    cd_xa: bool,
 }
 
 impl Default for IsoBuilder {
@@ -65,6 +67,7 @@ impl IsoBuilder {
             root: Dir::default(),
             min_bytes: 0,
             layer0_sectors: None,
+            cd_xa: false,
         }
     }
 
@@ -100,6 +103,13 @@ impl IsoBuilder {
     /// Makes a DVD-9 the way OPL detects one: the PVD's volume space size
     /// is `layer0_sectors + 16` and that sector holds layer 1's descriptor,
     /// so OPL computes `layer1_start = layer0_sectors`.
+    /// Marks the volume as a CD-XA disc, as every PS2 CD is (`CD-XA001`
+    /// at byte 1024 of the primary volume descriptor; hdl-dump's rule).
+    pub fn cd_xa(mut self) -> Self {
+        self.cd_xa = true;
+        self
+    }
+
     pub fn dual_layer(mut self, layer0_sectors: u64) -> Self {
         self.layer0_sectors = Some(layer0_sectors);
         self
@@ -356,6 +366,9 @@ impl<'a> Layout<'a> {
             s[start..start + 17].copy_from_slice(VOLUME_DATE);
         }
         s[881] = 1;
+        if b.cd_xa {
+            s[1024..1032].copy_from_slice(b"CD-XA001");
+        }
         s
     }
 }

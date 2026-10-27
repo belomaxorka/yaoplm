@@ -156,6 +156,8 @@ test("games are added with their covers and checked as they are written", async 
   const texts = await steps.allTextContents();
   const game = texts.findIndex((t) => t.includes("CD/SLUS_299.99.New Game.iso"));
   expect(game).toBeGreaterThanOrEqual(0);
+  // The plan says which fact chose the disc type (IMP-1): a BIN/CUE is a CD dump.
+  expect(texts[game]).toContain("CD — a raw CD dump");
   expect(texts[game + 1]).toContain("ART/SLUS_299.99_COV.png");
 
   await plan.getByTestId("plan-confirm").click();

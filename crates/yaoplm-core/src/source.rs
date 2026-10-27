@@ -95,22 +95,79 @@ impl MediaHints {
 
     /// The media OPL should report, plus a warning when the hints disagree.
     pub fn suggest(&self, sectors: u64) -> (Media, Option<Notice>) {
+        let (media, _, conflict) = self.suggest_with(sectors, None, None);
+        (media, conflict)
+    }
+
+    /// The media OPL should report, which fact decided, and a warning when
+    /// the hints disagree (IMP-1; walkthrough findings 1 and 6). What the
+    /// image itself says comes first: a raw CD dump, two layers or UDF, the
+    /// `CD-XA001` mark of a CD (hdl-dump's rule, research/09). Then the
+    /// database (`known`), then a game with the same ID already on the
+    /// device (`on_device`), and only then the size, which OPL itself never
+    /// looks at and which small DVD games fall under.
+    pub fn suggest_with(
+        &self,
+        sectors: u64,
+        known: Option<Media>,
+        on_device: Option<Media>,
+    ) -> (Media, MediaSource, Option<Notice>) {
         let volume = self.volume_sectors.unwrap_or(sectors);
         let large = volume * SECTOR_SIZE as u64 > CD_MAX_BYTES;
-        let media = if self.raw_cd_dump {
-            Media::Cd
-        } else if self.dual_layer || self.udf {
-            Media::Dvd
+        let (media, source) = if self.raw_cd_dump {
+            (Media::Cd, MediaSource::RawDump)
+        } else if self.dual_layer {
+            (Media::Dvd, MediaSource::DualLayer)
+        } else if self.udf {
+            (Media::Dvd, MediaSource::Udf)
         } else if self.cd_xa {
-            Media::Cd
+            (Media::Cd, MediaSource::CdXa)
+        } else if let Some(known) = known {
+            (known, MediaSource::Database)
+        } else if let Some(on_device) = on_device {
+            (on_device, MediaSource::Device)
         } else if large {
-            Media::Dvd
+            (Media::Dvd, MediaSource::Size)
         } else {
-            Media::Cd
+            (Media::Cd, MediaSource::Size)
         };
         let conflict = (media == Media::Cd && large)
             .then(|| Notice::warning(Phrase::notice("mediaConflict").with("sectors", volume)));
-        (media, conflict)
+        (media, source, conflict)
+    }
+}
+
+/// Which fact chose a game's disc type (IMP-1); the plan says so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaSource {
+    /// A BIN/CUE or CHD with raw 2352-byte sectors: a CD.
+    RawDump,
+    /// Two layers: a DVD-9.
+    DualLayer,
+    /// A UDF file system: a DVD.
+    Udf,
+    /// `CD-XA001` in the volume descriptor: a CD.
+    CdXa,
+    /// The title database (Redump's dump of this ID).
+    Database,
+    /// A game with the same ID is already on the device.
+    Device,
+    /// The size alone.
+    Size,
+}
+
+impl MediaSource {
+    /// Why the plan chose `media`, for the transaction's notice.
+    pub fn reason(self, media: Media, bytes: u64) -> Phrase {
+        match self {
+            Self::RawDump => Phrase::reason("mediaRawDump"),
+            Self::DualLayer => Phrase::reason("mediaDualLayer"),
+            Self::Udf => Phrase::reason("mediaUdf"),
+            Self::CdXa => Phrase::reason("mediaCdXa"),
+            Self::Database => Phrase::reason("mediaDatabase"),
+            Self::Device => Phrase::reason("mediaDevice").with("folder", media.folder()),
+            Self::Size => Phrase::reason("mediaSize").with("size", bytes),
+        }
     }
 }
 

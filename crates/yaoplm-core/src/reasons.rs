@@ -7,6 +7,7 @@ use std::io;
 
 use yaoplm_device::PathError;
 use yaoplm_formats::apps::AppError;
+use yaoplm_formats::archive::ArchiveError;
 use yaoplm_formats::cht::ChtWarning;
 use yaoplm_formats::cue::{BinError, CueError};
 use yaoplm_formats::image::StartupError;
@@ -25,6 +26,30 @@ pub(crate) fn text(text: impl ToString) -> Phrase {
 /// An error of the OS or a library, as a whole message.
 pub(crate) fn system(err: impl ToString) -> Phrase {
     Phrase::error("system").with("error", err.to_string())
+}
+
+/// Why a source cannot be read, as a notice (walkthrough finding 3): an
+/// archive that is damaged or was not fully downloaded, or one that is
+/// encrypted, gets its own sentence with the library's message as a detail;
+/// anything else is the OS message.
+pub(crate) fn unreadable(err: &io::Error) -> Phrase {
+    let archive = err
+        .get_ref()
+        .and_then(|e| e.downcast_ref::<crate::archives::ArchiveFailure>());
+    match archive.map(|a| &a.0) {
+        Some(ArchiveError::Encrypted(_)) => Phrase::notice("archiveEncrypted"),
+        Some(ArchiveError::Zip(detail) | ArchiveError::SevenZip(detail)) => {
+            Phrase::notice("archiveDamaged").with("detail", detail.clone())
+        }
+        // An entry the archive reader hands over unreadable (formats/archive):
+        // the message is the only sign.
+        None if err.kind() == io::ErrorKind::Unsupported
+            && err.to_string().contains("encrypted") =>
+        {
+            Phrase::notice("archiveEncrypted")
+        }
+        _ => Phrase::notice("unreadable").with("error", err.to_string()),
+    }
 }
 
 /// A name that cannot be used on the device, as a whole message: a file
