@@ -839,22 +839,14 @@ function GameTable({
   return (
     <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-list">
       {/* A click on a sortable header picks the field, a second one turns it
-          (walkthrough finding 11); the other columns are not sort keys. */}
-      <div
-        role="row"
-        className="sticky top-0 z-10 grid grid-cols-[1fr_8rem_4rem_4rem_6rem] gap-3 border-b bg-background px-2 pb-2 text-xs font-medium text-muted-foreground"
-      >
+          (walkthrough finding 11); the other columns are not sort keys. No
+          table roles: the rows below are a list, and a row needs a table. */}
+      <div className="sticky top-0 z-10 grid grid-cols-[1fr_8rem_4rem_4rem_6rem] gap-3 border-b bg-background px-2 pb-2 text-xs font-medium text-muted-foreground">
         <SortHeader label={t("game.title")} sortKey="title" filters={filters} setFilters={setFilters} />
         <SortHeader label={t("game.id")} sortKey="startup" filters={filters} setFilters={setFilters} />
-        <span role="columnheader" aria-label={t("game.media")}>
-          {t("game.media")}
-        </span>
-        <span role="columnheader" aria-label={t("game.format")}>
-          {t("game.format")}
-        </span>
-        <span role="columnheader" aria-label={t("game.size")} className="text-right">
-          {t("game.size")}
-        </span>
+        <span>{t("game.media")}</span>
+        <span>{t("game.format")}</span>
+        <span className="text-right">{t("game.size")}</span>
       </div>
       <div
         role="list"
@@ -916,7 +908,7 @@ function SortHeader({
   const active = filters.sort === sortKey;
   const sorted = active ? (filters.desc ? "descending" : "ascending") : undefined;
   return (
-    <span role="columnheader" aria-label={label} {...(sorted ? { "aria-sort": sorted } : {})}>
+    <span data-testid={`sort-header-${sortKey}`} data-sort={sorted}>
       <button
         type="button"
         className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"

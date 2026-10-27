@@ -190,20 +190,18 @@ describe("the library toolbar (LIB-5, UI-5)", () => {
     const user = userEvent.setup();
     open("/library", { view: "list" });
     await screen.findByText("3 of 3 games");
-    const title = screen.getByRole("columnheader", { name: "Title" });
-    const id = screen.getByRole("columnheader", { name: "Game ID" });
-    expect(title).toHaveAttribute("aria-sort", "ascending");
-    expect(id).not.toHaveAttribute("aria-sort");
-    await user.click(within(id).getByRole("button"));
+    expect(screen.getByTestId("sort-header-title")).toHaveAttribute("data-sort", "ascending");
+    expect(screen.getByTestId("sort-header-startup")).not.toHaveAttribute("data-sort");
+    await user.click(screen.getByRole("button", { name: "Sort by Game ID" }));
     expect(search()).toBe("?sort=startup");
-    expect(screen.getByRole("columnheader", { name: "Game ID" })).toHaveAttribute("aria-sort", "ascending");
-    await user.click(within(screen.getByRole("columnheader", { name: "Game ID" })).getByRole("button"));
+    expect(screen.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "ascending");
+    await user.click(screen.getByRole("button", { name: "Sorted by Game ID, ascending; click for descending" }));
     expect(search()).toBe("?sort=startup&desc=1");
-    expect(screen.getByRole("columnheader", { name: "Game ID" })).toHaveAttribute("aria-sort", "descending");
+    expect(screen.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "descending");
     expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveTextContent("ID Z→A");
-    await user.click(within(screen.getByRole("columnheader", { name: "Title" })).getByRole("button"));
+    await user.click(screen.getByRole("button", { name: "Sort by Title" }));
     expect(search()).toBe("");
-    // Media, format and size are not sort keys: plain headers.
-    expect(within(screen.getByRole("columnheader", { name: "Media" })).queryByRole("button")).toBeNull();
+    // Media, format and size are not sort keys: plain headers, no buttons.
+    expect(screen.getAllByRole("button", { name: /^Sort(ed)? by / })).toHaveLength(2);
   });
 });

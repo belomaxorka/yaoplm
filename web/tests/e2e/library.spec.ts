@@ -68,11 +68,11 @@ test("search, filters and the list view", async ({ page, request }) => {
   await expect(page.getByTestId("game-list").getByRole("listitem")).toHaveCount(5);
   await page.getByRole("button", { name: "Sort by Game ID" }).click();
   await expect(page).toHaveURL(/sort=startup/);
-  await expect(page.getByRole("columnheader", { name: "Game ID" })).toHaveAttribute("aria-sort", "ascending");
+  await expect(page.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "ascending");
   await expect(page.getByTestId("game-list").getByRole("listitem").first()).toHaveAccessibleName(/SCES_500\.03$/);
   await expect(page.getByTestId("library-sort")).toHaveText("ID A→Z");
   await page.getByRole("button", { name: /^Sorted by Game ID/ }).click();
-  await expect(page.getByRole("columnheader", { name: "Game ID" })).toHaveAttribute("aria-sort", "descending");
+  await expect(page.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "descending");
   await page.getByRole("button", { name: "Sort by Title" }).click();
   await expect(page).not.toHaveURL(/sort=/);
   await page.getByRole("radio", { name: "Grid" }).click();
