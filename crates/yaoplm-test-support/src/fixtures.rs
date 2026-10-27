@@ -94,44 +94,49 @@ impl Variant {
 
     pub fn builder(self) -> IsoBuilder {
         let elf = || Content::Bytes(placeholder_elf());
+        // A CD: the `CD-XA001` mark decides its disc type, as it does for a
+        // real dump, whatever the database says of its ID.
+        let cd = || IsoBuilder::new().cd_xa();
         let retail = |id: &str| {
-            IsoBuilder::new()
-                .system_cnf(ps2_cnf(&format!("cdrom0:\\{id};1")))
+            cd().system_cnf(ps2_cnf(&format!("cdrom0:\\{id};1")))
                 .file(format!("{id};1"), elf())
         };
         match self {
             Self::Retail => retail("SLUS_200.62"),
-            Self::LfOnly => IsoBuilder::new()
+            Self::LfOnly => cd()
                 .system_cnf("BOOT2 = cdrom0:\\SCES_500.03;1\nVER = 1.00\nVMODE = PAL\n")
                 .file("SCES_500.03;1", elf()),
-            Self::NoBoot2 => IsoBuilder::new().system_cnf("VER = 1.00\r\nVMODE = PAL\r\n"),
-            Self::LowercaseKey => IsoBuilder::new()
+            Self::NoBoot2 => cd().system_cnf("VER = 1.00\r\nVMODE = PAL\r\n"),
+            Self::LowercaseKey => cd()
                 .system_cnf("boot2 = cdrom0:\\SLUS_200.62;1\r\n")
                 .file("SLUS_200.62;1", elf()),
-            Self::SubfolderElf => IsoBuilder::new()
+            Self::SubfolderElf => cd()
                 .system_cnf(ps2_cnf("cdrom0:\\DATA\\MAIN.ELF;1"))
                 .file("DATA/MAIN.ELF;1", elf()),
-            Self::LongId => IsoBuilder::new()
+            Self::LongId => cd()
                 .system_cnf(ps2_cnf("cdrom0:\\SLPM_123.4567;1"))
                 .file("SLPM_123.4567;1", elf()),
-            Self::Ps1 => IsoBuilder::new()
+            Self::Ps1 => cd()
                 .system_cnf(
                     "BOOT = cdrom:\\SCUS_944.26;1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = 801FFFF0\r\n",
                 )
                 .file("SCUS_944.26;1", elf()),
-            Self::NoVersionSuffix => IsoBuilder::new()
+            Self::NoVersionSuffix => cd()
                 .file(
                     "SYSTEM.CNF",
                     Content::Bytes(ps2_cnf("cdrom0:\\SLUS_200.62;1").into_bytes()),
                 )
                 .file("SLUS_200.62;1", elf()),
-            Self::LowercaseName => IsoBuilder::new()
+            Self::LowercaseName => cd()
                 .file(
                     "system.cnf;1",
                     Content::Bytes(ps2_cnf("cdrom0:\\SLUS_200.62;1").into_bytes()),
                 )
                 .file("SLUS_200.62;1", elf()),
-            Self::Dvd9 => retail("SLUS_212.18").dual_layer(Self::DVD9_LAYER0_SECTORS),
+            Self::Dvd9 => IsoBuilder::new()
+                .system_cnf(ps2_cnf("cdrom0:\\SLUS_212.18;1"))
+                .file("SLUS_212.18;1", elf())
+                .dual_layer(Self::DVD9_LAYER0_SECTORS),
         }
     }
 

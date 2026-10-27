@@ -17,7 +17,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use yaoplm_device::source::{ReadSeek, SourceFs, SourceMeta};
-use yaoplm_formats::archive::{self, Entry, Kind};
+use yaoplm_formats::archive::{self, ArchiveError, Entry, Kind};
 
 type Listing = Arc<Vec<Entry>>;
 /// Small members by archive and name, with the archive's time.
@@ -58,6 +58,27 @@ struct Located {
 
 fn unsupported(what: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Unsupported, what.to_owned())
+}
+
+/// An archive that cannot be listed or read, as the source of an
+/// `io::Error`: the plan's reason names the archive itself, so the error
+/// carries only what went wrong (`reasons::unreadable`).
+#[derive(Debug)]
+pub struct ArchiveFailure(pub ArchiveError);
+
+impl std::fmt::Display for ArchiveFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ArchiveFailure {}
+
+fn failed(err: ArchiveError) -> io::Error {
+    match err {
+        ArchiveError::Io(err) => err,
+        other => io::Error::new(io::ErrorKind::InvalidData, ArchiveFailure(other)),
+    }
 }
 
 impl<'a> ArchiveSources<'a> {
@@ -108,12 +129,7 @@ impl<'a> ArchiveSources<'a> {
             return Ok((meta, Arc::clone(listing)));
         }
         let mut file = self.inner.open(archive)?;
-        let entries = archive::list(kind, &mut file).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("{}: {e}", archive.display()),
-            )
-        })?;
+        let entries = archive::list(kind, &mut file).map_err(failed)?;
         let listing = Arc::new(entries);
         listings.insert(archive.to_path_buf(), (meta.modified, Arc::clone(&listing)));
         Ok((meta, listing))
@@ -207,12 +223,7 @@ impl SourceFs for ArchiveSources<'_> {
         }
         let file = self.inner.open(&at.archive)?;
         let mut reader =
-            archive::open_entry(at.kind, Box::new(file), &entry.name).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("{}: {e}", at.archive.display()),
-                )
-            })?;
+            archive::open_entry(at.kind, Box::new(file), &entry.name).map_err(failed)?;
         if entry.size > SMALL_MEMBER {
             return Ok(Box::new(reader));
         }

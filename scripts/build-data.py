@@ -156,9 +156,10 @@ def parse_blocks(tokens):
             i += 1
 
 
-def load_dat(text: str) -> tuple[dict, dict[str, list[list[str]]]]:
+def load_dat(text: str) -> tuple[dict, dict[str, list[list[str]]], dict[str, set[str]]]:
     header: dict = {}
     names: dict[str, list[list[str]]] = {}
+    media: dict[str, set[str]] = {}
     for kind, fields in parse_blocks(tokenize(text)):
         if kind == "clrmamepro":
             header = fields
@@ -179,14 +180,26 @@ def load_dat(text: str) -> tuple[dict, dict[str, list[list[str]]]]:
             bucket = names.setdefault(key, [])
             if entry not in bucket:
                 bucket.append(entry)
-    return header, names
+            # Redump dumps a CD as BIN/CUE and a DVD as one ISO (IMP-1): the
+            # roms' extensions say which disc the serial is on.
+            for rom in fields.get("rom", []):
+                rom_name = str(rom.get("name", "")).lower() if isinstance(rom, dict) else ""
+                if rom_name.endswith(".iso"):
+                    media.setdefault(key, set()).add("DVD")
+                elif rom_name.endswith((".cue", ".bin")):
+                    media.setdefault(key, set()).add("CD")
+    return header, names, media
 
 
 def build(pcsx2: bytes, libretro: bytes) -> dict:
     games = load_gameindex(pcsx2.decode("utf-8"))
-    header, names = load_dat(libretro.decode("utf-8", errors="replace"))
+    header, names, media = load_dat(libretro.decode("utf-8", errors="replace"))
     for key, entries in names.items():
         games.setdefault(key, {})["d"] = entries
+    # A serial pressed on both kinds of disc (a CD and a DVD release) gets no verdict.
+    for key, kinds in media.items():
+        if len(kinds) == 1:
+            games.setdefault(key, {})["m"] = next(iter(kinds))
     today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     return {
         "format": FORMAT_VERSION,
@@ -314,7 +327,8 @@ def main() -> int:
     with_title = sum(1 for g in db["games"].values() if "t" in g)
     with_names = sum(1 for g in db["games"].values() if "d" in g)
     print(
-        f"{len(db['games'])} serials ({with_title} with a PCSX2 title, {with_names} with Redump names); "
+        f"{len(db['games'])} serials ({with_title} with a PCSX2 title, {with_names} with Redump names, "
+        f"{sum(1 for g in db['games'].values() if 'm' in g)} with a disc type); "
         f"{len(payload)} bytes of JSON, {(out / 'titles.json.gz').stat().st_size} bytes gzipped"
     )
     return 0
