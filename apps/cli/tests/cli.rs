@@ -1132,6 +1132,43 @@ fn cfg_shows_and_changes_a_games_settings() {
         b"Title=Retail\r\n$Compatibility=2\r\n$ConfigSource=1\r\nGenre=Action\r\n"
     );
 
+    // The bundled game info (META-3): shown next to the CFG, written by a
+    // plan, only the chosen fields.
+    let info = run(&[
+        "cfg".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--info".as_ref(),
+    ]);
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
+    let text = stdout(&info);
+    assert!(text.contains("Developer:    DMA Design"), "{text}");
+    assert!(text.contains("CFG: -"), "{text}");
+    assert!(text.contains("Genre:        Action"), "{text}");
+    assert!(text.contains("CFG: Action"), "{text}");
+    let written = run(&[
+        "cfg".as_ref(),
+        s.root.as_os_str(),
+        "SLUS_200.62".as_ref(),
+        "--write-info".as_ref(),
+        "--fields".as_ref(),
+        "developer,players".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        written.status.success(),
+        "{}",
+        String::from_utf8_lossy(&written.stderr)
+    );
+    assert_eq!(
+        std::fs::read(s.root.join("CFG/SLUS_200.62.cfg")).unwrap(),
+        b"Title=Retail\r\n$Compatibility=2\r\n$ConfigSource=1\r\nGenre=Action\r\nDeveloper=DMA Design\r\nPlayers=players/1\r\nPlayersText=1\r\n"
+    );
+
     // Mode 7 is RiptOPL's.
     let refused = run(&[
         "cfg".as_ref(),

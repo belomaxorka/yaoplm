@@ -4,6 +4,7 @@ import type { DumpCheck } from "./DumpCheck";
 import type { Fragments } from "./Fragments";
 import type { GameCfg } from "./GameCfg";
 import type { GameFormat } from "./GameFormat";
+import type { GameInfoView } from "./GameInfoView";
 import type { Media } from "./Media";
 import type { NameFormat } from "./NameFormat";
 import type { Notice } from "./Notice";
@@ -38,6 +39,10 @@ layer1Start: number | null, cfg: GameCfg | null, art: Array<Art>, cheats: number
  * The title the bundled database gives this ID (META-1).
  */
 knownTitle: string | null, 
+/**
+ * What the bundled game info table says about the ID (META-3).
+ */
+info: GameInfoView | null, 
 /**
  * The last verification of this image, when its hashes are cached and
  * it has not changed since (GAME-5). Scans never hash.

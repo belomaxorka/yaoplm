@@ -23,6 +23,7 @@ use std::io;
 use yaoplm_device::RelPath;
 use yaoplm_device::fs::{DeviceFs, DirEntry, TMP_SUFFIX, find_entry, list_or_empty};
 use yaoplm_formats::art::parse_art_file_name;
+use yaoplm_formats::cfg::{self, CfgDocument, Dialect};
 use yaoplm_formats::image::{self, DiscImage};
 use yaoplm_formats::iso_name::{self, ImageExtension, IsoFileName, NameFormat, NameStyle};
 use yaoplm_formats::ul_cfg::{RECORD_SIZE, UlRecord};
@@ -32,9 +33,12 @@ use yaoplm_i18n::Phrase;
 use crate::device::{DeviceState, join, rel};
 use crate::import::image_name;
 use crate::journal::{self, BACKUP_DIR};
-use crate::plan::{Bytes, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction};
+use crate::plan::{
+    Bytes, CfgChange, Expect, GameInfo, Notice, Plan, PlanKind, Removal, Step, Transaction,
+};
 use crate::reasons;
 use crate::scan::OPL_FOLDERS;
+use crate::settings;
 
 /// Which game a request is about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -475,6 +479,10 @@ pub fn plan_rename(
         }
     };
 
+    // The game's CFG as it will lie once the steps above ran: moved with
+    // the ID, or where it is.
+    let mut cfg_after: Option<(RelPath, Vec<u8>)> = None;
+    let mut cfg_backed_up = false;
     if let (Some(old), Some(new)) = (&old_id, &new_id)
         && old != new
     {
@@ -491,6 +499,8 @@ pub fn plan_rename(
             }
             if path.as_str().to_lowercase().ends_with(".cfg") {
                 tx.push(backup_step(&backup, path)?);
+                cfg_after = Some((target.clone(), fs.read(path)?));
+                cfg_backed_up = true;
             }
             if shared {
                 tx.push(Step::CopyFile {
@@ -515,6 +525,48 @@ pub fn plan_rename(
                 .with("new", new)
                 .with("files", related.len()),
             ));
+        }
+    }
+    if cfg_after.is_none()
+        && let (Some(old), Some(new)) = (&old_id, &new_id)
+        && old == new
+    {
+        let (path, bytes) = settings::locate_cfg(fs, &state, new)?;
+        cfg_after = bytes.map(|bytes| (path, bytes));
+    }
+    // The info page of OPL's theme shows the CFG's `Title`, so an existing
+    // key follows the new name (META-3, ADR-0050). A CFG without the key
+    // and wOPL's libconfig are left as they are.
+    if let Some((path, bytes)) = cfg_after
+        && cfg::detect_dialect(&bytes) == Dialect::Opl
+    {
+        let before = CfgDocument::parse(&bytes);
+        let mut doc = before.clone();
+        // The title as the library shows it, not the file name.
+        let shown = tx
+            .game
+            .as_ref()
+            .map(|g| g.title.clone())
+            .unwrap_or_default();
+        if let Some(current) = before.get("Title")
+            && !shown.is_empty()
+            && current != shown
+            && doc.set("Title", &shown).is_ok()
+        {
+            if !cfg_backed_up {
+                tx.push(backup_step(&new_backup_dir()?, &path)?);
+            }
+            tx.push(Step::PutFile {
+                path,
+                content: Bytes(doc.to_bytes()),
+                expect: Expect::Content(Bytes(bytes)),
+            });
+            tx.cfg_changes.push(CfgChange {
+                key: "Title".to_owned(),
+                before: Some(current),
+                after: Some(shown),
+            });
+            notices.push(Notice::info(Phrase::notice("cfgTitleUpdated")));
         }
     }
     if let FoundKind::Image { .. } = found.kind

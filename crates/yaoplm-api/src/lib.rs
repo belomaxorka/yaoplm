@@ -905,6 +905,36 @@ impl Api {
                 let plan = art::set_art(&self.net, &self.paths, &params)?;
                 Ok(self.store(path, plan))
             }
+            Request::PlanGameInfo {
+                root,
+                game,
+                profile,
+                fields,
+                description,
+                mode,
+            } => {
+                let (path, fs) = self.root_in(&root, mode)?;
+                let game = self.game_ref(&path, game)?;
+                let write = yaoplm_core::settings::InfoWrite {
+                    fields: match fields {
+                        Some(fields) => fields.into_iter().map(Into::into).collect(),
+                        None => yaoplm_core::settings::InfoField::ALL.to_vec(),
+                    },
+                    description: description.map(|d| yaoplm_core::settings::DescriptionText {
+                        text: d.text,
+                        source: d.source,
+                    }),
+                };
+                let plan = yaoplm_core::settings::plan_game_info(
+                    &fs,
+                    &game,
+                    &write,
+                    profile.unwrap_or_default().into(),
+                    unix_now(),
+                )
+                .map_err(op_error)?;
+                Ok(self.store_in(path, mode, plan))
+            }
             Request::ReadCfg { root, game } => {
                 let (path, fs) = self.root(&root)?;
                 let game = self.game_ref(&path, game)?;

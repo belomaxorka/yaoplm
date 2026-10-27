@@ -253,3 +253,80 @@ fn wopl_files_are_shown_but_not_rewritten() {
     .unwrap_err();
     assert_eq!(err.phrase.as_ref().unwrap().key, "errors.cfgNotOpl");
 }
+
+// The bundled game info written by a plan (META-3, ADR-0050).
+#[test]
+fn game_info_is_planned_from_the_bundled_table() {
+    let device = device();
+    let api = Api::new();
+    let plan = call(
+        &api,
+        json!({"type": "PlanGameInfo", "root": device.root, "game": game()}),
+    )
+    .unwrap();
+    assert_eq!(plan["kind"], "settings");
+    let tx = &plan["transactions"][0];
+    assert_eq!(tx["titlePhrase"]["key"], "titles.gameInfo");
+    let keys: Vec<&str> = tx["cfgChanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "Genre",
+            "Release",
+            "Developer",
+            "Publisher",
+            "Players",
+            "PlayersText"
+        ]
+    );
+    assert_eq!(
+        tx["cfgChanges"][2],
+        json!({"key": "Developer", "before": null, "after": "DMA Design"})
+    );
+    let report = execute(&api, &plan);
+    assert!(report.error.is_none(), "{report:?}");
+    assert_eq!(
+        fs::read(device.path.join("CFG").join("SLUS_200.62.cfg")).unwrap(),
+        b"Title=Retail\r\n$Compatibility=1\r\nGenre=Action\r\nRelease=10-23-2001\r\nDeveloper=DMA Design\r\nPublisher=Rockstar Games\r\nPlayers=players/1\r\nPlayersText=1\r\n"
+    );
+
+    // `ReadCfg` shows the table next to the file.
+    let cfg = call(
+        &api,
+        json!({"type": "ReadCfg", "root": device.root, "game": game()}),
+    )
+    .unwrap();
+    assert_eq!(cfg["info"]["developer"]["value"], "DMA Design");
+    assert_eq!(cfg["info"]["developer"]["source"], "libretro");
+    assert_eq!(cfg["info"]["genres"]["value"], json!(["action"]));
+
+    // Nothing left to write; then one chosen field plus a description.
+    let again = call(
+        &api,
+        json!({"type": "PlanGameInfo", "root": device.root, "game": game()}),
+    )
+    .unwrap();
+    assert!(again["transactions"].as_array().unwrap().is_empty());
+    assert_eq!(again["notices"][0]["code"], "gameInfoUnchanged");
+    let partial = call(
+        &api,
+        json!({
+            "type": "PlanGameInfo", "root": device.root, "game": game(),
+            "fields": ["genre"],
+            "description": {"text": "First sentence. Second sentence.", "source": "https://en.wikipedia.org/wiki/Grand_Theft_Auto_III"}
+        }),
+    )
+    .unwrap();
+    let keys: Vec<&str> = partial["transactions"][0]["cfgChanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["Description", "DescriptionSource"]);
+}

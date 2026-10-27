@@ -212,6 +212,8 @@ pub struct Game {
     pub warnings: Vec<Notice>,
     /// The title the bundled database gives this ID (META-1).
     pub known_title: Option<String>,
+    /// What the bundled game info table says about the ID (META-3).
+    pub info: Option<GameInfoView>,
     /// The last verification of this image, when its hashes are cached and
     /// it has not changed since (GAME-5). Scans never hash.
     pub dump: Option<DumpCheck>,
@@ -318,6 +320,7 @@ impl Game {
                 .map(|c| u32::try_from(c.cheats).unwrap_or(u32::MAX)),
             warnings: notices(&game.warnings),
             known_title: core::titles::known_title(&game.startup),
+            info: game_info_view(&game.startup),
             dump: None,
             fragments: game
                 .fragments

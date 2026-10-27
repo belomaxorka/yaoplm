@@ -35,6 +35,7 @@ function game(overrides: Partial<Game>): Game {
     cheats: null,
     warnings: [],
     knownTitle: null,
+    info: null,
     dump: null,
     fragments: null,
     ...overrides,

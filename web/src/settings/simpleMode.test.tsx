@@ -46,6 +46,7 @@ const game: Game = {
     },
   ],
   knownTitle: null,
+  info: null,
   dump: null,
   fragments: { kind: "known", total: 1, files: [1], limit: 64 },
 };
@@ -94,6 +95,7 @@ function core(): MockTransport {
           },
           entries: [],
           cardNames: ["SLUS_200.62_0", "SLUS_200.62_1"],
+          info: null,
         };
       case "ListVmc":
         return { type: "Vmcs", cards: [] };

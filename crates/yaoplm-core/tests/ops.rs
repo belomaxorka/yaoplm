@@ -12,7 +12,7 @@ use yaoplm_core::ops::{
     DeleteOptions, GameRef, OpError, RenameOptions, plan_delete, plan_init, plan_init_folder,
     plan_move, plan_rename,
 };
-use yaoplm_core::plan::Step;
+use yaoplm_core::plan::{CfgChange, Step};
 use yaoplm_device::{FsKind, RelPath};
 use yaoplm_formats::iso_name::NameStyle;
 use yaoplm_formats::ul_cfg::{UlCfg, UlRecord};
@@ -105,6 +105,69 @@ fn a_new_title_renames_only_the_image() {
     )
     .unwrap_err();
     assert!(matches!(err, OpError::Conflict(_)));
+}
+
+// The info page of OPL's theme shows the CFG's `Title`, so a new name goes
+// there too (META-3, ADR-0050; walkthrough finding 7 of 2026-10-24). Only
+// an existing key is updated: a CFG without `Title` is left as it is.
+#[test]
+fn renaming_updates_the_title_in_the_cfg() {
+    let fs = library();
+    fs.insert_file(
+        "CFG/SLUS_200.62.cfg",
+        b"Title=Retail\r\n$Compatibility=3\r\nUnknown=kept\r\n",
+    );
+    let plan = plan_rename(&fs, &image("CD/SLUS_200.62.Retail.iso"), &rename("GTA III")).unwrap();
+    let tx = &plan.transactions[0];
+    assert_eq!(
+        tx.cfg_changes,
+        [CfgChange {
+            key: "Title".into(),
+            before: Some("Retail".into()),
+            after: Some("GTA III".into()),
+        }]
+    );
+    assert!(tx.notices.iter().any(|n| n.code == "cfgTitleUpdated"));
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    assert_eq!(
+        fs.bytes("CFG/SLUS_200.62.cfg").unwrap(),
+        b"Title=GTA III\r\n$Compatibility=3\r\nUnknown=kept\r\n"
+    );
+    let copies = backups(&fs);
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert!(copies[0].ends_with("/CFG/SLUS_200.62.cfg"), "{copies:?}");
+
+    // With a new ID the moved CFG gets the new title, one backup in all.
+    let fs = library();
+    fs.insert_file("CFG/SLUS_200.62.cfg", b"Title=Retail\r\nUnknown=kept\r\n");
+    let options = RenameOptions {
+        title: "GTA III".into(),
+        startup: Some("SLES_500.51".into()),
+        name_style: None,
+    };
+    let plan = plan_rename(&fs, &image("CD/SLUS_200.62.Retail.iso"), &options).unwrap();
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    assert_eq!(
+        fs.bytes("CFG/SLES_500.51.cfg").unwrap(),
+        b"Title=GTA III\r\nUnknown=kept\r\n"
+    );
+    assert!(fs.bytes("CFG/SLUS_200.62.cfg").is_none());
+    assert_eq!(backups(&fs).len(), 1);
+
+    // No `Title` key: nothing is written; wOPL's libconfig: never rewritten.
+    for cfg in [
+        &b"$Compatibility=3\r\n"[..],
+        &b"title = \"Retail\";\r\n"[..],
+    ] {
+        let fs = library();
+        fs.insert_file("CFG/SLUS_200.62.cfg", cfg);
+        let plan =
+            plan_rename(&fs, &image("CD/SLUS_200.62.Retail.iso"), &rename("GTA III")).unwrap();
+        assert!(plan.transactions[0].cfg_changes.is_empty());
+        assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+        assert_eq!(fs.bytes("CFG/SLUS_200.62.cfg").unwrap(), cfg);
+        assert!(backups(&fs).is_empty());
+    }
 }
 
 #[test]

@@ -20,7 +20,7 @@ use yaoplm_api::devices::DeviceMode;
 use yaoplm_api::jobs::{JobInfo, JobLogEntry, JobResult, JobStatus};
 use yaoplm_api::library::{Game, GameFormat, Library, LoaderProfile, Media};
 use yaoplm_api::plans::PlanView;
-use yaoplm_api::settings::{CfgPair, CfgView, NewVmc};
+use yaoplm_api::settings::{CfgPair, CfgView, InfoField, NewVmc};
 use yaoplm_api::verify::{RedumpUpdate, VerifyStatus};
 use yaoplm_api::{
     Api, ConvertTarget, GameRef, JobEvent, JobId, Layout, NameStyle, RecoveryAction, Request,
@@ -240,6 +240,23 @@ enum Command {
         /// Remove a key. Repeatable.
         #[arg(long = "unset", value_name = "KEY")]
         unset: Vec<String>,
+        /// Show the bundled game info (developer, publisher, release date,
+        /// players, genre) next to what the CFG has.
+        #[arg(long)]
+        info: bool,
+        /// Plan writing the bundled game info into the CFG: Title, Genre,
+        /// Release, Developer, Publisher, Players (all of them, or --fields).
+        #[arg(long)]
+        write_info: bool,
+        /// With --write-info: only these fields, comma-separated
+        /// (title,genre,release,developer,publisher,players).
+        #[arg(
+            long,
+            value_delimiter = ',',
+            value_name = "FIELDS",
+            requires = "write_info"
+        )]
+        fields: Vec<String>,
         #[command(flatten)]
         apply: Apply,
     },
@@ -1011,6 +1028,9 @@ fn main() -> anyhow::Result<ExitCode> {
             alt_startup,
             set,
             unset,
+            info,
+            write_info,
+            fields,
             apply,
         } => {
             let game = find_game(&api, &root, &game, apply.profile)?;
@@ -1018,6 +1038,40 @@ fn main() -> anyhow::Result<ExitCode> {
                 Ok(view) => view,
                 Err(error) => return fail(&error, apply.json),
             };
+            if write_info {
+                let fields = fields
+                    .iter()
+                    .filter(|f| !f.trim().is_empty())
+                    .map(|f| match f.trim().to_ascii_lowercase().as_str() {
+                        "title" => Ok(InfoField::Title),
+                        "genre" => Ok(InfoField::Genre),
+                        "release" => Ok(InfoField::Release),
+                        "developer" => Ok(InfoField::Developer),
+                        "publisher" => Ok(InfoField::Publisher),
+                        "players" => Ok(InfoField::Players),
+                        other => bail!(
+                            "--fields takes title, genre, release, developer, publisher or players, not {other:?}"
+                        ),
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                let request = Request::PlanGameInfo {
+                    root: text(&root),
+                    game,
+                    profile: Some(apply.profile.at(&api, &root)),
+                    fields: (!fields.is_empty()).then_some(fields),
+                    description: None,
+                    mode: None,
+                };
+                return plan_and_apply(&api, request, &apply);
+            }
+            if info {
+                if apply.json {
+                    print_json(&view.info, true);
+                } else {
+                    print!("{}", report::cfg_info(&view));
+                }
+                return Ok(ExitCode::SUCCESS);
+            }
             let structured = !(modes.is_empty() && no_modes.is_empty() && vmc.is_empty())
                 || alt_startup.is_some();
             if !structured && set.is_empty() && unset.is_empty() {
