@@ -343,7 +343,11 @@
     "convert": "Convert…",
     "verify": "Check dump",
     "dump": "Dump",
-    "dumpUnchecked": "Not checked yet"
+    "dumpUnchecked": "Not checked yet",
+    "infoSource": {
+      "libretro": "PlayStation DataCenter via libretro-database",
+      "wikidata": "Wikidata"
+    }
   },
   "plan": {
     "stepsToggle": "Steps: {{count}}",
@@ -939,7 +943,8 @@
       "front covers by serial (COV)": "Front covers by game ID",
       "every picture type by game ID, one picture at a time from the backup": "Every picture type by game ID",
       "covers, screenshots, title screens and logos by Redump name": "Covers, screenshots, title screens and logos by Redump name",
-      "every picture type by serial and region, in builds with a developer key": "Every picture type by serial and region (needs a developer key)"
+      "every picture type by serial and region, in builds with a developer key": "Every picture type by serial and region (needs a developer key)",
+      "gameInfo": "Developer, publisher, release date, player count and genre, shown and written into CFG by a plan"
     },
     "loading": "Loading…",
     "unavailable": "Unavailable",
@@ -948,7 +953,9 @@
     "loaderMirror": "Release mirror",
     "loaderMirrorHint": "A folder with GitHub’s release layout, for installing without the network; empty: GitHub",
     "offerLoaderUpdates": "Offer loader updates by themselves",
-    "offerLoaderUpdatesHint": "Once per device and version."
+    "offerLoaderUpdatesHint": "Once per device and version.",
+    "gameInfoDb": "Game info",
+    "gameInfoDbState": "{{count}} game IDs with developer, publisher, release date, players or genre, built {{built}} (libretro-database {{dat}}, Wikidata {{wikidata}})"
   },
   "languages": {
     "en": "English",
@@ -1452,5 +1459,32 @@
     "save": "Save…",
     "reset": "Undo changes",
     "cardReplacing": "{{name}} (a new {{size}} MiB card in its place)"
+  },
+  "genre": {
+    "action": "Action",
+    "action-adventure": "Action-adventure",
+    "adventure": "Adventure",
+    "platform": "Platformer",
+    "shooter": "Shooter",
+    "fighting": "Fighting",
+    "beat-em-up": "Beat ’em up",
+    "racing": "Racing",
+    "sports": "Sports",
+    "rpg": "RPG",
+    "strategy": "Strategy",
+    "simulation": "Simulation",
+    "puzzle": "Puzzle",
+    "music": "Music and rhythm",
+    "party": "Party and mini-games",
+    "board": "Board game",
+    "card": "Card game",
+    "casino": "Casino",
+    "mahjong": "Mahjong",
+    "quiz": "Quiz",
+    "horror": "Horror",
+    "visual-novel": "Visual novel",
+    "educational": "Educational",
+    "pinball": "Pinball",
+    "other": "Other"
   }
 }

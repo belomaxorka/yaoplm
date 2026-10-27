@@ -19,6 +19,26 @@
       "credits": "Redump contributors, via libretro-database (robloach/libretro-dats)",
       "fields": "name, region, serial",
       "use": "redumpNames"
+    },
+    {
+      "id": "libretro-developer",
+      "name": "libretro-database, Sony - PlayStation 2 (developer DAT, PSXDataCenter)",
+      "url": "https://github.com/libretro/libretro-database/blob/master/metadat/developer/Sony%20-%20PlayStation%202.dat",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://github.com/libretro/libretro-database/blob/master/LICENSE",
+      "credits": "PlayStation DataCenter (psxdatacenter.com), scraped by robloach/libretro-database-psxdatacenter for libretro-database; descriptions are not used",
+      "fields": "serial, developer, publisher, releaseyear, releasemonth, releaseday, users, genre",
+      "use": "gameInfo"
+    },
+    {
+      "id": "wikidata",
+      "name": "Wikidata (items with platform PlayStation 2)",
+      "url": "https://www.wikidata.org/",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credits": "Wikidata contributors",
+      "fields": "label (en, ru), genre (P136), developer (P178), publisher (P123), publication date (P577), PlayStation ID (P2606), en and ru Wikipedia article titles; matched to serials by PlayStation ID or by title",
+      "use": "gameInfo"
     }
   ],
   "art": [

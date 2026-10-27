@@ -2,6 +2,7 @@
 import type { FileName } from "./FileName";
 import type { Fragments } from "./Fragments";
 import type { GameFormat } from "./GameFormat";
+import type { GameInfoView } from "./GameInfoView";
 import type { Media } from "./Media";
 import type { Notice } from "./Notice";
 import type { Platform } from "./Platform";
@@ -23,6 +24,10 @@ hiddenReason: string | null, platform: Platform, suggestedMedia: Media, fileName
  * The title the bundled database gives the ID (META-1).
  */
 knownTitle: string | null, 
+/**
+ * What the bundled game info table says about the ID (META-3).
+ */
+info?: GameInfoView, 
 /**
  * How the file lies on a FAT32 or exFAT device (IMP-7b); `null` when
  * the file is elsewhere.

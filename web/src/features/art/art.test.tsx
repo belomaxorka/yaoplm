@@ -187,6 +187,7 @@ const about = (): Promise<Response> =>
       },
     ],
     titles: { built: "2026-10-01", libretroVersion: "1", entries: 1 },
+          gameInfo: { built: "2026-10-01", libretroVersion: "1", wikidataFetched: "2026-10-01", entries: 1, withFacts: 1, withWikidata: 1 },
   });
 
 function storeSettings(settings: Partial<Settings>) {

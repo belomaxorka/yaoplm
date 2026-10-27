@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
+/// The English text of any catalogue key (`genre.action`), for front ends
+/// that print values as words.
+pub use yaoplm_core::english_text as english;
 
 /// A key of the front end's catalogue with named parameters. Numbers are
 /// counts (`count` picks the plural form) or byte sizes; a nested phrase

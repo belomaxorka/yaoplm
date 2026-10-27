@@ -253,6 +253,15 @@ export function SettingsPage() {
                       dat: about.data.titles.libretroVersion,
                     })}
                   </dd>
+                  <dt className="text-muted-foreground">{t("settings.gameInfoDb")}</dt>
+                  <dd>
+                    {t("settings.gameInfoDbState", {
+                      count: about.data.gameInfo.entries,
+                      built: about.data.gameInfo.built,
+                      dat: about.data.gameInfo.libretroVersion,
+                      wikidata: about.data.gameInfo.wikidataFetched,
+                    })}
+                  </dd>
                 </>
               )}
             </dl>

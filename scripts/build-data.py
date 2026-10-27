@@ -11,7 +11,8 @@ Inputs:
 Outputs, deterministic for the same inputs:
   - data/titles.json.gz: one object per serial, gzip with a zero mtime;
   - data/ATTRIBUTION.md: credits and licences, from data/attribution.json
-    plus the versions of the inputs used.
+    plus the versions of the inputs used, and of data/game-info.json.gz
+    (scripts/build-game-info.py, META-3) when it is there.
 
 Usage:
   python scripts/build-data.py [--pcsx2 URL|FILE] [--libretro URL|FILE] [--out data]
@@ -226,7 +227,7 @@ def write_gzip(path: Path, payload: bytes) -> None:
     path.write_bytes(buffer.getvalue())
 
 
-def attribution_markdown(attribution: dict, db: dict) -> str:
+def attribution_markdown(attribution: dict, db: dict, info: dict | None = None) -> str:
     lines = [
         "# Attribution",
         "",
@@ -235,13 +236,28 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
         "",
         "## Bundled data",
         "",
-        f"`data/titles.json.gz` (format {db['format']}, built {db['built']}) is derived from:",
-        "",
+        f"`data/titles.json.gz` (format {db['format']}, built {db['built']}) is derived from",
+        "the first two sources below.",
     ]
-    sources = db["sources"]
+    if info:
+        games = info["games"]
+        matched = info["sources"].get("wikidata", {}).get("matched", {})
+        lines += [
+            f"`data/game-info.json.gz` (format {info['format']}, built {info['built']}; META-3, ADR-0050) is",
+            f"derived from the next two: {sum(1 for g in games.values() if 'facts' in g)} serials with facts from the",
+            f"developer DAT, {sum(1 for g in games.values() if 'wikidata' in g)} with a Wikidata item (matched by",
+            f"PlayStation ID: {matched.get('byId', 0)} items, by title: {matched.get('byTitle', 0)}; ambiguous titles:",
+            f"{matched.get('ambiguous', 0)}, unmatched items: {matched.get('unmatched', 0)}).",
+        ]
+    lines.append("")
+    sources = dict(db["sources"])
+    if info:
+        sources.update(info["sources"])
     for entry in attribution["data"]:
         meta = sources.get(entry["id"], {})
         version = f", version {meta['version']}" if meta.get("version") else ""
+        if entry["id"] == "wikidata" and meta.get("version"):
+            version = f", fetched {meta['version']} ({meta.get('items', 0)} items)"
         lines += [
             f"### {entry['name']}",
             "",
@@ -253,9 +269,9 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
             "",
         ]
     lines += [
-        "The derived database keeps the share-alike terms of CC BY-SA 4.0 for the",
-        "parts that come from libretro-database and is distributed with YAOPLM under",
-        "GPL-3.0-or-later (ADR-0002).",
+        "The derived databases keep the share-alike terms of CC BY-SA 4.0 for the",
+        "parts that come from libretro-database and are distributed with YAOPLM under",
+        "GPL-3.0-or-later (ADR-0002). Wikidata's data is CC0; it asks to be credited.",
         "",
     ]
     for entry in attribution.get("other", []):
@@ -293,6 +309,14 @@ def attribution_markdown(attribution: dict, db: dict) -> str:
     return "\n".join(lines)
 
 
+def game_info(out: Path) -> dict | None:
+    """`data/game-info.json.gz` (META-3, `scripts/build-game-info.py`), when built."""
+    path = out / "game-info.json.gz"
+    if not path.exists():
+        return None
+    return json.loads(gzip.decompress(path.read_bytes()))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pcsx2", default=PCSX2_URL, help="GameIndex.yaml URL or file")
@@ -310,7 +334,9 @@ def main() -> int:
     attribution = json.loads((out / "attribution.json").read_text(encoding="utf-8"))
     if args.attribution_only:
         db = json.loads(gzip.decompress((out / "titles.json.gz").read_bytes()))
-        (out / "ATTRIBUTION.md").write_text(attribution_markdown(attribution, db), encoding="utf-8", newline="\n")
+        (out / "ATTRIBUTION.md").write_text(
+            attribution_markdown(attribution, db, game_info(out)), encoding="utf-8", newline="\n"
+        )
         print(f"wrote {out / 'ATTRIBUTION.md'}")
         return 0
 
@@ -322,7 +348,9 @@ def main() -> int:
 
     payload = json.dumps(db, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
     write_gzip(out / "titles.json.gz", payload)
-    (out / "ATTRIBUTION.md").write_text(attribution_markdown(attribution, db), encoding="utf-8", newline="\n")
+    (out / "ATTRIBUTION.md").write_text(
+        attribution_markdown(attribution, db, game_info(out)), encoding="utf-8", newline="\n"
+    )
 
     with_title = sum(1 for g in db["games"].values() if "t" in g)
     with_names = sum(1 for g in db["games"].values() if "d" in g)

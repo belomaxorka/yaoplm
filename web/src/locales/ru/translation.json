@@ -357,7 +357,11 @@
     "convert": "Конвертировать…",
     "verify": "Проверить дамп",
     "dump": "Дамп",
-    "dumpUnchecked": "Ещё не проверен"
+    "dumpUnchecked": "Ещё не проверен",
+    "infoSource": {
+      "libretro": "PlayStation DataCenter через libretro-database",
+      "wikidata": "Wikidata"
+    }
   },
   "plan": {
     "stepsToggle": "Шаги: {{count}}",
@@ -971,7 +975,8 @@
       "front covers by serial (COV)": "Лицевые обложки по ID игры",
       "every picture type by game ID, one picture at a time from the backup": "Все типы картинок по ID игры",
       "covers, screenshots, title screens and logos by Redump name": "Обложки, скриншоты, титульные экраны и логотипы по имени Redump",
-      "every picture type by serial and region, in builds with a developer key": "Все типы картинок по серийному номеру и региону (нужен ключ разработчика)"
+      "every picture type by serial and region, in builds with a developer key": "Все типы картинок по серийному номеру и региону (нужен ключ разработчика)",
+      "gameInfo": "Разработчик, издатель, дата выхода, число игроков и жанр: показываются и пишутся в CFG планом"
     },
     "loading": "Загрузка…",
     "unavailable": "Недоступно",
@@ -980,7 +985,9 @@
     "loaderMirror": "Зеркало релизов",
     "loaderMirrorHint": "Папка со структурой релизов GitHub — для установки без сети; пусто — GitHub",
     "offerLoaderUpdates": "Предлагать обновления загрузчика автоматически",
-    "offerLoaderUpdatesHint": "Один раз на носитель и версию."
+    "offerLoaderUpdatesHint": "Один раз на носитель и версию.",
+    "gameInfoDb": "Сведения об играх",
+    "gameInfoDbState": "ID игр с разработчиком, издателем, датой выхода, числом игроков или жанром: {{count}}; собрано {{built}} (libretro-database {{dat}}, Wikidata {{wikidata}})"
   },
   "languages": {
     "en": "English",
@@ -1502,5 +1509,32 @@
     "save": "Сохранить…",
     "reset": "Отменить изменения",
     "cardReplacing": "{{name}} (на её месте новая карта, {{size}} МиБ)"
+  },
+  "genre": {
+    "action": "Экшен",
+    "action-adventure": "Приключенческий экшен",
+    "adventure": "Приключение",
+    "platform": "Платформер",
+    "shooter": "Шутер",
+    "fighting": "Файтинг",
+    "beat-em-up": "Beat ’em up",
+    "racing": "Гонки",
+    "sports": "Спорт",
+    "rpg": "Ролевая игра",
+    "strategy": "Стратегия",
+    "simulation": "Симулятор",
+    "puzzle": "Головоломка",
+    "music": "Музыка и ритм",
+    "party": "Вечеринка и мини-игры",
+    "board": "Настольная игра",
+    "card": "Карточная игра",
+    "casino": "Казино",
+    "mahjong": "Маджонг",
+    "quiz": "Викторина",
+    "horror": "Хоррор",
+    "visual-novel": "Визуальная новелла",
+    "educational": "Обучающая",
+    "pinball": "Пинбол",
+    "other": "Другое"
   }
 }

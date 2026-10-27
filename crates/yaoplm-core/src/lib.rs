@@ -24,6 +24,7 @@ pub mod emulator;
 pub mod exec;
 pub mod fragments;
 mod fsutil;
+pub mod game_info;
 pub mod import;
 mod info;
 pub mod journal;
@@ -49,4 +50,4 @@ pub use scan::{
     CD_MAX_BYTES, OPL_FOLDERS, ScanError, ScanOptions, scan_library, scan_library_with,
 };
 pub use yaoplm_formats::{LoaderProfile, Media};
-pub use yaoplm_i18n::{Param, Phrase};
+pub use yaoplm_i18n::{Param, Phrase, text as english_text};
