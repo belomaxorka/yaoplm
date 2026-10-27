@@ -31,8 +31,9 @@ test("simple mode: a game is added and deleted through plans that name it, and n
   await page.getByTestId("preview-plan").click();
 
   const plan = page.getByTestId("import-plan");
-  await expect(plan.getByTestId("plan-transaction")).toHaveCount(1);
-  await expect(plan).toContainText("1 operation");
+  // The game and its CFG with the bundled game info (META-3).
+  await expect(plan.getByTestId("plan-transaction")).toHaveCount(2);
+  await expect(plan).toContainText("2 operations");
   await expect(plan).toContainText("SCES_500.03");
   // The steps of each operation fold away in simple mode.
   await expect(plan.getByTestId("plan-steps")).toHaveCount(0);
