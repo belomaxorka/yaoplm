@@ -156,9 +156,10 @@ test("games are added with their covers and checked as they are written", async 
   // A long plan scrolls inside the page, never the window as well (the
   // second scrollbar of the 2026-10-24 walkthrough).
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
-  // The plan comes back with the cover right after its game.
+  // The plan comes back with the cover right after its game; Disc Image
+  // (SLUS_212.18) is in the bundled table and gets its CFG too (META-3).
   const steps = plan.getByTestId("plan-transaction");
-  await expect(steps).toHaveCount(3);
+  await expect(steps).toHaveCount(4);
   // Text, not innerText: each operation's steps are folded away.
   const texts = await steps.allTextContents();
   const game = texts.findIndex((t) => t.includes("CD/SLUS_299.99.New Game.iso"));

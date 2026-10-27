@@ -435,6 +435,8 @@
     "compressNotForProfile": "OPL 1.1.0 does not read ZSO. Choose another loader in Settings to compress.",
     "titlesFromDb": "Titles from the database",
     "titlesFromDbHint": "Titles come from the database where the game is known",
+    "infoToCfg": "Game info into CFG",
+    "infoToCfgHint": "Developer, publisher, release date, players and genre for the games the bundled table knows; OPL shows them on its info page",
     "coversOnAdd": "Download pictures",
     "coversOnAddHint": "Covers and screenshots are found for you",
     "checkOnAdd": "Check dumps",

@@ -228,6 +228,28 @@ const search = () => screen.getByTestId("cover-search");
 // The cover search polls its job with a backoff of up to a second.
 const slow = { timeout: 4000 };
 
+describe("AddGamesPage game info", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    window.localStorage.setItem("yaoplm.settings", JSON.stringify({ ...defaultSettings, root: "/lib", coversOnAdd: false }));
+  });
+
+  // The bundled game info goes into the CFG by a switch that is on by
+  // default and remembered (META-3, ADR-0050).
+  it("asks for the game info in the CFG until the switch is turned off", async () => {
+    const core = new FakeCore();
+    renderPage(core);
+    await planFor(["/src/one.iso"]);
+    expect(core.of("PlanImport").at(-1)?.writeInfo).toBe(true);
+    const toggle = screen.getByTestId("info-to-cfg");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(toggle);
+    await waitFor(() => expect(core.of("PlanImport").at(-1)?.writeInfo).toBe(false));
+    const stored = JSON.parse(window.localStorage.getItem("yaoplm.settings") ?? "{}") as { infoToCfg?: boolean };
+    expect(stored.infoToCfg).toBe(false);
+  });
+});
+
 describe("AddGamesPage covers", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");

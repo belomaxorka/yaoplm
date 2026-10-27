@@ -107,7 +107,9 @@ for (const language of ["en", "ru"] as const) {
         await page.getByTestId("preview-plan").click();
         // The cover search runs under the plan, which comes back with the cover (ART-8).
         await expect(page.getByTestId("cover-search")).toHaveAttribute("data-status", "done");
-        await expect(page.getByTestId("import-plan").getByTestId("plan-transaction")).toHaveCount(4);
+        // Two games with their covers; Disc Image (SLUS_212.18) is in the bundled
+        // table, so its CFG with the game info comes right after it (META-3).
+        await expect(page.getByTestId("import-plan").getByTestId("plan-transaction")).toHaveCount(5);
         await expect(page.getByTestId("plan-confirm")).toBeEnabled();
         await page.getByTestId("import-plan").scrollIntoViewIfNeeded();
         await shot("import-plan");

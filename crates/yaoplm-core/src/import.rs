@@ -32,11 +32,13 @@ use yaoplm_i18n::Phrase;
 
 use crate::art::{ArtFolder, ArtItem};
 use crate::device::{DeviceState, join, on_disk};
+use crate::game_info;
 use crate::plan::{
     Bytes, Check, Expect, GameInfo, Notice, Plan, PlanKind, Skipped, Step, Transaction,
 };
 use crate::reasons;
 use crate::scan::CD_MAX_BYTES;
+use crate::settings::{self, InfoField};
 use crate::source::{ProbeError, Probed, probe, sheet_files};
 use crate::titles;
 
@@ -85,6 +87,10 @@ pub struct ImportOptions {
     /// right after its game, once per game ID and kind, unless the device
     /// already has that picture.
     pub covers: Vec<ArtItem>,
+    /// Write the bundled game info (META-3, ADR-0050) into `CFG/<ID>.cfg`
+    /// right after each game the table knows: title, genre, release date,
+    /// developer, publisher, players; once per game ID, by the CFG-2 rules.
+    pub write_info: bool,
 }
 
 /// Extensions OPL users have that YAOPLM does not import yet (IMP-1c).
@@ -264,6 +270,7 @@ pub(crate) fn image_name(
 }
 
 struct Planner<'a> {
+    fs: &'a dyn DeviceFs,
     state: DeviceState,
     sources: &'a dyn SourceFs,
     options: &'a ImportOptions,
@@ -285,6 +292,8 @@ struct Planner<'a> {
     /// `ul.cfg` after the transactions planned so far.
     ul_next: Option<Vec<u8>>,
     games: usize,
+    /// Lower-case IDs whose CFG this plan already writes (META-3).
+    info_written: HashSet<String>,
 }
 
 impl Planner<'_> {
@@ -415,7 +424,28 @@ impl Planner<'_> {
         self.plan.transactions.push(tx);
         self.games += 1;
         if let Some(game) = game {
+            self.plan_info(&game)
+                .map_err(|e| skip(path, reasons::unreadable(&e)))?;
             self.plan_covers(&game);
+        }
+        Ok(())
+    }
+
+    /// The bundled game info of `game` into its CFG, right after it
+    /// (META-3): once per ID, only for games the table knows.
+    fn plan_info(&mut self, game: &GameInfo) -> io::Result<()> {
+        if !self.options.write_info || !self.info_written.insert(game.startup.to_lowercase()) {
+            return Ok(());
+        }
+        let Some(known) = game_info::known_info(&game.startup) else {
+            return Ok(());
+        };
+        let values = settings::info_values(&game.title, Some(known), &InfoField::ALL);
+        let title = Phrase::title("gameInfo").with("title", &game.title);
+        if let Some(tx) =
+            settings::info_cfg_transaction(self.fs, &self.state, game, &values, title)?
+        {
+            self.plan.transactions.push(tx);
         }
         Ok(())
     }
@@ -729,6 +759,7 @@ pub fn plan_import(
     }
 
     let mut planner = Planner {
+        fs,
         state,
         sources,
         options,
@@ -741,6 +772,7 @@ pub fn plan_import(
         media_by_startup,
         ul_next: None,
         games: 0,
+        info_written: HashSet::new(),
     };
     for path in &candidates {
         if let Err(skipped) = planner.plan_source(path) {

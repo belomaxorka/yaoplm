@@ -124,6 +124,10 @@ enum Command {
         /// the others keep the title of their file name.
         #[arg(long)]
         db_titles: bool,
+        /// Do not write the bundled game info (developer, publisher, release
+        /// date, players, genre) into the CFG of the games the table knows.
+        #[arg(long)]
+        no_info: bool,
         /// Look for the covers of the games being added (as `art fetch`
         /// does) and write them together with the games.
         #[arg(long)]
@@ -886,6 +890,7 @@ fn main() -> anyhow::Result<ExitCode> {
             zso,
             no_verify,
             db_titles,
+            no_info,
             covers,
             mirrors,
             skipped,
@@ -922,6 +927,7 @@ fn main() -> anyhow::Result<ExitCode> {
                 compress: Some(zso),
                 verify: Some(!no_verify),
                 database_titles: Some(db_titles),
+                write_info: Some(!no_info),
                 covers: None,
                 mode: None,
             };

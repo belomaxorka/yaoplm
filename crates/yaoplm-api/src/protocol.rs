@@ -240,6 +240,12 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         covers: Option<String>,
+        /// Write the bundled game info into `CFG/<ID>.cfg` right after
+        /// each game the table knows (META-3, ADR-0050): title, genre,
+        /// release date, developer, publisher, players. Off when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        write_info: Option<bool>,
         /// As in `ScanLibrary`: SMB's limits or BDM's fragment rule.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]

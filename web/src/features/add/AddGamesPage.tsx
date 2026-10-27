@@ -126,6 +126,7 @@ export function AddGamesPage() {
       ...(list.length > 0 ? { overrides: list } : {}),
       verify: settings.checkOnAdd,
       databaseTitles: settings.titlesFromDb,
+      writeInfo: settings.infoToCfg,
       ...(coverSet ? { covers: coverSet } : {}),
       ...(mode ? { mode } : {}),
     };
@@ -142,6 +143,7 @@ export function AddGamesPage() {
     zsoReadable,
     settings.checkOnAdd,
     settings.titlesFromDb,
+    settings.infoToCfg,
     coverSet,
   ]);
 
@@ -373,6 +375,19 @@ export function AddGamesPage() {
             <span>
               {t("add.titlesFromDb")}
               <span className="block text-xs text-muted-foreground">{t("add.titlesFromDbHint")}</span>
+            </span>
+          </Label>
+          <Label htmlFor={`${ids}-info`} className="items-start font-normal">
+            <Switch
+              id={`${ids}-info`}
+              checked={settings.infoToCfg}
+              onCheckedChange={(infoToCfg) => update({ infoToCfg })}
+              className="mt-0.5"
+              data-testid="info-to-cfg"
+            />
+            <span>
+              {t("add.infoToCfg")}
+              <span className="block text-xs text-muted-foreground">{t("add.infoToCfgHint")}</span>
             </span>
           </Label>
           <Label htmlFor={`${ids}-covers`} className="items-start font-normal">

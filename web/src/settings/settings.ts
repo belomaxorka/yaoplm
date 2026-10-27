@@ -76,6 +76,8 @@ export interface Settings {
   coversOnAdd: boolean;
   /** Title the games being added by the bundled database (META-1). */
   titlesFromDb: boolean;
+  /** Write the bundled game info into the CFG of every added game the table knows (META-3). */
+  infoToCfg: boolean;
   /** Picture sources on or off, and their mirrors (ART-1). */
   artSources: Record<ArtSourceId, ArtSourceSettings>;
   /** Optional; the source works without one. */
@@ -100,6 +102,7 @@ export const defaultSettings: Settings = {
   checkOnAdd: false,
   coversOnAdd: true,
   titlesFromDb: true,
+  infoToCfg: true,
   artSources: {
     xlenore: { enabled: true, mirror: "" },
     oplm: { enabled: true, mirror: "" },
@@ -202,6 +205,7 @@ export function readSettings(): Settings {
       checkOnAdd: typeof p.checkOnAdd === "boolean" ? p.checkOnAdd : defaultSettings.checkOnAdd,
       coversOnAdd: typeof p.coversOnAdd === "boolean" ? p.coversOnAdd : defaultSettings.coversOnAdd,
       titlesFromDb: typeof p.titlesFromDb === "boolean" ? p.titlesFromDb : defaultSettings.titlesFromDb,
+      infoToCfg: typeof p.infoToCfg === "boolean" ? p.infoToCfg : defaultSettings.infoToCfg,
       artSources: readArtSources(p.artSources),
       screenscraper: readAccount(p.screenscraper),
       loaderMirror: typeof p.loaderMirror === "string" ? p.loaderMirror : "",
