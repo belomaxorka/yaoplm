@@ -4,13 +4,32 @@ import type { Media } from "@/api/generated/Media";
 import { hasCover } from "@/api/media";
 import { baseName } from "@/lib/format";
 
-export const sortKeys = ["title", "startup", "size", "media", "format"] as const;
+/** What the library sorts by: the title or the game ID (LIB-5). */
+export const sortKeys = ["title", "startup"] as const;
 export type SortKey = (typeof sortKeys)[number];
+
+/** The sort choices as the toolbar lists them: the key and the direction as one. */
+export const sortChoices = ["title", "title-desc", "startup", "startup-desc"] as const;
+export type SortChoice = (typeof sortChoices)[number];
+
+export function sortChoice({ sort, desc }: Pick<LibraryFilters, "sort" | "desc">): SortChoice {
+  return desc ? `${sort}-desc` : sort;
+}
+
+export function fromSortChoice(choice: SortChoice): Pick<LibraryFilters, "sort" | "desc"> {
+  const [sort, direction] = choice.split("-") as [SortKey, string | undefined];
+  return { sort, desc: direction === "desc" };
+}
+
+export const mediaKinds: readonly Media[] = ["CD", "DVD"];
+export const formatKinds: readonly GameFormat[] = ["ISO", "ZSO", "UL"];
 
 export interface LibraryFilters {
   q: string;
-  media: Media | "all";
-  format: GameFormat | "all";
+  /** The disc types ticked; none means every type. */
+  media: Media[];
+  /** The formats ticked; none means every format. */
+  format: GameFormat[];
   /** Only games with warnings. */
   warnings: boolean;
   /** Only games without a front cover (ART-4). */
@@ -21,8 +40,8 @@ export interface LibraryFilters {
 
 export const defaultFilters: LibraryFilters = {
   q: "",
-  media: "all",
-  format: "all",
+  media: [],
+  format: [],
   warnings: false,
   noCover: false,
   sort: "title",
@@ -40,44 +59,79 @@ export function effectiveFilters(filters: LibraryFilters, simple: boolean): Libr
   return { ...filters, warnings, noCover, sort, desc };
 }
 
-function isMedia(value: string | null): value is Media {
-  return value === "CD" || value === "DVD";
+/** How many boxes of the "Filter" menu are ticked, for its button. */
+export function activeFilterCount(filters: LibraryFilters): number {
+  return filters.media.length + filters.format.length + (filters.warnings ? 1 : 0) + (filters.noCover ? 1 : 0);
 }
 
-function isFormat(value: string | null): value is GameFormat {
-  return value === "ISO" || value === "ZSO" || value === "UL";
+function isMedia(value: string): value is Media {
+  return mediaKinds.includes(value as Media);
+}
+
+function isFormat(value: string): value is GameFormat {
+  return formatKinds.includes(value as GameFormat);
 }
 
 function isSortKey(value: string | null): value is SortKey {
   return sortKeys.includes(value as SortKey);
 }
 
+function list<T extends string>(value: string | null, keep: (item: string) => item is T): T[] {
+  return (value ?? "").split(",").filter(keep);
+}
+
 /** Filters live in the address, so Back from a game keeps them. */
 export function parseFilters(params: URLSearchParams): LibraryFilters {
-  const media = params.get("media");
-  const format = params.get("format");
   const sort = params.get("sort");
+  // An old key (size, media, format) in a saved address reads as Title A→Z.
+  const sorted = isSortKey(sort);
   return {
     q: params.get("q") ?? "",
-    media: isMedia(media) ? media : "all",
-    format: isFormat(format) ? format : "all",
+    media: list(params.get("media"), isMedia),
+    format: list(params.get("format"), isFormat),
     warnings: params.get("warnings") === "1",
     noCover: params.get("nocover") === "1",
-    sort: isSortKey(sort) ? sort : "title",
-    desc: params.get("desc") === "1",
+    sort: sorted ? sort : "title",
+    desc: sort === null || sorted ? params.get("desc") === "1" : false,
   };
 }
 
 export function filtersToParams(filters: LibraryFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
-  if (filters.media !== "all") params.set("media", filters.media);
-  if (filters.format !== "all") params.set("format", filters.format);
+  if (filters.media.length > 0) params.set("media", filters.media.join(","));
+  if (filters.format.length > 0) params.set("format", filters.format.join(","));
   if (filters.warnings) params.set("warnings", "1");
   if (filters.noCover) params.set("nocover", "1");
   if (filters.sort !== "title") params.set("sort", filters.sort);
   if (filters.desc) params.set("desc", "1");
   return params;
+}
+
+const QUERY_KEY = "yaoplm.libraryQuery";
+
+/**
+ * The library's address, remembered for the way back from a game card: a
+ * deletion ends on the library with the same filters and sorting
+ * (walkthrough finding 11). Session storage: a new window starts clean.
+ */
+export function rememberLibraryQuery(search: string): void {
+  try {
+    const query = search.replace(/^\?/, "");
+    if (query) window.sessionStorage.setItem(QUERY_KEY, query);
+    else window.sessionStorage.removeItem(QUERY_KEY);
+  } catch {
+    // Storage may be unavailable; the way back is then the plain library.
+  }
+}
+
+export function libraryHref(): string {
+  try {
+    const query = window.sessionStorage.getItem(QUERY_KEY);
+    return query ? `/library?${query}` : "/library";
+  } catch {
+    return "/library";
+  }
 }
 
 /** `SLUS_200.62`, `slus-20062` and `SLUS20062` all match the same game. */
@@ -102,20 +156,14 @@ function compare(a: Game, b: Game, key: SortKey): number {
       return collator.compare(a.title, b.title);
     case "startup":
       return collator.compare(a.startup, b.startup);
-    case "size":
-      return a.size - b.size;
-    case "media":
-      return collator.compare(a.media, b.media);
-    case "format":
-      return collator.compare(a.format, b.format);
   }
 }
 
 export function applyFilters(games: readonly Game[], filters: LibraryFilters): Game[] {
   const result = games.filter(
     (game) =>
-      (filters.media === "all" || game.media === filters.media) &&
-      (filters.format === "all" || game.format === filters.format) &&
+      (filters.media.length === 0 || filters.media.includes(game.media)) &&
+      (filters.format.length === 0 || filters.format.includes(game.format)) &&
       (!filters.warnings || game.warnings.length > 0) &&
       (!filters.noCover || !hasCover(game)) &&
       matchesQuery(game, filters.q),
