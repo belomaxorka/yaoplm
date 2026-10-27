@@ -1,4 +1,4 @@
-# 21. RiptOPL inside a memory card emulator's boot card
+# 22. RiptOPL inside a memory card emulator's boot card
 
 Date: 2026-10-27. The owner asked whether RiptOPL would be a better OPL to put inside the emulator's boot card (LDR-5, plan `docs/plans/emulator-sd.md` PR 4) than the MMCE fork's `v1.2.0-Beta-2216-bb415d2`, which the factory card runs today. The setup is a PSXMemCard Gen2 on sd2psXtd 1.4.0, FreeMcBoot booting from an 8 MiB boot card, and games on the emulator's exFAT microSD read through MMCE (research/19, research/20).
 
