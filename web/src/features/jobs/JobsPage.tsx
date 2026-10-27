@@ -188,7 +188,7 @@ function JobCard({ job }: { job: JobInfo }) {
             <span className="font-mono text-xs text-muted-foreground">#{job.id}</span>
           </div>
           {job.root && (
-            <div className="truncate font-mono text-xs text-muted-foreground" title={job.root}>
+            <div className="selectable truncate font-mono text-xs text-muted-foreground" title={job.root}>
               {job.root}
             </div>
           )}
@@ -407,7 +407,7 @@ function JobLogList({ entries, height }: { entries: readonly JobLogEntry[]; heig
   const { t } = useTranslation();
   return (
     <ol
-      className={cn("relative mt-1 min-h-0 overflow-auto rounded-md border bg-background p-2 font-mono text-xs", height ?? "max-h-72")}
+      className={cn("selectable relative mt-1 min-h-0 overflow-auto rounded-md border bg-background p-2 font-mono text-xs", height ?? "max-h-72")}
       data-testid="job-log"
     >
       {entries.map((entry, index) => (

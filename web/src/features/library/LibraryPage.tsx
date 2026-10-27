@@ -288,7 +288,7 @@ function LibraryView({
         <Facts className="text-xs text-muted-foreground" data-testid="library-facts">
           {/* The header names the device already; the path is a detail. */}
           {!simple && (
-            <span className="truncate font-mono" title={root}>
+            <span className="selectable truncate font-mono" title={root}>
               {root}
             </span>
           )}
@@ -316,7 +316,7 @@ function LibraryView({
         {isPending && <ScanProgress root={root} />}
         {error && (
           <div
-            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            className="selectable flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
             role="alert"
           >
             <span className="min-w-0 flex-1 wrap-anywhere">{t("library.scanFailed", { error })}</span>

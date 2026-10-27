@@ -196,6 +196,13 @@ describe("simple mode (UI-4)", () => {
       if (simple) expect(screen.queryByTestId("game-verify")).not.toBeInTheDocument();
       else expect(within(screen.getByTestId("game-dump").parentElement!).getByTestId("game-verify")).toHaveTextContent("Check dump");
       expect(screen.getByTestId("game-download-art")).toBeInTheDocument();
+      // What people copy from the card stays selectable in the desktop
+      // window (UI-5, `selectable`): the ID, the title and, in advanced
+      // mode, the path; the labels around them do not.
+      expect(screen.getByTestId("game-id")).toHaveClass("selectable");
+      expect(screen.getByTestId("game-title")).toHaveClass("selectable");
+      if (!simple) expect(screen.getByText(game.path)).toHaveClass("selectable");
+      expect(screen.getByRole("group", { name: "Actions" })).not.toHaveClass("selectable");
       // A VMC warning belongs to its slot (release pass 1.10): the list
       // repeats only what no slot on screen shows (slot 2 in simple mode).
       const warnings = screen.getByTestId("game-warnings");

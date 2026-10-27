@@ -35,7 +35,7 @@ function BootHolds({ contents, simple }: { contents: BootContents; simple: boole
                 {t("devices.emulator.mmce")}
               </Badge>
             )}
-            <span className="font-mono break-all">{loader.path}</span>
+            <span className="selectable font-mono break-all">{loader.path}</span>
           </span>
         ))}
     </div>
@@ -106,7 +106,7 @@ export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo;
                       {t("devices.emulator.channel", { channel: boot.channel })}
                     </span>
                     <span>{boot.name ?? t("devices.emulator.noName")}</span>
-                    {!simple && <span className="font-mono text-xs break-all text-muted-foreground">{boot.file}</span>}
+                    {!simple && <span className="selectable font-mono text-xs break-all text-muted-foreground">{boot.file}</span>}
                   </div>
                   {boot.contents && <BootHolds contents={boot.contents} simple={simple} />}
                 </li>
@@ -126,7 +126,7 @@ export function EmulatorPanel({ emulator, className }: { emulator: EmulatorInfo;
         <div className="flex flex-col gap-0.5 text-xs text-muted-foreground" data-testid="emulator-settings">
           <div className="font-medium">.sd2psx/settings.ini</div>
           {emulator.settings.map((section) => (
-            <div key={section.name} className="font-mono break-all">
+            <div key={section.name} className="selectable font-mono break-all">
               [{section.name}] {section.entries.map((e) => `${e.key}=${e.value}`).join(" ")}
             </div>
           ))}

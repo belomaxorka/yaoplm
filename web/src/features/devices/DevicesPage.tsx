@@ -277,7 +277,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
+            <span className="selectable font-mono text-base font-semibold wrap-anywhere">{device.root}</span>
             {device.label && <span className="text-sm text-muted-foreground">{device.label}</span>}
             <Badge variant="outline">{device.fileSystem === "other" ? device.fsName : device.fileSystem}</Badge>
             {!simple && device.bus && <Badge variant="outline">{t(`devices.bus.${device.bus}`)}</Badge>}
@@ -312,7 +312,7 @@ function DeviceCard({ device, current, onOpen }: { device: DeviceInfo; current: 
               )}
               {device.serial && (
                 <span>
-                  {t("devices.serial")}: <span className="font-mono">{device.serial}</span>
+                  {t("devices.serial")}: <span className="selectable font-mono">{device.serial}</span>
                 </span>
               )}
               {device.clusterSize !== null && (

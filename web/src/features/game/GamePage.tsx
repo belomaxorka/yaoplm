@@ -82,7 +82,7 @@ function Fact({ label, children, mono = false }: { label: string; children: Reac
   return (
     <div className="contents">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className={mono ? "font-mono wrap-anywhere" : "wrap-anywhere"}>{children}</dd>
+      <dd className={mono ? "selectable font-mono wrap-anywhere" : "wrap-anywhere"}>{children}</dd>
     </div>
   );
 }
@@ -135,11 +135,11 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
           </div>
           <div className="flex min-w-0 flex-col gap-4">
             <div>
-              <h2 className="text-2xl font-semibold wrap-anywhere" data-testid="game-title">
+              <h2 className="selectable text-2xl font-semibold wrap-anywhere" data-testid="game-title">
                 {game.title}
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <Badge variant="secondary" className="font-mono" title={t("game.id")} data-testid="game-id">
+                <Badge variant="secondary" className="selectable font-mono" title={t("game.id")} data-testid="game-id">
                   {game.startup}
                 </Badge>
                 <Badge variant="outline" title={t("game.media")}>
@@ -213,7 +213,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
               {knownTitle && (
                 <Fact label={t("game.knownTitle")}>
                   <span className="flex flex-wrap items-baseline gap-x-3">
-                    <span data-testid="known-title">{knownTitle}</span>
+                    <span className="selectable" data-testid="known-title">{knownTitle}</span>
                     <Button
                       variant="link"
                       size="sm"
@@ -235,7 +235,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
                     {game.dump ? (
                       <span className="flex flex-wrap items-center gap-2" data-testid="game-dump">
                         <DumpBadge status={game.dump.status} reason={game.dump.reason} title={game.dump.redump} byTrack={game.dump.byTrack} />
-                        {game.dump.redump && <span className="wrap-anywhere">{game.dump.redump}</span>}
+                        {game.dump.redump && <span className="selectable wrap-anywhere">{game.dump.redump}</span>}
                       </span>
                     ) : (
                       <span className="text-muted-foreground" data-testid="game-dump">
