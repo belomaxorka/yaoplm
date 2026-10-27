@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { joinPath, libraryTool, openLibrary, roots } from "./helpers";
+import { joinPath, libraryPictures, openLibrary, roots } from "./helpers";
 
 // Covers end to end against the fixture mirrors (ART-1 to ART-4, META-1):
 // one game downloads its cover from the game card, the bulk run skips the
@@ -13,6 +13,7 @@ test("the fixture starts with one cover and the database titles", async ({ page,
   await openLibrary(page, request);
   await page.goto("/library");
   await expect(page.getByTestId("library-count")).toHaveText("5 of 5 games");
+  await page.getByTestId("library-filter").click();
   await expect(page.getByTestId("filter-no-cover")).toHaveText("4 without cover");
   const dual = page.getByRole("listitem", { name: /Dual Layer Quest/ });
   await expect(dual.getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
@@ -67,7 +68,7 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
 test("the bulk run takes only the games without a cover", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
-  await page.getByTestId("download-covers").click();
+  await libraryPictures(page, "sources");
   const dialog = page.getByTestId("art-fetch-dialog");
   await expect(dialog).toContainText("Only the 3 games without a cover");
   await dialog.getByTestId("art-fetch-start").click();
@@ -81,7 +82,9 @@ test("the bulk run takes only the games without a cover", async ({ page, request
   await expect(plan.getByTestId("plan-skipped")).toContainText("SLES_999.99");
   await plan.getByTestId("plan-confirm").click();
   await expect(plan).toBeHidden();
+  await page.getByTestId("library-filter").click();
   await expect(page.getByTestId("filter-no-cover")).toHaveText("2 without cover");
+  await page.keyboard.press("Escape");
 
   // The jobs page keeps the search with its per-game log.
   await page.goto("/jobs");
@@ -145,7 +148,7 @@ test("a cover is replaced from a server file and deleted with confirmation", asy
 test("the bulk run takes the picture types it is given", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
-  await page.getByTestId("download-covers").click();
+  await libraryPictures(page, "sources");
   const dialog = page.getByTestId("art-fetch-dialog");
   // Every type has a source; the front cover is preselected.
   await expect(dialog.getByTestId("art-kinds").getByRole("checkbox")).toHaveCount(8);
@@ -169,7 +172,7 @@ test("the bulk run takes the picture types it is given", async ({ page, request 
 test("picture sets fill the games on the device", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
-  await libraryTool(page, "import-pictures");
+  await libraryPictures(page, "set");
   const dialog = page.getByTestId("art-import-dialog");
   await expect(dialog.getByTestId("art-import-start")).toBeDisabled();
   await dialog.getByTestId("art-import-browse").click();

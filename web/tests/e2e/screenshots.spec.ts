@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { openEmulatorPanel } from "./emulator-flow";
-import { libraryTool, openLibrary } from "./helpers";
+import { libraryPictures, openLibrary } from "./helpers";
 
 // Screenshots for PR review (TESTING.md): both themes, both languages, two widths.
 // Saved to test-results/screenshots/ and uploaded by CI.
@@ -35,7 +35,7 @@ for (const language of ["en", "ru"] as const) {
         await shot("library");
 
         // The bulk cover dialog with its scope and sources (ART-4).
-        await page.getByTestId("download-covers").click();
+        await libraryPictures(page, "sources");
         await expect(page.getByTestId("art-fetch-dialog")).toBeVisible();
         // Let the dialog's fade-in finish before the shot.
         await page.waitForTimeout(400);
@@ -52,7 +52,7 @@ for (const language of ["en", "ru"] as const) {
         await expect(page.getByTestId("convert-shown")).toBeHidden();
 
         // Picture sets with the two fixture sets picked (ART-5).
-        await libraryTool(page, "import-pictures");
+        await libraryPictures(page, "set");
         const importDialog = page.getByTestId("art-import-dialog");
         await importDialog.getByTestId("art-import-browse").click();
         const setBrowser = page.getByTestId("folder-browser");

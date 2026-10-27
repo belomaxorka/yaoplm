@@ -3,7 +3,15 @@ import "@/i18n";
 import { describe, expect, it } from "vitest";
 
 import type { Game } from "@/api/generated/Game";
-import { applyFilters, defaultFilters, filtersToParams, matchesQuery, parseFilters } from "@/features/library/filters";
+import {
+  applyFilters,
+  defaultFilters,
+  filtersToParams,
+  libraryHref,
+  matchesQuery,
+  parseFilters,
+  rememberLibraryQuery,
+} from "@/features/library/filters";
 import { GRID_GAP, GRID_MIN_COLUMN, gridLayout } from "@/features/library/gridLayout";
 import i18n from "@/i18n";
 import { formatBytes, formatDuration, formatEta, percent } from "@/lib/format";
@@ -54,8 +62,10 @@ describe("library filters", () => {
   });
 
   it("filters by media, format and warnings", () => {
-    expect(applyFilters(games, { ...defaultFilters, media: "DVD" }).map((g) => g.title)).toEqual(["Alpha Racer", "Big Game"]);
-    expect(applyFilters(games, { ...defaultFilters, format: "UL" }).map((g) => g.title)).toEqual(["Big Game"]);
+    expect(applyFilters(games, { ...defaultFilters, media: ["DVD"] }).map((g) => g.title)).toEqual(["Alpha Racer", "Big Game"]);
+    expect(applyFilters(games, { ...defaultFilters, format: ["UL"] }).map((g) => g.title)).toEqual(["Big Game"]);
+    // Several boxes ticked: any of them.
+    expect(applyFilters(games, { ...defaultFilters, format: ["ISO", "UL"] }).map((g) => g.title)).toEqual(["Big Game", "Zelda-like"]);
     expect(applyFilters(games, { ...defaultFilters, warnings: true }).map((g) => g.title)).toEqual(["Big Game"]);
   });
 
@@ -68,18 +78,33 @@ describe("library filters", () => {
     expect(matchesQuery(g, "mario")).toBe(false);
   });
 
-  it("sorts by size descending", () => {
-    expect(applyFilters(games, { ...defaultFilters, sort: "size", desc: true }).map((g) => g.title)).toEqual([
-      "Big Game",
-      "Alpha Racer",
-      "Zelda-like",
-    ]);
+  it("sorts by title either way and by ID", () => {
+    expect(applyFilters(games, { ...defaultFilters, desc: true }).map((g) => g.title)).toEqual(["Zelda-like", "Big Game", "Alpha Racer"]);
+    expect(applyFilters(games, { ...defaultFilters, sort: "startup" }).map((g) => g.startup)).toEqual(["SCES_500.03", "SLPM_123.45", "SLUS_200.62"]);
   });
 
   it("round-trips through the address", () => {
-    const filters = { ...defaultFilters, q: "big", media: "DVD" as const, warnings: true, sort: "size" as const, desc: true };
+    const filters = { ...defaultFilters, q: "big", media: ["DVD" as const], format: ["ISO" as const, "UL" as const], warnings: true, sort: "startup" as const, desc: true };
     expect(parseFilters(filtersToParams(filters))).toEqual(filters);
+    expect(filtersToParams(filters).toString()).toBe("q=big&media=DVD&format=ISO%2CUL&warnings=1&sort=startup&desc=1");
     expect(parseFilters(new URLSearchParams("media=Blu-ray&sort=nope"))).toEqual(defaultFilters);
+  });
+
+  // Size, media and format are no longer sort keys (LIB-5): a bookmark or a
+  // saved address with one of them, in either direction, reads as Title A→Z.
+  it("reads an old sort key as Title A→Z", () => {
+    expect(parseFilters(new URLSearchParams("sort=size&desc=1"))).toEqual(defaultFilters);
+    expect(parseFilters(new URLSearchParams("sort=media"))).toEqual(defaultFilters);
+  });
+
+  // The filters and the sorting survive a visit to the game card and its
+  // deletion (walkthrough finding 11): the game card comes back to them.
+  it("remembers the library's address for the way back", () => {
+    expect(libraryHref()).toBe("/library");
+    rememberLibraryQuery("?sort=startup&media=DVD");
+    expect(libraryHref()).toBe("/library?sort=startup&media=DVD");
+    rememberLibraryQuery("");
+    expect(libraryHref()).toBe("/library");
   });
 });
 
