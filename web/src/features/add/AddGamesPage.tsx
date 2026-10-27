@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
 import { ArrowLeft, FilePlus2, FolderOpen, FolderSearch, Loader2, Trash2, Upload } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
@@ -178,8 +178,19 @@ export function AddGamesPage() {
   // the one to run.
   const stale = plannedJson !== null && requestJson !== plannedJson;
 
+  // "Preview plan" brings the plan into view once it is there; re-plans
+  // after an edit leave the page where it is (walkthrough finding 11).
+  const planRef = useRef<HTMLElement>(null);
+  const scrollToPlan = useRef(false);
+  useEffect(() => {
+    if (!flow.plan || !scrollToPlan.current) return;
+    scrollToPlan.current = false;
+    planRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [flow.plan]);
+
   const preview = () => {
     if (!request) return;
+    scrollToPlan.current = true;
     setPlannedJson(requestJson);
     sendPlan(request, false);
   };
@@ -415,12 +426,12 @@ export function AddGamesPage() {
           </p>
         )}
         {flow.plan && (
-          <section className="flex flex-col gap-4 rounded-lg border bg-card p-4" data-testid="import-plan">
+          <section ref={planRef} className="flex flex-col gap-4 rounded-lg border bg-card p-4" data-testid="import-plan">
             <div>
               <h3 className="text-base font-semibold">{phraseText(flow.plan.titlePhrase, flow.plan.title)}</h3>
               <p className="text-xs text-muted-foreground">{t("add.planHint")}</p>
             </div>
-            {covers.state && <CoverSearchPanel search={covers.state} onStop={covers.stop} onRetry={covers.retry} />}
+            {covers.state && <CoverSearchPanel search={covers.state} plan={flow.plan} onStop={covers.stop} onRetry={covers.retry} />}
             <PlanDetails
               plan={flow.plan}
               renderTransaction={renderOverride}

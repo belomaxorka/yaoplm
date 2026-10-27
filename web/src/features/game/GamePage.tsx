@@ -475,6 +475,22 @@ function RenameDialog({
                 <p className="text-xs text-muted-foreground">{t("game.fixIdHint")}</p>
               </div>
             )}
+            {/* The file's ID and SYSTEM.CNF's differ: one click takes the
+                image's, in simple mode too, where the field is hidden. */}
+            {game.imageStartup !== null && game.imageStartup !== game.startup && startup.trim() !== game.imageStartup && (
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="rename-image-id">
+                <span>{t("game.imageSays", { id: game.imageStartup })}</span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-xs"
+                  onClick={() => setStartup(game.imageStartup ?? game.startup)}
+                >
+                  {t("game.useImageId")}
+                </Button>
+              </p>
+            )}
             {!simple && !isUl && (
               <fieldset className="flex flex-col gap-1.5">
                 <legend className="mb-1.5 text-sm font-medium">{t("settings.nameStyle")}</legend>

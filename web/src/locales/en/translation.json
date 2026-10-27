@@ -332,6 +332,8 @@
     "ulTitleHint": "ul.cfg holds up to 32 ASCII characters.",
     "fixId": "Game ID",
     "fixIdHint": "Change it only to correct a wrong ID. CFG, art and cheats then move with it.",
+    "imageSays": "The image says {{id}}",
+    "useImageId": "Use it",
     "previewRename": "Preview changes",
     "deleteTitle": "Delete {{title}}?",
     "deleteDescription": "The image (or the ul chunks and record) will be deleted after you confirm the plan.",
