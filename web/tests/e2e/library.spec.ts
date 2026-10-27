@@ -128,8 +128,11 @@ test("a game is added from the server folders through the plan", async ({ page, 
   await page.getByTestId("preview-plan").click();
   const plan = page.getByTestId("import-plan");
   await expect(plan).toBeVisible();
-  await expect(plan.getByTestId("plan-transaction")).toHaveCount(1);
+  // The game and, right after it, its CFG with the bundled game info (META-3).
+  await expect(plan.getByTestId("plan-transaction")).toHaveCount(2);
   await expect(plan).toContainText("SCES_500.03");
+  await expect(plan).toContainText("Game info of");
+  await expect(page.getByTestId("info-to-cfg")).toBeChecked();
   // The bundled database knows the game: its title replaces the file's.
   await expect(page.getByTestId("titles-from-db")).toBeChecked();
   await expect(plan).toContainText("CD/SCES_500.03.Dead or Alive 2 - Hardcore.iso");
@@ -143,7 +146,7 @@ test("a game is added from the server folders through the plan", async ({ page, 
   await expect(page).toHaveURL(/\/jobs$/);
   const job = page.getByTestId("job-card").filter({ hasText: "Import" }).first();
   await expect(job).toHaveAttribute("data-status", "finished");
-  await expect(job.getByTestId("job-outcomes")).toContainText("1 done");
+  await expect(job.getByTestId("job-outcomes")).toContainText("2 done");
   await job.getByRole("button", { name: /^Log/ }).click();
   await expect(job.getByTestId("job-log")).toContainText("Write CD/SCES_500.03.Lf Renamed.iso: done");
 
