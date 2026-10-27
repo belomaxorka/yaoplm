@@ -51,10 +51,6 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   const slot = page.getByTestId("art-slot-COV");
   await expect(slot).toHaveAttribute("data-has-art", "true");
   await expect(slot).toContainText("140×200");
-  // The slot's search is not a job to follow; the write is.
-  await page.goto("/jobs");
-  await expect(page.getByTestId("job-card").filter({ hasText: "Pictures for SLUS_200.62" })).toHaveCount(0);
-  await expect(page.getByTestId("job-card").filter({ hasText: "Write 1 cover" })).toHaveCount(1);
   await expect(page.getByTestId("game-hero").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
   // The image really loads from /media/art.
   const src = await slot.locator("img").getAttribute("src");
@@ -62,6 +58,10 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   const image = await request.get(src!);
   expect(image.ok()).toBe(true);
   expect(image.headers()["content-type"]).toBe("image/png");
+  // The slot's search is not a job to follow; the write is.
+  await page.goto("/jobs");
+  await expect(page.getByTestId("job-card").filter({ hasText: "Pictures for SLUS_200.62" })).toHaveCount(0);
+  await expect(page.getByTestId("job-card").filter({ hasText: "Write 1 cover" })).toHaveCount(1);
 });
 
 test("the bulk run takes only the games without a cover", async ({ page, request }) => {
