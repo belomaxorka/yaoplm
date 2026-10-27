@@ -7,6 +7,7 @@
 //! transcodes a file or pasted bytes the same way and returns a plan at
 //! once; `DeleteArt` plans a removal.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -126,6 +127,21 @@ pub struct CoverSearch {
     /// Pictures no source had.
     pub missing: u32,
     /// Pictures the device has already.
+    pub present: u32,
+    /// The same counts per game, so a plan that lost a game can be counted
+    /// again without a new search (walkthrough finding 4).
+    #[serde(default)]
+    pub games: Vec<CoverSearchGame>,
+}
+
+/// What a cover search found for one game of an import plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CoverSearchGame {
+    pub startup: String,
+    pub found: u32,
+    pub missing: u32,
     pub present: u32,
 }
 
@@ -522,7 +538,18 @@ pub(crate) struct FetchParams {
     pub kinds: Vec<ArtKind>,
     /// The games of an import plan, and how many have the picture already
     /// (ART-8): the job then ends with a cover set, not a plan.
-    pub import: Option<(Vec<Target>, usize)>,
+    pub import: Option<ImportTargets>,
+}
+
+/// The games an import plan adds, as the cover search sees them.
+pub(crate) struct ImportTargets {
+    /// The games with a picture still to find.
+    pub targets: Vec<Target>,
+    /// How many pictures the device has for the plan's games already.
+    pub already: usize,
+    /// Every game of the plan, once per ID, with how many of the wanted
+    /// kinds it has already (also the games left out of `targets`).
+    pub present: Vec<(String, u32)>,
 }
 
 /// The games an import plan adds, once per ID, each with the `kinds` the
@@ -533,7 +560,7 @@ pub(crate) fn import_targets(
     plan_id: &str,
     root: &Path,
     kinds: &[ArtKind],
-) -> Result<(Vec<Target>, usize), ApiError> {
+) -> Result<ImportTargets, ApiError> {
     let (plan, plan_root) = plans.peek(plan_id).ok_or_else(|| {
         ApiError::phrased(
             ErrorCode::NotFound,
@@ -552,6 +579,7 @@ pub(crate) fn import_targets(
     let mut seen = std::collections::HashSet::new();
     let mut already = 0;
     let mut targets = Vec::new();
+    let mut per_game = Vec::new();
     for game in plan.transactions.iter().filter_map(|t| t.game.as_ref()) {
         if !seen.insert(serial::lookup_key(&game.startup)) {
             continue;
@@ -563,6 +591,10 @@ pub(crate) fn import_targets(
             .map(|(kind, _)| *kind)
             .collect();
         already += have.len();
+        per_game.push((
+            game.startup.clone(),
+            u32::try_from(have.len()).unwrap_or(u32::MAX),
+        ));
         if have.len() == kinds.len() {
             continue;
         }
@@ -574,7 +606,11 @@ pub(crate) fn import_targets(
             present: have,
         });
     }
-    Ok((targets, already))
+    Ok(ImportTargets {
+        targets,
+        already,
+        present: per_game,
+    })
 }
 
 /// The Redump names of `startup`, region first: libretro names its files
@@ -715,21 +751,26 @@ pub(crate) fn fetch_job(
     let service = net.service()?;
     let for_import = params.import.is_some();
     let only_covers = params.kinds == [ArtKind::Cov];
+    let mut per_game: Vec<(String, u32)> = Vec::new();
     let (pairs, already) = match params.import.take() {
-        Some((targets, already)) => (
-            targets
-                .into_iter()
-                .flat_map(|t| {
-                    params
-                        .kinds
-                        .iter()
-                        .filter(|kind| !t.present.contains(kind))
-                        .map(|&kind| (t.clone(), kind))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>(),
-            already,
-        ),
+        Some(import) => {
+            per_game = import.present;
+            (
+                import
+                    .targets
+                    .into_iter()
+                    .flat_map(|t| {
+                        params
+                            .kinds
+                            .iter()
+                            .filter(|kind| !t.present.contains(kind))
+                            .map(|&kind| (t.clone(), kind))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>(),
+                import.already,
+            )
+        }
         None => {
             let wanted: Option<Vec<String>> = params
                 .games
@@ -769,6 +810,8 @@ pub(crate) fn fetch_job(
     let mut skipped = Vec::new();
     let mut missing = Vec::new();
     let mut not_found = 0usize;
+    // Found and missing per game, by ID as the plan spells it.
+    let mut counts: HashMap<String, (u32, u32)> = HashMap::new();
     for (index, (target, kind)) in pairs.iter().enumerate() {
         if ctx.is_cancelled() {
             return Err(ApiError::cancelled());
@@ -828,6 +871,7 @@ pub(crate) fn fetch_job(
                 .or_else(|| logged.as_ref().map(Said::english)),
             detail_phrase: logged.as_ref().map(Phrase::from),
         });
+        let count = counts.entry(target.startup.clone()).or_default();
         match outcome.cover {
             Some(cover) => items.push(ArtItem {
                 startup: target.startup.clone(),
@@ -840,6 +884,7 @@ pub(crate) fn fetch_job(
                 origin: cover.origin.clone(),
             }),
             None => {
+                count.1 += 1;
                 let label = if *kind == ArtKind::Cov {
                     format!("{} {}", target.startup, target.title)
                 } else {
@@ -866,6 +911,21 @@ pub(crate) fn fetch_job(
     ctx.progress(total, Some(total), None);
 
     if for_import {
+        for item in &items {
+            counts.entry(item.startup.clone()).or_default().0 += 1;
+        }
+        let games = per_game
+            .into_iter()
+            .map(|(startup, present)| {
+                let (found, missing) = counts.get(&startup).copied().unwrap_or_default();
+                CoverSearchGame {
+                    startup,
+                    found,
+                    missing,
+                    present,
+                }
+            })
+            .collect();
         let found = u32::try_from(items.len()).unwrap_or(u32::MAX);
         let id = plans.insert_covers(params.root, items, missing);
         return Ok(JobResult::Covers(CoverSearch {
@@ -873,6 +933,7 @@ pub(crate) fn fetch_job(
             found,
             missing: u32::try_from(not_found).unwrap_or(u32::MAX),
             present: u32::try_from(already).unwrap_or(u32::MAX),
+            games,
         }));
     }
 

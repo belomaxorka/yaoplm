@@ -40,6 +40,19 @@ function planIds(plan: PlanView): Set<string> {
 }
 
 /**
+ * The search's numbers for the games `plan` still adds (walkthrough finding
+ * 4): a game taken out of the list takes its pictures with it. A result
+ * without per-game counts (an older core) is shown as it is.
+ */
+export function countForPlan(result: CoverSearch, plan: PlanView): CoverSearch {
+  if (result.games.length === 0) return result;
+  const ids = planIds(plan);
+  const kept = result.games.filter((game) => ids.has(game.startup.toUpperCase()));
+  const sum = (key: "found" | "missing" | "present") => kept.reduce((n, game) => n + game[key], 0);
+  return { ...result, found: sum("found"), missing: sum("missing"), present: sum("present") };
+}
+
+/**
  * Whether `plan` needs a new search: it adds a game the last search did not
  * look for, or that search failed for an earlier plan.
  */

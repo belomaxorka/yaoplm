@@ -171,6 +171,21 @@ test("renaming goes through the plan dialog", async ({ page, request }) => {
   await expect(page.getByRole("listitem", { name: /Lf Renamed/ })).toHaveCount(0);
 });
 
+test("the rename dialog offers the ID the image says", async ({ page, request }) => {
+  await openLibrary(page, request);
+  await page.goto("/library");
+  // Wrong Name holds Retail Game's bytes under another ID (walkthrough finding 9).
+  await page.getByRole("listitem", { name: /Wrong Name/ }).click();
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename game" });
+  await expect(dialog).toContainText("The image says SLUS_200.62");
+  await dialog.getByRole("button", { name: "Use it" }).click();
+  await expect(dialog.getByLabel("Game ID")).toHaveValue("SLUS_200.62");
+  // Not run: later specs expect the game under its wrong ID.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("deleting needs the plan and an extra confirmation", async ({ page, request }) => {
   await openLibrary(page, request);
   // The sorting and the filters survive the card and the deletion.

@@ -53,7 +53,7 @@
 | Per-game CFG | `CFG/<GAMEID>.cfg` (`"%sCFG%s%s.cfg"` with `game->startup`). Keys seen in the wild: `Title=`, `$Compatibility=`, `$ConfigSource=`, `Modes=` (informational) | `src/supportbase.c` **[verified]**; keys from GDX-X repo **[verified]** |
 | Compatibility modes (bitmask for `$Compatibility`) | 1 = Accurate Reads (0x01), 2 = Synchronous / alt read (0x02), 3 = Unhook Syscalls (0x04), 4 = Skip Videos (0x08), 5 = Emulate DVD-DL (0x10), 6 = Disable IGR (0x20). Bits 0x40/0x80 unused. Older OPL had other modes 7/8, so mode numbers differ across versions | `include/iosupport.h`, `lng_tmpl/_base.yml` **[verified]** |
 | Cheats | `CHT/<name>.cht` (`"%sCHT/%s.cht"`, buffer 64 chars). Which name the caller passes (likely the game ID) is **[unverified]**. Format is PS2RD text: any non-code line is a cheat name. Code lines are `XXXXXXXX YYYYYYYY`. `//` and `#` start comments. Max line length 255. In "select" mode master codes are always on | `src/supportbase.c`, `src/cheatman.c` (GPL-3 PS2rd code) **[verified]** |
-| OPL compat network update | OPL ≥ 0.9.3 has `compatUpdate()`, which fetches records per (startup, device) from the OPL-CL service (`OPL_COMPAT_HTTP_HOST/URI` macros). The OPL-CL site `sx.sytes.net/oplcl` did not respond during research | `src/opl.c` **[verified]**; site status **[unverified, looks dead]** |
+| OPL compat network update | OPL ≥ 0.9.3 has `compatUpdate()`, which fetches records per (startup, device) from the OPL-CL service (`OPL_COMPAT_HTTP_HOST/URI` macros). The OPL-CL site `sx.sytes.net/oplcl` did not respond during research; **it answered on 2026-10-27** (records of 2015, research/21 §1.2) | `src/opl.c` **[verified]**; site **[verified 2026-10-27]** |
 | OPL license | Academic Free License 3.0. Only matters if we reuse OPL code (e.g. `pc/ziso.py`), not for writing compatible files | README **[verified]** |
 
 ---
@@ -240,7 +240,7 @@
 | **GDX-X/PS2-OPL-CFG-Compatibility-Database** | GitHub | Ready-made OPL CFGs (`HDD/SLUS_219.55.cfg` …) with `Title=`, `$Compatibility=<bitmask>`, `Modes=2+1+3`, `$ConfigSource=`. **Fully machine-readable** | About 68–70 games (Games_List.txt). Updated Oct 2024. Used by PFS BatchKit Manager | **No LICENSE found** | **MVP "suggest modes"** for these games (show and let the user apply; never auto-write) |
 | Algol's Google Sheet ("OPL-BDM… Compatibility List") | `docs.google.com/spreadsheets/d/1MLEw7TIKvn9MCwd5Ptbqh2lkUj3lX6YQ2wPgLEx8Koo` | Tabs per device (HDD Int., ETH/SMB, USB iso & ul, DS3/BT, DS3/USB). Columns: TITLE, ID, Media, sizes, Device, **Compatibility modes** (e.g. `1`, `3+6`), DMA mode, VMC/IGR/GSM/PS2RD, Wide Screen, comments, revision ticks, date. Machine-readable via the Sheets CSV export **[untested]** | Last visible entry 30/12/2024. Mostly French comments | None stated | Phase 2. Ask the owner before ingesting |
 | ZSO list, MX4SIO list (Google Sheets) | Linked from the psx-place thread (403 to me) | Sheets | **[unverified]** | None | Phase 2 |
-| OPL-CL (`sx.sytes.net/oplcl`) | Linked from the OPL README; OPL's built-in "network update" targets it | Was per-(serial, device) HTTP records | Didn't respond during research **[unverified: likely dead]** | None | Don't use (private server) |
+| OPL-CL (`sx.sytes.net/oplcl`) | Linked from the OPL README; OPL's built-in "network update" targets it | Was per-(serial, device) HTTP records | Didn't respond during research; **alive on 2026-10-27**: HTTP 200, CFG fragments per (ID, device), records of 2015, launchers up to OPL 1.0.0 (research/21 §1.2) | None | Private server: at most the per-game GET OPL itself makes, on the owner's decision (CFG-3 plan, question 1); never scrape the list |
 | El_isra's list | Original GitHub Pages "dead"; mirror at `ps2homebrew.org/Open-PS2-Loader-Compatibility-list/` (didn't respond) | — | **[unverified]** | — | Probably superseded by the ps2homebrew repo |
 | "ps2wiki" | Not found | — | — | — | — |
 | ConsoleMods wiki / PS2TV list | ConsoleMods returned 403. It says OPL targets "~286 games" on the PS2TV internal list **[secondary]** | Wiki prose | — | Wiki license **[unverified]** | Reference only |
@@ -353,7 +353,7 @@
 | **ps2homebrew OPL compat list** | Per-game device/format/build/status reports | **Game ID** (`SCUS_973.99.md`) | None | GitHub | No LICENSE | **MVP** runtime fetch, labelled community data |
 | **GDX-X OPL CFG compat DB** | `$Compatibility` bitmask CFGs (about 70 games) | Game ID | None | GitHub | No LICENSE | **MVP** suggestions |
 | **Google Sheets OPL lists** | Modes, device, DMA, VMC/GSM/WS per game | Game ID | None | Sheets export | None stated | Phase 2 (ask owners) |
-| **OPL-CL** | Compat records | Game ID + device | None | — | Private, appears down | Don't use |
+| **OPL-CL** | Compat records | Game ID + device | None | — | Private, alive 2026-10-27 (research/21) | Owner's decision (CFG-3) |
 | **pcsx2_patches** | About 4.7k WS/NI/fix pnach files | **Serial + ELF XOR-CRC** | None | GitHub | **No LICENSE**; authors credited per file | Later: experimental convert (runtime) |
 | **CheatDevicePS2 DB** | Large RAW cheat compilation | Title only | None | — | Repo GPL-3; compilation provenance unclear | Later / maybe |
 | **Codetwink / GameHacking.org** | CB/AR codes | Title/ID | Account | — | **[unverified]** | Don't scrape |

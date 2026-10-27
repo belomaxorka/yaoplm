@@ -251,11 +251,66 @@ fn archives_stay_closed_and_odd_members_are_refused() {
     assert_eq!(
         skipped,
         [
-            (src("Broken.7z"), "unreadable".to_owned()),
+            // A file that is no 7z at all: damaged, in the user's words.
+            (src("Broken.7z"), "archiveDamaged".to_owned()),
             (
                 src("Chd.zip").join("Disc.chd"),
                 "unsupportedSource".to_owned()
             ),
         ]
     );
+}
+
+/// A download that stopped half way, or a file that is no archive at all,
+/// says so in the user's words (walkthrough finding 3): the path is the
+/// skipped entry's, not part of the reason, and the library's message is a
+/// detail after it.
+#[test]
+fn a_cut_or_broken_archive_says_so_without_the_path() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let host = VirtualSources::new();
+    let iso = Variant::Retail.build().to_vec();
+    let whole = zip(&[("Game.iso", &iso)], false).unwrap();
+    host.add_file(
+        src("Cut download.zip"),
+        Content::Bytes(whole[..whole.len() / 2].to_vec()),
+    );
+    host.add_file(
+        src("Not an archive.7z"),
+        Content::Bytes(b"hello ".repeat(100)),
+    );
+    let sources = ArchiveSources::new(&host);
+    let plan = plan_import(
+        &fs,
+        &sources,
+        &[src("Cut download.zip"), src("Not an archive.7z")],
+        &options(),
+    )
+    .unwrap();
+    assert_eq!(
+        plan.transactions
+            .iter()
+            .filter(|t| t.game.is_some())
+            .count(),
+        0
+    );
+    let codes: Vec<&str> = plan
+        .skipped
+        .iter()
+        .map(|s| s.reason.code.as_str())
+        .collect();
+    assert_eq!(
+        codes,
+        ["archiveDamaged", "archiveDamaged"],
+        "{:?}",
+        plan.skipped
+    );
+    for skipped in &plan.skipped {
+        let phrase = format!("{:?}", skipped.reason.phrase);
+        assert!(
+            !phrase.contains("download.zip") && !phrase.contains("archive.7z"),
+            "{phrase}"
+        );
+        assert!(phrase.contains("detail"), "{phrase}");
+    }
 }

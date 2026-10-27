@@ -1,8 +1,9 @@
 import { ImageDown, ImageOff, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import type { PlanView } from "@/api/generated/PlanView";
 import { Button } from "@/components/ui/button";
-import type { CoverSearchState } from "@/features/add/useCoverSearch";
+import { type CoverSearchState, countForPlan } from "@/features/add/useCoverSearch";
 import { JobLog, JobProgressLine } from "@/features/jobs/JobsPage";
 import { useJobs } from "@/jobs/context";
 import { useSimpleMode } from "@/settings/context";
@@ -14,10 +15,13 @@ import { useSimpleMode } from "@/settings/context";
  */
 export function CoverSearchPanel({
   search,
+  plan,
   onStop,
   onRetry,
 }: {
   search: CoverSearchState;
+  /** The plan on screen: the numbers count its games, not the search's. */
+  plan: PlanView | null;
   onStop: () => void;
   onRetry: () => void;
 }) {
@@ -25,6 +29,7 @@ export function CoverSearchPanel({
   const { jobs } = useJobs();
   const simple = useSimpleMode();
   const job = search.job === null ? undefined : jobs.find((j) => j.id === search.job);
+  const result = search.result && plan ? countForPlan(search.result, plan) : search.result;
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-sm" data-testid="cover-search" data-status={search.status}>
       <div className="flex flex-wrap items-center gap-2">
@@ -51,12 +56,12 @@ export function CoverSearchPanel({
           {job && <JobProgressLine job={job} />}
         </>
       )}
-      {search.status === "done" && search.result && (
+      {search.status === "done" && result && (
         <p data-testid="cover-search-result">
           {t("add.coversResult", {
-            found: search.result.found,
-            missing: search.result.missing,
-            present: search.result.present,
+            found: result.found,
+            missing: result.missing,
+            present: result.present,
           })}
         </p>
       )}
