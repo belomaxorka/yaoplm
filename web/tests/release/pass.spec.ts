@@ -614,16 +614,11 @@ for (const run of runs) {
       await expect(page.getByTestId("verify-dialog")).toBeVisible();
     });
     await pass.escape();
-    await pass.state("art-variants", async () => {
-      await page.getByTestId("art-download-COV").click();
-      await expect(page.getByTestId("art-variants-dialog")).toBeVisible();
-      await page.waitForTimeout(1500);
-    });
-    await pass.escape();
-    await pass.state("art-slot-menu", async () => {
+    await pass.state("art-choose", async () => {
       await page.getByTestId("art-slot-COV").scrollIntoViewIfNeeded();
-      await page.getByTestId("art-replace-COV").click();
-      await expect(page.getByRole("menu")).toBeVisible();
+      await page.getByTestId("art-choose-COV").click();
+      await expect(page.getByTestId("art-choose-dialog")).toBeVisible();
+      await page.waitForTimeout(1500);
     });
     await pass.escape();
     if (!run.simple) await pass.state("vmc-new", async () => {

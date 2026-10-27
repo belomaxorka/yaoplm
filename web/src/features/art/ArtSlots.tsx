@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { cn } from "cn";
-import { ClipboardPaste, FileImage, ImageDown, ImageOff, Loader2, Replace } from "lucide-react";
-import { type DragEvent, useEffect, useId, useState } from "react";
+import { ImageOff, ImagePlus, Loader2 } from "lucide-react";
+import { type DragEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ArtInput } from "@/api/generated/ArtInput";
@@ -9,15 +9,9 @@ import type { ArtType } from "@/api/generated/ArtType";
 import type { Game } from "@/api/generated/Game";
 import { artOf, artUrl } from "@/api/media";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { listenForDrops, pickImage } from "@/features/add/desktop";
 import { FolderBrowserDialog } from "@/features/add/FolderBrowserDialog";
-import { ArtVariantsDialog } from "@/features/art/ArtVariantsDialog";
+import { ArtChooseDialog } from "@/features/art/ArtChooseDialog";
 import { imageBlobToPng, readClipboardImage } from "@/features/art/clipboard";
 import { artAspect, artTypes, useFetchableTypes } from "@/features/art/kinds";
 import { PlanDialog } from "@/features/plan/PlanDialog";
@@ -26,8 +20,8 @@ import { useLoaderProfile } from "@/features/devices/useLoaderProfile";
 
 /**
  * The game's pictures, one slot per type OPL themes load (ART-2, ART-3,
- * SPEC §5.4.1): a preview, its size, and Download (to pick from what the
- * sources have), Replace (a file, the clipboard, a drop) and Delete. Every
+ * SPEC §5.4.1): a preview, its size, Choose… (one window: what the sources
+ * have, a file, the clipboard) and Delete; a drop on the slot too. Every
  * change is a plan the user confirms; a replaced or deleted file keeps a
  * copy in the device's backup folder.
  */
@@ -35,10 +29,9 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
   const { t } = useTranslation();
   const { profile: loaderProfile } = useLoaderProfile();
   const fetchable = useFetchableTypes();
-  // Every disabled Download has the same reason at any one time.
+  // Every slot the sources cannot fill says the same reason at any one time.
   const unavailable = fetchable.blocked?.text ?? t("art.noSourceForKind");
-  const unavailableId = useId();
-  const [variantsFor, setVariantsFor] = useState<ArtType | null>(null);
+  const [chooseFor, setChooseFor] = useState<ArtType | null>(null);
   const [browseFor, setBrowseFor] = useState<ArtType | null>(null);
   const [hovering, setHovering] = useState<ArtType | "any" | null>(null);
   const [busy, setBusy] = useState<ArtType | null>(null);
@@ -106,7 +99,6 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {artTypes.map((kind) => {
           const art = artOf(game, kind);
-          const canFetch = fetchable.types.has(kind);
           const kindName = t(`art.kinds.${kind}`);
           const onDrop = (event: DragEvent<HTMLLIElement>) => {
             event.preventDefault();
@@ -164,46 +156,16 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
               </div>
               <div className="flex gap-1">
                 <Button
-                  size="icon-sm"
+                  size="sm"
                   variant="outline"
-                  disabled={!canFetch}
-                  title={canFetch ? t("art.downloadKind") : unavailable}
-                  aria-label={t("art.downloadKindLabel", { kind: kindName })}
-                  aria-describedby={canFetch ? undefined : unavailableId}
-                  onClick={() => setVariantsFor(kind)}
-                  data-testid={`art-download-${kind}`}
+                  className="flex-1"
+                  aria-label={t("art.chooseKindLabel", { kind: kindName })}
+                  onClick={() => setChooseFor(kind)}
+                  data-testid={`art-choose-${kind}`}
                 >
-                  <ImageDown aria-hidden />
+                  <ImagePlus aria-hidden />
+                  {t("art.choose")}
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon-sm"
-                      variant="outline"
-                      title={t("art.replace")}
-                      aria-label={t("art.replaceKindLabel", { kind: kindName })}
-                      data-testid={`art-replace-${kind}`}
-                    >
-                      <Replace aria-hidden />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        if (desktop) void pickImage(t("art.imagesFilter")).then((path) => path && setArt(kind, { kind: "file", path }));
-                        else setBrowseFor(kind);
-                      }}
-                      data-testid={`art-from-file-${kind}`}
-                    >
-                      <FileImage aria-hidden />
-                      {desktop ? t("art.fromFile") : t("art.fromServerFile")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void paste(kind)}>
-                      <ClipboardPaste aria-hidden />
-                      {t("art.fromClipboard")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
                 {art && (
                   <Button
                     size="icon-sm"
@@ -223,25 +185,28 @@ export function ArtSlots({ game, root }: { game: Game; root: string }) {
         })}
       </ul>
       <p className="text-xs text-muted-foreground">{desktop ? t("art.dropHintDesktop") : t("art.dropHintBrowser")}</p>
-      {/* Read as the description of a disabled Download, not on its own. */}
-      <span id={unavailableId} hidden>
-        {unavailable}
-      </span>
       {notice && (
         <p className="text-xs text-destructive" role="alert">
           {notice}
         </p>
       )}
-      {variantsFor && (
-        <ArtVariantsDialog
+      {chooseFor && (
+        <ArtChooseDialog
           root={root}
           game={game}
-          kind={variantsFor}
+          kind={chooseFor}
+          canFetch={fetchable.types.has(chooseFor)}
+          unavailable={unavailable}
           open
-          onOpenChange={(open) => !open && setVariantsFor(null)}
+          onOpenChange={(open) => !open && setChooseFor(null)}
           onPick={(variant) =>
-            setArt(variantsFor, { kind: "bytes", data: variant.png, name: `${variant.source} (${variant.origin})` })
+            setArt(chooseFor, { kind: "bytes", data: variant.png, name: `${variant.source} (${variant.origin})` })
           }
+          onFile={() => {
+            if (desktop) void pickImage(t("art.imagesFilter")).then((path) => path && setArt(chooseFor, { kind: "file", path }));
+            else setBrowseFor(chooseFor);
+          }}
+          onClipboard={() => void paste(chooseFor)}
         />
       )}
       <FolderBrowserDialog

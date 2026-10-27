@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { Ban, Check, Loader2 } from "lucide-react";
+import { Ban, Check, ClipboardPaste, FileImage, Loader2 } from "lucide-react";
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -39,35 +39,95 @@ function fileName(origin: string): string {
 }
 
 /**
- * "Download" on a picture slot (ART-2, SPEC §5.4.1): every picture of the
- * type the sources have for the game, already resized, to pick from; the
- * first is preselected. The pick goes on as a plan to confirm.
+ * "Choose…" on a picture slot (ART-2, ART-3, SPEC §5.4.1; release pass
+ * finding 2.6): one window with what the sources have for the game, already
+ * resized and searched on opening, and below it the user's own picture (a
+ * file, the server's folders, the clipboard). Every path goes on as the
+ * same plan to confirm. The search is the card's own business, not a job
+ * the user follows (`JobKind::FindArt` stays out of the jobs list).
  */
-export function ArtVariantsDialog({
+export function ArtChooseDialog({
   root,
   game,
   kind,
+  canFetch,
+  unavailable,
   open,
   onOpenChange,
   onPick,
+  onFile,
+  onClipboard,
 }: {
   root: string;
   game: Game;
   kind: ArtType;
+  /** Whether a source that is on has this type; otherwise `unavailable` says why. */
+  canFetch: boolean;
+  unavailable: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (variant: ArtVariant) => void;
+  onFile: () => void;
+  onClipboard: () => void;
 }) {
   const { t } = useTranslation();
+  const close = () => onOpenChange(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl" data-testid="art-variants-dialog">
+      <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl" data-testid="art-choose-dialog">
         <DialogHeader>
           <DialogTitle>{t("art.variantsTitle", { kind: t(`art.kinds.${kind}`), title: game.title })}</DialogTitle>
-          <DialogDescription>{t("art.variantsDescription")}</DialogDescription>
+          <DialogDescription>{t("art.chooseDescription")}</DialogDescription>
         </DialogHeader>
-        {/* Mounted only while open, so every opening asks again. */}
-        {open && <VariantsBody root={root} game={game} kind={kind} onClose={() => onOpenChange(false)} onPick={onPick} />}
+        <div className="relative flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
+          <section className="flex min-h-0 flex-col gap-2" aria-label={t("art.fromSources")}>
+            <h3 className="text-sm font-medium">{t("art.fromSources")}</h3>
+            {/* Mounted only while open, so every opening asks again. */}
+            {open && canFetch ? (
+              <VariantsBody root={root} game={game} kind={kind} onClose={close} onPick={onPick} />
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="art-choose-no-source">
+                {unavailable}
+              </p>
+            )}
+          </section>
+          <section className="flex flex-col gap-2" aria-label={t("art.ownPicture")}>
+            <h3 className="text-sm font-medium">{t("art.ownPicture")}</h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  close();
+                  onFile();
+                }}
+                data-testid={`art-from-file-${kind}`}
+              >
+                <FileImage aria-hidden />
+                {t("art.fromFile")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  close();
+                  onClipboard();
+                }}
+                data-testid={`art-from-clipboard-${kind}`}
+              >
+                <ClipboardPaste aria-hidden />
+                {t("art.fromClipboard")}
+              </Button>
+            </div>
+          </section>
+        </div>
+        {!(open && canFetch) && (
+          <DialogFooter>
+            <Button variant="outline" onClick={close}>
+              {t("common.close")}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -195,18 +255,19 @@ function VariantsBody({
           ))}
         </RadioGroup>
       )}
-      <DialogFooter>
+      <div className="flex flex-wrap justify-end gap-2">
         {running && jobId !== null ? (
-          <Button variant="outline" onClick={() => void cancel(jobId)}>
+          <Button variant="outline" size="sm" onClick={() => void cancel(jobId)}>
             <Ban aria-hidden />
             {t("jobs.cancel")}
           </Button>
         ) : (
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" size="sm" onClick={onClose}>
             {t("common.close")}
           </Button>
         )}
         <Button
+          size="sm"
           disabled={!pick}
           onClick={() => {
             if (!pick) return;
@@ -217,7 +278,7 @@ function VariantsBody({
         >
           {t("art.useVariant")}
         </Button>
-      </DialogFooter>
+      </div>
     </>
   );
 }
