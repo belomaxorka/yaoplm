@@ -943,7 +943,8 @@
       "front covers by serial (COV)": "Front covers by game ID",
       "every picture type by game ID, one picture at a time from the backup": "Every picture type by game ID",
       "covers, screenshots, title screens and logos by Redump name": "Covers, screenshots, title screens and logos by Redump name",
-      "every picture type by serial and region, in builds with a developer key": "Every picture type by serial and region (needs a developer key)"
+      "every picture type by serial and region, in builds with a developer key": "Every picture type by serial and region (needs a developer key)",
+      "gameInfo": "Developer, publisher, release date, player count and genre, shown and written into CFG by a plan"
     },
     "loading": "Loading…",
     "unavailable": "Unavailable",

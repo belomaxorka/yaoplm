@@ -975,7 +975,8 @@
       "front covers by serial (COV)": "Лицевые обложки по ID игры",
       "every picture type by game ID, one picture at a time from the backup": "Все типы картинок по ID игры",
       "covers, screenshots, title screens and logos by Redump name": "Обложки, скриншоты, титульные экраны и логотипы по имени Redump",
-      "every picture type by serial and region, in builds with a developer key": "Все типы картинок по серийному номеру и региону (нужен ключ разработчика)"
+      "every picture type by serial and region, in builds with a developer key": "Все типы картинок по серийному номеру и региону (нужен ключ разработчика)",
+      "gameInfo": "Разработчик, издатель, дата выхода, число игроков и жанр: показываются и пишутся в CFG планом"
     },
     "loading": "Загрузка…",
     "unavailable": "Недоступно",
