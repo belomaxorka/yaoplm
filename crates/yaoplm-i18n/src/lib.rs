@@ -145,6 +145,12 @@ impl From<Phrase> for Param {
 }
 
 /// Every string of the catalogue under its dotted key.
+/// The English text of any key of the catalogue (`genre.action`), for
+/// values the crates print as words rather than as phrases.
+pub fn text(key: &str) -> Option<&'static str> {
+    catalogue().get(key).map(String::as_str)
+}
+
 fn catalogue() -> &'static HashMap<String, String> {
     static CATALOGUE: OnceLock<HashMap<String, String>> = OnceLock::new();
     CATALOGUE.get_or_init(|| {

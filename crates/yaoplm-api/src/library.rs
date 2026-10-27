@@ -441,6 +441,207 @@ pub struct ZsoHeader {
     pub align: u8,
 }
 
+/// Where a game-info value comes from (META-3, ADR-0050).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum InfoSource {
+    /// libretro-database's developer DAT: PSXDataCenter's facts for the
+    /// serial itself.
+    Libretro,
+    /// The Wikidata item of the game, which covers every regional release.
+    Wikidata,
+}
+
+impl From<core::game_info::InfoSource> for InfoSource {
+    fn from(source: core::game_info::InfoSource) -> Self {
+        match source {
+            core::game_info::InfoSource::Libretro => Self::Libretro,
+            core::game_info::InfoSource::Wikidata => Self::Wikidata,
+        }
+    }
+}
+
+/// The genre vocabulary (ADR-0050); the values are the i18n keys
+/// `genre.<value>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "kebab-case")]
+pub enum Genre {
+    Action,
+    ActionAdventure,
+    Adventure,
+    Platform,
+    Shooter,
+    Fighting,
+    BeatEmUp,
+    Racing,
+    Sports,
+    Rpg,
+    Strategy,
+    Simulation,
+    Puzzle,
+    Music,
+    Party,
+    Board,
+    Card,
+    Casino,
+    Mahjong,
+    Quiz,
+    Horror,
+    VisualNovel,
+    Educational,
+    Pinball,
+    Other,
+}
+
+impl From<core::game_info::Genre> for Genre {
+    fn from(genre: core::game_info::Genre) -> Self {
+        use core::game_info::Genre as G;
+        match genre {
+            G::Action => Self::Action,
+            G::ActionAdventure => Self::ActionAdventure,
+            G::Adventure => Self::Adventure,
+            G::Platform => Self::Platform,
+            G::Shooter => Self::Shooter,
+            G::Fighting => Self::Fighting,
+            G::BeatEmUp => Self::BeatEmUp,
+            G::Racing => Self::Racing,
+            G::Sports => Self::Sports,
+            G::Rpg => Self::Rpg,
+            G::Strategy => Self::Strategy,
+            G::Simulation => Self::Simulation,
+            G::Puzzle => Self::Puzzle,
+            G::Music => Self::Music,
+            G::Party => Self::Party,
+            G::Board => Self::Board,
+            G::Card => Self::Card,
+            G::Casino => Self::Casino,
+            G::Mahjong => Self::Mahjong,
+            G::Quiz => Self::Quiz,
+            G::Horror => Self::Horror,
+            G::VisualNovel => Self::VisualNovel,
+            G::Educational => Self::Educational,
+            G::Pinball => Self::Pinball,
+            G::Other => Self::Other,
+        }
+    }
+}
+
+impl Genre {
+    /// The code in the data file and the i18n key suffix.
+    pub fn code(self) -> &'static str {
+        core::game_info::Genre::ALL
+            .into_iter()
+            .find(|g| Genre::from(*g) == self)
+            .map_or("other", core::game_info::Genre::code)
+    }
+}
+
+/// A text value with its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TextFact {
+    pub value: String,
+    pub source: InfoSource,
+}
+
+/// A number with its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NumberFact {
+    pub value: u32,
+    pub source: InfoSource,
+}
+
+/// Genres with their source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GenresFact {
+    pub value: Vec<Genre>,
+    pub source: InfoSource,
+}
+
+/// The Wikidata item of the game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WikidataLink {
+    /// `Q149106`.
+    pub qid: String,
+    pub url: String,
+    /// `true` when the item's PlayStation ID is this serial; otherwise the
+    /// item was matched by title.
+    pub by_id: bool,
+    pub label_en: Option<String>,
+    pub label_ru: Option<String>,
+    /// Wikipedia article titles, when the game has an article.
+    pub article_en: Option<String>,
+    pub article_ru: Option<String>,
+}
+
+/// What the bundled game info table says about a game (META-3): each
+/// value with its source, the serial's own facts before the title's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoView {
+    /// `SLUS-20062`.
+    pub serial: String,
+    pub developer: Option<TextFact>,
+    pub publisher: Option<TextFact>,
+    /// `2001-10-23`, `2001-10` or `2001`.
+    pub released: Option<TextFact>,
+    pub players: Option<NumberFact>,
+    pub genres: Option<GenresFact>,
+    pub wikidata: Option<WikidataLink>,
+}
+
+impl From<&core::game_info::GameInfo> for GameInfoView {
+    fn from(info: &core::game_info::GameInfo) -> Self {
+        let text = |fact: Option<core::game_info::Sourced<String>>| {
+            fact.map(|f| TextFact {
+                value: f.value,
+                source: f.source.into(),
+            })
+        };
+        Self {
+            serial: info.serial.clone(),
+            developer: text(info.developer()),
+            publisher: text(info.publisher()),
+            released: info.released().map(|f| TextFact {
+                value: f.value.iso(),
+                source: f.source.into(),
+            }),
+            players: info.players().map(|f| NumberFact {
+                value: f.value,
+                source: f.source.into(),
+            }),
+            genres: info.genres().map(|f| GenresFact {
+                value: f.value.into_iter().map(Genre::from).collect(),
+                source: f.source.into(),
+            }),
+            wikidata: info.wikidata.as_ref().map(|w| WikidataLink {
+                qid: w.qid.clone(),
+                url: w.url(),
+                by_id: w.matched_by == core::game_info::MatchedBy::Id,
+                label_en: w.label_en.clone(),
+                label_ru: w.label_ru.clone(),
+                article_en: w.article_en.clone(),
+                article_ru: w.article_ru.clone(),
+            }),
+        }
+    }
+}
+
+/// The bundled game info for `id`, if the table knows it.
+pub fn game_info_view(id: &str) -> Option<GameInfoView> {
+    core::game_info::known_info(id).map(GameInfoView::from)
+}
+
 /// Everything YAOPLM can tell about one disc image (`yaoplm info`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -469,6 +670,10 @@ pub struct ImageDetails {
     pub warnings: Vec<Notice>,
     /// The title the bundled database gives the ID (META-1).
     pub known_title: Option<String>,
+    /// What the bundled game info table says about the ID (META-3).
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<GameInfoView>,
     /// How the file lies on a FAT32 or exFAT device (IMP-7b); `null` when
     /// the file is elsewhere.
     #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -520,6 +725,7 @@ impl From<&core::ImageInfo> for ImageDetails {
                 .as_ref()
                 .ok()
                 .and_then(|id| core::titles::known_title(id)),
+            info: info.startup.as_ref().ok().and_then(|id| game_info_view(id)),
             fragments: None,
         }
     }

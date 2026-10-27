@@ -184,6 +184,22 @@ pub struct TitlesInfo {
     pub entries: u32,
 }
 
+/// The bundled game info table (META-3) for the About screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoDbInfo {
+    pub built: String,
+    /// Version string of the libretro developer DAT.
+    pub libretro_version: String,
+    /// ISO date the Wikidata extract was fetched.
+    pub wikidata_fetched: String,
+    /// Serials with any record.
+    pub entries: u32,
+    pub with_facts: u32,
+    pub with_wikidata: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -197,6 +213,7 @@ pub struct Attribution {
     /// Cover sources, fetched on request.
     pub art: Vec<SourceEntry>,
     pub titles: TitlesInfo,
+    pub game_info: GameInfoDbInfo,
 }
 
 #[derive(Deserialize)]
@@ -234,6 +251,18 @@ pub fn attribution() -> Result<Attribution, ApiError> {
             built: info.built.clone(),
             libretro_version: info.libretro_version.clone(),
             entries: u32::try_from(info.entries).unwrap_or(u32::MAX),
+        },
+        game_info: {
+            let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+            let info = yaoplm_core::game_info::database().info();
+            GameInfoDbInfo {
+                built: info.built.clone(),
+                libretro_version: info.libretro_version.clone(),
+                wikidata_fetched: info.wikidata_fetched.clone(),
+                entries: count(info.entries),
+                with_facts: count(info.with_facts),
+                with_wikidata: count(info.with_wikidata),
+            }
         },
     })
 }

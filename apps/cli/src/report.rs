@@ -11,13 +11,14 @@ use yaoplm_api::devices::{
 };
 use yaoplm_api::jobs::{ExecutionReport, JobLogEntry, TxOutcome};
 use yaoplm_api::library::{
-    Fragments, GameFormat, ImageDetails, Library, LoaderProfile, Media, NameFormat, Notice,
-    Platform,
+    Fragments, GameFormat, GameInfoView, ImageDetails, InfoSource, Library, LoaderProfile, Media,
+    NameFormat, Notice, Platform,
 };
 use yaoplm_api::loaders::{
     ImpactGame, LoaderBootHint, LoaderCatalog, LoaderChecksumSource, LoaderFile, LoaderImpact,
     LoaderLauncher, LoaderOffer, LoaderPublisher, LoaderReleaseList, LoaderTarget,
 };
+use yaoplm_api::phrase::english;
 use yaoplm_api::plans::{NoticeLevel, PlanNotice, PlanStep, PlanView, RemovalKind, StepOp};
 use yaoplm_api::settings::{CfgView, VmcCard};
 use yaoplm_api::verify::{
@@ -189,6 +190,47 @@ pub fn library(lib: &Library) -> String {
     out
 }
 
+/// The bundled game info (META-3), each value with its source.
+fn game_info(out: &mut String, info: &GameInfoView) {
+    let source = |s: InfoSource| {
+        let key = match s {
+            InfoSource::Libretro => "game.infoSource.libretro",
+            InfoSource::Wikidata => "game.infoSource.wikidata",
+        };
+        english(key).unwrap_or(key)
+    };
+    let line = |out: &mut String, label: &str, value: &str, from: InfoSource| {
+        let _ = writeln!(out, "{label:<16}{value} ({})", source(from));
+    };
+    if let Some(fact) = &info.developer {
+        line(out, "Developer:", &fact.value, fact.source);
+    }
+    if let Some(fact) = &info.publisher {
+        line(out, "Publisher:", &fact.value, fact.source);
+    }
+    if let Some(fact) = &info.released {
+        line(out, "Released:", &fact.value, fact.source);
+    }
+    if let Some(fact) = &info.players {
+        line(out, "Players:", &fact.value.to_string(), fact.source);
+    }
+    if let Some(fact) = &info.genres {
+        let labels: Vec<&str> = fact
+            .value
+            .iter()
+            .map(|g| english(&format!("genre.{}", g.code())).unwrap_or(g.code()))
+            .collect();
+        line(out, "Genre:", &labels.join(", "), fact.source);
+    }
+    if let Some(wd) = &info.wikidata {
+        let mut value = wd.url.clone();
+        if let Some(article) = &wd.article_en {
+            let _ = write!(value, " (Wikipedia: {article})");
+        }
+        let _ = writeln!(out, "{:<16}{value}", "Wikidata:");
+    }
+}
+
 pub fn image(info: &ImageDetails) -> String {
     let mut out = String::new();
     let line = |out: &mut String, label: &str, value: &str| {
@@ -216,6 +258,9 @@ pub fn image(info: &ImageDetails) -> String {
             line(&mut out, "Game ID:", id);
             if let Some(title) = &info.known_title {
                 line(&mut out, "Known as:", title);
+            }
+            if let Some(facts) = &info.info {
+                game_info(&mut out, facts);
             }
         }
         None => line(

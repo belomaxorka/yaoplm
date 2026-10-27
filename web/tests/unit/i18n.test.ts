@@ -297,6 +297,8 @@ describe("locales", () => {
       ["DriveKind", ["devices.kind"]],
       ["PartitionTable", ["devices.tables"]],
       ["DeviceMode", ["devices.modes", "devices.modeOptions"]],
+      ["Genre", ["genre"]],
+      ["InfoSource", ["game.infoSource"]],
     ];
     for (const [type, prefixes] of keyed) {
       const values = unionValues(generatedType(type));

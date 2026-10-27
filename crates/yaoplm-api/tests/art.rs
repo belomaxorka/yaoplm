@@ -506,10 +506,25 @@ fn source_settings_cache_and_attribution() {
     assert_eq!(about["license"], "GPL-3.0-or-later");
     assert_eq!(about["version"], yaoplm_api::VERSION);
     let data = about["data"].as_array().unwrap();
-    assert_eq!(data.len(), 2);
-    assert_eq!(data[0]["id"], "pcsx2");
+    assert_eq!(
+        data.iter()
+            .map(|d| d["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["pcsx2", "libretro", "libretro-developer", "wikidata"]
+    );
     assert_eq!(data[0]["license"], "GPL-3.0");
     assert_eq!(data[1]["license"], "CC BY-SA 4.0");
+    assert_eq!(data[2]["license"], "CC BY-SA 4.0");
+    assert_eq!(data[3]["license"], "CC0 1.0");
+    // The game info table (META-3) reports its build next to the titles.
+    assert!(about["gameInfo"]["entries"].as_u64().unwrap() > 8_000);
+    assert!(about["gameInfo"]["withFacts"].as_u64().unwrap() > 4_000);
+    assert!(
+        about["gameInfo"]["wikidataFetched"]
+            .as_str()
+            .unwrap()
+            .starts_with("20")
+    );
     let art = about["art"].as_array().unwrap();
     assert_eq!(
         art.iter()

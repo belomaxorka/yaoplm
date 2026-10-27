@@ -343,7 +343,11 @@
     "convert": "Convert…",
     "verify": "Check dump",
     "dump": "Dump",
-    "dumpUnchecked": "Not checked yet"
+    "dumpUnchecked": "Not checked yet",
+    "infoSource": {
+      "libretro": "PlayStation DataCenter via libretro-database",
+      "wikidata": "Wikidata"
+    }
   },
   "plan": {
     "stepsToggle": "Steps: {{count}}",
@@ -948,7 +952,9 @@
     "loaderMirror": "Release mirror",
     "loaderMirrorHint": "A folder with GitHub’s release layout, for installing without the network; empty: GitHub",
     "offerLoaderUpdates": "Offer loader updates by themselves",
-    "offerLoaderUpdatesHint": "Once per device and version."
+    "offerLoaderUpdatesHint": "Once per device and version.",
+    "gameInfoDb": "Game info",
+    "gameInfoDbState": "{{count}} game IDs with developer, publisher, release date, players or genre, built {{built}} (libretro-database {{dat}}, Wikidata {{wikidata}})"
   },
   "languages": {
     "en": "English",
@@ -1452,5 +1458,32 @@
     "save": "Save…",
     "reset": "Undo changes",
     "cardReplacing": "{{name}} (a new {{size}} MiB card in its place)"
+  },
+  "genre": {
+    "action": "Action",
+    "action-adventure": "Action-adventure",
+    "adventure": "Adventure",
+    "platform": "Platformer",
+    "shooter": "Shooter",
+    "fighting": "Fighting",
+    "beat-em-up": "Beat ’em up",
+    "racing": "Racing",
+    "sports": "Sports",
+    "rpg": "RPG",
+    "strategy": "Strategy",
+    "simulation": "Simulation",
+    "puzzle": "Puzzle",
+    "music": "Music and rhythm",
+    "party": "Party and mini-games",
+    "board": "Board game",
+    "card": "Card game",
+    "casino": "Casino",
+    "mahjong": "Mahjong",
+    "quiz": "Quiz",
+    "horror": "Horror",
+    "visual-novel": "Visual novel",
+    "educational": "Educational",
+    "pinball": "Pinball",
+    "other": "Other"
   }
 }

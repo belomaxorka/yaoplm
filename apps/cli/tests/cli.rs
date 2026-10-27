@@ -140,6 +140,29 @@ fn info_describes_an_image() {
     let text = stdout(&output);
     assert!(text.contains("Game ID:        SLUS_200.62"), "{text}");
     assert!(text.contains("old style"), "{text}");
+    // The bundled game info (META-3), each value with its source.
+    assert!(
+        text.contains("Developer:      DMA Design (PlayStation DataCenter via libretro-database)"),
+        "{text}"
+    );
+    assert!(text.contains("Released:       2001-10-23 ("), "{text}");
+    assert!(text.contains("Genre:          Action ("), "{text}");
+    assert!(
+        text.contains("Wikidata:       https://www.wikidata.org/wiki/Q149106 (Wikipedia: Grand Theft Auto III)"),
+        "{text}"
+    );
+
+    let json = yaoplm()
+        .args(["info", "--json"])
+        .arg(dir.path().join("CD/SLUS_200.62.GTA III.iso"))
+        .output()
+        .unwrap();
+    let answer: serde_json::Value = serde_json::from_str(stdout(&json)).unwrap();
+    assert_eq!(answer["info"]["developer"]["value"], "DMA Design");
+    assert_eq!(answer["info"]["developer"]["source"], "libretro");
+    assert_eq!(answer["info"]["players"]["value"], 1);
+    assert_eq!(answer["info"]["genres"]["value"][0], "action");
+    assert_eq!(answer["info"]["wikidata"]["qid"], "Q149106");
 
     let hidden = yaoplm()
         .args(["info", "--json"])

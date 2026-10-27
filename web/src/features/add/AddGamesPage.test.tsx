@@ -98,6 +98,7 @@ class FakeCore {
             { id: "libretro", name: "libretro", url: "", license: null, licenseUrl: null, credits: "", fields: null, use: "", kinds: ["COV", "SCR", "LGO"], available: true },
           ],
           titles: { built: "2026-10-01", libretroVersion: "1", entries: 1 },
+          gameInfo: { built: "2026-10-01", libretroVersion: "1", wikidataFetched: "2026-10-01", entries: 1, withFacts: 1, withWikidata: 1 },
         };
       case "PlanImport":
         if (request.covers && this.holdPlans) await new Promise<void>((resolve) => this.#held.push(resolve));
