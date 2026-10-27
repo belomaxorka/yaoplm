@@ -175,7 +175,8 @@
   - [x] исследование источников (research/23): ключи и отрисовка в OPL и форках, база Tom-Bruise как текст ScreenScraper, факты libretro и Wikidata, описания Википедии, выборка из 40 игр — PR #84;
   - [x] решения владельца и ADR-0050, план по PR — PR #85;
   - [x] шаг 1, данные: `scripts/build-game-info.py` → `data/game-info.json.gz` (факты libretro для 4 718 серийников, снимок Wikidata для 6 085, словарь жанров), `yaoplm-core::game_info`, `yaoplm info` со сведениями и источниками, «О программе» — PR #86;
-  - [ ] шаги 2–6 плана: запись в CFG и `Title` при переименовании, план добавления, сетевые источники, страница игры, консоль.
+  - [x] шаг 2, ядро и CLI: `plan_game_info` (ключи `Title`, `Genre`, `Release`, `Developer`, `Publisher`, `Players` + `PlayersText`, описание по выбору с `DescriptionSource`, правила CFG-2 и копия), `Title` при переименовании, `PlanGameInfo`, `Game.info`, `yaoplm cfg --info/--write-info`, чек-лист консоли `testing/m6-meta-3-console-checklist.md` — PR #87;
+  - [ ] шаги 3–6 плана: план добавления, сетевые источники, страница игры, консоль.
 - [ ] Установка и обновление форков (RiptOPL пакетом `APPS/APP_RIPTOPL/`, wOPL, форк с MMCE) и игры на SD эмулятора карты памяти (LDR-1, LDR-3, LDR-4 для форков).
 - [ ] SD эмулятора карты памяти, PR 2–6 (ADR-0048, план — `docs/plans/emulator-sd.md`; решение владельца продукта 2026-10-26):
   - [x] чтение файловой системы карты PS2 и PS1: что лежит в загрузочных картах (FreeMcBoot, PS2BBL, образы SD Builder, версии OPL), предупреждение о неверных именах каналов, сверка с mymcplusplus, fuzz-цель (PR #56);
