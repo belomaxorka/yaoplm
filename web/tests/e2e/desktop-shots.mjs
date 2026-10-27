@@ -56,8 +56,8 @@ if (!loaded) process.exitCode = 1;
 await shot("library");
 
 // Picture sets come from native pickers or a drop on the desktop (ART-5).
-await page.getByTestId("library-more").click();
-await page.getByTestId("import-pictures").click();
+await page.getByTestId("library-pictures").click();
+await page.getByTestId("pictures-from-set").click();
 await page.waitForSelector('[data-testid="art-import-dialog"]');
 await page.waitForTimeout(400);
 await shot("art-import");

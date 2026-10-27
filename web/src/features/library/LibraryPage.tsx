@@ -2,17 +2,18 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "cn";
 import {
   AlertTriangle,
-  ArrowDownAZ,
-  ArrowUpZA,
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   Disc3,
   FolderInput,
   FolderPlus,
   HardDrive,
   ImageDown,
-  ImageOff,
+  Images,
   LayoutGrid,
   List,
+  ListFilter,
   Plus,
   RefreshCw,
   Replace,
@@ -33,12 +34,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Facts } from "@/components/ui/facts";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
@@ -46,13 +54,20 @@ import { ArtImportDialog } from "@/features/art/ArtImportDialog";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { CoverThumb, GameCover } from "@/features/library/GameCover";
 import {
+  activeFilterCount,
   applyFilters,
   effectiveFilters,
   filtersToParams,
+  formatKinds,
+  fromSortChoice,
   type LibraryFilters,
+  mediaKinds,
   parseFilters,
+  rememberLibraryQuery,
+  type SortChoice,
+  sortChoice,
+  sortChoices,
   type SortKey,
-  sortKeys,
 } from "@/features/library/filters";
 import { GRID_GAP, GRID_MIN_COLUMN, type GridLayout, gridLayout } from "@/features/library/gridLayout";
 import { useLibrary } from "@/features/library/useLibrary";
@@ -168,10 +183,14 @@ function LibraryView({
   const initFlow = usePlan();
   const searchRef = useRef<HTMLInputElement>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
+  const [picturesOpen, setPicturesOpen] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+
+  // The game card comes back to these filters, also after a deletion.
+  useEffect(() => rememberLibraryQuery(params.toString()), [params]);
 
   // "/" focuses the search box, like most lists.
   useEffect(() => {
@@ -202,43 +221,8 @@ function LibraryView({
               className="pl-8"
             />
           </div>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            spacing={0}
-            value={filters.media}
-            onValueChange={(value) => value && setFilters({ media: value as LibraryFilters["media"] })}
-            aria-label={t("library.filterMedia")}
-          >
-            <ToggleGroupItem value="all">{t("library.all")}</ToggleGroupItem>
-            <ToggleGroupItem value="CD">CD</ToggleGroupItem>
-            <ToggleGroupItem value="DVD">DVD</ToggleGroupItem>
-          </ToggleGroup>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            spacing={0}
-            value={filters.format}
-            onValueChange={(value) => value && setFilters({ format: value as LibraryFilters["format"] })}
-            aria-label={t("library.filterFormat")}
-          >
-            <ToggleGroupItem value="all">{t("library.all")}</ToggleGroupItem>
-            <ToggleGroupItem value="ISO">ISO</ToggleGroupItem>
-            <ToggleGroupItem value="ZSO">ZSO</ToggleGroupItem>
-            <ToggleGroupItem value="UL">UL</ToggleGroupItem>
-          </ToggleGroup>
-          {!simple && (
-            <AdvancedFilters
-              filters={filters}
-              setFilters={setFilters}
-              withWarnings={withWarnings}
-              withoutCover={withoutCover}
-              view={view}
-              setView={setView}
-            />
-          )}
+          <FilterMenu filters={shown} setFilters={setFilters} simple={simple} withWarnings={withWarnings} withoutCover={withoutCover} />
+          {!simple && <SortAndView filters={filters} setFilters={setFilters} view={view} setView={setView} />}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {!simple && (
               <Tooltip>
@@ -259,10 +243,6 @@ function LibraryView({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setImportOpen(true)} data-testid="import-pictures">
-                    <FolderInput aria-hidden />
-                    {t("library.importPictures")}
-                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setVerifyOpen(true)} data-testid="verify-dumps">
                     <ShieldCheck aria-hidden />
                     {t("library.verifyDumps")}
@@ -279,15 +259,17 @@ function LibraryView({
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {/* One action with two sources (release pass 2.5); the simple mode
+                goes straight to the sources, as before (ADR-0034). */}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setArtOpen(true)}
+              onClick={() => (simple ? setArtOpen(true) : setPicturesOpen(true))}
               disabled={!data || data.games.length === 0}
-              data-testid="download-covers"
+              data-testid="library-pictures"
             >
-              <ImageDown aria-hidden />
-              {t("library.downloadCovers")}
+              <Images aria-hidden />
+              {t("library.pictures")}
             </Button>
             <Button asChild size="sm">
               <Link to="/library/add">
@@ -361,6 +343,18 @@ function LibraryView({
         )}
       </div>
       <PlanDialog flow={initFlow} />
+      <PicturesDialog
+        open={picturesOpen}
+        onOpenChange={setPicturesOpen}
+        onSources={() => {
+          setPicturesOpen(false);
+          setArtOpen(true);
+        }}
+        onSet={() => {
+          setPicturesOpen(false);
+          setImportOpen(true);
+        }}
+      />
       {data && <ArtFetchDialog root={root} games={data.games} open={artOpen} onOpenChange={setArtOpen} quick={simple} />}
       <ArtImportDialog root={root} open={importOpen} onOpenChange={setImportOpen} />
       {data && <VerifyDialog root={root} games={data.games} open={verifyOpen} onOpenChange={setVerifyOpen} />}
@@ -389,7 +383,7 @@ function LibraryView({
       )}
       {/* The first scan: the shape of the grid, not an empty page that jumps. */}
       {isPending && !data && <GridSkeleton />}
-      {games.length > 0 && (shownView === "grid" ? <GameGrid games={games} /> : <GameTable games={games} />)}
+      {games.length > 0 && (shownView === "grid" ? <GameGrid games={games} /> : <GameTable games={games} filters={shown} setFilters={setFilters} />)}
 
       {data && (
         <Dialog open={skippedOpen} onOpenChange={setSkippedOpen}>
@@ -415,67 +409,128 @@ function LibraryView({
   );
 }
 
-/** Counter filters, sorting and the view: advanced mode only (UI-4). */
-function AdvancedFilters({
+/**
+ * One "Filter" menu with boxes (LIB-5, release pass 2.5): the disc types and
+ * the formats in both modes, the counter filters in the advanced mode only
+ * (UI-4). The button counts the ticked boxes; a box keeps the menu open for
+ * the next one.
+ */
+function FilterMenu({
   filters,
   setFilters,
+  simple,
   withWarnings,
   withoutCover,
+}: {
+  filters: LibraryFilters;
+  setFilters: (patch: Partial<LibraryFilters>) => void;
+  simple: boolean;
+  withWarnings: number;
+  withoutCover: number;
+}) {
+  const { t } = useTranslation();
+  const count = activeFilterCount(filters);
+  const toggle = <T extends string>(list: readonly T[], item: T, on: boolean): T[] =>
+    on ? [...list.filter((x) => x !== item), item] : list.filter((x) => x !== item);
+  const keepOpen = (event: Event) => event.preventDefault();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={count > 0 ? t("library.filterOn", { count }) : t("library.filter")}
+          data-testid="library-filter"
+        >
+          <ListFilter aria-hidden />
+          {t("library.filter")}
+          {count > 0 && (
+            <Badge variant="secondary" className="px-1.5 tabular-nums" data-testid="library-filter-count">
+              {count}
+            </Badge>
+          )}
+          <ChevronDown aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>{t("library.filterMedia")}</DropdownMenuLabel>
+        {mediaKinds.map((media) => (
+          <DropdownMenuCheckboxItem
+            key={media}
+            checked={filters.media.includes(media)}
+            onCheckedChange={(on) => setFilters({ media: toggle(filters.media, media, on) })}
+            onSelect={keepOpen}
+            data-testid={`filter-media-${media}`}
+          >
+            {media}
+          </DropdownMenuCheckboxItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>{t("library.filterFormat")}</DropdownMenuLabel>
+        {formatKinds.map((format) => (
+          <DropdownMenuCheckboxItem
+            key={format}
+            checked={filters.format.includes(format)}
+            onCheckedChange={(on) => setFilters({ format: toggle(filters.format, format, on) })}
+            onSelect={keepOpen}
+            data-testid={`filter-format-${format}`}
+          >
+            {format}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {!simple && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={filters.warnings}
+              onCheckedChange={(warnings) => setFilters({ warnings })}
+              onSelect={keepOpen}
+              data-testid="filter-warnings"
+            >
+              {t("library.warnings", { count: withWarnings })}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.noCover}
+              onCheckedChange={(noCover) => setFilters({ noCover })}
+              onSelect={keepOpen}
+              data-testid="filter-no-cover"
+            >
+              {t("library.noCover", { count: withoutCover })}
+            </DropdownMenuCheckboxItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The sort choice, direction inside, and the view: advanced mode only (UI-4). */
+function SortAndView({
+  filters,
+  setFilters,
   view,
   setView,
 }: {
   filters: LibraryFilters;
   setFilters: (patch: Partial<LibraryFilters>) => void;
-  withWarnings: number;
-  withoutCover: number;
   view: ViewMode;
   setView: (view: ViewMode) => void;
 }) {
   const { t } = useTranslation();
   return (
     <>
-      <Toggle
-        variant="outline"
-        size="sm"
-        pressed={filters.warnings}
-        onPressedChange={(warnings) => setFilters({ warnings })}
-        title={t("library.onlyWarnings")}
-      >
-        <AlertTriangle aria-hidden />
-        {t("library.warnings", { count: withWarnings })}
-      </Toggle>
-      <Toggle
-        variant="outline"
-        size="sm"
-        pressed={filters.noCover}
-        onPressedChange={(noCover) => setFilters({ noCover })}
-        title={t("library.onlyNoCover")}
-        data-testid="filter-no-cover"
-      >
-        <ImageOff aria-hidden />
-        {t("library.noCover", { count: withoutCover })}
-      </Toggle>
-      <Select value={filters.sort} onValueChange={(sort) => setFilters({ sort: sort as SortKey })}>
-        <SelectTrigger size="sm" aria-label={t("library.sort")}>
+      <Select value={sortChoice(filters)} onValueChange={(choice) => setFilters(fromSortChoice(choice as SortChoice))}>
+        <SelectTrigger size="sm" aria-label={t("library.sort")} data-testid="library-sort">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {sortKeys.map((key) => (
-            <SelectItem key={key} value={key}>
-              {t(`library.sortBy.${key}`)}
+          {sortChoices.map((choice) => (
+            <SelectItem key={choice} value={choice}>
+              {t(`library.sortBy.${choice}`)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button
-        variant="outline"
-        size="icon-sm"
-        onClick={() => setFilters({ desc: !filters.desc })}
-        aria-label={filters.desc ? t("library.sortDescending") : t("library.sortAscending")}
-        aria-pressed={filters.desc}
-      >
-        {filters.desc ? <ArrowUpZA aria-hidden /> : <ArrowDownAZ aria-hidden />}
-      </Button>
       <ToggleGroup
         type="single"
         variant="outline"
@@ -493,6 +548,64 @@ function AdvancedFilters({
         </ToggleGroupItem>
       </ToggleGroup>
     </>
+  );
+}
+
+/** "Pictures…": where they come from (ART-4, ART-5). Either path leads to its own dialog and plan. */
+function PicturesDialog({
+  open,
+  onOpenChange,
+  onSources,
+  onSet,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSources: () => void;
+  onSet: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-testid="pictures-dialog">
+        <DialogHeader>
+          <DialogTitle>{t("library.picturesTitle")}</DialogTitle>
+          <DialogDescription>{t("library.picturesDescription")}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-2">
+          <PicturesPath icon={ImageDown} title={t("library.picturesFromSources")} hint={t("library.picturesFromSourcesHint")} onClick={onSources} testId="pictures-from-sources" />
+          <PicturesPath icon={FolderInput} title={t("library.picturesFromSet")} hint={t("library.picturesFromSetHint")} onClick={onSet} testId="pictures-from-set" />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PicturesPath({
+  icon: Icon,
+  title,
+  hint,
+  onClick,
+  testId,
+}: {
+  icon: typeof ImageDown;
+  title: string;
+  hint: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      data-testid={testId}
+    >
+      <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </button>
   );
 }
 
@@ -704,7 +817,15 @@ function GameCard({ game, index }: { game: Game; index: number }) {
   );
 }
 
-function GameTable({ games }: { games: Game[] }) {
+function GameTable({
+  games,
+  filters,
+  setFilters,
+}: {
+  games: Game[];
+  filters: LibraryFilters;
+  setFilters: (patch: Partial<LibraryFilters>) => void;
+}) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -717,9 +838,12 @@ function GameTable({ games }: { games: Game[] }) {
 
   return (
     <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto px-6 py-4" data-testid="game-list">
+      {/* A click on a sortable header picks the field, a second one turns it
+          (walkthrough finding 11); the other columns are not sort keys. No
+          table roles: the rows below are a list, and a row needs a table. */}
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_8rem_4rem_4rem_6rem] gap-3 border-b bg-background px-2 pb-2 text-xs font-medium text-muted-foreground">
-        <span>{t("game.title")}</span>
-        <span>{t("game.id")}</span>
+        <SortHeader label={t("game.title")} sortKey="title" filters={filters} setFilters={setFilters} />
+        <SortHeader label={t("game.id")} sortKey="startup" filters={filters} setFilters={setFilters} />
         <span>{t("game.media")}</span>
         <span>{t("game.format")}</span>
         <span className="text-right">{t("game.size")}</span>
@@ -766,6 +890,35 @@ function GameTable({ games }: { games: Game[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  filters,
+  setFilters,
+}: {
+  label: string;
+  sortKey: SortKey;
+  filters: LibraryFilters;
+  setFilters: (patch: Partial<LibraryFilters>) => void;
+}) {
+  const { t } = useTranslation();
+  const active = filters.sort === sortKey;
+  const sorted = active ? (filters.desc ? "descending" : "ascending") : undefined;
+  return (
+    <span data-testid={`sort-header-${sortKey}`} data-sort={sorted}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={() => setFilters(active ? { desc: !filters.desc } : { sort: sortKey, desc: false })}
+        aria-label={t(active ? (filters.desc ? "library.sortHeaderAscending" : "library.sortHeaderDescending") : "library.sortHeader", { column: label })}
+      >
+        {label}
+        {active && (filters.desc ? <ArrowDown className="size-3" aria-hidden /> : <ArrowUp className="size-3" aria-hidden />)}
+      </button>
+    </span>
   );
 }
 

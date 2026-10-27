@@ -44,18 +44,37 @@ test("search, filters and the list view", async ({ page, request }) => {
   await expect(page).toHaveURL(/q=retail/);
   await search.fill("");
 
-  await page.getByRole("radio", { name: "UL" }).click();
+  // One "Filter" menu with boxes (LIB-5): the button counts what is ticked.
+  await page.getByTestId("library-filter").click();
+  await page.getByRole("menuitemcheckbox", { name: "UL" }).click();
   await expect(page.getByTestId("library-count")).toHaveText("1 of 5 games");
   await expect(page.getByRole("listitem", { name: /Split Game/ })).toBeVisible();
-  await page.getByRole("radio", { name: "All" }).last().click();
-
-  await page.getByRole("button", { name: /warnings$/ }).click();
+  await expect(page.getByTestId("library-filter-count")).toHaveText("1");
+  await expect(page).toHaveURL(/format=UL/);
+  await page.getByRole("menuitemcheckbox", { name: "UL" }).click();
+  await page.getByRole("menuitemcheckbox", { name: /with warnings$/ }).click();
   await expect(page.getByTestId("library-count")).toHaveText("3 of 5 games");
-  await page.getByRole("button", { name: /warnings$/ }).click();
+  await page.getByRole("menuitemcheckbox", { name: /with warnings$/ }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("library-filter-count")).toHaveCount(0);
 
+  // One sort choice with the direction inside; the list's headers sort too.
+  await page.getByTestId("library-sort").click();
+  await page.getByRole("option", { name: "Title Z→A" }).click();
+  await expect(page).toHaveURL(/desc=1/);
+  await expect(page.getByTestId("game-grid").getByRole("listitem").first()).toHaveAccessibleName(/^Wrong Name/);
   await page.getByRole("radio", { name: "List" }).click();
   await expect(page.getByTestId("game-list")).toBeVisible();
   await expect(page.getByTestId("game-list").getByRole("listitem")).toHaveCount(5);
+  await page.getByRole("button", { name: "Sort by Game ID" }).click();
+  await expect(page).toHaveURL(/sort=startup/);
+  await expect(page.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "ascending");
+  await expect(page.getByTestId("game-list").getByRole("listitem").first()).toHaveAccessibleName(/SCES_500\.03$/);
+  await expect(page.getByTestId("library-sort")).toHaveText("ID A→Z");
+  await page.getByRole("button", { name: /^Sorted by Game ID/ }).click();
+  await expect(page.getByTestId("sort-header-startup")).toHaveAttribute("data-sort", "descending");
+  await page.getByRole("button", { name: "Sort by Title" }).click();
+  await expect(page).not.toHaveURL(/sort=/);
   await page.getByRole("radio", { name: "Grid" }).click();
   await expect(page.getByTestId("game-grid")).toBeVisible();
 
@@ -154,7 +173,8 @@ test("renaming goes through the plan dialog", async ({ page, request }) => {
 
 test("deleting needs the plan and an extra confirmation", async ({ page, request }) => {
   await openLibrary(page, request);
-  await page.goto("/library");
+  // The sorting and the filters survive the card and the deletion.
+  await page.goto("/library?sort=startup&media=CD");
   await page.getByRole("listitem", { name: /Lf Final/ }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("delete-preview").click();
@@ -163,8 +183,10 @@ test("deleting needs the plan and an extra confirmation", async ({ page, request
   await expect(plan.getByTestId("plan-confirm")).toBeDisabled();
   await plan.getByLabel("I understand that files will be deleted").check();
   await plan.getByTestId("plan-confirm").click();
-  await expect(page).toHaveURL(/\/library$/);
+  await expect(page).toHaveURL(/\/library\?sort=startup&media=CD$/);
   await expect(page.getByRole("listitem", { name: /Lf Final/ })).toHaveCount(0);
+  await expect(page.getByTestId("library-sort")).toHaveText("ID A→Z");
+  await page.goto("/library");
   await expect(page.getByTestId("library-count")).toHaveText("5 of 5 games");
 });
 
