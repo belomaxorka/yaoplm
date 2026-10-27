@@ -1,0 +1,348 @@
+{
+  "run": {
+    "language": "en",
+    "theme": "light",
+    "simple": true
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED"
+  ],
+  "states": [
+    {
+      "state": "devices",
+      "axe": [],
+      "layout": [],
+      "tabs": [
+        "<a> Library",
+        "<a> Devices",
+        "<a> Settings",
+        "<a> C:\\Users\\Admin\\AppData\\Local\\Temp\\yaoplm-e2e-CvtlF",
+        "<button role=radio> English",
+        "<button> Switch to dark theme",
+        "<button> Refresh",
+        "<button> Open library",
+        "<button> Why",
+        "<button> Change",
+        "<button> Why",
+        "<button> OPL 1.2 (beta, YAOPL)",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know",
+        "<button> Open library",
+        "<button> Why",
+        "<button> Change",
+        "<button> Create OPL folders",
+        "<button> Why",
+        "<button> OPL 1.2 (beta, YAOPL)",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know",
+        "<button> Open library",
+        "<button> Why",
+        "<button> Change",
+        "<button> Create OPL folders",
+        "<button> Why",
+        "<button> OPL 1.2 (beta, YAOPL)",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know",
+        "<button> Open library",
+        "<button> Why",
+        "<button> Change",
+        "<button> Create OPL folders",
+        "<button> Why",
+        "<button> OPL 1.2 (beta, YAOPL)",
+        "<button> OPL 1.1.0"
+      ]
+    },
+    {
+      "state": "devices-emulator-open",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-answered",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-choice-menu",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-back-to-auto",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-as-ps2-by-hand",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-stick-mode-auto",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-smb-init-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "devices-emulator-init-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-empty",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-1-wizard",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-2-unknown-method-details",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-4-stable-build",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-5-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-6-boot-hints",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-installed-current",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-more-menu",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "reinstall-wizard",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-1-offer",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-2-not-now",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-3-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "update-4-done",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "rollback-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "rollback-done-update-available",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "replace-1-wizard",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "replace-2-to-stable-impact",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "rollback-across-builds-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "stick-exfat-with-opl110",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "install-exfat-wizard",
+      "axe": [],
+      "layout": [
+        "<a> \"Licence text\" overlaps <button> \"Cancel\""
+      ]
+    },
+    {
+      "state": "replace-exfat-wizard",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library",
+      "axe": [],
+      "layout": [],
+      "tabs": [
+        "<a> Library",
+        "<a> Devices",
+        "<a> Settings",
+        "<a> C:\\Users\\Admin\\AppData\\Local\\Temp\\yaoplm-e2e-CvtlF",
+        "<button role=radio> English",
+        "<button> Switch to dark theme",
+        "<input> Search",
+        "<button> Filter",
+        "<button> Pictures…",
+        "<a> Add games",
+        "<button> Why",
+        "<button> Change",
+        "<button> 2 files OPL will not show",
+        "<button> Why",
+        "<button> OPL 1.2 (beta, YAOPL)",
+        "<button> OPL 1.1.0",
+        "<button> RiptOPL",
+        "<button> I don’t know",
+        "<a role=listitem> Dual Layer Quest, SLUS_212.18",
+        "<a role=listitem> Retail Game, SLUS_200.62",
+        "<a role=listitem> Split Game, SCES_500.03",
+        "<a role=listitem> Uppercase Ext, SLPM_123.45",
+        "<a role=listitem> Wrong Name, SLES_999.99",
+        "(body)",
+        "<a> Skip to content",
+        "<a> Library",
+        "<a> Devices",
+        "<a> Settings",
+        "<a> C:\\Users\\Admin\\AppData\\Local\\Temp\\yaoplm-e2e-CvtlF",
+        "<button role=radio> English"
+      ]
+    },
+    {
+      "state": "library-search-nomatch",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-fetch",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library-empty-folder",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "library-stale-device",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-rename",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-delete",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-delete-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-move-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "art-choose",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "cfg-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "game-no-cover-warning",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-browser",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-sources",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-plan",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "add-done",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "delete-added-game",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "settings",
+      "axe": [],
+      "layout": []
+    },
+    {
+      "state": "connection-lost",
+      "axe": [],
+      "layout": []
+    }
+  ]
+}
