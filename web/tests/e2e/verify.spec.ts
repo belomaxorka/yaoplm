@@ -101,11 +101,16 @@ test("a game goes to ZSO and back through plans", async ({ page, request }) => {
   const row = page.getByRole("listitem", { name: /Retail Game/ });
   await expect(row).toContainText("ZSO");
   await row.click();
-  // The image is new, but its hashes are those of the ISO: no cached verdict yet.
-  await expect(page.getByTestId("game-dump")).toHaveText("Not checked yet");
+  // The image is new, but it holds the same bytes: the verdict carries over
+  // (walkthrough finding 10). On main the card said "Not checked yet".
+  await expect(page.getByTestId("game-dump")).toContainText("Retail Game (USA)");
+  await expect(page.getByTestId("game-dump")).not.toContainText("Not checked yet");
 
   await convert(page, /Retail Game/, "iso", "Write CD/SLUS_200.62.Retail Game.iso");
-  await expect(page.getByRole("listitem", { name: /Retail Game/ })).toContainText("ISO");
+  const back = page.getByRole("listitem", { name: /Retail Game/ });
+  await expect(back).toContainText("ISO");
+  await back.click();
+  await expect(page.getByTestId("game-dump")).toContainText("Retail Game (USA)");
 });
 
 test("the add page offers ZSO and the bulk dialog counts the games", async ({ page, request }) => {
