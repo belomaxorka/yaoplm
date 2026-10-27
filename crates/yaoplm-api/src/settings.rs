@@ -13,6 +13,7 @@ use ts_rs::TS;
 use yaoplm_core::settings as core;
 use yaoplm_formats::game_cfg as cfg;
 
+use crate::library::{GameInfoView, game_info_view};
 use crate::paths::display_path;
 use crate::phrase::Phrase;
 
@@ -137,6 +138,44 @@ pub struct CfgPair {
     pub value: String,
 }
 
+/// A field of the bundled game info a plan writes into the CFG (META-3,
+/// ADR-0050). `players` writes `Players` and `PlayersText`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum InfoField {
+    Title,
+    Genre,
+    Release,
+    Developer,
+    Publisher,
+    Players,
+}
+
+impl From<InfoField> for core::InfoField {
+    fn from(field: InfoField) -> Self {
+        match field {
+            InfoField::Title => Self::Title,
+            InfoField::Genre => Self::Genre,
+            InfoField::Release => Self::Release,
+            InfoField::Developer => Self::Developer,
+            InfoField::Publisher => Self::Publisher,
+            InfoField::Players => Self::Players,
+        }
+    }
+}
+
+/// A description the user chose to write, with the URL it came from
+/// (`DescriptionSource`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DescriptionText {
+    pub text: String,
+    #[serde(default)]
+    pub source: String,
+}
+
 /// A game's CFG (`ReadCfg`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -153,11 +192,15 @@ pub struct CfgView {
     pub entries: Vec<CfgPair>,
     /// The names OPL's VMC menu suggests for slots 1 and 2.
     pub card_names: Vec<String>,
+    /// What the bundled game info table says about the ID (META-3), to
+    /// show next to the file's keys.
+    pub info: Option<GameInfoView>,
 }
 
 impl CfgView {
     pub fn new(root: &Path, cfg: &core::GameCfg) -> Self {
         Self {
+            info: game_info_view(&cfg.startup),
             startup: cfg.startup.clone(),
             path: display_path(&root.join(cfg.path.components().collect::<std::path::PathBuf>())),
             exists: cfg.exists,

@@ -34,6 +34,7 @@ const game: Game = {
   cheats: null,
   warnings: [],
   knownTitle: null,
+  info: null,
   dump: null,
   fragments: null,
 };

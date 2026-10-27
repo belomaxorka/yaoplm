@@ -213,7 +213,10 @@
     "emulatorIniTail": "The last line of {{file}} has no line break, so the emulator’s firmware never reads it: “{{line}}”",
     "emulatorServiceFile": "{{path}} belongs to the memory card emulator: YAOPLM does not change it",
     "loaderOnEmulatorSd": "This is a memory card emulator’s SD: no loader is put on it. OPL runs from inside its boot card",
-    "emulatorChannelName": "Channel {{channel}} ({{variant}}) is listed as “{{name}}” but holds {{holds}}"
+    "emulatorChannelName": "Channel {{channel}} ({{variant}}) is listed as “{{name}}” but holds {{holds}}",
+    "gameInfoUnchanged": "The CFG already has these values; nothing to write",
+    "descriptionShortened": "The description was shortened to {{bytes}} bytes, the most OPL shows, at the end of a sentence",
+    "cfgTitleUpdated": "The title in the CFG follows the new name"
   },
   "library": {
     "title": "Library",
@@ -1115,7 +1118,8 @@
     "retireLoader": "Move {{path}} into the backup folder",
     "replaceLoader": "Replace {{from}} with {{to}}",
     "loaderReleases": "Releases of {{build}}",
-    "loaderImpact": "What changes for the games with {{build}}"
+    "loaderImpact": "What changes for the games with {{build}}",
+    "gameInfo": "Game info of {{title}}"
   },
   "errors": {
     "planBlocked": "The plan cannot run. {{reason}}",
@@ -1230,7 +1234,8 @@
     "loaderPresetNotForDevice": "{{preset}} does not fit this device",
     "loaderLanguagesNotStored": "The language pack of {{build}} is not downloaded yet",
     "loaderNoLanguages": "The release of {{build}} has no language pack",
-    "loaderNotInstalled": "No loader YAOPLM knows is at {{path}}"
+    "loaderNotInstalled": "No loader YAOPLM knows is at {{path}}",
+    "noGameInfo": "No game info for {{id}} in the bundled table"
   },
   "reasons": {
     "appBadBoot": "boot must be a plain ELF file name, not {{boot}}",

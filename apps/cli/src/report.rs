@@ -802,6 +802,94 @@ fn on_off(on: bool) -> &'static str {
 }
 
 /// `yaoplm cfg <root> <game>`.
+/// The bundled game info next to the CFG's keys (`yaoplm cfg --info`,
+/// META-3): what a plan would write, and what the file says now.
+pub fn cfg_info(view: &CfgView) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "{}  {}", view.startup, view.path);
+    let in_cfg = |key: &str| {
+        view.entries
+            .iter()
+            .find(|e| e.key == key)
+            .map_or("-".to_owned(), |e| e.value.clone())
+    };
+    let source = |s: InfoSource| {
+        let key = match s {
+            InfoSource::Libretro => "game.infoSource.libretro",
+            InfoSource::Wikidata => "game.infoSource.wikidata",
+        };
+        english(key).unwrap_or(key)
+    };
+    let Some(info) = &view.info else {
+        let _ = writeln!(out, "No game info for this ID in the bundled table.");
+        let _ = writeln!(out, "Title:        CFG: {}", in_cfg("Title"));
+        return out;
+    };
+    let _ = writeln!(out, "Bundled info (source)              CFG now");
+    let _ = writeln!(
+        out,
+        "Title:        {:<24}CFG: {}",
+        "(the library's title)",
+        in_cfg("Title")
+    );
+    let mut row = |label: &str, value: Option<(String, InfoSource)>, key: &str| {
+        let shown = match value {
+            Some((v, s)) => format!("{v} ({})", source(s)),
+            None => "-".to_owned(),
+        };
+        let _ = writeln!(out, "{label:<14}{shown:<36}CFG: {}", in_cfg(key));
+    };
+    row(
+        "Genre:",
+        info.genres.as_ref().map(|g| {
+            let labels: Vec<&str> = g
+                .value
+                .iter()
+                .map(|g| english(&format!("genre.{}", g.code())).unwrap_or(g.code()))
+                .collect();
+            (labels.join(", "), g.source)
+        }),
+        "Genre",
+    );
+    row(
+        "Release:",
+        info.released.as_ref().map(|f| (f.value.clone(), f.source)),
+        "Release",
+    );
+    row(
+        "Developer:",
+        info.developer.as_ref().map(|f| (f.value.clone(), f.source)),
+        "Developer",
+    );
+    row(
+        "Publisher:",
+        info.publisher.as_ref().map(|f| (f.value.clone(), f.source)),
+        "Publisher",
+    );
+    row(
+        "Players:",
+        info.players
+            .as_ref()
+            .map(|f| (f.value.to_string(), f.source)),
+        "Players",
+    );
+    let _ = writeln!(
+        out,
+        "{:<14}{:<36}CFG: {}",
+        "Description:",
+        "-",
+        in_cfg("Description")
+    );
+    if let Some(wd) = &info.wikidata {
+        let _ = writeln!(out, "Wikidata:     {}", wd.url);
+    }
+    let _ = writeln!(
+        out,
+        "\nWrite the bundled values with --write-info [--fields title,genre,release,developer,publisher,players]."
+    );
+    out
+}
+
 pub fn cfg(view: &CfgView) -> String {
     let mut out = String::new();
     let state = match (view.exists, view.editable) {

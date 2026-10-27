@@ -5,10 +5,12 @@ import type { ArtSourceSetting } from "./ArtSourceSetting";
 import type { ArtType } from "./ArtType";
 import type { CfgPair } from "./CfgPair";
 import type { ConvertTarget } from "./ConvertTarget";
+import type { DescriptionText } from "./DescriptionText";
 import type { DeviceMode } from "./DeviceMode";
 import type { GameRef } from "./GameRef";
 import type { GameSettings } from "./GameSettings";
 import type { ImportOverride } from "./ImportOverride";
+import type { InfoField } from "./InfoField";
 import type { JobId } from "./JobId";
 import type { Layout } from "./Layout";
 import type { LoaderProfile } from "./LoaderProfile";
@@ -166,7 +168,7 @@ overwrite?: boolean, } | { "type": "ReadCfg", root: string, game: GameRef, } | {
 /**
  * As in `ScanLibrary`: on BDM a new card must be one run.
  */
-mode?: DeviceMode, } | { "type": "ListVmc", root: string, } | { "type": "CreateVmc", root: string, cards: Array<NewVmc>, 
+mode?: DeviceMode, } | { "type": "PlanGameInfo", root: string, game: GameRef, profile?: LoaderProfile, fields?: Array<InfoField>, description?: DescriptionText, mode?: DeviceMode, } | { "type": "ListVmc", root: string, } | { "type": "CreateVmc", root: string, cards: Array<NewVmc>, 
 /**
  * As in `WriteCfg`.
  */

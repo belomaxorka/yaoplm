@@ -217,7 +217,10 @@
     "emulatorIniTail": "У последней строки {{file}} нет перевода строки, поэтому прошивка эмулятора её не читает: «{{line}}»",
     "emulatorServiceFile": "{{path}} принадлежит эмулятору карты памяти: YAOPLM его не меняет",
     "loaderOnEmulatorSd": "Это SD эмулятора карты памяти: загрузчик на неё не ставится. OPL запускается изнутри загрузочной карты",
-    "emulatorChannelName": "Канал {{channel}} ({{variant}}): в списке «{{name}}», в образе {{holds}}"
+    "emulatorChannelName": "Канал {{channel}} ({{variant}}): в списке «{{name}}», в образе {{holds}}",
+    "gameInfoUnchanged": "В CFG уже записаны эти значения; записывать нечего",
+    "descriptionShortened": "Описание сокращено до {{bytes}} байт по концу предложения: больше OPL не показывает",
+    "cfgTitleUpdated": "Название в CFG обновлено вслед за новым именем"
   },
   "library": {
     "title": "Библиотека",
@@ -1165,7 +1168,8 @@
     "retireLoader": "Убрать {{path}} в резервную копию",
     "replaceLoader": "Замена {{from}} на {{to}}",
     "loaderReleases": "Релизы {{build}}",
-    "loaderImpact": "Что изменится для игр с {{build}}"
+    "loaderImpact": "Что изменится для игр с {{build}}",
+    "gameInfo": "Сведения об игре {{title}}"
   },
   "errors": {
     "planBlocked": "План нельзя выполнить. {{reason}}",
@@ -1280,7 +1284,8 @@
     "loaderPresetNotForDevice": "{{preset}} не подходит для этого носителя",
     "loaderLanguagesNotStored": "Языковой пакет {{build}} ещё не скачан",
     "loaderNoLanguages": "В релизе {{build}} нет языкового пакета",
-    "loaderNotInstalled": "В {{path}} нет загрузчика, который знает YAOPLM"
+    "loaderNotInstalled": "В {{path}} нет загрузчика, который знает YAOPLM",
+    "noGameInfo": "Сведений об игре {{id}} во встроенной таблице нет"
   },
   "reasons": {
     "mediaRawDump": "сырой дамп CD (BIN/CUE или CHD)",

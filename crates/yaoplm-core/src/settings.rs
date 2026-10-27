@@ -29,6 +29,7 @@ use yaoplm_i18n::Phrase;
 
 use crate::art::backup_dirs;
 use crate::device::{DeviceState, join, rel};
+use crate::game_info::{self, GameInfo as KnownInfo, ReleaseDate};
 use crate::ops::{
     Found, FoundKind, GameRef, OpError, backup_step, find_game, game_info, new_backup_dir, new_plan,
 };
@@ -167,7 +168,8 @@ fn entries_of(fs: &dyn DeviceFs, state: &DeviceState, name: &str) -> io::Result<
 }
 
 /// The CFG of `startup`: its path, and its bytes when it exists.
-fn locate_cfg(
+/// `CFG/<startup>.cfg` and its bytes, when it is there.
+pub(crate) fn locate_cfg(
     fs: &dyn DeviceFs,
     state: &DeviceState,
     startup: &str,
@@ -338,7 +340,35 @@ pub fn plan_settings(
     let state = DeviceState::read(fs)?;
     let found = find_game(fs, &state, game)?;
     let startup = startup_of(&found)?;
-    let (path, bytes) = locate_cfg(fs, &state, &startup)?;
+    let title = Phrase::title("gameSettings").with("title", &found_info(&found, &startup).title);
+    plan_cfg_edit(
+        fs,
+        &state,
+        &found,
+        &startup,
+        edit,
+        profile,
+        now,
+        title,
+        "settingsUnchanged",
+    )
+}
+
+/// The edit of one CFG as a plan: `title` names it, `unchanged` is the
+/// notice when there is nothing to write.
+#[allow(clippy::too_many_arguments)]
+fn plan_cfg_edit(
+    fs: &dyn DeviceFs,
+    state: &DeviceState,
+    found: &Found,
+    startup: &str,
+    edit: &SettingsEdit,
+    profile: LoaderProfile,
+    now: i64,
+    title: Phrase,
+    unchanged: &str,
+) -> Result<Plan, OpError> {
+    let (path, bytes) = locate_cfg(fs, state, startup)?;
     if bytes
         .as_deref()
         .is_some_and(|b| cfg::detect_dialect(b) == Dialect::Libconfig)
@@ -367,20 +397,18 @@ pub fn plan_settings(
         .map_err(|e| settings_error(&e))?;
     let changes = changed_keys(&before, &doc);
 
-    let info = found_info(&found, &startup);
-    let title = Phrase::title("gameSettings").with("title", &info.title);
-    let mut plan = new_plan(PlanKind::Settings, title.clone(), &state);
+    let info = found_info(found, startup);
+    let mut plan = new_plan(PlanKind::Settings, title.clone(), state);
     if changes.is_empty() && edit.cards.is_empty() {
-        plan.notices
-            .push(Notice::info(Phrase::notice("settingsUnchanged")));
+        plan.notices.push(Notice::info(Phrase::notice(unchanged)));
         return Ok(plan);
     }
 
     let mut tx = Transaction::titled(title);
     tx.game = Some(info);
     let backup = new_backup_dir()?;
-    let existing = entries_of(fs, &state, vmc::VMC_FOLDER)?;
-    card_steps(&state, &existing, &edit.cards, &backup, now, &mut tx)?;
+    let existing = entries_of(fs, state, vmc::VMC_FOLDER)?;
+    card_steps(state, &existing, &edit.cards, &backup, now, &mut tx)?;
 
     // A slot naming a card that is neither there nor created now.
     let after = GameSettings::read(&doc);
@@ -419,6 +447,250 @@ pub fn plan_settings(
     }
     tx.cfg_changes = changes;
     plan.transactions.push(tx);
+    Ok(plan)
+}
+
+// --- Game info (META-3, ADR-0050) -------------------------------------------
+
+/// A field of the bundled game info a plan may write into the CFG, where
+/// the info page of OPL's theme shows it (research/23 §1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InfoField {
+    Title,
+    Genre,
+    Release,
+    Developer,
+    Publisher,
+    /// `Players=players/N` and `PlayersText=N`, as OPL Manager writes them.
+    Players,
+}
+
+impl InfoField {
+    pub const ALL: [InfoField; 6] = [
+        InfoField::Title,
+        InfoField::Genre,
+        InfoField::Release,
+        InfoField::Developer,
+        InfoField::Publisher,
+        InfoField::Players,
+    ];
+
+    /// The CFG key.
+    pub fn key(self) -> &'static str {
+        match self {
+            InfoField::Title => "Title",
+            InfoField::Genre => "Genre",
+            InfoField::Release => "Release",
+            InfoField::Developer => "Developer",
+            InfoField::Publisher => "Publisher",
+            InfoField::Players => "Players",
+        }
+    }
+
+    /// The name on the command line (`--fields genre,players`).
+    pub fn name(self) -> &'static str {
+        match self {
+            InfoField::Title => "title",
+            InfoField::Genre => "genre",
+            InfoField::Release => "release",
+            InfoField::Developer => "developer",
+            InfoField::Publisher => "publisher",
+            InfoField::Players => "players",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<InfoField> {
+        let name = name.trim().to_ascii_lowercase();
+        InfoField::ALL.into_iter().find(|f| f.name() == name)
+    }
+}
+
+/// The second key `Players` writes.
+pub const PLAYERS_TEXT_KEY: &str = "PlayersText";
+pub const DESCRIPTION_KEY: &str = "Description";
+/// Where a written description came from (its article's URL): OPL keeps
+/// the key, themes may show it, and the share-alike terms are met.
+pub const DESCRIPTION_SOURCE_KEY: &str = "DescriptionSource";
+
+/// A description the user chose to write (the first paragraph of a
+/// Wikipedia article), with the article's URL.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DescriptionText {
+    pub text: String,
+    pub source: String,
+}
+
+/// What `plan_game_info` writes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InfoWrite {
+    pub fields: Vec<InfoField>,
+    pub description: Option<DescriptionText>,
+}
+
+impl InfoWrite {
+    /// Every field the table has, no description.
+    pub fn all() -> Self {
+        Self {
+            fields: InfoField::ALL.to_vec(),
+            description: None,
+        }
+    }
+}
+
+/// `Release` as OPL Manager and the other managers write it: `MM-DD-YYYY`,
+/// or `MM-YYYY` / `YYYY` when the source knows no more. OPL prints the
+/// text as it is (research/23 §1.1).
+pub fn release_text(date: &ReleaseDate) -> String {
+    match (date.month, date.day) {
+        (Some(month), Some(day)) => format!("{month:02}-{day:02}-{:04}", date.year),
+        (Some(month), None) => format!("{month:02}-{:04}", date.year),
+        _ => format!("{:04}", date.year),
+    }
+}
+
+/// The key/value pairs `fields` give for a game: the library's title and
+/// the bundled facts, the serial's own before the title's. A field the
+/// table has no value for is skipped.
+pub fn info_values(
+    title: &str,
+    info: Option<&KnownInfo>,
+    fields: &[InfoField],
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |key: &str, value: String| out.push((key.to_owned(), value));
+    for field in fields {
+        match field {
+            InfoField::Title => {
+                if !title.is_empty() {
+                    push(field.key(), title.to_owned());
+                }
+            }
+            InfoField::Genre => {
+                if let Some(genres) = info.and_then(KnownInfo::genres) {
+                    let labels: Vec<&str> = genres.value.iter().map(|g| g.label_en()).collect();
+                    push(field.key(), labels.join(", "));
+                }
+            }
+            InfoField::Release => {
+                if let Some(date) = info.and_then(KnownInfo::released) {
+                    push(field.key(), release_text(&date.value));
+                }
+            }
+            InfoField::Developer => {
+                if let Some(developer) = info.and_then(KnownInfo::developer) {
+                    push(field.key(), developer.value);
+                }
+            }
+            InfoField::Publisher => {
+                if let Some(publisher) = info.and_then(KnownInfo::publisher) {
+                    push(field.key(), publisher.value);
+                }
+            }
+            InfoField::Players => {
+                if let Some(players) = info.and_then(KnownInfo::players) {
+                    push(field.key(), format!("players/{}", players.value));
+                    push(PLAYERS_TEXT_KEY, players.value.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Fits a description into OPL's 255 bytes: whole sentences where one
+/// ends in time, else whole words with an ellipsis, else whole characters
+/// with an ellipsis. Returns the text and whether it was cut.
+pub fn shorten_description(text: &str) -> (String, bool) {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.len() <= cfg::VALUE_MAX {
+        return (text, false);
+    }
+    let mut sentence_end = None;
+    for (i, c) in text.char_indices() {
+        let end = i + c.len_utf8();
+        if end > cfg::VALUE_MAX {
+            break;
+        }
+        if matches!(c, '.' | '!' | '?' | '…') && text[end..].starts_with(char::is_whitespace) {
+            sentence_end = Some(end);
+        }
+    }
+    if let Some(end) = sentence_end {
+        return (text[..end].trim_end().to_owned(), true);
+    }
+    let room = cfg::VALUE_MAX - '…'.len_utf8();
+    let mut word_end = 0;
+    let mut char_end = 0;
+    for (i, c) in text.char_indices() {
+        if i + c.len_utf8() > room {
+            break;
+        }
+        if c.is_whitespace() {
+            word_end = i;
+        }
+        char_end = i + c.len_utf8();
+    }
+    let cut = if word_end > 0 { word_end } else { char_end };
+    (format!("{}…", text[..cut].trim_end()), true)
+}
+
+/// Plans writing the bundled game info, and a description the user chose,
+/// into the game's CFG (META-3, ADR-0050): by the CFG-2 rules, with a
+/// backup first (CFG-5). Only values that differ are written; a game the
+/// table does not know gets an error unless a description is given.
+pub fn plan_game_info(
+    fs: &dyn DeviceFs,
+    game: &GameRef,
+    write: &InfoWrite,
+    profile: LoaderProfile,
+    now: i64,
+) -> Result<Plan, OpError> {
+    let state = DeviceState::read(fs)?;
+    let found = find_game(fs, &state, game)?;
+    let startup = startup_of(&found)?;
+    let info = game_info::known_info(&startup);
+    if info.is_none() && write.description.is_none() {
+        return Err(invalid(Phrase::error("noGameInfo").with("id", &startup)));
+    }
+    let game_title = found_info(&found, &startup).title;
+    let mut set = info_values(&game_title, info, &write.fields);
+    let mut notices = Vec::new();
+    if let Some(description) = &write.description {
+        let (text, shortened) = shorten_description(&description.text);
+        if !text.is_empty() {
+            set.push((DESCRIPTION_KEY.to_owned(), text.clone()));
+            if !description.source.trim().is_empty() {
+                set.push((
+                    DESCRIPTION_SOURCE_KEY.to_owned(),
+                    description.source.trim().to_owned(),
+                ));
+            }
+            if shortened {
+                notices.push(Notice::info(
+                    Phrase::notice("descriptionShortened").with("bytes", text.len()),
+                ));
+            }
+        }
+    }
+    let edit = SettingsEdit {
+        set,
+        ..SettingsEdit::default()
+    };
+    let title = Phrase::title("gameInfo").with("title", &game_title);
+    let mut plan = plan_cfg_edit(
+        fs,
+        &state,
+        &found,
+        &startup,
+        &edit,
+        profile,
+        now,
+        title,
+        "gameInfoUnchanged",
+    )?;
+    if let Some(tx) = plan.transactions.first_mut() {
+        tx.notices.extend(notices);
+    }
     Ok(plan)
 }
 

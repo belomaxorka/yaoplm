@@ -470,3 +470,158 @@ fn ul_games_have_settings_too() {
     );
     assert!(files(&fs).iter().any(|(p, _)| p == "ul.cfg"));
 }
+
+// --- Game info written by a plan (META-3, ADR-0050) ------------------------
+
+/// The CFG of a game the bundled table knows (GTA III), with a key OPL
+/// never wrote and the title of the file.
+fn gta() -> MemFs {
+    library()
+}
+
+#[test]
+fn game_info_is_written_by_a_plan() {
+    use yaoplm_core::settings::{InfoWrite, plan_game_info};
+    let fs = gta();
+    let plan = plan_game_info(&fs, &game(), &InfoWrite::all(), OPL, NOW).unwrap();
+    assert_eq!(plan.kind, PlanKind::Settings);
+    let tx = &plan.transactions[0];
+    assert_eq!(tx.title_phrase.as_ref().unwrap().key, "titles.gameInfo");
+    // The file's title is already `Retail`: no change to `Title`.
+    let keys: Vec<&str> = tx.cfg_changes.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "Genre",
+            "Release",
+            "Developer",
+            "Publisher",
+            "Players",
+            "PlayersText"
+        ]
+    );
+    let release = tx.cfg_changes.iter().find(|c| c.key == "Release").unwrap();
+    assert_eq!(
+        (release.before.as_deref(), release.after.as_deref()),
+        (None, Some("10-23-2001"))
+    );
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    assert_eq!(
+        fs.bytes("CFG/SLUS_200.62.cfg").unwrap(),
+        b"Title=Retail\r\n$Compatibility=1\r\nVmode=vmode/ntsc\r\nGenre=Action\r\nRelease=10-23-2001\r\nDeveloper=DMA Design\r\nPublisher=Rockstar Games\r\nPlayers=players/1\r\nPlayersText=1\r\n"
+    );
+    assert_eq!(backups(&fs).len(), 1);
+
+    // The same plan again has nothing to write.
+    let again = plan_game_info(&fs, &game(), &InfoWrite::all(), OPL, NOW).unwrap();
+    assert!(again.transactions.is_empty());
+    assert!(again.notices.iter().any(|n| n.code == "gameInfoUnchanged"));
+}
+
+#[test]
+fn chosen_fields_and_a_shortened_description() {
+    use yaoplm_core::settings::{DescriptionText, InfoField, InfoWrite, plan_game_info};
+    let fs = gta();
+    // Two keys the user already has keep their values when not chosen.
+    fs.insert_file(
+        "CFG/SLUS_200.62.cfg",
+        b"Title=Retail\r\nDeveloper=Someone Else\r\nGenre=Various\r\n",
+    );
+    let text = "Grand Theft Auto III is a 2001 action-adventure game developed by DMA Design and published by Rockstar Games. It is the first 3D game in the Grand Theft Auto series. Set in Liberty City, loosely based on New York City, the game follows Claude, a silent protagonist who becomes entangled in a world of crime. The game is played from a third-person perspective.";
+    assert!(text.len() > 255);
+    let write = InfoWrite {
+        fields: vec![InfoField::Genre],
+        description: Some(DescriptionText {
+            text: text.to_owned(),
+            source: "https://en.wikipedia.org/wiki/Grand_Theft_Auto_III".to_owned(),
+        }),
+    };
+    let plan = plan_game_info(&fs, &game(), &write, OPL, NOW).unwrap();
+    let tx = &plan.transactions[0];
+    let change = |key: &str| {
+        tx.cfg_changes
+            .iter()
+            .find(|c| c.key == key)
+            .unwrap_or_else(|| panic!("no change to {key}: {:?}", tx.cfg_changes))
+    };
+    assert_eq!(change("Genre").before.as_deref(), Some("Various"));
+    assert_eq!(change("Genre").after.as_deref(), Some("Action"));
+    let description = change("Description").after.clone().unwrap();
+    assert!(description.len() <= 255, "{}", description.len());
+    assert!(
+        description.ends_with("Grand Theft Auto series."),
+        "{description}"
+    );
+    assert_eq!(
+        change("DescriptionSource").after.as_deref(),
+        Some("https://en.wikipedia.org/wiki/Grand_Theft_Auto_III")
+    );
+    assert!(tx.cfg_changes.iter().all(|c| c.key != "Developer"));
+    let shortened = tx
+        .notices
+        .iter()
+        .find(|n| n.code == "descriptionShortened")
+        .unwrap();
+    assert_eq!(
+        shortened.phrase.as_ref().unwrap().english(),
+        format!(
+            "The description was shortened to {} bytes, the most OPL shows, at the end of a sentence",
+            description.len()
+        )
+    );
+    assert!(run(&plan, &fs, &VirtualSources::new()).succeeded());
+    let bytes = fs.bytes("CFG/SLUS_200.62.cfg").unwrap();
+    assert!(
+        bytes
+            .starts_with(b"Title=Retail\r\nDeveloper=Someone Else\r\nGenre=Action\r\nDescription=")
+    );
+
+    // Text without a sentence end is cut on a character boundary.
+    let fs = gta();
+    let write = InfoWrite {
+        fields: Vec::new(),
+        description: Some(DescriptionText {
+            text: "я".repeat(200),
+            source: String::new(),
+        }),
+    };
+    let plan = plan_game_info(&fs, &game(), &write, OPL, NOW).unwrap();
+    let description = plan.transactions[0]
+        .cfg_changes
+        .iter()
+        .find(|c| c.key == "Description")
+        .unwrap()
+        .after
+        .clone()
+        .unwrap();
+    assert!(description.len() <= 255 && description.chars().all(|c| c == 'я' || c == '…'));
+    assert!(
+        plan.transactions[0]
+            .cfg_changes
+            .iter()
+            .all(|c| c.key != "DescriptionSource")
+    );
+}
+
+#[test]
+fn game_info_is_refused_for_wopl_and_unknown_games() {
+    use yaoplm_core::settings::{InfoWrite, plan_game_info};
+    let fs = gta();
+    fs.insert_file("CFG/SLUS_200.62.cfg", b"title = \"Retail\";\n");
+    let err = plan_game_info(&fs, &game(), &InfoWrite::all(), OPL, NOW).unwrap_err();
+    assert!(
+        matches!(&err, OpError::Invalid(p) if p.key == "errors.cfgNotOpl"),
+        "{err:?}"
+    );
+
+    let fs = MemFs::new(FsKind::Fat32);
+    fs.insert_file("CD/SLPM_123.45.Long.iso", &Variant::LongId.build().to_vec());
+    let unknown = GameRef::Image {
+        path: RelPath::new("CD/SLPM_123.45.Long.iso").unwrap(),
+    };
+    let err = plan_game_info(&fs, &unknown, &InfoWrite::all(), OPL, NOW).unwrap_err();
+    assert!(
+        matches!(&err, OpError::Invalid(p) if p.key == "errors.noGameInfo"),
+        "{err:?}"
+    );
+}

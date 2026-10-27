@@ -38,6 +38,7 @@ const game: Game = {
   cheats: null,
   warnings: [],
   knownTitle: null,
+  info: null,
   dump: null,
   fragments: null,
 };
@@ -59,6 +60,7 @@ const cfg: CfgView = {
   },
   entries: [{ key: "$Compatibility", value: "65" }],
   cardNames: ["SLUS_200.62_0", "SLUS_200.62_1"],
+  info: null,
 };
 
 /** A core with the game's CFG and one card OPL refuses; it records WriteCfg. */

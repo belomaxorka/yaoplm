@@ -12,7 +12,9 @@ use crate::library::{ImageDetails, LoaderProfile, Media};
 use crate::loaders::{LoaderBootHint, LoaderCatalog, LoaderFile, LoaderOffer, LoaderTarget};
 use crate::phrase::Phrase;
 use crate::plans::PlanView;
-use crate::settings::{CfgPair, CfgView, GameSettings, NewVmc, VmcCard};
+use crate::settings::{
+    CfgPair, CfgView, DescriptionText, GameSettings, InfoField, NewVmc, VmcCard,
+};
 use crate::verify::RedumpInfo;
 
 /// `ID.Title.iso` (ADR-0006, the default) or `Title.iso`.
@@ -446,6 +448,26 @@ pub enum Request {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         cards: Option<Vec<NewVmc>>,
         /// As in `ScanLibrary`: on BDM a new card must be one run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        mode: Option<DeviceMode>,
+    },
+    /// Plans writing the bundled game info into the game's CFG (META-3,
+    /// ADR-0050): `fields` (every field when absent) and, on the user's
+    /// choice, a `description` with its source, shortened to OPL's 255
+    /// bytes at a sentence end. By the CFG-2 rules, with a backup (CFG-5).
+    PlanGameInfo {
+        root: String,
+        game: GameRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        profile: Option<LoaderProfile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        fields: Option<Vec<InfoField>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        description: Option<DescriptionText>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts-export", ts(optional))]
         mode: Option<DeviceMode>,
