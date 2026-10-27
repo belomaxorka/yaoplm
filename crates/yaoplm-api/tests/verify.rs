@@ -522,3 +522,77 @@ fn checks_while_adding_ul_and_zso_games() {
         .unwrap();
     assert!(ul_game.dump.as_ref().unwrap().by_track);
 }
+
+/// ISO, ZSO and `ul` chunks hold the same image bytes: a conversion carries
+/// the hashes, and so the verdict, over to the new files instead of
+/// forgetting them (walkthrough finding 10).
+#[test]
+fn a_conversion_keeps_the_verdict() {
+    let dir = tempfile::tempdir().unwrap();
+    let device = dir.path().join("stick");
+    let sources = dir.path().join("sources");
+    fs::create_dir_all(&device).unwrap();
+    fs::create_dir_all(&sources).unwrap();
+    let dvd = Variant::Dvd9.build().to_vec();
+    fs::write(sources.join("Dvd Game.iso"), &dvd).unwrap();
+    let dat = DatBuilder::new()
+        .iso("Dvd9 (USA)", Some("SLUS 21218"), &dvd)
+        .build();
+    let dat_path = dir.path().join("redump.dat");
+    fs::write(&dat_path, dat).unwrap();
+    let api = Api::new().with_data_dir(dir.path().join("data"));
+    run(&api, json!({"type": "UpdateRedump", "file": dat_path}));
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": device, "sources": [sources], "verify": true}),
+    );
+    run(
+        &api,
+        json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": false}),
+    );
+    let dump_of = |path: &str| {
+        let scan = run(&api, json!({"type": "ScanLibrary", "root": device}));
+        let Some(JobResult::Library(library)) = scan.result else {
+            panic!("unexpected result {:?}", scan.result);
+        };
+        let game = library
+            .games
+            .iter()
+            .find(|g| g.startup == "SLUS_212.18")
+            .unwrap_or_else(|| panic!("no game: {:?}", library.games));
+        assert!(game.path.ends_with(path), "{}", game.path);
+        game.dump.clone()
+    };
+    assert_eq!(
+        dump_of("Dvd Game.iso").map(|d| d.status),
+        Some(VerifyStatus::Verified)
+    );
+
+    let convert = |target: &str, path: &str| {
+        let plan = call(
+            &api,
+            json!({
+                "type": "ConvertGames",
+                "root": device,
+                "games": [{"kind": "image", "path": path}],
+                "target": target,
+            }),
+        );
+        let info = run(
+            &api,
+            json!({"type": "ExecutePlan", "plan": plan["id"], "confirmDelete": true}),
+        );
+        let Some(JobResult::Execution(report)) = info.result else {
+            panic!("unexpected result {:?}", info.result);
+        };
+        assert!(report.error.is_none(), "{report:?}");
+    };
+    convert("zso", "DVD/SLUS_212.18.Dvd Game.iso");
+    let zso = dump_of("Dvd Game.zso").expect("the ZSO keeps the verdict");
+    assert_eq!(zso.status, VerifyStatus::Verified);
+    convert("iso", "DVD/SLUS_212.18.Dvd Game.zso");
+    assert_eq!(
+        dump_of("Dvd Game.iso").map(|d| d.status),
+        Some(VerifyStatus::Verified)
+    );
+}

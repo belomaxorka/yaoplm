@@ -28,6 +28,7 @@ mod paths;
 pub mod phrase;
 pub mod plans;
 mod protocol;
+mod rate;
 pub mod settings;
 pub mod verify;
 
@@ -668,18 +669,23 @@ impl Api {
                                     title,
                                     title_phrase,
                                     state,
-                                } => ctx.log(JobLogEntry::Transaction {
-                                    at: now_ms(),
-                                    index: u32::try_from(index).unwrap_or(u32::MAX),
-                                    title: title.to_owned(),
-                                    title_phrase: title_phrase.map(Phrase::from),
-                                    state: match state {
-                                        TxEvent::Started => TxLogState::Started,
-                                        TxEvent::Done => TxLogState::Done,
-                                        TxEvent::RolledBack => TxLogState::RolledBack,
-                                        TxEvent::Interrupted => TxLogState::Interrupted,
-                                    },
-                                }),
+                                } => {
+                                    if matches!(state, TxEvent::Done) {
+                                        recorder.carry_over(index);
+                                    }
+                                    ctx.log(JobLogEntry::Transaction {
+                                        at: now_ms(),
+                                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                                        title: title.to_owned(),
+                                        title_phrase: title_phrase.map(Phrase::from),
+                                        state: match state {
+                                            TxEvent::Started => TxLogState::Started,
+                                            TxEvent::Done => TxLogState::Done,
+                                            TxEvent::RolledBack => TxLogState::RolledBack,
+                                            TxEvent::Interrupted => TxLogState::Interrupted,
+                                        },
+                                    })
+                                }
                                 Event::Step {
                                     transaction,
                                     index,

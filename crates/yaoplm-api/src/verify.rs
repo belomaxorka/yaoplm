@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use yaoplm_core::checks::Checked;
-use yaoplm_core::plan::{Plan, Step};
+use yaoplm_core::plan::{Plan, PlanKind, Step};
 use yaoplm_core::{Game as CoreGame, GameLocation, Phrase as Said, ScanOptions};
 use yaoplm_device::HostFs;
 use yaoplm_formats::ul_cfg::UlCfg;
@@ -443,15 +443,26 @@ fn volume_key(root: &Path) -> String {
 
 /// The files of `game` with their times, for the hash cache.
 fn hashed_files(game: &CoreGame) -> Result<Vec<(PathBuf, u64, Option<u128>)>, std::io::Error> {
-    yaoplm_core::verify::image_files(game)?
-        .into_iter()
-        .map(|(path, len)| {
-            let modified = std::fs::metadata(&path)?
+    file_keys(
+        &yaoplm_core::verify::image_files(game)?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// `paths` with their sizes and times, for the hash cache.
+fn file_keys(paths: &[PathBuf]) -> Result<Vec<(PathBuf, u64, Option<u128>)>, std::io::Error> {
+    paths
+        .iter()
+        .map(|path| {
+            let meta = std::fs::metadata(path)?;
+            let modified = meta
                 .modified()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_nanos());
-            Ok((path, len, modified))
+            Ok((path.clone(), meta.len(), modified))
         })
         .collect()
 }
@@ -724,22 +735,100 @@ pub(crate) fn log_entry(entry: &GameVerification) -> JobLogEntry {
     }
 }
 
-/// Keeps the hashes a plan took while writing (GAME-5).
+/// Keeps the hashes a plan took while writing (GAME-5), and carries the
+/// hashes a conversion's sources had over to what it writes.
 pub(crate) struct Recorder<'a> {
     net: &'a Net,
     fs: &'a HostFs,
     plan: &'a Plan,
     /// The volume part of the cache keys, read once.
     volume: Option<String>,
+    /// For a conversion: the cached hashes of the files each transaction
+    /// removes, read before it runs; ISO, ZSO and `ul` chunks hold the same
+    /// image bytes, so the verdict holds for what it writes.
+    carried: Vec<Option<(Hashes, HashedFrom)>>,
 }
 
 impl<'a> Recorder<'a> {
     pub(crate) fn new(net: &'a Net, fs: &'a HostFs, plan: &'a Plan) -> Self {
-        Self {
+        let mut recorder = Self {
             net,
             fs,
             plan,
             volume: None,
+            carried: Vec::new(),
+        };
+        if plan.kind == PlanKind::Convert {
+            recorder.carried = plan
+                .transactions
+                .iter()
+                .map(|tx| recorder.cached_hashes_of_removed(tx))
+                .collect();
+        }
+        recorder
+    }
+
+    /// The cached hashes of the image files transaction `tx` removes.
+    fn cached_hashes_of_removed(
+        &mut self,
+        tx: &yaoplm_core::plan::Transaction,
+    ) -> Option<(Hashes, HashedFrom)> {
+        tx.game.as_ref()?;
+        let removed: Vec<PathBuf> = tx
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Remove { path, .. } => Some(self.fs.resolve(path)),
+                _ => None,
+            })
+            .collect();
+        if removed.is_empty() {
+            return None;
+        }
+        let files = file_keys(&removed).ok()?;
+        let service = self.net.service().ok()?;
+        let volume = self
+            .volume
+            .get_or_insert_with(|| volume_key(self.fs.root()))
+            .clone();
+        service
+            .cache()
+            .hashes(&keys(&volume, &files), false)
+            .ok()
+            .flatten()
+    }
+
+    /// Transaction `transaction` of a conversion is done: its new files get
+    /// the hashes its old ones had (walkthrough finding 10), so the scan
+    /// shows the same verdict and `VerifyGames` need not read them again.
+    pub(crate) fn carry_over(&mut self, transaction: usize) {
+        let Some(Some((hashes, from))) = self.carried.get(transaction).cloned() else {
+            return;
+        };
+        let Some(tx) = self.plan.transactions.get(transaction) else {
+            return;
+        };
+        let written: Vec<PathBuf> = tx
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::WriteFile { path, .. } | Step::WriteZso { path, .. } => {
+                    Some(self.fs.resolve(path))
+                }
+                _ => None,
+            })
+            .collect();
+        let Ok(files) = file_keys(&written) else {
+            return;
+        };
+        // The cache only saves time: without it the verdict is read again.
+        if let Ok(service) = self.net.service() {
+            let volume = self
+                .volume
+                .get_or_insert_with(|| volume_key(self.fs.root()));
+            let _ = service
+                .cache()
+                .put_hashes(&keys(volume, &files), &hashes, from);
         }
     }
 

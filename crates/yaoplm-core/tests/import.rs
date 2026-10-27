@@ -631,3 +631,82 @@ fn an_unfinished_journal_blocks_new_plans() {
     assert!(p.notices.iter().any(|n| n.code == "unfinishedOperation"));
     assert!(!p.is_executable());
 }
+
+/// The disc type of a small image (walkthrough findings 1 and 6): the
+/// database says Gran Turismo 4 is a DVD, a game with the same ID is
+/// already in `DVD/`, and only an unknown ID goes by the size. The plan
+/// says which source decided.
+#[test]
+fn disc_type_from_the_database_then_the_device_then_the_size() {
+    use yaoplm_test_support::fixtures::{boot_iso, placeholder_elf};
+    let small = |id: &str| boot_iso(placeholder_elf(), id, 0).build();
+    let fs = MemFs::new(FsKind::ExFat);
+    fs.insert_dir("CD");
+    fs.insert_dir("DVD");
+    fs.insert_file(
+        "DVD/SLES_999.99.Other Release.iso",
+        &small("SLES_999.99").to_vec(),
+    );
+    let sources = VirtualSources::new();
+    sources.add_iso(src("GT4.iso"), small("SCUS_906.82"));
+    sources.add_iso(src("Same Id.iso"), small("SLES_999.99"));
+    sources.add_iso(src("Unknown.iso"), small("SLES_999.98"));
+    let plan = plan_for(
+        &fs,
+        &sources,
+        &["GT4.iso", "Same Id.iso", "Unknown.iso"],
+        &options(),
+    );
+    assert!(plan.skipped.is_empty(), "{:?}", plan.skipped);
+    let games: Vec<(String, Media, String)> = plan
+        .transactions
+        .iter()
+        .filter_map(|tx| {
+            let game = tx.game.as_ref()?;
+            let by = tx
+                .notices
+                .iter()
+                .find(|n| n.code == "mediaBy")
+                .map(|n| format!("{:?}", n.phrase))
+                .unwrap_or_default();
+            Some((game.startup.clone(), game.media, by))
+        })
+        .collect();
+    assert_eq!(games.len(), 3, "{games:?}");
+    assert_eq!(
+        (games[0].0.as_str(), games[0].1),
+        ("SCUS_906.82", Media::Dvd)
+    );
+    assert!(
+        games[0].2.contains("reasons.mediaDatabase"),
+        "{}",
+        games[0].2
+    );
+    assert_eq!(
+        (games[1].0.as_str(), games[1].1),
+        ("SLES_999.99", Media::Dvd)
+    );
+    assert!(games[1].2.contains("reasons.mediaDevice"), "{}", games[1].2);
+    assert_eq!(
+        (games[2].0.as_str(), games[2].1),
+        ("SLES_999.98", Media::Cd)
+    );
+    assert!(games[2].2.contains("reasons.mediaSize"), "{}", games[2].2);
+    // The user's choice still wins, and says so.
+    let chosen = ImportOptions {
+        overrides: vec![ImportOverride {
+            path: src("GT4.iso"),
+            title: None,
+            media: Some(Media::Cd),
+        }],
+        ..options()
+    };
+    let plan = plan_for(&fs, &sources, &["GT4.iso"], &chosen);
+    let tx = plan.transactions.iter().find(|t| t.game.is_some()).unwrap();
+    assert_eq!(tx.game.as_ref().unwrap().media, Media::Cd);
+    assert!(
+        tx.notices.iter().all(|n| n.code != "mediaBy"),
+        "{:?}",
+        tx.notices
+    );
+}

@@ -125,10 +125,7 @@ fn walk(
     let entries = match sources.list(dir) {
         Ok(entries) => entries,
         Err(err) => {
-            skipped.push(skip(
-                dir,
-                Phrase::notice("unreadable").with("error", err.to_string()),
-            ));
+            skipped.push(skip(dir, reasons::unreadable(&err)));
             return;
         }
     };
@@ -155,10 +152,7 @@ fn walk(
                     ));
                 }
             }
-            Err(err) => skipped.push(skip(
-                &path,
-                Phrase::notice("unreadable").with("error", err.to_string()),
-            )),
+            Err(err) => skipped.push(skip(&path, reasons::unreadable(&err))),
         }
     }
 }
@@ -176,10 +170,7 @@ pub fn expand_inputs(sources: &dyn SourceFs, inputs: &[PathBuf]) -> (Vec<PathBuf
                 skipped.push(skip(input, Phrase::notice("sourceMissing")));
             }
             // A damaged archive, a folder the user may not read...
-            Err(err) => skipped.push(skip(
-                input,
-                Phrase::notice("unreadable").with("error", err.to_string()),
-            )),
+            Err(err) => skipped.push(skip(input, reasons::unreadable(&err))),
         }
     }
     let mut seen = HashSet::new();
@@ -203,6 +194,11 @@ pub fn title_from_path(path: &Path) -> String {
         Ok(name) if name.format == NameFormat::Old => name.title,
         _ => stem,
     }
+}
+
+/// `CD` or `DVD`, as the folders are named.
+fn media_name(media: Media) -> &'static str {
+    media.folder()
 }
 
 /// The database title for `startup` when the file name gave none: an empty
@@ -282,12 +278,21 @@ struct Planner<'a> {
     claimed: HashSet<String>,
     /// Game IDs on the device or in this plan.
     startups: HashSet<String>,
+    /// The disc type of every game already on the device, by ID: another
+    /// release of the same game goes to the same folder (walkthrough
+    /// finding 6).
+    media_by_startup: HashMap<String, Media>,
     /// `ul.cfg` after the transactions planned so far.
     ul_next: Option<Vec<u8>>,
     games: usize,
 }
 
 impl Planner<'_> {
+    /// The folder a game with the same ID already lies in, if any.
+    fn media_on_device(&self, startup: &str) -> Option<Media> {
+        self.media_by_startup.get(startup).copied()
+    }
+
     fn claim(&mut self, folder: &str, name: &str) -> bool {
         self.claimed
             .insert(format!("{folder}/{name}").to_lowercase())
@@ -300,10 +305,7 @@ impl Planner<'_> {
                 path,
                 Phrase::notice("unsupportedSource").with("reason", why),
             ),
-            ProbeError::Io { source, .. } => skip(
-                path,
-                Phrase::notice("unreadable").with("error", source.to_string()),
-            ),
+            ProbeError::Io { source, .. } => skip(path, reasons::unreadable(&source)),
         })?;
         if probed.ps1 {
             return Err(skip(path, Phrase::notice("ps1Game")));
@@ -318,10 +320,20 @@ impl Planner<'_> {
             .iter()
             .find(|o| o.path == path || o.path == probed.input);
         let mut notices = probed.notices.clone();
-        let (suggested, conflict) = probed.hints.suggest(probed.iso_len / 2048);
+        let (suggested, source, conflict) = probed.hints.suggest_with(
+            probed.iso_len / 2048,
+            titles::known_media(&startup),
+            self.media_on_device(&startup),
+        );
         let media = match override_.and_then(|o| o.media) {
             Some(media) => media,
             None => {
+                // The plan says which fact decided (rule 4 of the release pass).
+                notices.push(Notice::info(
+                    Phrase::notice("mediaBy")
+                        .with("media", media_name(suggested))
+                        .with("reason", source.reason(suggested, probed.iso_len)),
+                ));
                 notices.extend(conflict);
                 suggested
             }
@@ -682,12 +694,21 @@ pub fn plan_import(
     );
     plan.profile = Some(options.profile);
     let mut startups = HashSet::new();
-    for entry in state.cd.iter().chain(&state.dvd) {
-        if let Ok(name) = iso_name::classify(&entry.name)
-            && let Some(id) = name.startup
-        {
-            startups.insert(id);
+    let mut media_by_startup = HashMap::new();
+    for (media, entries) in [(Media::Cd, &state.cd), (Media::Dvd, &state.dvd)] {
+        for entry in entries {
+            if let Ok(name) = iso_name::classify(&entry.name)
+                && let Some(id) = name.startup
+            {
+                media_by_startup.entry(id.clone()).or_insert(media);
+                startups.insert(id);
+            }
         }
+    }
+    for record in &state.ul.records {
+        media_by_startup
+            .entry(record.startup())
+            .or_insert(record.media());
     }
     startups.extend(state.ul.records.iter().map(|r| r.startup()));
     plan.notices.extend(state.unfinished_notice());
@@ -717,6 +738,7 @@ pub fn plan_import(
         covered: HashSet::new(),
         claimed: HashSet::new(),
         startups,
+        media_by_startup,
         ul_next: None,
         games: 0,
     };
