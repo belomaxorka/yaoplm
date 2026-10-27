@@ -605,6 +605,22 @@ fn covers_found_for_an_import_land_with_the_games() {
         panic!("expected a cover set: {:?}", search.result);
     };
     assert_eq!((found.found, found.missing, found.present), (1, 1, 1));
+    // Per game too, so the panel under the plan can count the games that
+    // are still in it (walkthrough finding 4).
+    let mut per_game: Vec<(String, u32, u32, u32)> = found
+        .games
+        .iter()
+        .map(|g| (g.startup.clone(), g.found, g.missing, g.present))
+        .collect();
+    per_game.sort();
+    assert_eq!(
+        per_game,
+        [
+            ("SCES_500.03".to_owned(), 1, 0, 0),
+            ("SLUS_200.62".to_owned(), 0, 0, 1),
+            ("SLUS_212.18".to_owned(), 0, 1, 0),
+        ]
+    );
     let lines = search
         .log
         .iter()

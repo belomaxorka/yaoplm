@@ -25,6 +25,11 @@ globalThis.ResizeObserver ??= class {
   disconnect(): void {}
 };
 
+// Nor scrollIntoView; jsdom lays nothing out, so there is nowhere to scroll.
+if (!("scrollIntoView" in Element.prototype)) {
+  Object.defineProperty(Element.prototype, "scrollIntoView", { value: () => undefined, writable: true, configurable: true });
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();

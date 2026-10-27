@@ -7,6 +7,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/ApiProvider";
+import type { CoverSearchGame } from "@/api/generated/CoverSearchGame";
 import type { JobId } from "@/api/generated/JobId";
 import type { JobInfo } from "@/api/generated/JobInfo";
 import type { PlanTransaction } from "@/api/generated/PlanTransaction";
@@ -58,13 +59,17 @@ class FakeCore {
     return this.requests.filter((r): r is Extract<Request, { type: T }> => r.type === type);
   }
 
-  finish(job: JobId): void {
+  finish(job: JobId, games: CoverSearchGame[] = []): void {
     const info = this.jobs.get(job);
     if (!info) throw new Error(`no job ${job}`);
+    const sum = (key: "found" | "missing" | "present") => games.reduce((n, g) => n + g[key], 0);
     this.jobs.set(job, {
       ...info,
       status: "finished",
-      result: { type: "Covers", id: `set-${job}`, found: 2, missing: 0, present: 0 },
+      result:
+        games.length > 0
+          ? { type: "Covers", id: `set-${job}`, found: sum("found"), missing: sum("missing"), present: sum("present"), games }
+          : { type: "Covers", id: `set-${job}`, found: 2, missing: 0, present: 0, games: [] },
     });
   }
 
@@ -265,6 +270,43 @@ describe("AddGamesPage covers", () => {
     await waitFor(() => expect(within(plan).getAllByTestId("plan-transaction")).toHaveLength(2));
     await waitFor(() => expect(confirm()).toBeEnabled());
     expect(core.of("FetchArt")).toHaveLength(2);
+  }, 15_000);
+
+  // The numbers under the plan follow the plan, not the search (walkthrough
+  // finding 4): a game taken out of the list takes its pictures with it.
+  it("counts the pictures of the games left in the plan", async () => {
+    const core = new FakeCore();
+    renderPage(core);
+    const plan = await planFor(["/src/one.iso", "/src/two.iso"]);
+    await waitFor(() => expect(core.of("FetchArt")).toHaveLength(1));
+    core.finish(1, [
+      { startup: idOf(0), found: 1, missing: 0, present: 0 },
+      { startup: idOf(1), found: 1, missing: 1, present: 0 },
+    ]);
+    await waitFor(
+      () => expect(screen.getByTestId("cover-search-result")).toHaveTextContent("Pictures found: 2, not found: 1, on the device already: 0."),
+      slow,
+    );
+    await waitFor(() => expect(within(plan).getAllByTestId("plan-transaction")).toHaveLength(4));
+    await userEvent.click(screen.getByRole("button", { name: "Remove two.iso" }));
+    await waitFor(() => expect(within(plan).getAllByTestId("plan-transaction")).toHaveLength(2));
+    expect(screen.getByTestId("cover-search-result")).toHaveTextContent("Pictures found: 1, not found: 0, on the device already: 0.");
+    // No new search for a plan the last one covered.
+    expect(core.of("FetchArt")).toHaveLength(1);
+  }, 15_000);
+
+  // The plan appeared below the window's edge (walkthrough finding 11).
+  it("scrolls to the plan once it is shown, not on every re-plan", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    const core = new FakeCore();
+    renderPage(core);
+    const plan = await planFor(["/src/one.iso"]);
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(scrolled.mock.contexts[0]).toBe(plan);
+    await userEvent.type(within(plan).getByLabelText("Title"), "x");
+    await waitFor(() => expect(core.of("PlanImport").length).toBeGreaterThan(1));
+    expect(scrolled).toHaveBeenCalledTimes(1);
   }, 15_000);
 
   it("keeps a title being typed focused when the covers are inserted", async () => {

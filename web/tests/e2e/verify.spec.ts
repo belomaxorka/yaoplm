@@ -138,6 +138,8 @@ test("games are added with their covers and checked as they are written", async 
   await page.getByTestId("preview-plan").click();
 
   const plan = page.getByTestId("import-plan");
+  // The page scrolls to the plan once it is shown (walkthrough finding 11).
+  await expect(plan).toBeInViewport();
   const search = plan.getByTestId("cover-search");
   await expect(search).toHaveAttribute("data-status", "done");
   await expect(search.getByTestId("cover-search-result")).toHaveText(
