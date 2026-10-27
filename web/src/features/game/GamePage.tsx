@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
 import { ArtSlots } from "@/features/art/ArtSlots";
+import { libraryHref } from "@/features/library/filters";
 import { GameCover } from "@/features/library/GameCover";
 import { ConvertDialog } from "@/features/convert/ConvertDialog";
 import { GameSettingsCard } from "@/features/game/GameSettingsCard";
@@ -69,7 +70,7 @@ export function GamePage() {
       <PageScroll className="flex flex-col items-center">
         <EmptyState icon={ArrowLeft} title={t("game.notFoundTitle")} description={t("game.notFoundDescription")} />
         <Button asChild variant="outline">
-          <Link to="/library">{t("game.backToLibrary")}</Link>
+          <Link to={libraryHref()}>{t("game.backToLibrary")}</Link>
         </Button>
       </PageScroll>
     );
@@ -101,7 +102,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
   // After a rename, a move or a conversion the card stays open, found by the
   // game's ID now that its path changed; after a deletion the library opens.
   const cardOf = (startup: string) => `/library/game/${encodeURIComponent(idKey(startup))}`;
-  const afterPlan = useRef("/library");
+  const afterPlan = useRef(libraryHref());
   const flow = usePlan({
     onExecuted: () => void navigate(afterPlan.current, { replace: true }),
   });
@@ -312,7 +313,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             </h3>
             <Button variant="outline" size="sm" onClick={() => setArtOpen(true)} data-testid="game-download-art">
               <ImageDown aria-hidden />
-              {t("art.downloadAll")}
+              {t("art.picturesButton")}
             </Button>
           </div>
           <ArtSlots game={game} root={root} />
@@ -368,7 +369,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
         onOpenChange={setDeleteOpen}
         onSubmit={(related) => {
           setDeleteOpen(false);
-          afterPlan.current = "/library";
+          afterPlan.current = libraryHref();
           void flow.request({ type: "DeleteGame", root, game: gameRef(game), related });
         }}
       />

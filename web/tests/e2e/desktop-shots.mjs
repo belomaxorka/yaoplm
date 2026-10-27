@@ -56,8 +56,8 @@ if (!loaded) process.exitCode = 1;
 await shot("library");
 
 // Picture sets come from native pickers or a drop on the desktop (ART-5).
-await page.getByTestId("library-more").click();
-await page.getByTestId("import-pictures").click();
+await page.getByTestId("library-pictures").click();
+await page.getByTestId("pictures-from-set").click();
 await page.waitForSelector('[data-testid="art-import-dialog"]');
 await page.waitForTimeout(400);
 await shot("art-import");
@@ -70,9 +70,9 @@ await shot("game");
 
 if (mirror) {
   // The cover's variants from the mirrors, up to the plan dialog.
-  await page.getByTestId("art-download-COV").click();
+  await page.getByTestId("art-choose-COV").click();
   await page.getByTestId("art-variant").first().waitFor({ timeout: 30_000 });
-  await shot("art-variants");
+  await shot("art-choose");
   await page.getByTestId("art-variant-use").click();
   await page.getByTestId("plan-dialog").waitFor({ timeout: 30_000 });
   await shot("art-plan");

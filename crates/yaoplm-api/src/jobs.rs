@@ -46,6 +46,10 @@ pub enum JobKind {
     ExecutePlan,
     /// Finds covers and ends with a plan to write them (ART-1, ART-4).
     FetchArt,
+    /// Lists the pictures of one type the sources have for one game (ART-2).
+    /// Its own kind: the interface shows it inside the slot's window, not as
+    /// a job to follow.
+    FindArt,
     /// Hashes games and matches them against Redump (GAME-5).
     VerifyGames,
     /// Downloads or imports the Redump DAT (META-2).

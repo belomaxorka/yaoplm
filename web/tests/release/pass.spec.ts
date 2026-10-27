@@ -517,9 +517,17 @@ for (const run of runs) {
         await expect(page.getByRole("dialog")).toBeVisible();
       });
       await pass.escape();
+      await pass.state("library-filter-menu", async () => {
+        await page.getByTestId("library-filter").click();
+        await expect(page.getByRole("menu")).toBeVisible();
+      });
+      await pass.escape();
+      await pass.state("library-pictures", async () => {
+        await page.getByTestId("library-pictures").click();
+        await expect(page.getByTestId("pictures-dialog")).toBeVisible();
+      });
       await pass.state("art-import", async () => {
-        await page.getByTestId("library-more").click();
-        await page.getByTestId("import-pictures").click();
+        await page.getByTestId("pictures-from-set").click();
         await expect(page.getByTestId("art-import-dialog")).toBeVisible();
       });
       await pass.state("art-import-browser", async () => {
@@ -546,7 +554,8 @@ for (const run of runs) {
       await pass.escape();
     }
     await pass.state("art-fetch", async () => {
-      await page.getByTestId("download-covers").click();
+      await page.getByTestId("library-pictures").click();
+      if (!run.simple) await page.getByTestId("pictures-from-sources").click();
       await expect(page.getByTestId("art-fetch-dialog")).toBeVisible();
       await page.waitForTimeout(1500);
     });
@@ -605,16 +614,11 @@ for (const run of runs) {
       await expect(page.getByTestId("verify-dialog")).toBeVisible();
     });
     await pass.escape();
-    await pass.state("art-variants", async () => {
-      await page.getByTestId("art-download-COV").click();
-      await expect(page.getByTestId("art-variants-dialog")).toBeVisible();
-      await page.waitForTimeout(1500);
-    });
-    await pass.escape();
-    await pass.state("art-slot-menu", async () => {
+    await pass.state("art-choose", async () => {
       await page.getByTestId("art-slot-COV").scrollIntoViewIfNeeded();
-      await page.getByTestId("art-replace-COV").click();
-      await expect(page.getByRole("menu")).toBeVisible();
+      await page.getByTestId("art-choose-COV").click();
+      await expect(page.getByTestId("art-choose-dialog")).toBeVisible();
+      await page.waitForTimeout(1500);
     });
     await pass.escape();
     if (!run.simple) await pass.state("vmc-new", async () => {

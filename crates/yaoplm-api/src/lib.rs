@@ -876,7 +876,7 @@ impl Api {
                 };
                 let net = Arc::clone(&self.net);
                 let job = self.jobs.spawn(
-                    JobKind::FetchArt,
+                    JobKind::FindArt,
                     &title,
                     Some(display_path(&path)),
                     Queue::Read,

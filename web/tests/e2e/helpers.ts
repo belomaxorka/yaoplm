@@ -78,9 +78,15 @@ export async function openLibrary(
 }
 
 /** Runs one of the library's advanced tools from its "More" menu. */
-export async function libraryTool(page: Page, testId: "import-pictures" | "verify-dumps" | "convert-shown"): Promise<void> {
+export async function libraryTool(page: Page, testId: "verify-dumps" | "convert-shown"): Promise<void> {
   await page.getByTestId("library-more").click();
   await page.getByTestId(testId).click();
+}
+
+/** "Pictures…" and one of its two paths (LIB-5): the sources or the user's own set. */
+export async function libraryPictures(page: Page, path: "sources" | "set"): Promise<void> {
+  await page.getByTestId("library-pictures").click();
+  await page.getByTestId(`pictures-from-${path}`).click();
 }
 
 export function stickCard(page: Page) {

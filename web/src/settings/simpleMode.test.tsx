@@ -149,13 +149,11 @@ describe("simple mode (UI-4)", () => {
       // jsdom lays nothing out, so the virtual grid shows no cards: the count says the game is there.
       await screen.findByText("1 of 1 games");
       expect(screen.getByRole("searchbox", { name: "Search" })).toBeInTheDocument();
-      expect(screen.getByRole("radiogroup", { name: "Media" })).toBeInTheDocument();
-      expect(screen.getByRole("radiogroup", { name: "Format" })).toBeInTheDocument();
-      expect(screen.getByTestId("download-covers")).toBeInTheDocument();
+      // One "Filter" menu and one "Pictures…" button in both modes (LIB-5).
+      expect(screen.getByTestId("library-filter")).toBeInTheDocument();
+      expect(screen.getByTestId("library-pictures")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Add games" })).toBeInTheDocument();
       const advanced = [
-        screen.queryByRole("button", { name: /with warnings/ }),
-        screen.queryByTestId("filter-no-cover"),
         screen.queryByRole("combobox", { name: "Sort by" }),
         screen.queryByRole("radiogroup", { name: "View" }),
         screen.queryByTestId("library-more"),
@@ -164,8 +162,10 @@ describe("simple mode (UI-4)", () => {
         if (simple) expect(control).not.toBeInTheDocument();
         else expect(control).toBeInTheDocument();
       }
-      // The hidden filter stays in the address but does not apply.
+      // The hidden filter stays in the address but does not apply or count.
       expect(window.location.search).toBe("?warnings=1");
+      if (simple) expect(screen.queryByTestId("library-filter-count")).toBeNull();
+      else expect(screen.getByTestId("library-filter-count")).toHaveTextContent("1");
       expect(screen.getByTestId("library-count")).toHaveTextContent("1 of 1 games");
       // Counters and rescanning are advanced tools (release pass 2.1): simple
       // mode keeps the count for screen readers only.

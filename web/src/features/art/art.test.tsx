@@ -17,7 +17,8 @@ import { MockTransport, RpcError } from "@/api/transport";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArtFetchDialog } from "@/features/art/ArtFetchDialog";
 import { ArtImportDialog } from "@/features/art/ArtImportDialog";
-import { ArtVariantsDialog } from "@/features/art/ArtVariantsDialog";
+import { ArtChooseDialog } from "@/features/art/ArtChooseDialog";
+import { ArtSlots } from "@/features/art/ArtSlots";
 import { useFetchableTypes } from "@/features/art/kinds";
 import i18n from "@/i18n";
 import { JobsProvider } from "@/jobs/JobsProvider";
@@ -28,6 +29,7 @@ import { SettingsProvider } from "@/settings/SettingsProvider";
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   isTauri: () => true,
+  convertFileSrc: (path: string) => `asset://${path}`,
 }));
 vi.mock("@/features/add/desktop", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/add/desktop")>()),
@@ -87,6 +89,7 @@ function fakeCore(answers: { results?: Partial<Record<JobInfo["kind"], JobResult
       case "DiscardPlan":
         return { type: "Ack" };
       case "FindArt":
+        return start("findArt");
       case "FetchArt":
         return start("fetchArt");
       case "ImportArt":
@@ -195,11 +198,64 @@ beforeEach(async () => {
   storeSettings({});
 });
 
-describe("ArtVariantsDialog", () => {
-  function Opener({ onPick = () => undefined }: { onPick?: () => void }) {
+describe("ArtChooseDialog", () => {
+  function Opener({ onPick = () => undefined, canFetch = true }: { onPick?: () => void; canFetch?: boolean }) {
     const [open, setOpen] = useState(true);
-    return <ArtVariantsDialog root="/lib" game={game} kind="COV" open={open} onOpenChange={setOpen} onPick={onPick} />;
+    return (
+      <ArtChooseDialog
+        root="/lib"
+        game={game}
+        kind="COV"
+        canFetch={canFetch}
+        unavailable="No source has covers"
+        open={open}
+        onOpenChange={setOpen}
+        onPick={onPick}
+        onFile={() => undefined}
+        onClipboard={() => undefined}
+      />
+    );
   }
+
+  // One window per slot (release pass 2.6): the sources' variants above,
+  // the user's own paths below. On main "Download" opened the variants and
+  // "Replace" a menu with the paths.
+  it("shows the sources' variants and the user's own paths together", async () => {
+    const core = fakeCore({
+      results: {
+        findArt: {
+          type: "ArtVariants",
+          startup: game.startup,
+          kind: "COV",
+          variants: [{ width: 140, height: 200, png: "", source: "xlenore", origin: "https://example.invalid/a.jpg" }],
+        },
+      },
+    });
+    render(
+      <Providers transport={core.transport}>
+        <Opener />
+      </Providers>,
+    );
+    const dialog = await screen.findByTestId("art-choose-dialog");
+    expect(await within(dialog).findAllByTestId("art-variant")).toHaveLength(1);
+    expect(within(dialog).getByTestId("art-variant-use")).toBeEnabled();
+    expect(within(dialog).getByTestId("art-from-file-COV")).toHaveTextContent("From a file…");
+    expect(within(dialog).getByTestId("art-from-clipboard-COV")).toHaveTextContent("Paste from the clipboard");
+    expect(core.of("FindArt")).toHaveLength(1);
+  });
+
+  it("says why the sources have nothing and asks none of them", async () => {
+    const core = fakeCore({});
+    render(
+      <Providers transport={core.transport}>
+        <Opener canFetch={false} />
+      </Providers>,
+    );
+    const dialog = await screen.findByTestId("art-choose-dialog");
+    expect(within(dialog).getByText("No source has covers")).toBeInTheDocument();
+    expect(within(dialog).getByTestId("art-from-file-COV")).toBeInTheDocument();
+    expect(core.of("FindArt")).toHaveLength(0);
+  });
 
   it("stops its search when the dialog is closed", async () => {
     const core = fakeCore({});
@@ -210,7 +266,7 @@ describe("ArtVariantsDialog", () => {
     );
     await waitFor(() => expect(core.of("GetJob").length).toBeGreaterThan(0));
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByTestId("art-variants-dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId("art-choose-dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(core.of("CancelJob").map((r) => r.job)).toEqual([1]));
     expect(core.of("FindArt")).toHaveLength(1);
   });
@@ -233,7 +289,7 @@ describe("ArtVariantsDialog", () => {
     const variant = { width: 140, height: 200, png: "" };
     const core = fakeCore({
       results: {
-        fetchArt: {
+        findArt: {
           type: "ArtVariants",
           startup: game.startup,
           kind: "COV",
@@ -262,8 +318,34 @@ describe("ArtVariantsDialog", () => {
     expect(first).toHaveAttribute("aria-checked", "false");
     // A finished search is not cancelled on closing.
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByTestId("art-variants-dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId("art-choose-dialog")).not.toBeInTheDocument());
     expect(core.of("CancelJob")).toEqual([]);
+  });
+});
+
+describe("ArtSlots", () => {
+  it("gives every slot one Choose… button and keeps Delete for a slot that has a picture", async () => {
+    const core = fakeCore({ attribution: about });
+    const withCover: Game = {
+      ...game,
+      art: [{ kind: "COV", path: "ART/SLUS_200.62_COV.png", width: 140, height: 200, size: 1024, modified: null }],
+    };
+    render(
+      <Providers transport={core.transport}>
+        <ArtSlots game={withCover} root="/lib" />
+      </Providers>,
+    );
+    const slots = await screen.findByTestId("art-slots");
+    expect(within(slots).getAllByRole("button", { name: /^Choose: / })).toHaveLength(8);
+    expect(within(slots).queryByTestId("art-download-COV")).toBeNull();
+    expect(within(slots).queryByTestId("art-replace-COV")).toBeNull();
+    expect(within(slots).getByTestId("art-delete-COV")).toBeInTheDocument();
+    expect(within(slots).queryByTestId("art-delete-ICO")).toBeNull();
+    await userEvent.click(within(slots).getByTestId("art-choose-COV"));
+    const dialog = await screen.findByTestId("art-choose-dialog");
+    expect(dialog).toHaveTextContent("Cover: Retail Game");
+    expect(within(dialog).getByTestId("art-from-file-COV")).toBeInTheDocument();
+    await waitFor(() => expect(core.of("FindArt")).toHaveLength(1));
   });
 });
 
