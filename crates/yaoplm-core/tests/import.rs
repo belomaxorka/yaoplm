@@ -503,6 +503,117 @@ fn database_titles_name_every_game_the_database_knows() {
     );
 }
 
+// The bundled game info goes into `CFG/<ID>.cfg` right after each game the
+// table knows, by the switch (META-3, ADR-0050): a new file with CRLF
+// lines, or the existing one merged by the CFG-2 rules with a backup.
+#[test]
+fn game_info_is_written_with_the_games() {
+    let fs = MemFs::new(FsKind::ExFat);
+    let sources = VirtualSources::new();
+    sources.add_iso(src("Retail.iso"), Variant::Retail.build());
+    sources.add_iso(src("Retail Copy.iso"), Variant::Retail.build());
+    sources.add_iso(src("My Homebrew.iso"), Variant::LongId.build());
+    let inputs = ["Retail.iso", "Retail Copy.iso", "My Homebrew.iso"];
+    let with_info = ImportOptions {
+        write_info: true,
+        ..options()
+    };
+    let plan = plan_for(&fs, &sources, &inputs, &with_info);
+    let info: Vec<_> = plan
+        .transactions
+        .iter()
+        .filter(|t| {
+            t.title_phrase
+                .as_ref()
+                .is_some_and(|p| p.key == "titles.gameInfo")
+        })
+        .collect();
+    // One per ID: the unknown homebrew gets none, the second copy neither.
+    assert_eq!(
+        info.len(),
+        1,
+        "{:?}",
+        plan.transactions
+            .iter()
+            .map(|t| &t.title)
+            .collect::<Vec<_>>()
+    );
+    let tx = info[0];
+    assert_eq!(tx.game.as_ref().unwrap().startup, "SLUS_200.62");
+    let keys: Vec<&str> = tx.cfg_changes.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "Title",
+            "Genre",
+            "Release",
+            "Developer",
+            "Publisher",
+            "Players",
+            "PlayersText"
+        ]
+    );
+    // Right after its game, before anything else.
+    let at = plan
+        .transactions
+        .iter()
+        .position(|t| std::ptr::eq(t, tx))
+        .unwrap();
+    assert_eq!(
+        plan.transactions[at - 1].game.as_ref().unwrap().startup,
+        "SLUS_200.62"
+    );
+    assert!(matches!(tx.steps[0], Step::PutFile { .. }));
+    assert!(run(&plan, &fs, &sources).succeeded());
+    assert_eq!(
+        fs.bytes("CFG/SLUS_200.62.cfg").unwrap(),
+        b"Title=Retail\r\nGenre=Action\r\nRelease=10-23-2001\r\nDeveloper=DMA Design\r\nPublisher=Rockstar Games\r\nPlayers=players/1\r\nPlayersText=1\r\n"
+    );
+    assert!(
+        !files(&fs)
+            .iter()
+            .any(|(p, _)| p.starts_with(".yaoplm/backup/"))
+    );
+
+    // A CFG already on the device keeps its other keys and gets a backup.
+    let fs = MemFs::new(FsKind::ExFat);
+    fs.insert_file(
+        "CFG/SLUS_200.62.cfg",
+        b"$Compatibility=1\r\nTitle=Old\r\nMine=kept\r\n",
+    );
+    let plan = plan_for(&fs, &sources, &inputs[..1], &with_info);
+    let tx = plan
+        .transactions
+        .iter()
+        .find(|t| {
+            t.title_phrase
+                .as_ref()
+                .is_some_and(|p| p.key == "titles.gameInfo")
+        })
+        .unwrap();
+    assert_eq!(tx.cfg_changes[0].before.as_deref(), Some("Old"));
+    assert!(run(&plan, &fs, &sources).succeeded());
+    assert!(
+        fs.bytes("CFG/SLUS_200.62.cfg")
+            .unwrap()
+            .starts_with(b"$Compatibility=1\r\nTitle=Retail\r\nMine=kept\r\nGenre=Action\r\n")
+    );
+    assert!(
+        fs.files()
+            .iter()
+            .any(|(p, _)| p.starts_with(".yaoplm/backup/") && p.ends_with("/CFG/SLUS_200.62.cfg"))
+    );
+
+    // Off: nothing of the kind.
+    let fs = MemFs::new(FsKind::ExFat);
+    let plan = plan_for(&fs, &sources, &inputs[..1], &options());
+    assert!(plan.transactions.iter().all(|t| {
+        t.title_phrase
+            .as_ref()
+            .is_none_or(|p| p.key != "titles.gameInfo")
+    }));
+}
+
 #[test]
 fn move_deletes_sources_only_after_the_copy() {
     let fs = MemFs::new(FsKind::ExFat);

@@ -453,6 +453,7 @@ impl Api {
                 verify,
                 database_titles,
                 covers,
+                write_info,
                 mode,
             } => {
                 let (path, fs) = self.root_in(&root, mode)?;
@@ -502,6 +503,7 @@ impl Api {
                     compress: compress.unwrap_or(false),
                     check: verify.unwrap_or(false),
                     database_titles: database_titles.unwrap_or(false),
+                    write_info: write_info.unwrap_or(false),
                     covers: covers.as_ref().map(|c| c.items.clone()).unwrap_or_default(),
                 };
                 let sources = ArchiveSources::new(&HostSources);

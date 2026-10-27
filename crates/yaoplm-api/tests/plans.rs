@@ -166,6 +166,72 @@ fn import_rename_move_delete() {
     assert!(s.sources.join("Retail.iso").exists());
 }
 
+// Game info written into the CFG as the games are added (META-3,
+// ADR-0050): one CFG transaction right after each game the bundled table
+// knows, by the switch.
+#[test]
+fn game_info_is_written_with_the_games() {
+    let s = setup();
+    let api = Api::new();
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": s.device, "sources": [s.sources], "writeInfo": true}),
+    )
+    .unwrap();
+    let txs = plan["transactions"].as_array().unwrap();
+    let titles: Vec<&str> = txs
+        .iter()
+        .map(|t| t["titlePhrase"]["key"].as_str().unwrap_or(""))
+        .collect();
+    // Folders, then the games; the Retail image (GTA III) is known, the
+    // Lf-only image (SCES_500.03, Dead or Alive 2) too.
+    assert_eq!(
+        titles.iter().filter(|t| **t == "titles.gameInfo").count(),
+        2,
+        "{titles:?}"
+    );
+    let info = txs
+        .iter()
+        .find(|t| {
+            t["titlePhrase"]["key"] == "titles.gameInfo" && t["game"]["startup"] == "SLUS_200.62"
+        })
+        .unwrap();
+    assert_eq!(
+        info["cfgChanges"][0],
+        json!({"key": "Title", "before": null, "after": "Retail"})
+    );
+    assert_eq!(info["cfgChanges"][3]["key"], "Developer");
+    assert_eq!(info["steps"][0]["op"], "putFile");
+    let report = execute(&api, &plan, false);
+    assert!(
+        report.outcomes.iter().all(|o| *o == TxOutcome::Done),
+        "{report:?}"
+    );
+    let cfg = fs::read(Path::new(&s.device).join("CFG").join("SLUS_200.62.cfg")).unwrap();
+    assert!(
+        cfg.starts_with(
+            b"Title=Retail\r\nGenre=Action\r\nRelease=10-23-2001\r\nDeveloper=DMA Design\r\n"
+        ),
+        "{}",
+        String::from_utf8_lossy(&cfg)
+    );
+
+    // Without the switch no CFG is planned.
+    let s = setup();
+    let plan = call(
+        &api,
+        json!({"type": "PlanImport", "root": s.device, "sources": [s.sources]}),
+    )
+    .unwrap();
+    assert!(
+        plan["transactions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["titlePhrase"]["key"] != "titles.gameInfo")
+    );
+}
+
 #[test]
 fn titles_and_errors_carry_phrases() {
     let s = setup();

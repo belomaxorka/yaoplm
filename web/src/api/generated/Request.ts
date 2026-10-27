@@ -100,6 +100,12 @@ databaseTitles?: boolean,
  */
 covers?: string, 
 /**
+ * Write the bundled game info into `CFG/<ID>.cfg` right after
+ * each game the table knows (META-3, ADR-0050): title, genre,
+ * release date, developer, publisher, players. Off when absent.
+ */
+writeInfo?: boolean, 
+/**
  * As in `ScanLibrary`: SMB's limits or BDM's fragment rule.
  */
 mode?: DeviceMode, } | { "type": "ConvertGames", root: string, games: Array<GameRef>, target: ConvertTarget, profile?: LoaderProfile, 

@@ -694,6 +694,54 @@ pub fn plan_game_info(
     Ok(plan)
 }
 
+/// The transaction writing `values` into `CFG/<ID>.cfg` of a game being
+/// added (META-3): the file as the device has it now (none for a new
+/// game), the values replaced or appended, a backup when the file exists.
+/// `None` when every value is already there, when a value does not fit,
+/// or when the file is wOPL's libconfig, which YAOPLM never rewrites.
+pub(crate) fn info_cfg_transaction(
+    fs: &dyn DeviceFs,
+    state: &DeviceState,
+    game: &GameInfo,
+    values: &[(String, String)],
+    title: Phrase,
+) -> io::Result<Option<Transaction>> {
+    let (path, bytes) = locate_cfg(fs, state, &game.startup)?;
+    if bytes
+        .as_deref()
+        .is_some_and(|b| cfg::detect_dialect(b) == Dialect::Libconfig)
+    {
+        return Ok(None);
+    }
+    let before = CfgDocument::parse(bytes.as_deref().unwrap_or_default());
+    let mut doc = before.clone();
+    for (key, value) in values {
+        if doc.set(key, value).is_err() {
+            return Ok(None);
+        }
+    }
+    let changes = changed_keys(&before, &doc);
+    if changes.is_empty() {
+        return Ok(None);
+    }
+    let mut tx = Transaction::titled(title);
+    tx.game = Some(game.clone());
+    let expect = match &bytes {
+        Some(old) => {
+            tx.push(backup_step(&new_backup_dir()?, &path)?);
+            Expect::Content(Bytes(old.clone()))
+        }
+        None => Expect::Absent,
+    };
+    tx.push(Step::PutFile {
+        path,
+        content: Bytes(doc.to_bytes()),
+        expect,
+    });
+    tx.cfg_changes = changes;
+    Ok(Some(tx))
+}
+
 /// Plans creating blank cards that no game names yet (`yaoplm vmc create`).
 pub fn plan_cards(fs: &dyn DeviceFs, cards: &[NewCard], now: i64) -> Result<Plan, OpError> {
     let state = DeviceState::read(fs)?;

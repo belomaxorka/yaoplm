@@ -70,6 +70,7 @@ fn import(root: &Path, sources: &[PathBuf], layout: Layout) {
         .dispatch(Request::PlanImport {
             verify: None,
             database_titles: None,
+            write_info: None,
             covers: None,
             root: root.to_string_lossy().into_owned(),
             sources: sources

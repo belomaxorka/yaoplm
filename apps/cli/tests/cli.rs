@@ -208,6 +208,10 @@ fn stick() -> Stick {
     }
 }
 
+fn text_of(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
 fn run(args: &[&std::ffi::OsStr]) -> Output {
     yaoplm().args(args).stdin(Stdio::null()).output().unwrap()
 }
@@ -244,6 +248,36 @@ fn add_prints_the_plan_and_needs_yes() {
     assert!(stdout(&done).contains("done  Copy SLUS_200.62.Retail.iso to CD"));
     assert!(s.root.join("CD/SLUS_200.62.Retail.iso").is_file());
     assert!(s.root.join("APPS").is_dir());
+    // The bundled game info goes into the CFG with the game (META-3).
+    assert!(
+        text_of(&dry).contains("Game info of Retail"),
+        "{}",
+        text_of(&dry)
+    );
+    let cfg = std::fs::read(s.root.join("CFG/SLUS_200.62.cfg")).unwrap();
+    assert!(
+        cfg.starts_with(b"Title=Retail\r\nGenre=Action\r\n"),
+        "{}",
+        String::from_utf8_lossy(&cfg)
+    );
+    assert!(String::from_utf8_lossy(&cfg).contains("Developer=DMA Design\r\n"));
+
+    // --no-info leaves the CFG folder empty.
+    let plain = s.root.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let no_info = run(&[
+        "add".as_ref(),
+        plain.as_os_str(),
+        s.games.join("Retail.iso").as_os_str(),
+        "--no-info".as_ref(),
+        "--yes".as_ref(),
+    ]);
+    assert!(
+        no_info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&no_info.stderr)
+    );
+    assert!(!plain.join("CFG/SLUS_200.62.cfg").exists());
 
     // With --db-titles the bundled database names the games it knows.
     let other = s.root.parent().unwrap().join("other");
