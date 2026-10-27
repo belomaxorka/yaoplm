@@ -312,7 +312,7 @@ function GameDetails({ game, root, games }: { game: Game; root: string; games: r
             </h3>
             <Button variant="outline" size="sm" onClick={() => setArtOpen(true)} data-testid="game-download-art">
               <ImageDown aria-hidden />
-              {t("art.downloadAll")}
+              {t("art.picturesButton")}
             </Button>
           </div>
           <ArtSlots game={game} root={root} />

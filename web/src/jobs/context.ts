@@ -24,10 +24,11 @@ export const JobsContext = createContext<JobsContextValue | null>(null);
 
 /**
  * Jobs the user started and may want to follow. Library scans are the app's
- * own business: their progress shows in the library (`ScanProgress`).
+ * own business: their progress shows in the library (`ScanProgress`); a
+ * picture slot's search shows inside its window (`ArtChooseDialog`).
  */
 export function isUserJob(job: JobInfo): boolean {
-  return job.kind !== "scanLibrary";
+  return job.kind !== "scanLibrary" && job.kind !== "findArt";
 }
 
 export function useJobs(): JobsContextValue {

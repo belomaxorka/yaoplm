@@ -33,11 +33,11 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Retail Game/ }).click();
-  // Every type has a source now (ADR-0035): the icon slot can download.
-  await expect(page.getByTestId("art-download-ICO")).toBeEnabled();
-  await page.getByTestId("art-download-COV").click();
-  // The sources' pictures to pick from, the first one chosen.
-  const variants = page.getByTestId("art-variants-dialog");
+  // One window per slot (ART-2): the sources' pictures to pick from, the
+  // first one chosen, and the user's own paths below them.
+  await page.getByTestId("art-choose-COV").click();
+  const variants = page.getByTestId("art-choose-dialog");
+  await expect(variants.getByTestId("art-from-file-COV")).toBeVisible();
   await expect(variants.getByTestId("art-variant")).toHaveCount(1);
   await expect(variants.getByTestId("art-variant")).toHaveAttribute("aria-checked", "true");
   await expect(variants).toContainText("xlenore");
@@ -51,6 +51,10 @@ test("a cover is downloaded for one game from its card", async ({ page, request 
   const slot = page.getByTestId("art-slot-COV");
   await expect(slot).toHaveAttribute("data-has-art", "true");
   await expect(slot).toContainText("140×200");
+  // The slot's search is not a job to follow; the write is.
+  await page.goto("/jobs");
+  await expect(page.getByTestId("job-card").filter({ hasText: "Pictures for SLUS_200.62" })).toHaveCount(0);
+  await expect(page.getByTestId("job-card").filter({ hasText: "Write 1 cover" })).toHaveCount(1);
   await expect(page.getByTestId("game-hero").getByTestId("game-cover")).toHaveAttribute("data-has-cover", "true");
   // The image really loads from /media/art.
   const src = await slot.locator("img").getAttribute("src");
@@ -94,7 +98,7 @@ test("a cover is replaced from a server file and deleted with confirmation", asy
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Uppercase Ext/ }).click();
-  await page.getByTestId("art-replace-COV").click();
+  await page.getByTestId("art-choose-COV").click();
   await page.getByTestId("art-from-file-COV").click();
   const browser = page.getByTestId("folder-browser");
   await browser.getByRole("button", { name: "mirror" }).click();
@@ -116,7 +120,7 @@ test("a cover is replaced from a server file and deleted with confirmation", asy
   await expect(page.getByTestId("art-slot-COV")).toHaveAttribute("data-has-art", "false");
 
   // Any other type the same way: a background from the same file.
-  await page.getByTestId("art-replace-BG").click();
+  await page.getByTestId("art-choose-BG").click();
   await page.getByTestId("art-from-file-BG").click();
   await browser.getByRole("button", { name: "mirror" }).click();
   await browser.getByRole("checkbox", { name: "Select custom-cover.jpg" }).check();
@@ -219,8 +223,8 @@ test("an icon comes from OPL Manager's backup", async ({ page, request }) => {
   await openLibrary(page, request);
   await page.goto("/library");
   await page.getByRole("listitem", { name: /Split Game/ }).click();
-  await page.getByTestId("art-download-ICO").click();
-  const variants = page.getByTestId("art-variants-dialog");
+  await page.getByTestId("art-choose-ICO").click();
+  const variants = page.getByTestId("art-choose-dialog");
   await expect(variants.getByTestId("art-variant")).toHaveCount(1);
   await expect(variants).toContainText("oplm");
   await variants.getByTestId("art-variant-use").click();
