@@ -826,7 +826,7 @@ function BootHints({
           ) : (
             <>
               <p className="text-muted-foreground wrap-anywhere">{t("loaderInstall.addLines", { config: hint.config ?? "" })}</p>
-              <pre className="relative mt-2 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs">{hint.lines.join("\n")}</pre>
+              <pre className="selectable relative mt-2 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs">{hint.lines.join("\n")}</pre>
               {hint.lines.some((line) => line.includes("_N")) && (
                 <p className="mt-1 text-xs text-muted-foreground">{t("loaderInstall.itemNumber")}</p>
               )}

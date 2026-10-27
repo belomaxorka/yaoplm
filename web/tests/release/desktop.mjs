@@ -1,6 +1,7 @@
 // Drives the running dev desktop over WebView2's CDP port (TESTING.md):
 //   node tests/release/desktop.mjs <command> [args]
 // Commands: text | shot <file> [height] | goto <path> | click <selector> |
+// rightclick <selector> | select <selector> | style <selector> <property> |
 // eval <js> | tabs <n> | storage <json>. Each call connects, acts, leaves.
 import { chromium } from "@playwright/test";
 
@@ -34,6 +35,27 @@ switch (command) {
     await page.locator(args[0]).first().click();
     await page.waitForTimeout(800);
     console.log("clicked");
+    break;
+  }
+  case "rightclick": {
+    // A real right click: WebView2 opens its own menu unless the page
+    // cancels the event (UI-5). The menu is native, so a desktop screenshot
+    // shows it, a page screenshot does not.
+    await page.locator(args[0]).first().click({ button: "right" });
+    await page.waitForTimeout(800);
+    console.log("right-clicked");
+    break;
+  }
+  case "select": {
+    // Triple-click selects the element's text where selection is allowed.
+    await page.locator(args[0]).first().click({ clickCount: 3 });
+    await page.waitForTimeout(300);
+    console.log(JSON.stringify(await page.evaluate(() => window.getSelection()?.toString() ?? "")));
+    break;
+  }
+  case "style": {
+    const [selector, property] = args;
+    console.log(await page.locator(selector).first().evaluate((el, prop) => getComputedStyle(el).getPropertyValue(prop), property));
     break;
   }
   case "key": {

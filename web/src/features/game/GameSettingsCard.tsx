@@ -375,11 +375,11 @@ export function GameSettingsCard({ game, root }: { game: Game; root: string }) {
               <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
                 {t("cfg.keys", { count: view.entries.length })}
               </summary>
-              <p className="mt-2 font-mono text-xs wrap-anywhere text-muted-foreground">
+              <p className="selectable mt-2 font-mono text-xs wrap-anywhere text-muted-foreground">
                 {view.exists ? view.path : t("cfg.notThereYet", { path: view.path })}
               </p>
               {view.entries.length > 0 && (
-                <ul className="mt-1 flex flex-col gap-0.5 font-mono text-xs">
+                <ul className="selectable mt-1 flex flex-col gap-0.5 font-mono text-xs">
                   {view.entries.map((entry) => (
                     <li key={entry.key} className="wrap-anywhere">
                       {entry.key}={entry.value}

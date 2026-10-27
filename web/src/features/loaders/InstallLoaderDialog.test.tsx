@@ -33,6 +33,15 @@ const fmcbHint: LoaderBootHint = {
   title: null,
 };
 
+const ps2bblHint: LoaderBootHint = {
+  launcher: "ps2bbl",
+  ps2Path: "mass:/UPDT/OPL.ELF",
+  stock: false,
+  config: "mass:/PS2BBL/CONFIG.INI",
+  lines: ["LK_AUTO_E1 = mass:/UPDT/OPL.ELF", "LK_CIRCLE_E1 = mass:/UPDT/OPL.ELF"],
+  title: null,
+};
+
 /** The core as the dialog sees it; `plans` answers each PlanInstallLoader in turn. */
 /**
  * How the write ends: done, failed in a transaction (the job still
@@ -45,7 +54,8 @@ function fakeCore({
   languages = false,
   plans = [plan()],
   write = "done",
-}: { languages?: boolean; plans?: Response[]; write?: Write } = {}) {
+  hints = [fmcbHint],
+}: { languages?: boolean; plans?: Response[]; write?: Write; hints?: LoaderBootHint[] } = {}) {
   const requests: Request[] = [];
   const jobs = new Map<number, JobInfo>();
   let planned = 0;
@@ -121,7 +131,7 @@ function fakeCore({
         return { type: "JobState", ...info };
       }
       case "LoaderBootHints":
-        return { type: "LoaderBootHints", hints: [fmcbHint] };
+        return { type: "LoaderBootHints", hints };
       default:
         break;
     }
@@ -153,7 +163,7 @@ beforeEach(async () => {
 describe("InstallLoaderDialog", () => {
   it("installs the recommended build through a plan, then says how to start it", async () => {
     const user = userEvent.setup();
-    const core = fakeCore();
+    const core = fakeCore({ hints: [fmcbHint, ps2bblHint] });
     show(core);
     const dialog = await screen.findByTestId("loader-install-dialog");
     // The release is shown before anything is downloaded.
@@ -182,6 +192,12 @@ describe("InstallLoaderDialog", () => {
     const hints = await screen.findByTestId("loader-boot-hints");
     expect(within(hints).getByText(/stock config starts mass:\/UPDT\/OPL\.ELF/)).toBeTruthy();
     expect(within(hints).getByText(/USB device start mode to Auto/)).toBeTruthy();
+    // The launcher's lines are typed into a config on the console: they stay
+    // selectable in the desktop window (UI-5), the hints around them do not.
+    const lines = within(hints).getByText(/LK_AUTO_E1 = mass:\/UPDT\/OPL\.ELF/);
+    expect(lines.tagName).toBe("PRE");
+    expect(lines).toHaveClass("selectable");
+    expect(within(hints).getByText(/stock config starts/)).not.toHaveClass("selectable");
     expect(core.of("LoaderBootHints")[0]).toMatchObject({ build: "opl-beta", presets: ["fmcb"], device: "usb" });
   });
 

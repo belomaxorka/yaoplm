@@ -59,6 +59,48 @@ describe("the library on a device that is gone", () => {
   });
 });
 
+/** A core whose device reads fine but whose scan fails. */
+function failedScanCore() {
+  const info = testDevice({ root: "E:\\", mode: smbMode, external: false, kind: "fixed", loader: loader({ detected: detected({ library: true }) }) });
+  return new MockTransport((request: Request): Response => {
+    switch (request.type) {
+      case "ListJobs":
+        return { type: "Jobs", jobs: [] };
+      case "ListDevices":
+        return { type: "Devices", devices: [info] };
+      case "InspectDevice":
+        return { type: "Device", ...info };
+      case "ScanLibrary":
+        throw new RpcError({ code: "Internal", message: "E:\\CD: access denied" });
+      case "DiscardPlan":
+        return { type: "Ack" };
+      default:
+        throw new RpcError({ code: "NotFound", message: `${request.type} is not faked` });
+    }
+  });
+}
+
+describe("the library whose scan failed", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+    storeSettings({ root: "E:\\" });
+  });
+
+  // The error is what one sends along when asking for help: it stays
+  // selectable in the desktop window (UI-5, `selectable`).
+  it("shows the error as selectable text with a retry", async () => {
+    render(
+      <Providers transport={failedScanCore()}>
+        <LibraryPage />
+      </Providers>,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The scan failed: E:\\CD: access denied");
+    expect(alert).toHaveClass("selectable");
+    expect(screen.getByRole("button", { name: "Scan again" })).toBeInTheDocument();
+  });
+});
+
 /** A core whose open folder has no OPL folders and no games yet. */
 function emptyFolderCore() {
   const info = testDevice({ root: "E:\\", mode: smbMode, external: false, kind: "fixed", loader: loader({ detected: detected({ library: false }) }) });
