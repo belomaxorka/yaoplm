@@ -92,7 +92,8 @@ const FIRST_ZSO_BETA: u32 = 1871;
 
 /// The rules an OPL version string asks for: 1.0, 1.1 and upstream betas
 /// before build 1871 are 1.1.0's. A fork's suffix (`-yaopl`) means the
-/// number counts the fork's own commits, so it says nothing.
+/// number counts the fork's own commits, so it says nothing; YAOPL's own
+/// versions (`v2.0.0-…-yaopl`) are above 1.2 anyway.
 fn opl_rules(version: &str) -> LoaderProfile {
     let mut parts = version.trim_start_matches('v').split('-');
     let release: Vec<u32> = parts
@@ -1347,6 +1348,14 @@ mod tests {
             LoaderProfile::Opl120Beta
         );
         assert_eq!(opl_rules("v1.2-beta-468"), LoaderProfile::Opl120Beta);
+        // YAOPL's own versions are the 1.2.0 beta with its fixes (ADR-0051).
+        for version in [
+            "v2.0.0-nightly.1-0123abc-yaopl",
+            "v2.0.0-rc1-yaopl",
+            "v2.0.0-yaopl-nosio2man",
+        ] {
+            assert_eq!(opl_rules(version), LoaderProfile::Opl120Beta, "{version}");
+        }
     }
 
     #[test]
