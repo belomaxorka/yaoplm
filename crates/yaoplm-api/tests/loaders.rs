@@ -176,7 +176,7 @@ fn yaopl_needs_its_sums_and_digest_to_agree() {
 
     let sums = s
         .root
-        .join("belomaxorka/yaopl/releases/download/latest/SHA256SUMS");
+        .join("yaopl/yaopl/releases/download/latest/SHA256SUMS");
     std::fs::write(&sums, format!("{}  OPNPS2LD.ELF\n", "1".repeat(64))).unwrap();
     let info = run(
         &s.api,
@@ -346,13 +346,13 @@ fn the_users_own_file_says_what_it_is() {
 #[test]
 fn a_versioned_yaopl_release_is_one_of_its_channel() {
     let s = setup();
-    let elf = opl_elf("v1.2.0-Beta-2400-0123abc-yaopl");
+    let elf = opl_elf("v2.0.0-yaopl");
     let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&elf));
     ReleaseMirror::new(&s.root)
         .release(
-            "belomaxorka/yaopl",
-            "v1.2.0-Beta-2400-0123abc-yaopl",
-            "v1.2.0-Beta-2400-0123abc-yaopl",
+            "yaopl/yaopl",
+            "yaopl-v2.0.0",
+            "v2.0.0-yaopl",
             "- Fix a hang on an empty cheat name\n",
             "2026-11-01",
             &[
@@ -369,12 +369,16 @@ fn a_versioned_yaopl_release_is_one_of_its_channel() {
             ],
         )
         .unwrap();
-    let tag = "v1.2.0-Beta-2400-0123abc-yaopl";
+    // A YAOPL release: tag `yaopl-vX.Y.Z`, named by its version (ADR-0051).
+    let (tag, version) = ("yaopl-v2.0.0", "v2.0.0-yaopl");
     let details = offer(run(
         &s.api,
         json!({"type": "LoaderRelease", "build": "yaopl", "tag": tag, "mirror": s.mirror}),
     ));
-    assert_eq!((details.tag.as_str(), details.version.as_str()), (tag, tag));
+    assert_eq!(
+        (details.tag.as_str(), details.version.as_str()),
+        (tag, version)
+    );
     assert_eq!(
         details.changelog[0].text,
         "Fix a hang on an empty cheat name"
@@ -384,7 +388,7 @@ fn a_versioned_yaopl_release_is_one_of_its_channel() {
         json!({"type": "DownloadLoader", "build": "yaopl", "tag": tag, "sha256": details.file.sha256, "mirror": s.mirror}),
     ));
     assert_eq!(got.tag.as_deref(), Some(tag));
-    assert_eq!(got.version.as_deref(), Some(tag));
+    assert_eq!(got.version.as_deref(), Some(version));
 }
 
 #[test]

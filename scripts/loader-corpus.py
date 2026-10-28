@@ -38,7 +38,7 @@ import sys
 
 REPOS = [
     "ps2homebrew/Open-PS2-Loader",
-    "belomaxorka/yaopl",
+    "yaopl/yaopl",
     "NathanNeurotic/Open-PS2-Loader",
     "NathanNeurotic/RiptOPL",
     "ps2homebrew/wOPL",
@@ -100,7 +100,8 @@ def fetch(out: pathlib.Path) -> None:
 
 
 VERSION_IN_NAME = re.compile(
-    r"(v\d+\.\d+(?:\.\d+)?(?:-rc\d+)?(?:-Beta-\d+-[0-9a-f]{7}(?:-yaopl)?|-beta-\d+|-\d+(?=[-.]|$)|-unofficial-[0-9a-f]{7})?)",
+    r"(v\d+\.\d+(?:\.\d+)?(?:-rc\d+)?(?:-Beta-\d+-[0-9a-f]{7}(?:-yaopl)?|-nightly\.\d+-[0-9a-f]{7}-yaopl|-yaopl"
+    r"|-beta-\d+|-\d+(?=[-.]|$)|-unofficial-[0-9a-f]{7})?)",
     re.I,
 )
 # Builds whose names do not carry the version: from the clones' git history

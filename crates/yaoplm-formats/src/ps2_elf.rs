@@ -3,7 +3,8 @@
 //!
 //! Format reference: `docs/research/16-loader-signs.md` §1.6. The version is
 //! `OPL_VERSION` from upstream's `Makefile` (`v1.1.0`,
-//! `v1.2.0-Beta-<N>-<hash>`, plus a fork's `LOCALVERSION` such as `-yaopl`),
+//! `v1.2.0-Beta-<N>-<hash>`, plus a fork's `LOCALVERSION` such as `-yaopl`;
+//! YAOPL's own `v2.0.0-nightly.<N>-<hash>-yaopl`, `v2.0.0-yaopl`),
 //! compiled in as a C string and shown by `src/gui.c` ("Open PS2 Loader %s")
 //! of ps2homebrew/Open-PS2-Loader@b3a21997. Release ELFs are packed by
 //! `ps2-packer` (`Makefile` `EE_BIN_PACKED`); checked on 2026-10-25 on the
@@ -326,6 +327,15 @@ mod tests {
                 packed: true
             })
         );
+        // YAOPL's own versions (ADR-0051).
+        let nightly = packed(&program("v2.0.0-nightly.12-0123abc-yaopl"));
+        assert_eq!(
+            read_version(&nightly).unwrap(),
+            Some(ElfVersion {
+                version: "v2.0.0-nightly.12-0123abc-yaopl".into(),
+                packed: true
+            })
+        );
         // A stream without an end marker, its exact size in the header.
         let exact = packed_with(&program("v1.1.0"), false);
         assert_eq!(read_version(&exact).unwrap().unwrap().version, "v1.1.0");
@@ -388,6 +398,9 @@ mod tests {
             "v1.2.0-Beta-2370-33a2b19-yaopl-nosio2man",
             "v1.2-beta-468",
             "v1.2.2",
+            "v2.0.0-nightly.12-0123abc-yaopl",
+            "v2.0.0-rc1-yaopl",
+            "v2.0.0-yaopl",
         ] {
             assert!(version_rank(good).is_some(), "{good}");
         }

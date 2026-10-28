@@ -209,6 +209,33 @@ fn freshness_orders_builds_inside_a_channel_only() {
     );
 }
 
+/// YAOPL's own versions come after its beta-numbered builds (ADR-0051).
+#[test]
+fn yaopl_updates_to_its_own_versions() {
+    let beta = "v1.2.0-Beta-2420-03edb47-yaopl";
+    let nightly = "v2.0.0-nightly.3-0123abc-yaopl";
+    let release = "v2.0.0-yaopl";
+    assert_eq!(
+        freshness(Some(beta), Some(nightly)),
+        Freshness::Update(nightly.to_owned())
+    );
+    assert_eq!(
+        freshness(Some(nightly), Some(release)),
+        Freshness::Update(release.to_owned())
+    );
+    assert_eq!(freshness(Some(release), Some(nightly)), Freshness::Current);
+    let next = "v2.1.0-nightly.1-4567def-yaopl";
+    assert_eq!(
+        freshness(Some(release), Some(next)),
+        Freshness::Update(next.to_owned())
+    );
+    // The A/B build is told only of A/B builds.
+    assert_eq!(
+        freshness(Some("v2.0.0-nightly.3-0123abc-yaopl-nosio2man"), Some(next)),
+        Freshness::Unknown
+    );
+}
+
 #[test]
 fn an_update_replaces_only_the_elf_and_its_language_with_a_backup() {
     let d = Device::new();
