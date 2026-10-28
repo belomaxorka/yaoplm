@@ -4,23 +4,24 @@ import { useApi } from "@/api/context";
 import type { LoaderBuild } from "@/api/generated/LoaderBuild";
 import { loaderCatalog } from "@/api/rpc";
 
-const BETA = /^(v\d+(?:\.\d+)+)-Beta-(\d+)-([0-9a-f]{7})/i;
+/** A numbered build: a beta, or YAOPL's nightly (ADR-0051). */
+const BUILD = /^(v\d+(?:\.\d+)+-(?:Beta-|nightly\.)\d+)-([0-9a-f]{7})/i;
 
-/** `v1.2.0-Beta-2271 (b3a2199)` for `v1.2.0-Beta-2271-b3a2199`; other versions as they are. */
+/** `v1.2.0-Beta-2271 (b3a2199)` for `v1.2.0-Beta-2271-b3a2199`, `v2.0.0-nightly.12 (0123abc)` for
+ * `v2.0.0-nightly.12-0123abc-yaopl`; other versions as they are. */
 export function versionLabel(version: string): string {
-  const beta = BETA.exec(version);
-  return beta ? `${beta[1]}-Beta-${beta[2]} (${beta[3]})` : version;
+  const build = BUILD.exec(version);
+  return build ? `${build[1]} (${build[2]})` : version;
 }
 
 /** `v1.2.0-Beta-2280` for a button; other versions as they are. */
 export function versionShort(version: string): string {
-  const beta = BETA.exec(version);
-  return beta ? `${beta[1]}-Beta-${beta[2]}` : version;
+  return BUILD.exec(version)?.[1] ?? version;
 }
 
-/** The commit a beta's version names. */
+/** The commit a numbered build's version names. */
 export function commitOf(version: string | null | undefined): string | null {
-  return (version && BETA.exec(version)?.[3]) || null;
+  return (version && BUILD.exec(version)?.[2]) || null;
 }
 
 /** "What changed since your version": GitHub's comparison of the two builds' commits. */
