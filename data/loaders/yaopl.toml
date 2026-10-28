@@ -1,7 +1,8 @@
 # YAOPL: the YAOPLM author's fork of OPL (ADR-0018), pre-release `latest`
-# recreated on every push to `master`. Release name = version string; the
-# CI publishes SHA256SUMS next to the assets (research/17 §6). Versioned
-# releases (`v…-yaopl`) are planned in the fork (ADR-0038).
+# recreated on every push to `master` with the nightly build. Releases are
+# tagged `yaopl-vX.Y.Z`, candidates `yaopl-vX.Y.Z-rcN` (pre-releases). Release
+# name = version string; the CI publishes SHA256SUMS next to the assets
+# (research/16 §2, research/17 §6, ADR-0051).
 id = "yaopl"
 family = "opl"
 name = "YAOPL"
@@ -26,7 +27,7 @@ ru = "Неофициальная сборка."
 
 [[docs]]
 kind = "fork"
-url = "https://github.com/belomaxorka/yaopl/blob/master/FORK.md"
+url = "https://github.com/belomaxorka/yaopl/blob/master/CHANGELOG.md"
 
 [[docs]]
 kind = "readme"
@@ -40,7 +41,7 @@ url = "https://github.com/ps2homebrew/Open-PS2-Loader/wiki"
 tag = "latest"
 floating = true
 prerelease = true
-releases = ["latest", "v*-yaopl"]
+releases = ["latest", "yaopl-v*"]
 version = "name"
 elf = "OPNPS2LD.ELF"
 languages = "OPNPS2LD-LANGS-{version}.7z"
@@ -73,9 +74,11 @@ title = "YAOPL"
 devices = ["usb", "mx4sio"]
 launchers = ["opl-apps", "ps2bbl-mx4sio", "osdmenu"]
 
-# `-yaopl` follows the commit (`LOCALVERSION`), `-nosio2man` may follow it.
+# `-yaopl` ends YAOPL's version (`LOCALVERSION`), `-nosio2man` may follow it:
+# `v1.2.0-Beta-<N>-<commit>-yaopl` before YAOPL numbered its own versions,
+# then `v2.0.0-nightly.<N>-<commit>-yaopl`, `v2.0.0-rc1-yaopl`, `v2.0.0-yaopl`.
 [fingerprints]
 elf = ["OPNPS2LD*.ELF", "OPL.ELF"]
 settings = ["conf_opl.cfg"]
-versions = ["v1.2.0-Beta-*"]
+versions = ["v*"]
 suffix = "yaopl"

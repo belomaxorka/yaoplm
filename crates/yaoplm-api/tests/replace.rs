@@ -340,12 +340,12 @@ fn the_same_rules_change_nothing_and_a_path_left_behind_can_be_retired() {
 fn a_channel_offers_only_the_releases_the_catalogue_allows() {
     let s = setup();
     let mirror = ReleaseMirror::new(Path::new(&s.mirror));
-    let older = opl_elf("v1.2.0-Beta-2360-1234abc-yaopl");
+    let older = opl_elf("v2.0.0-rc1-yaopl");
     mirror
         .release(
             "belomaxorka/yaopl",
-            "v1.2.0-Beta-2360-1234abc-yaopl",
-            "v1.2.0-Beta-2360-1234abc-yaopl",
+            "yaopl-v2.0.0-rc1",
+            "v2.0.0-rc1-yaopl",
             "",
             "2026-10-20",
             &[MirrorAsset {
@@ -393,8 +393,8 @@ fn a_channel_offers_only_the_releases_the_catalogue_allows() {
                 true
             ),
             (
-                "v1.2.0-Beta-2360-1234abc-yaopl".to_owned(),
-                Some("v1.2.0-Beta-2360-1234abc-yaopl".to_owned()),
+                "yaopl-v2.0.0-rc1".to_owned(),
+                Some("v2.0.0-rc1-yaopl".to_owned()),
                 false
             ),
         ]
@@ -405,12 +405,12 @@ fn a_channel_offers_only_the_releases_the_catalogue_allows() {
     let stable = list("opl-stable");
     assert_eq!(stable.len(), 1);
     assert_eq!(stable[0].0, "v1.1.0");
-    // The older YAOPL is one offer away, held to its own hash.
+    // The YAOPL candidate is one offer away, held to its own hash.
     let offer = result(run(
         &s.api,
-        json!({"type": "LoaderRelease", "build": "yaopl", "tag": "v1.2.0-Beta-2360-1234abc-yaopl", "mirror": s.mirror}),
+        json!({"type": "LoaderRelease", "build": "yaopl", "tag": "yaopl-v2.0.0-rc1", "mirror": s.mirror}),
     ));
-    assert_eq!(offer["version"], "v1.2.0-Beta-2360-1234abc-yaopl");
+    assert_eq!(offer["version"], "v2.0.0-rc1-yaopl");
 }
 
 #[test]

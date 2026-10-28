@@ -727,16 +727,13 @@ mod tests {
             assert!(catalog.channel_of(upstream, tag).is_none(), "{tag}");
         }
         let fork = "belomaxorka/yaopl";
-        assert_eq!(catalog.channel_of(fork, "latest").unwrap().id, "yaopl");
-        assert_eq!(
-            catalog
-                .channel_of(fork, "v1.2.0-Beta-2400-0123abc-yaopl")
-                .unwrap()
-                .id,
-            "yaopl"
-        );
+        for tag in ["latest", "yaopl-v2.0.0", "yaopl-v2.0.0-rc1"] {
+            assert_eq!(catalog.channel_of(fork, tag).unwrap().id, "yaopl", "{tag}");
+        }
         // Upstream tags inherited through git are not YAOPL releases.
-        assert!(catalog.channel_of(fork, "v1.1.0").is_none());
+        for tag in ["v1.1.0", "v1.0.0-rc1"] {
+            assert!(catalog.channel_of(fork, tag).is_none(), "{tag}");
+        }
     }
 
     #[test]
@@ -757,6 +754,19 @@ mod tests {
             Some("yaopl")
         );
         assert_eq!(channel("v1.2.0-Beta-4257-55261de-riptopl"), None);
+        // YAOPL's own versions (ADR-0051), the A/B build among them.
+        for text in [
+            "v2.0.0-nightly.12-0123abc-yaopl",
+            "v2.0.0-nightly.12-0123abc-yaopl-nosio2man",
+            "v2.0.0-rc1-yaopl",
+            "v2.0.0-yaopl",
+            "v2.1.0-nightly.1-0123abc-yaopl",
+        ] {
+            assert_eq!(channel(text), Some("yaopl"), "{text}");
+        }
+        // A local build is none of the published ones.
+        assert_eq!(channel("v2.0.0-nightly.12-0123abc-dirty-yaopl"), None);
+        assert_eq!(channel("v2.0.0-nightly.12-0123abc"), None);
         // Releases without a profile have no channel either (SPEC §5.10.2).
         assert_eq!(channel("v1.0.0"), None);
         assert_eq!(channel("v0.9.3"), None);
@@ -779,19 +789,28 @@ mod tests {
             // Channels never overlap: a version names one channel at most.
             for other in catalog.builds.iter().filter(|o| o.id != build.id) {
                 for pattern in &build.fingerprints.versions {
-                    let sample = pattern.replace('*', "2271-b3a2199");
-                    let sample = match &build.fingerprints.suffix {
-                        Some(suffix) => format!("{sample}-{suffix}"),
-                        None => sample,
-                    };
-                    let version = BuildVersion::parse(&sample).unwrap();
-                    assert!(build.takes_version(&version), "{}: {sample}", build.id);
-                    assert!(
-                        !other.takes_version(&version),
-                        "{} and {}: {sample}",
-                        build.id,
-                        other.id
-                    );
+                    // What `*` stands for in the patterns: a beta's number
+                    // and commit, a whole version.
+                    let samples: Vec<BuildVersion> = ["2271-b3a2199", "2.0.0-nightly.3-b3a2199"]
+                        .iter()
+                        .map(|fill| pattern.replace('*', fill))
+                        .map(|sample| match &build.fingerprints.suffix {
+                            Some(suffix) => format!("{sample}-{suffix}"),
+                            None => sample,
+                        })
+                        .filter_map(|sample| BuildVersion::parse(&sample))
+                        .collect();
+                    assert!(!samples.is_empty(), "{}: {pattern}", build.id);
+                    for version in samples {
+                        let sample = version.to_string();
+                        assert!(build.takes_version(&version), "{}: {sample}", build.id);
+                        assert!(
+                            !other.takes_version(&version),
+                            "{} and {}: {sample}",
+                            build.id,
+                            other.id
+                        );
+                    }
                 }
             }
         }
@@ -878,14 +897,10 @@ mod tests {
                 "owner/name",
             ),
             ("recommended = true", "recommended = false", "recommended"),
+            ("versions = [\"v*\"]\n", "", "missing field `versions`"),
             (
-                "versions = [\"v1.2.0-Beta-*\"]\n",
-                "",
-                "missing field `versions`",
-            ),
-            (
-                "releases = [\"latest\", \"v*-yaopl\"]",
-                "releases = [\"v*-yaopl\"]",
+                "releases = [\"latest\", \"yaopl-v*\"]",
+                "releases = [\"yaopl-v*\"]",
                 "channel.tag",
             ),
             (
