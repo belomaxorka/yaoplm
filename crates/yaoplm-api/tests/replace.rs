@@ -343,7 +343,7 @@ fn a_channel_offers_only_the_releases_the_catalogue_allows() {
     let older = opl_elf("v2.0.0-rc1-yaopl");
     mirror
         .release(
-            "belomaxorka/yaopl",
+            "yaopl/yaopl",
             "yaopl-v2.0.0-rc1",
             "v2.0.0-rc1-yaopl",
             "",

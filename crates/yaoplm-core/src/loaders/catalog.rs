@@ -726,7 +726,7 @@ mod tests {
         for tag in ["v1.0.0", "v1.0.0-rc1", "0.9.3"] {
             assert!(catalog.channel_of(upstream, tag).is_none(), "{tag}");
         }
-        let fork = "belomaxorka/yaopl";
+        let fork = "yaopl/yaopl";
         for tag in ["latest", "yaopl-v2.0.0", "yaopl-v2.0.0-rc1"] {
             assert_eq!(catalog.channel_of(fork, tag).unwrap().id, "yaopl", "{tag}");
         }
@@ -891,11 +891,7 @@ mod tests {
                 "unknown profile",
             ),
             ("profile = \"opl-1.2\"", "profile = \"riptopl\"", "family"),
-            (
-                "repo = \"belomaxorka/yaopl\"",
-                "repo = \"yaopl\"",
-                "owner/name",
-            ),
+            ("repo = \"yaopl/yaopl\"", "repo = \"yaopl\"", "owner/name"),
             ("recommended = true", "recommended = false", "recommended"),
             ("versions = [\"v*\"]\n", "", "missing field `versions`"),
             (
@@ -916,7 +912,7 @@ mod tests {
                 "nothing confirms",
             ),
             (
-                "url = \"https://github.com/belomaxorka/yaopl/blob/master/LICENSE\"",
+                "url = \"https://github.com/yaopl/yaopl/blob/master/LICENSE\"",
                 "url = \"http://example.org\"",
                 "https",
             ),

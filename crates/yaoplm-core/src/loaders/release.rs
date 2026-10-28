@@ -338,7 +338,7 @@ pub(crate) mod tests {
     }
 
     pub fn yaopl_release() -> Release {
-        let repo = "belomaxorka/yaopl";
+        let repo = "yaopl/yaopl";
         Release {
             tag_name: "latest".into(),
             name: Some("v1.2.0-Beta-2370-33a2b19-yaopl".into()),
@@ -488,7 +488,7 @@ pub(crate) mod tests {
         for a in &mut release.assets {
             a.browser_download_url = a
                 .browser_download_url
-                .replace("belomaxorka/yaopl", "ps2homebrew/Open-PS2-Loader");
+                .replace("yaopl/yaopl", "ps2homebrew/Open-PS2-Loader");
         }
         assert_eq!(
             offer(beta, &release, None).unwrap_err().phrase.key,

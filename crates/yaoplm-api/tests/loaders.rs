@@ -176,7 +176,7 @@ fn yaopl_needs_its_sums_and_digest_to_agree() {
 
     let sums = s
         .root
-        .join("belomaxorka/yaopl/releases/download/latest/SHA256SUMS");
+        .join("yaopl/yaopl/releases/download/latest/SHA256SUMS");
     std::fs::write(&sums, format!("{}  OPNPS2LD.ELF\n", "1".repeat(64))).unwrap();
     let info = run(
         &s.api,
@@ -350,7 +350,7 @@ fn a_versioned_yaopl_release_is_one_of_its_channel() {
     let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&elf));
     ReleaseMirror::new(&s.root)
         .release(
-            "belomaxorka/yaopl",
+            "yaopl/yaopl",
             "yaopl-v2.0.0",
             "v2.0.0-yaopl",
             "- Fix a hang on an empty cheat name\n",

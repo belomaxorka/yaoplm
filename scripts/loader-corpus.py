@@ -38,7 +38,7 @@ import sys
 
 REPOS = [
     "ps2homebrew/Open-PS2-Loader",
-    "belomaxorka/yaopl",
+    "yaopl/yaopl",
     "NathanNeurotic/Open-PS2-Loader",
     "NathanNeurotic/RiptOPL",
     "ps2homebrew/wOPL",

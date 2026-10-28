@@ -15,9 +15,9 @@ describe("loader versions", () => {
   });
 
   it("compares YAOPL's beta-numbered build with its nightly", () => {
-    expect(compareUrl("belomaxorka/yaopl", "v1.2.0-Beta-2420-03edb47-yaopl", "v2.0.0-nightly.3-0123abc-yaopl")).toBe(
-      "https://github.com/belomaxorka/yaopl/compare/03edb47...0123abc",
+    expect(compareUrl("yaopl/yaopl", "v1.2.0-Beta-2420-03edb47-yaopl", "v2.0.0-nightly.3-0123abc-yaopl")).toBe(
+      "https://github.com/yaopl/yaopl/compare/03edb47...0123abc",
     );
-    expect(compareUrl("belomaxorka/yaopl", "v2.0.0-nightly.3-0123abc-yaopl", "v2.0.0-yaopl")).toBeNull();
+    expect(compareUrl("yaopl/yaopl", "v2.0.0-nightly.3-0123abc-yaopl", "v2.0.0-yaopl")).toBeNull();
   });
 });

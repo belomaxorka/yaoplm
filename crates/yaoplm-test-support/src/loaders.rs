@@ -220,7 +220,7 @@ impl ReleaseMirror {
         let yaopl = opl_elf("v1.2.0-Beta-2370-33a2b19-yaopl");
         let sums = format!("{}  OPNPS2LD.ELF\n", sha256(&yaopl));
         self.release(
-            "belomaxorka/yaopl",
+            "yaopl/yaopl",
             "latest",
             "v1.2.0-Beta-2370-33a2b19-yaopl",
             "Automatic YAOPL build of v1.2.0-Beta-2370-33a2b19-yaopl.\n\nSHA-256 checksums of the files are in SHA256SUMS.\n",

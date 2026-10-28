@@ -186,7 +186,7 @@ Sources: [V] `gh api …/releases`; `Makefile` (`EE_BIN_PACKED`, `ps2-packer $< 
 
 ---
 
-## 2. YAOPL (`belomaxorka/yaopl`)
+## 2. YAOPL (`yaopl/yaopl`, until 2026-10-28 `belomaxorka/yaopl`)
 
 - **Same files as upstream** [V `src/config.c:22-27`, `src/opl.c` at `33a2b19a`]: `conf_opl.cfg` and the other four, looked for and saved exactly like upstream (§1.5). Per-game CFG, `games.bin` (188-byte records), VMC groups and art (PNG only) are upstream's.
 - **The only device-side difference is MMCE** (FORK.md, commit `1046d006` "mmce: the MMCE device: game list, settings and launch", 2026-10-23, YAOPL Beta-2367) [V]:
